@@ -196,21 +196,23 @@ references.
 
 | Id | Always true | Checked by |
 |---|---|---|
-| I1 | No task is leased to two workers at once | T03 |
-| I2 | A lease ends only by submit, split, cancel, lapse or a cancelled job; a lapsed task returns with a higher token | T04 |
-| I3 | A write from a stale lease is refused and changes nothing | T05 |
-| I4 | Failures retry with bounded jittered backoff, then dead-letter, every attempt logged | T06 |
-| I5 | One stored result per idempotency key; a replay returns the first receipt | T07 |
-| I6 | A split parent waits, then returns with its children's results | T08 |
-| I7 | The counts record always equals a recount | T09 |
-| I8 | Nothing is lost or doubled across workers, queues and restarts | T13, T14 |
-| I9 | Every receipt hash matches its stored result | T15 |
-| I10 | No key appears in any response, page or log | T16 and service tests |
-| I11 | Records change only by compare-and-set and keep every version; blobs are content-addressed; batches are atomic | ST01 to ST04 |
-| I12 | Only the key that claimed a task may change it, and tasks with the `public` effect class never reach an agent | service tests |
-| I13 | A dependent is never claimable before each dependency is done, dead or cancelled; then it sees their results | T17 |
-| I14 | Children with `after` run only after the siblings they name | T18 |
-| I15 | Parking counts no failure; a parked task is claimable only after resume or its wake time, and its next lease carries its inputs | T19 |
+| I1 | No task is leased to two workers at once | `test_T03_no_task_is_held_twice` |
+| I2 | A lease ends only by submit, split, cancel, lapse or a cancelled job; a lapsed task returns with a higher fencing token; heartbeats never extend past the hard cap | `test_T04_lapsed_leases_come_back`, `test_T04_heartbeats_keep_a_lease`, `test_T04_lease_has_a_hard_cap` |
+| I3 | A write from a stale lease is refused and changes nothing | `test_T05_fencing_refuses_the_old_holder` |
+| I4 | Failures retry with bounded jittered backoff, then dead-letter, every attempt logged | `test_T06_dead_letter_after_three_failures`, `test_T06_backoff_grows_within_bounds` |
+| I5 | One stored result per idempotency key; a replay returns the first receipt | `test_T07_submit_is_idempotent` |
+| I6 | A split parent waits, then returns with its children's results | `test_T08_split_keeps_the_parent` |
+| I7 | The counts record always equals a recount | `test_T09_one_counts_record` |
+| I8 | Health reports the database, the reaper's last run and queue depths honestly | `test_T10_health_is_honest`, `test_T10_health_over_http` |
+| I9 | Model jobs are tied to the lease that started them; a lapse asks them to stop; a cancelled job returns its task | `test_T12_a_job_is_polled_to_done_with_its_cost`, `test_T12_a_cancelled_job_returns_its_task`, `test_T12_a_lapsed_lease_asks_its_jobs_to_stop` |
+| I10 | Nothing is lost or doubled across workers, queues and restarts | `test_T13_it_holds_up`, `test_T14_it_survives_a_restart` |
+| I11 | Every receipt hash matches its stored result | `test_T15_receipts_match_results` |
+| I12 | No key appears in any response, page or log | `test_T16_no_secret_leaks`, `test_no_key_appears_in_any_response`, `test_web_forms_never_echo_the_key` |
+| I13 | Records change only by compare-and-set and keep every version; blobs are content-addressed; batches are atomic | `test_ST01_compare_and_set_has_one_winner`, `test_ST02_every_version_is_kept`, `test_ST03_blobs_are_content_addressed`, `test_ST04_a_batch_applies_completely_or_not_at_all` |
+| I14 | Writes are POST-only; a GET never changes state | `test_T02_writes_are_post_only`, `test_writes_are_post_only` |
+| I15 | A dependent is never claimable before each dependency is done, dead or cancelled, and then it sees their states and outputs; unknown dependencies are refused | `test_T17_a_dependent_waits_for_every_dependency`, `test_T17_failed_or_cancelled_dependencies_still_release`, `test_T17_dependencies_must_exist_and_resolved_ones_cost_nothing` |
+| I16 | Split children with `after` run only after the siblings they name | `test_T18_children_can_run_in_waves` |
+| I17 | Parking counts no failure; a parked task is claimable only after resume or its wake time, and its next lease carries its inputs; only the live lease may park | `test_T19_park_waits_for_input_without_a_failure`, `test_T19_a_stale_holder_cannot_park`, `test_T19_a_parked_task_wakes_when_its_time_is_up` |
 
 ## Trust boundaries
 

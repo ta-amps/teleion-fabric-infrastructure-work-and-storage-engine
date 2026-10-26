@@ -151,8 +151,10 @@ Outputs above 1 MiB are refused: store the bytes as a blob and submit its hash.
   two must always agree. Every board and manifest reads counts, never its own tally.
 - **Events**: an append-only log with a rising `seq`: `queue_defined`, `enqueued`, `claimed`,
   `heartbeat`, `submitted`, `retry_scheduled`, `dead_lettered`, `lease_lapsed`, `split`,
-  `parent_ready`, `cancelled`, `jobs_cancel_requested`, `job_registered`, `job_updated`,
-  `records_written`, `blob_stored`. Read in pages of up to 10,000 after a given `seq`.
+  `parent_ready`, `dependencies_met`, `parked`, `resumed`, `park_expired`, `cancelled`,
+  `jobs_cancel_requested`, `job_registered`, `job_updated`, `records_written`, `blob_stored`,
+  `key_issued`, `key_revoked`. Read in pages of up to 10,000 after a given `seq`. An event never
+  holds a key, a resume input or an output; it names the task, the worker and the token.
 - **Health**: `db_ok`, version, time, the reaper's last run, and per queue the counts, the age of the
   oldest claimable ready task and the number of expired leases not yet reaped.
 

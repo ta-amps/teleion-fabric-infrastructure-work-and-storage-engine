@@ -8,11 +8,13 @@ script fails when the file and the repo disagree:
   * every path it names exists (docs, reading order, components, stores, evidence, tests);
   * every "path::name" test reference points at a file that defines that test or class;
   * references between components, interfaces, stores and boundaries point at ids that exist;
-  * Python import rules hold: no file under a rule's path imports a forbidden module.
+  * Python import rules hold: no file under a rule's path imports a forbidden module;
+  * the invariants table in the architecture doc lists the same invariants, word for word.
 
-Usage: python3 scripts/check_architecture.py [ROOT] [--summary | --mermaid]
-  --summary  print a short text overview after the check
-  --mermaid  print the component graph as a Mermaid flowchart (no check)
+Usage: python3 scripts/check_architecture.py [ROOT] [--summary | --mermaid | --sync-docs]
+  --summary    print a short text overview after the check
+  --mermaid    print the component graph as a Mermaid flowchart (no check)
+  --sync-docs  rewrite the architecture doc's "## Invariants" table from architecture.json
 Exit 0 when consistent (or when there is no architecture.json), 1 with a report otherwise.
 Stdlib only; copy it into any repo. Schema: agents/schemas/architecture.schema.json in hackathon-context.
 """
@@ -316,7 +318,60 @@ def check(root: Path, data: Any) -> list[str]:
             for value in _strings(item.get("path", [])):
                 check_path(root, report, f"generalization.extension_points[{index}]", value)
     check_import_rules(root, report, data.get("import_rules", []))
+    check_docs_table(root, data, report)
     return report.problems
+
+
+INVARIANTS_HEADING = "## Invariants"
+TABLE_HEAD = ["| Id | Always true | Checked by |", "|---|---|---|"]
+
+
+def _doc_section(text: str) -> tuple[int, int] | None:
+    """Line span of the table under the invariants heading, or None if the doc has no such section."""
+    lines = text.splitlines()
+    if INVARIANTS_HEADING not in lines:
+        return None
+    start = lines.index(INVARIANTS_HEADING) + 1
+    while start < len(lines) and not lines[start].startswith("|"):
+        start += 1
+    end = start
+    while end < len(lines) and lines[end].startswith("|"):
+        end += 1
+    return start, end
+
+
+def invariants_table(data: dict[str, Any]) -> list[str]:
+    rows = list(TABLE_HEAD)
+    for item in data["invariants"]:
+        tests = ", ".join(
+            f"`{ref.rsplit('::', 1)[-1]}`" for ref in _strings(item.get("checked_by"))
+        )
+        rows.append(f"| {item['id']} | {item['statement']} | {tests} |")
+    return rows
+
+
+def check_docs_table(root: Path, data: dict[str, Any], report: Report) -> None:
+    doc = data["docs"].get("architecture")
+    if not isinstance(doc, str) or not (root / doc).is_file():
+        return
+    span = _doc_section((root / doc).read_text(encoding="utf-8"))
+    if span is None:
+        return  # no invariants section in the doc: nothing to compare
+    lines = (root / doc).read_text(encoding="utf-8").splitlines()[span[0] : span[1]]
+    if lines != invariants_table(data):
+        report.add(doc, "the invariants table differs from architecture.json; run --sync-docs")
+
+
+def sync_docs(root: Path, data: dict[str, Any]) -> str:
+    doc = data["docs"]["architecture"]
+    text = (root / doc).read_text(encoding="utf-8")
+    span = _doc_section(text)
+    if span is None:
+        raise SystemExit(f"{doc} has no '{INVARIANTS_HEADING}' heading")
+    lines = text.splitlines()
+    lines[span[0] : span[1]] = invariants_table(data)
+    (root / doc).write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return doc
 
 
 def summary(data: dict[str, Any]) -> str:
@@ -371,6 +426,8 @@ def main(argv: list[str]) -> int:
     if "--mermaid" in argv:
         print(mermaid(data))
         return 0
+    if "--sync-docs" in argv:
+        print(f"check_architecture: rewrote the invariants table in {sync_docs(root, data)}")
     problems = check(root, data)
     if problems:
         print(f"check_architecture: {len(problems)} problem(s) in {MANIFEST}", file=sys.stderr)

@@ -140,13 +140,14 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [src/tessera/store.py](src/tessera/store.py) | The in-process Tessera store: the reference implementation of SPEC.md. |
 | [src/tessera/testing.py](src/tessera/testing.py) | Factories the conformance suite loads by name (TESSERABACKENDFACTORY="module:function"). |
 
-## tests/ (4)
+## tests/ (5)
 
 | File | What it is |
 |---|---|
 | [tests/test_check_public.py](tests/test_check_public.py) | checkpublic finds secrets and private names, masks them, and honours the allow marker. |
 | [tests/test_guard_hook.py](tests/test_guard_hook.py) | The guard hook blocks protected paths and risky commands, and fails closed. |
 | [tests/test_service.py](tests/test_service.py) | The HTTP service: keys, scopes, POST-only writes, holders, rate limits, the edge lock, the agent door, the we… |
+| [tests/test_spec_events.py](tests/test_spec_events.py) | SPEC §5.5 lists every event type, and the code emits only listed types: a new event can't ship without a line… |
 | [tests/test_tools.py](tests/test_tools.py) | The Muse worker keeps its safety flags whatever the brief says, and briefs load in dependency order. |
 
 ## tools/ (3)
