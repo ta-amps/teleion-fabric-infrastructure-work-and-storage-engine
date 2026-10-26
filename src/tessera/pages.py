@@ -17,7 +17,7 @@ from tessera.errors import RateLimited, TesseraError
 from tessera.models import Health
 
 if TYPE_CHECKING:
-    from tessera.service import ClaimLimiter, Gate, ServiceSettings
+    from tessera.access import ClaimLimiter, Gate, ServiceSettings
     from tessera.store import Store
 
 ROBOTS = "User-agent: *\nAllow: /\nDisallow: /v1/\nDisallow: /work\nDisallow: /mcp\n"

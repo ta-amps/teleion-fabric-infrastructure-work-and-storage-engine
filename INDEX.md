@@ -113,7 +113,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [scripts/dev_stack.sh](scripts/dev_stack.sh) | Run Tessera on this machine behind the real Cloudflare edge code (wrangler dev), with the origin |
 | [scripts/suite_http_local.py](scripts/suite_http_local.py) | Run the whole conformance suite over HTTP against a real tessera serve process on this machine. |
 
-## src/ (22)
+## src/ (24)
 
 | File | What it is |
 |---|---|
@@ -126,11 +126,13 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [src/tessera/_storage.py](src/tessera/_storage.py) | Atomic storage (SPEC §6): versioned records written by compare-and-set, with every version kept, and content-… |
 | [src/tessera/_tasks.py](src/tessera/_tasks.py) | The five verbs (claim, heartbeat, split, submit, cancel), park and resume, plus enqueue with dependencies, qu… |
 | [src/tessera/_version.py](src/tessera/_version.py) |  |
+| [src/tessera/access.py](src/tessera/access.py) | What every door shares: the service settings, the claim rate limiter, reading the bearer key, and the Gate th… |
 | [src/tessera/backend.py](src/tessera/backend.py) | The contract every Tessera backend meets: the in-process Store, the HTTP Client, and any adapter an app puts… |
 | [src/tessera/cli.py](src/tessera/cli.py) | tessera: drive the in-process store on a SQLite file from a shell. |
 | [src/tessera/client.py](src/tessera/client.py) | HTTP client for a Tessera service (SPEC §7). |
 | [src/tessera/clock.py](src/tessera/clock.py) | Time source for leases and backoff. |
 | [src/tessera/errors.py](src/tessera/errors.py) | Errors every Tessera backend raises. |
+| [src/tessera/grants.py](src/tessera/grants.py) | What a worker key may do: its queues, kinds, effect classes and scopes, and the rules that narrow a request t… |
 | [src/tessera/mcp_door.py](src/tessera/mcp_door.py) | The MCP door (SPEC §7): claim, heartbeat, submit and split as MCP tools over Streamable HTTP, behind the same… |
 | [src/tessera/models.py](src/tessera/models.py) | Records that cross Tessera's boundary: what callers send and what every backend returns. |
 | [src/tessera/pages.py](src/tessera/pages.py) | The agent door: /connect, /llms.txt, the agent card, robots rules, the read-only board, and keyed web forms f… |

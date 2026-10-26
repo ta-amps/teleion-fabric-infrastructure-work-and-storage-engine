@@ -218,8 +218,11 @@ class Client:
             body["resume_within"] = resume_within
         return TaskView.model_validate(self._call("POST", "/v1/tasks/park", body=body).json())
 
-    def resume(self, task_id: str, value: dict[str, Any]) -> TaskView:
-        resp = self._call("POST", "/v1/tasks/resume", body={"task_id": task_id, "input": value})
+    def resume(self, task_id: str, value: dict[str, Any], *, park: int | None = None) -> TaskView:
+        body: dict[str, Any] = {"task_id": task_id, "input": value}
+        if park is not None:
+            body["park"] = park
+        resp = self._call("POST", "/v1/tasks/resume", body=body)
         return TaskView.model_validate(resp.json())
 
     # operations and observation -----------------------------------------------------------------

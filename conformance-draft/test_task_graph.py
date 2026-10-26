@@ -183,3 +183,21 @@ def test_T20_a_child_is_never_broader_than_its_parent(backend: Any, make_queue: 
         backend.split(task, lease.fencing_token, [ChildSpec(brief={}, effect_class="write-repo")])
     kids = backend.split(task, lease.fencing_token, [ChildSpec(brief={}, effect_class="read")])
     assert backend.task(kids[0]).effect_class == "read"
+
+
+def test_T19_a_resume_can_name_the_park_it_answers(backend: Any, make_queue: Any) -> None:
+    """T19: a late resume for an earlier park is refused instead of landing on a later one."""
+    make_queue("q-park-twice")
+    task = backend.enqueue(TaskSpec(queue="q-park-twice", brief={}))
+    first = backend.claim("q-park-twice", "w1")
+    assert first is not None
+    assert backend.park(task, first.fencing_token, reason="first question").parks == 1
+    backend.resume(task, {"answer": 1}, park=1)
+    second = backend.claim("q-park-twice", "w1")
+    assert second is not None
+    assert backend.park(task, second.fencing_token, reason="second question").parks == 2
+    with pytest.raises(InvalidState):
+        backend.resume(task, {"answer": "late reply to the first question"}, park=1)
+    backend.resume(task, {"answer": 2}, park=2)
+    third = backend.claim("q-park-twice", "w1")
+    assert third is not None and third.inputs == [{"answer": 1}, {"answer": 2}]

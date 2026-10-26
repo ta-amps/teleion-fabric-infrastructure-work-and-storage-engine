@@ -12,7 +12,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from tessera import QueueConfig, Store
-from tessera.service import WRITE_PATHS, ServiceSettings, create_app
+from tessera.access import ServiceSettings
+from tessera.service import WRITE_PATHS, create_app
 
 Keys = dict[str, str]
 
@@ -368,3 +369,25 @@ def test_split_children_need_an_effect_class_the_key_holds(
         400,
         403,
     }
+
+
+def test_whole_numbers_hash_the_same_in_every_language() -> None:
+    from tessera.receipts import canonical_json, receipt_hash
+
+    assert canonical_json({"a": 1.0, "b": [2.0, 0.5]}) == '{"a":1,"b":[2,0.5]}'
+    assert receipt_hash("t", 1, True, {"n": 3.0}, None) == receipt_hash(
+        "t", 1, True, {"n": 3}, None
+    )
+
+
+def test_an_older_build_refuses_a_newer_database(tmp_path: Path) -> None:
+    import sqlite3
+
+    from tessera import InvalidRequest
+
+    path = tmp_path / "t.db"
+    Store(str(path)).close()
+    with sqlite3.connect(path) as conn:
+        conn.execute("UPDATE meta SET value = '99' WHERE key = 'schema_version'")
+    with pytest.raises(InvalidRequest, match="newer than this build"):
+        Store(str(path))

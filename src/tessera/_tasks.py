@@ -488,7 +488,7 @@ class TaskOps(GraphOps):
                 self._cancel_jobs(c, task_id, now)
                 c.execute(
                     "UPDATE tasks SET state = 'waiting', wait_reason = 'input', wake_at = ?,"
-                    " parked_by = ?, updated_at = ? WHERE id = ?",
+                    " parked_by = ?, parks = parks + 1, updated_at = ? WHERE id = ?",
                     (wake, row["key_id"], now, task_id),
                 )
                 self._move(c, task["queue"], "leased", "waiting")
@@ -512,6 +512,7 @@ class TaskOps(GraphOps):
         task_id: str,
         value: dict[str, Any],
         *,
+        park: int | None = None,
         by: str | None = None,
         allow_self: bool = False,
     ) -> TaskView:
@@ -529,6 +530,10 @@ class TaskOps(GraphOps):
             task = self._task_row(c, task_id)
             if task["state"] != "waiting" or task["wait_reason"] != "input":
                 raise InvalidState(f"task {task_id} is not parked (state {task['state']})")
+            if park is not None and park != task["parks"]:
+                raise InvalidState(
+                    f"this resume answers park {park}, but task {task_id} is on park {task['parks']}"
+                )
             if by is not None and by == task["parked_by"] and not allow_self:
                 raise Forbidden("the key that parked this task may not resume it")
             self._wake(c, task, value, now, event="resumed", by=by)

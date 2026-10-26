@@ -109,7 +109,9 @@ stateDiagram-v2
 - **resume(task, input)**: only for a parked task (otherwise `invalid_state`). Stores the input (up to
   1 MiB) and makes the task `ready`. Its next lease carries every input it has received, in order. The
   task records the key that parked it; that key may not resume it (`forbidden`), so outside input comes
-  from someone else. Admin keys may. The `resumed` event records the resuming key.
+  from someone else. Admin keys may. The `resumed` event records the resuming key. Each park raises the
+  task's `parks` count; a resume may name the park it answers (`park`), and is refused with
+  `invalid_state` if the task has moved on to a later park.
 - **Leases** carry the brief plus `children` (after a split), `dependencies` and `inputs`: each child or
   dependency with its state and latest successful output. A dead or cancelled dependency still releases
   its dependent, which sees what happened and decides.
@@ -144,7 +146,9 @@ receipt with `replayed = true` and writes nothing; for a different task it is re
 sha256( canonical_json({"task_id", "fencing_token", "ok", "output", "error"}) )
 ```
 
-where `canonical_json` sorts keys, uses `,` and `:` without spaces, keeps UTF-8 and rejects NaN.
+where `canonical_json` sorts keys, uses `,` and `:` without spaces, keeps UTF-8, rejects NaN, and writes a
+whole number without a fraction (`1.0` as `1`, below 2^53), so a receipt computed in another language, such
+as JavaScript, matches.
 Outputs above 1 MiB are refused: store the bytes as a blob and submit its hash.
 
 ### 5.5 Counts, events and health
@@ -192,7 +196,7 @@ nothing. Bodies are JSON. Successful bodies are the models in `src/tessera/model
 | POST /v1/tasks/submit | `{task_id, fencing_token, output, ok, error}` + `Idempotency-Key` header | 200 Receipt | the key that claimed |
 | POST /v1/tasks/split | `{task_id, fencing_token, children}` | 200 `{children}` | the key that claimed, holding each child's effect class |
 | POST /v1/tasks/park | `{task_id, fencing_token, reason, resume_within?}` | 200 TaskView | the key that claimed |
-| POST /v1/tasks/resume | `{task_id, input}` | 200 TaskView | key for the task's queue, other than the key that parked it |
+| POST /v1/tasks/resume | `{task_id, input, park?}` | 200 TaskView | key for the task's queue, other than the key that parked it |
 | POST /v1/tasks/cancel | `{task_id, reason}` | 200 TaskView | key with the task's effect class |
 | POST /v1/admin/reap | | 200 `{reaped}` | admin |
 | GET /v1/counts (`?recount=true`) | | 200 `{as_of, queues}` | any key |

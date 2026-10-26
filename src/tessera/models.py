@@ -146,6 +146,7 @@ class TaskView(_Model):
     depends_on: list[str] = Field(default_factory=list)
     wake_at: float | None = None
     parked_by: str | None = None
+    parks: int = 0  # how many times the task has been parked; a resume can name the park it answers
 
 
 class QueueCounts(_Model):

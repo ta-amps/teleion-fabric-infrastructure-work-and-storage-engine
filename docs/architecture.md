@@ -50,7 +50,8 @@ flowchart LR
 | Store | `src/tessera/store.py`, `_base.py`, `_tasks.py`, `_graph.py`, `_jobs.py`, `_keys.py`, `_observe.py`, `_storage.py`, `schema.sql` | The reference implementation: queues, the five verbs, park and resume, dependencies, retries, split, model jobs, keys, counts, events, health, records and blobs | models, errors, receipts, clock |
 | Backend protocol | `src/tessera/backend.py` | The contract every backend meets (Store, Client, adapters) | models |
 | HTTP client | `src/tessera/client.py` | A Backend over HTTP, so callers can switch store and service with one setting | models, errors, httpx |
-| Service | `src/tessera/service.py` | FastAPI app: bearer keys, scopes, POST-only writes, claim rate limit, problem+json, edge lock, the reaper loop | store, MCP door, pages |
+| Service | `src/tessera/service.py`, `access.py` | FastAPI app: routes, POST-only writes, problem+json, edge lock, the reaper loop. `access.py` holds what every door shares: settings, the claim limiter, the bearer key, the Gate | store, MCP door, pages |
+| Key grants | `src/tessera/grants.py` | What a key may do and how a request is narrowed to it: pure policy shared by the store and every door | models |
 | MCP door | `src/tessera/mcp_door.py` | MCP server over Streamable HTTP at `/mcp` (claim, heartbeat, submit, split, park, resume), behind the same keys | store, keys |
 | Agent pages | `src/tessera/pages.py` | `/connect`, `/llms.txt`, `/.well-known/agent-card.json`, `/robots.txt`, `/board`, keyed `/work` forms | store |
 | CLI | `src/tessera/cli.py` | `tessera` command: every verb on a shared SQLite file, plus `serve` and `keys` | store, service |
@@ -60,13 +61,20 @@ flowchart LR
 
 ## Layering
 
-Three rules keep the store usable on its own and the doors thin. `make architecture` fails if an import breaks one.
+Tessera is built in rings, innermost first. A ring may use the rings inside it and never the ones outside;
+`make architecture` checks every rule against the real imports (`import_rules` in architecture.json).
 
-1. **The store never imports the web.** `models`, `errors`, `receipts`, `clock`, `backend` and every store
-   module import nothing from FastAPI, Starlette, Uvicorn, httpx, MCP or the service modules.
-2. **The client never touches the database.** `client.py` imports no store module and no `sqlite3`.
-3. **Every door calls the store and nothing else** for state. The service, the MCP door and the pages add
-   keys, limits and formatting; none writes SQL.
+| Ring | Modules | May use |
+|---|---|---|
+| 0 Kernel | `models.py`, `errors.py`, `receipts.py`, `clock.py`, `grants.py`, `_version.py` | the standard library and pydantic only |
+| 1 Port | `backend.py`: the one contract every engine meets | ring 0 |
+| 2 Engines | the SQLite store (`store.py`, `_base.py`, `_tasks.py`, `_graph.py`, `_jobs.py`, `_keys.py`, `_observe.py`, `_storage.py`) and the HTTP client (`client.py`) | rings 0 and 1; never each other, never a door |
+| 3 Doors | `service.py`, `access.py`, `mcp_door.py`, `pages.py`, `cli.py` | rings 0 and 1 and the store's public API; web libraries; never each other's internals |
+| Facade | `__init__.py` | rings 0 to 2 |
+| Outside | `testing.py`, `conformance-draft/`, `tests/`, `tools/`, `scripts/`, `deploy/` | anything; the package never imports them |
+
+Every door changes state only through `Store` methods, so every guarantee holds on every door, and the
+doors share their access rules (`access.py`, `grants.py`) instead of importing each other.
 
 ## Data
 
@@ -215,6 +223,9 @@ references.
 | I17 | Parking counts no failure; a parked task is claimable only after resume or its wake time, and its next lease carries its inputs; only the live lease may park | `test_T19_park_waits_for_input_without_a_failure`, `test_T19_a_stale_holder_cannot_park`, `test_T19_a_parked_task_wakes_when_its_time_is_up` |
 | I18 | A split child is never broader than its parent (read < write-internal < write-repo < public) | `test_T20_a_child_is_never_broader_than_its_parent`, `test_split_children_need_an_effect_class_the_key_holds` |
 | I19 | The key that parked a task may not resume it, and every resume records the resuming key | `test_the_key_that_parked_a_task_may_not_resume_it` |
+| I20 | A resume may name the park it answers, and a late resume for an earlier park is refused | `test_T19_a_resume_can_name_the_park_it_answers` |
+| I21 | Receipt hashes write whole numbers without a fraction, so other languages compute the same hash | `test_whole_numbers_hash_the_same_in_every_language`, `test_T15_receipts_match_results` |
+| I22 | An older build refuses to open a database with a newer schema instead of downgrading it | `test_an_older_build_refuses_a_newer_database` |
 
 ## Trust boundaries
 

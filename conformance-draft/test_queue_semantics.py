@@ -31,10 +31,23 @@ def enqueue_n(backend: Any, queue: str, n: int, prefix: str | None = None) -> li
     ]
 
 
+def spec_whole(value: Any) -> Any:
+    """SPEC §5.4: a whole number is written without a fraction (1.0 as 1)."""
+    if isinstance(value, float) and value.is_integer() and abs(value) < 2**53:
+        return int(value)
+    if isinstance(value, dict):
+        return {k: spec_whole(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [spec_whole(v) for v in value]
+    return value
+
+
 def spec_receipt_hash(task_id: str, token: int, ok: bool, output: Any, error: str | None) -> str:
     """SPEC §5.4, written out independently of the implementation under test."""
     body = json.dumps(
-        {"task_id": task_id, "fencing_token": token, "ok": ok, "output": output, "error": error},
+        spec_whole(
+            {"task_id": task_id, "fencing_token": token, "ok": ok, "output": output, "error": error}
+        ),
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=False,

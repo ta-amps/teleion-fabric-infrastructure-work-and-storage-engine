@@ -261,7 +261,8 @@ def _keys(store: Store, args: argparse.Namespace) -> Any:
 def _serve(args: argparse.Namespace) -> int:
     import uvicorn
 
-    from tessera.service import ServiceSettings, create_app
+    from tessera.access import ServiceSettings
+    from tessera.service import create_app
 
     settings = ServiceSettings.from_env()
     settings = ServiceSettings(**{**settings.__dict__, "db_path": args.db})

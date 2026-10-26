@@ -5,11 +5,26 @@ from __future__ import annotations
 import hashlib
 import json
 
+MAX_EXACT = 2**53  # beyond this, whole floats can't round-trip through a JavaScript number
+
+
+def _whole(value: object) -> object:
+    """Write whole floats as integers (1.0 -> 1), as JavaScript and most JSON libraries do, so a
+    receipt computed in another language matches. Other numbers keep their shortest round-trip form."""
+    if isinstance(value, float) and value.is_integer() and abs(value) < MAX_EXACT:
+        return int(value)
+    if isinstance(value, dict):
+        return {k: _whole(v) for k, v in value.items()}
+    if isinstance(value, list | tuple):
+        return [_whole(v) for v in value]
+    return value
+
 
 def canonical_json(value: object) -> str:
-    """Sorted keys, no spaces, UTF-8, no NaN: the same value always gives the same text."""
+    """Sorted keys, no spaces, UTF-8, no NaN, whole numbers without a fraction: the same value always
+    gives the same text, whichever language wrote it."""
     return json.dumps(
-        value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False
+        _whole(value), sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False
     )
 
 

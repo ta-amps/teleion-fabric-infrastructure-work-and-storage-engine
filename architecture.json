@@ -83,6 +83,17 @@
       "role": "Time source; tests inject a fake clock"
     },
     {
+      "id": "grants",
+      "title": "Key grants",
+      "path": "src/tessera/grants.py",
+      "kind": "library",
+      "domain": "neutral",
+      "role": "What a key may do (queues, kinds, effect classes, scopes) and the rules that narrow a request to it; pure policy shared by the store and every door",
+      "depends_on": [
+        "models"
+      ]
+    },
+    {
       "id": "store",
       "title": "Store",
       "kind": "library",
@@ -100,10 +111,11 @@
       ],
       "role": "The reference backend and the only place state changes: queues, the five verbs, park and resume, dependencies, retries, split, model jobs, keys, counts, events, health, records and blobs, each operation one IMMEDIATE transaction",
       "depends_on": [
-        "models",
+        "clock",
         "errors",
-        "receipts",
-        "clock"
+        "grants",
+        "models",
+        "receipts"
       ],
       "interfaces": [
         "library"
@@ -144,16 +156,20 @@
     {
       "id": "service",
       "title": "HTTP service",
-      "path": "src/tessera/service.py",
+      "path": [
+        "src/tessera/service.py",
+        "src/tessera/access.py"
+      ],
       "kind": "service",
       "domain": "neutral",
-      "role": "FastAPI app: bearer keys, scopes, POST-only writes, claim rate limit, problem+json, edge lock, reaper loop",
+      "role": "FastAPI app: routes, problem+json and the reaper loop; access.py holds what every door shares: settings, the claim limiter, the bearer key and the Gate",
       "depends_on": [
-        "store",
+        "errors",
+        "grants",
         "mcp-door",
-        "pages",
         "models",
-        "errors"
+        "pages",
+        "store"
       ],
       "interfaces": [
         "http"
@@ -171,9 +187,10 @@
       "domain": "neutral",
       "role": "MCP server over Streamable HTTP at /mcp: queues, claim, heartbeat, submit, split, park, resume, behind the same keys",
       "depends_on": [
-        "store",
+        "errors",
+        "grants",
         "models",
-        "errors"
+        "store"
       ],
       "interfaces": [
         "mcp"
@@ -191,9 +208,10 @@
       "domain": "neutral",
       "role": "/connect, /llms.txt, agent card, robots, the read-only board and keyed /work forms",
       "depends_on": [
-        "store",
+        "errors",
+        "grants",
         "models",
-        "errors"
+        "store"
       ],
       "interfaces": [
         "web"
@@ -630,11 +648,36 @@
       "checked_by": [
         "tests/test_service.py::test_the_key_that_parked_a_task_may_not_resume_it"
       ]
+    },
+    {
+      "id": "I20",
+      "statement": "A resume may name the park it answers, and a late resume for an earlier park is refused",
+      "enforced_by": "store",
+      "checked_by": [
+        "conformance-draft/test_task_graph.py::test_T19_a_resume_can_name_the_park_it_answers"
+      ]
+    },
+    {
+      "id": "I21",
+      "statement": "Receipt hashes write whole numbers without a fraction, so other languages compute the same hash",
+      "enforced_by": "receipts",
+      "checked_by": [
+        "tests/test_service.py::test_whole_numbers_hash_the_same_in_every_language",
+        "conformance-draft/test_queue_semantics.py::test_T15_receipts_match_results"
+      ]
+    },
+    {
+      "id": "I22",
+      "statement": "An older build refuses to open a database with a newer schema instead of downgrading it",
+      "enforced_by": "store",
+      "checked_by": [
+        "tests/test_service.py::test_an_older_build_refuses_a_newer_database"
+      ]
     }
   ],
   "import_rules": [
     {
-      "id": "store-below-doors",
+      "id": "ring0-kernel-stands-alone",
       "package": "tessera",
       "package_root": "src/tessera",
       "files": [
@@ -642,15 +685,225 @@
         "src/tessera/errors.py",
         "src/tessera/receipts.py",
         "src/tessera/clock.py",
-        "src/tessera/backend.py",
+        "src/tessera/_version.py",
+        "src/tessera/grants.py"
+      ],
+      "must_not_import": [
+        "anyio",
+        "fastapi",
+        "httpx",
+        "mcp",
+        "os",
+        "random",
+        "sqlite3",
+        "starlette",
+        "tessera.Store",
+        "tessera._base",
+        "tessera._graph",
+        "tessera._jobs",
+        "tessera._keys",
+        "tessera._observe",
+        "tessera._storage",
+        "tessera._tasks",
+        "tessera.access",
+        "tessera.backend",
+        "tessera.cli",
+        "tessera.client",
+        "tessera.mcp_door",
+        "tessera.pages",
+        "tessera.service",
+        "tessera.store",
+        "tessera.testing",
+        "uvicorn"
+      ],
+      "why": "Ring 0, the kernel: records, errors, receipts and the clock port describe work in general and depend on nothing but the standard library and pydantic, so every backend and door shares one vocabulary"
+    },
+    {
+      "id": "ring1-port-knows-only-the-kernel",
+      "package": "tessera",
+      "package_root": "src/tessera",
+      "files": [
+        "src/tessera/backend.py"
+      ],
+      "must_not_import": [
+        "anyio",
+        "fastapi",
+        "httpx",
+        "mcp",
+        "sqlite3",
+        "starlette",
+        "tessera.Store",
+        "tessera._base",
+        "tessera._graph",
+        "tessera._jobs",
+        "tessera._keys",
+        "tessera._observe",
+        "tessera._storage",
+        "tessera._tasks",
+        "tessera.access",
+        "tessera.cli",
+        "tessera.client",
+        "tessera.mcp_door",
+        "tessera.pages",
+        "tessera.service",
+        "tessera.store",
+        "tessera.testing",
+        "uvicorn"
+      ],
+      "why": "Ring 1, the port: the Backend protocol is the one contract every engine meets and every door and caller uses; it names kernel types only"
+    },
+    {
+      "id": "ring2-engines-never-reach-doors",
+      "package": "tessera",
+      "package_root": "src/tessera",
+      "files": [
         "src/tessera/store.py",
         "src/tessera/_base.py",
+        "src/tessera/_graph.py",
         "src/tessera/_tasks.py",
         "src/tessera/_jobs.py",
         "src/tessera/_keys.py",
         "src/tessera/_observe.py",
         "src/tessera/_storage.py",
-        "src/tessera/_graph.py"
+        "src/tessera/client.py"
+      ],
+      "must_not_import": [
+        "anyio",
+        "fastapi",
+        "mcp",
+        "starlette",
+        "tessera.access",
+        "tessera.cli",
+        "tessera.mcp_door",
+        "tessera.pages",
+        "tessera.service",
+        "tessera.testing",
+        "uvicorn"
+      ],
+      "why": "Ring 2, the engines: the SQLite store and the HTTP client are interchangeable implementations of the port; neither may depend on a door or on test wiring"
+    },
+    {
+      "id": "ring2-engines-do-not-know-each-other",
+      "package": "tessera",
+      "package_root": "src/tessera",
+      "files": [
+        "src/tessera/client.py"
+      ],
+      "must_not_import": [
+        "sqlite3",
+        "tessera.store",
+        "tessera.Store",
+        "tessera._base",
+        "tessera._tasks",
+        "tessera._graph",
+        "tessera._jobs",
+        "tessera._keys",
+        "tessera._observe",
+        "tessera._storage"
+      ],
+      "why": "Two engines behind one port stay independent, so a third (Postgres, D1) can be added by meeting the port and passing the suite"
+    },
+    {
+      "id": "ring3-doors-use-the-public-store-api",
+      "package": "tessera",
+      "package_root": "src/tessera",
+      "files": [
+        "src/tessera/service.py",
+        "src/tessera/mcp_door.py",
+        "src/tessera/pages.py",
+        "src/tessera/cli.py",
+        "src/tessera/access.py"
+      ],
+      "must_not_import": [
+        "sqlite3",
+        "tessera._base",
+        "tessera._tasks",
+        "tessera._graph",
+        "tessera._jobs",
+        "tessera._keys",
+        "tessera._observe",
+        "tessera._storage",
+        "tessera.client",
+        "tessera.testing"
+      ],
+      "why": "Ring 3, the doors: HTTP, MCP, pages and the CLI reach state only through Store's public methods and kernel types, never a store-private module, so every guarantee holds on every door"
+    },
+    {
+      "id": "ring3-doors-do-not-reach-upward",
+      "package": "tessera",
+      "package_root": "src/tessera",
+      "files": [
+        "src/tessera/mcp_door.py",
+        "src/tessera/pages.py",
+        "src/tessera/access.py"
+      ],
+      "must_not_import": [
+        "tessera.service",
+        "tessera.cli"
+      ],
+      "why": "The service composes the MCP door and the pages; a door that imported its composer would make the doors one tangle"
+    },
+    {
+      "id": "facade-stays-light",
+      "package": "tessera",
+      "package_root": "src/tessera",
+      "files": [
+        "src/tessera/__init__.py"
+      ],
+      "must_not_import": [
+        "anyio",
+        "fastapi",
+        "httpx",
+        "mcp",
+        "starlette",
+        "tessera.access",
+        "tessera.cli",
+        "tessera.client",
+        "tessera.mcp_door",
+        "tessera.pages",
+        "tessera.service",
+        "tessera.testing",
+        "uvicorn"
+      ],
+      "why": "import tessera gives the kernel, the port and the in-process store without pulling in a web stack, so an embedding caller pays only for what it uses"
+    },
+    {
+      "id": "package-never-imports-dev-roots",
+      "package": "tessera",
+      "package_root": "src/tessera",
+      "files": [
+        "src/tessera"
+      ],
+      "must_not_import": [
+        "tools",
+        "scripts",
+        "tests",
+        "conformance",
+        "harness",
+        "briefs",
+        "deploy"
+      ],
+      "why": "Development tooling, briefs and the suite sit outside the onion; the shipped package never depends on them"
+    },
+    {
+      "id": "store-below-doors",
+      "package": "tessera",
+      "package_root": "src/tessera",
+      "files": [
+        "src/tessera/_base.py",
+        "src/tessera/_graph.py",
+        "src/tessera/_jobs.py",
+        "src/tessera/_keys.py",
+        "src/tessera/_observe.py",
+        "src/tessera/_storage.py",
+        "src/tessera/_tasks.py",
+        "src/tessera/backend.py",
+        "src/tessera/clock.py",
+        "src/tessera/errors.py",
+        "src/tessera/grants.py",
+        "src/tessera/models.py",
+        "src/tessera/receipts.py",
+        "src/tessera/store.py"
       ],
       "must_not_import": [
         "fastapi",
@@ -666,42 +919,6 @@
         "tessera.cli"
       ],
       "why": "The store must work on its own, in process, with no web stack"
-    },
-    {
-      "id": "client-without-database",
-      "package": "tessera",
-      "package_root": "src/tessera",
-      "files": [
-        "src/tessera/client.py"
-      ],
-      "must_not_import": [
-        "sqlite3",
-        "tessera.store",
-        "tessera._base",
-        "tessera._tasks",
-        "tessera._jobs",
-        "tessera._keys",
-        "tessera._observe",
-        "tessera._storage",
-        "tessera.service",
-        "fastapi"
-      ],
-      "why": "The client speaks HTTP only, so it works against any service that passes the suite"
-    },
-    {
-      "id": "doors-without-sql",
-      "package": "tessera",
-      "package_root": "src/tessera",
-      "files": [
-        "src/tessera/service.py",
-        "src/tessera/mcp_door.py",
-        "src/tessera/pages.py"
-      ],
-      "must_not_import": [
-        "sqlite3",
-        "tessera._base"
-      ],
-      "why": "Every door changes state only through Store methods, so every guarantee holds on every door"
     }
   ],
   "claims": [

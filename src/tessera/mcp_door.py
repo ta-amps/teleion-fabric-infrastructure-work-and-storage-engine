@@ -17,13 +17,13 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
 
-from tessera._keys import KeyGrant
 from tessera._version import __version__
 from tessera.errors import RateLimited, TesseraError
+from tessera.grants import KeyGrant
 from tessera.models import ChildSpec
 
 if TYPE_CHECKING:
-    from tessera.service import ClaimLimiter, Gate, ServiceSettings
+    from tessera.access import ClaimLimiter, Gate, ServiceSettings
     from tessera.store import Store
 
 T = TypeVar("T")
@@ -186,12 +186,16 @@ def build_mcp(
         description="Give a parked task the input it is waiting for. It becomes ready again, and "
         "its next claim carries every input it has received."
     )
-    async def resume(task_id: str, input: dict[str, Any]) -> dict[str, Any]:
+    async def resume(
+        task_id: str, input: dict[str, Any], park: int | None = None
+    ) -> dict[str, Any]:
         grant = await current_grant()
         queue = (await run(lambda: store.task(task_id))).queue
         await run(lambda: gate.queue(grant, queue))
         view = await run(
-            lambda: store.resume(task_id, input, by=grant.key_id, allow_self=grant.is_admin)
+            lambda: store.resume(
+                task_id, input, park=park, by=grant.key_id, allow_self=grant.is_admin
+            )
         )
         return view.model_dump(mode="json")
 

@@ -27,6 +27,7 @@ TASK_COLUMNS_V2 = (
     ("wait_reason", "TEXT"),
     ("wake_at", "REAL"),
     ("parked_by", "TEXT"),
+    ("parks", "INTEGER NOT NULL DEFAULT 0"),
 )
 PRAGMAS = ("journal_mode=WAL", "synchronous=NORMAL", "foreign_keys=ON", "busy_timeout=30000")
 
@@ -102,6 +103,12 @@ class StoreBase:
     def _init_schema(self) -> None:
         script = resources.files("tessera").joinpath("schema.sql").read_text(encoding="utf-8")
         conn = self._conn()
+        stored = self._stored_version(conn)
+        if stored is not None and int(stored) > int(SCHEMA_VERSION):
+            raise InvalidRequest(
+                f"{self.path} uses schema v{stored}, newer than this build (v{SCHEMA_VERSION}); "
+                "upgrade Tessera instead of opening it with an older one"
+            )
         self._migrate(conn)
         conn.executescript(script)
         conn.execute(
@@ -115,6 +122,13 @@ class StoreBase:
                 "UPDATE tasks SET wait_reason = 'children'"
                 " WHERE state = 'waiting' AND wait_reason IS NULL"
             )
+
+    @staticmethod
+    def _stored_version(conn: sqlite3.Connection) -> str | None:
+        if conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'meta'").fetchone() is None:
+            return None
+        row = conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()
+        return None if row is None else str(row["value"])
 
     @staticmethod
     def _migrate(conn: sqlite3.Connection) -> None:
@@ -224,6 +238,7 @@ class StoreBase:
             ],
             wake_at=row["wake_at"],
             parked_by=row["parked_by"],
+            parks=row["parks"],
         )
 
     def _jitter(self) -> float:

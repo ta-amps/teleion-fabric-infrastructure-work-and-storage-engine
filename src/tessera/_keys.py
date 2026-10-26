@@ -8,56 +8,16 @@ import json
 import secrets
 import sqlite3
 from collections.abc import Sequence
-from fnmatch import fnmatchcase
-
-from pydantic import Field
 
 from tessera._base import StoreBase, new_id
 from tessera.errors import InvalidRequest, NotFound
-from tessera.models import _Model
+from tessera.grants import EFFECTS, SCOPES, KeyGrant
 
 KEY_PREFIX = "tsk_"
-EFFECTS = ("read", "write-internal", "write-repo")
-SCOPES = frozenset({"admin", "store"})
 
 
 def hash_secret(secret: str) -> str:
     return hashlib.sha256(secret.encode("utf-8")).hexdigest()
-
-
-class KeyGrant(_Model):
-    """What a key may do. Queue patterns are shell-style globs: `shamash.*`, `aq0?`, `*`."""
-
-    key_id: str
-    label: str
-    queues: list[str]
-    kinds: list[str] = Field(default_factory=lambda: ["*"])
-    effect_classes: list[str] = Field(default_factory=lambda: list(EFFECTS))
-    scopes: list[str] = Field(default_factory=list)
-    created_at: float
-    expires_at: float
-    revoked_at: float | None = None
-
-    @property
-    def is_admin(self) -> bool:
-        return "admin" in self.scopes
-
-    @property
-    def can_store(self) -> bool:
-        return "store" in self.scopes or self.is_admin
-
-    def allows_queue(self, queue: str) -> bool:
-        return any(fnmatchcase(queue, pattern) for pattern in self.queues)
-
-    def kind_filter(self, requested: Sequence[str] | None) -> list[str] | None:
-        """Kinds a claim may take: the request's, narrowed to the key's (None means any)."""
-        if "*" in self.kinds:
-            return list(requested) if requested else None
-        return [k for k in (requested or self.kinds) if k in self.kinds]
-
-    def effect_filter(self, requested: Sequence[str] | None) -> list[str]:
-        allowed = [e for e in self.effect_classes if e != "public"]
-        return [e for e in (requested or allowed) if e in allowed]
 
 
 class KeyOps(StoreBase):
