@@ -206,6 +206,22 @@ class Client:
         resp = self._call("POST", "/v1/tasks/cancel", body={"task_id": task_id, "reason": reason})
         return TaskView.model_validate(resp.json())
 
+    def park(
+        self, task_id: str, fencing_token: int, *, reason: str, resume_within: float | None = None
+    ) -> TaskView:
+        body: dict[str, Any] = {
+            "task_id": task_id,
+            "fencing_token": fencing_token,
+            "reason": reason,
+        }
+        if resume_within is not None:
+            body["resume_within"] = resume_within
+        return TaskView.model_validate(self._call("POST", "/v1/tasks/park", body=body).json())
+
+    def resume(self, task_id: str, value: dict[str, Any]) -> TaskView:
+        resp = self._call("POST", "/v1/tasks/resume", body={"task_id": task_id, "input": value})
+        return TaskView.model_validate(resp.json())
+
     # operations and observation -----------------------------------------------------------------
 
     def reap(self) -> int:

@@ -91,13 +91,14 @@
         "src/tessera/store.py",
         "src/tessera/_base.py",
         "src/tessera/_tasks.py",
+        "src/tessera/_graph.py",
         "src/tessera/_jobs.py",
         "src/tessera/_keys.py",
         "src/tessera/_observe.py",
         "src/tessera/_storage.py",
         "src/tessera/schema.sql"
       ],
-      "role": "The reference backend and the only place state changes: queues, the five verbs, retries, split, model jobs, keys, counts, events, health, records and blobs, each operation one IMMEDIATE transaction",
+      "role": "The reference backend and the only place state changes: queues, the five verbs, park and resume, dependencies, retries, split, model jobs, keys, counts, events, health, records and blobs, each operation one IMMEDIATE transaction",
       "depends_on": [
         "models",
         "errors",
@@ -110,7 +111,8 @@
       "tests": [
         "conformance-draft/test_queue_semantics.py",
         "conformance-draft/test_storage.py",
-        "conformance-draft/test_model_jobs.py"
+        "conformance-draft/test_model_jobs.py",
+        "conformance-draft/test_task_graph.py"
       ]
     },
     {
@@ -167,7 +169,7 @@
       "path": "src/tessera/mcp_door.py",
       "kind": "service",
       "domain": "neutral",
-      "role": "MCP server over Streamable HTTP at /mcp: queues, claim, heartbeat, submit, split, behind the same keys",
+      "role": "MCP server over Streamable HTTP at /mcp: queues, claim, heartbeat, submit, split, park, resume, behind the same keys",
       "depends_on": [
         "store",
         "models",
@@ -285,6 +287,8 @@
         "POST /v1/tasks/heartbeat",
         "POST /v1/tasks/submit",
         "POST /v1/tasks/split",
+        "POST /v1/tasks/park",
+        "POST /v1/tasks/resume",
         "POST /v1/tasks/cancel",
         "POST /v1/admin/reap",
         "GET /v1/counts",
@@ -308,7 +312,7 @@
       "spec": "conformance-draft/SPEC.md",
       "auth": "Bearer key",
       "entry_points": [
-        "POST /mcp (Streamable HTTP): tools queues, claim, heartbeat, submit, split"
+        "POST /mcp (Streamable HTTP): tools queues, claim, heartbeat, submit, split, park, resume"
       ]
     },
     {
@@ -331,7 +335,7 @@
       "served_by": "cli",
       "auth": "Access to the SQLite file",
       "entry_points": [
-        "tessera init|define|enqueue|claim|heartbeat|submit|split|cancel|reap|counts|health|queues|events|task|results|serve|keys|version"
+        "tessera init|define|enqueue|claim|heartbeat|submit|split|park|resume|cancel|reap|counts|health|queues|events|task|results|serve|keys|version"
       ]
     },
     {
@@ -397,7 +401,7 @@
         "agent",
         "service"
       ],
-      "rule": "Bearer key scoped to queues, kinds, effect classes and admin or store; per-key claim rate limit; writes are POST-only",
+      "rule": "Bearer key scoped to queues, kinds, effect classes and admin or store; per-key claim rate limit; writes are POST-only; a key may depend only on tasks in queues it can use",
       "enforced_by": [
         "src/tessera/service.py",
         "src/tessera/_keys.py"
@@ -407,7 +411,9 @@
         "conformance-draft/test_service_surface.py::test_T02_writes_are_post_only",
         "tests/test_service.py::test_keys_are_required_and_scoped",
         "tests/test_service.py::test_claims_are_rate_limited",
-        "tests/test_service.py::test_storage_needs_the_store_scope"
+        "tests/test_service.py::test_storage_needs_the_store_scope",
+        "tests/test_service.py::test_dependencies_stay_inside_the_key_scope",
+        "tests/test_service.py::test_park_and_resume_follow_the_holder_and_queue_rules"
       ]
     },
     {
@@ -564,6 +570,34 @@
         "conformance-draft/test_service_surface.py::test_T02_writes_are_post_only",
         "tests/test_service.py::test_writes_are_post_only"
       ]
+    },
+    {
+      "id": "I15",
+      "statement": "A dependent is never claimable before each dependency is done, dead or cancelled, and then it sees their states and outputs; unknown dependencies are refused",
+      "enforced_by": "store",
+      "checked_by": [
+        "conformance-draft/test_task_graph.py::test_T17_a_dependent_waits_for_every_dependency",
+        "conformance-draft/test_task_graph.py::test_T17_failed_or_cancelled_dependencies_still_release",
+        "conformance-draft/test_task_graph.py::test_T17_dependencies_must_exist_and_resolved_ones_cost_nothing"
+      ]
+    },
+    {
+      "id": "I16",
+      "statement": "Split children with `after` run only after the siblings they name",
+      "enforced_by": "store",
+      "checked_by": [
+        "conformance-draft/test_task_graph.py::test_T18_children_can_run_in_waves"
+      ]
+    },
+    {
+      "id": "I17",
+      "statement": "Parking counts no failure; a parked task is claimable only after resume or its wake time, and its next lease carries its inputs; only the live lease may park",
+      "enforced_by": "store",
+      "checked_by": [
+        "conformance-draft/test_task_graph.py::test_T19_park_waits_for_input_without_a_failure",
+        "conformance-draft/test_task_graph.py::test_T19_a_stale_holder_cannot_park",
+        "conformance-draft/test_task_graph.py::test_T19_a_parked_task_wakes_when_its_time_is_up"
+      ]
     }
   ],
   "import_rules": [
@@ -583,7 +617,8 @@
         "src/tessera/_jobs.py",
         "src/tessera/_keys.py",
         "src/tessera/_observe.py",
-        "src/tessera/_storage.py"
+        "src/tessera/_storage.py",
+        "src/tessera/_graph.py"
       ],
       "must_not_import": [
         "fastapi",
@@ -687,7 +722,7 @@
     },
     {
       "id": "C6",
-      "claim": "The suite passes over HTTP against a real local service with real keys (23 tests; the 3 that need a fake clock or a restart hook run on the in-process store)",
+      "claim": "The suite passes over HTTP against a real local service with real keys (29 tests; the 4 that need a fake clock or a restart hook run on the in-process store)",
       "status": "built",
       "evidence": [
         "scripts/suite_http_local.py"
@@ -738,6 +773,17 @@
       "status": "built",
       "evidence": [
         "conformance-draft/test_model_jobs.py::test_T12_a_lapsed_lease_asks_its_jobs_to_stop"
+      ],
+      "verify": "make suite BACKEND=store"
+    },
+    {
+      "id": "C17",
+      "claim": "Tasks form graphs without a workflow engine: dependencies (fan-in), children in waves, and park and resume for outside input",
+      "status": "built",
+      "evidence": [
+        "conformance-draft/test_task_graph.py::test_T17_a_dependent_waits_for_every_dependency",
+        "conformance-draft/test_task_graph.py::test_T18_children_can_run_in_waves",
+        "conformance-draft/test_task_graph.py::test_T19_park_waits_for_input_without_a_failure"
       ],
       "verify": "make suite BACKEND=store"
     },
@@ -822,7 +868,8 @@
       "leases, fencing, receipts, retries, dead letters, split and merge",
       "records and blobs under any store name",
       "HTTP, MCP and web doors",
-      "counts, events, health"
+      "counts, events, health",
+      "dependencies, waves, park and resume"
     ],
     "specific": [
       "effect classes are a fixed set shaped by coding work",

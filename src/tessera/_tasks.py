@@ -1,5 +1,5 @@
-"""The five verbs (claim, heartbeat, split, submit, cancel) plus enqueue, queue definitions and the
-reaper. SPEC §5 defines every rule implemented here."""
+"""The five verbs (claim, heartbeat, split, submit, cancel), park and resume, plus enqueue with
+dependencies, queue definitions and the reaper. SPEC §5 defines every rule implemented here."""
 
 from __future__ import annotations
 
@@ -8,9 +8,12 @@ import sqlite3
 from collections.abc import Sequence
 from typing import Any
 
-from tessera._base import StoreBase, new_id
-from tessera.errors import IdempotencyConflict, InvalidRequest, StaleLease
+from tessera._base import new_id
+from tessera._graph import GraphOps
+from tessera.errors import IdempotencyConflict, InvalidRequest, InvalidState, NotFound, StaleLease
 from tessera.models import (
+    MAX_DEPENDENCIES,
+    MAX_PARK_SECONDS,
     TERMINAL_STATES,
     ChildResult,
     ChildSpec,
@@ -29,7 +32,7 @@ MAX_CHILDREN = 100
 MAX_DEPTH = 4
 
 
-class TaskOps(StoreBase):
+class TaskOps(GraphOps):
     # -- queues and enqueue -------------------------------------------------------------------
 
     def define_queue(self, config: QueueConfig) -> QueueConfig:
@@ -89,6 +92,7 @@ class TaskOps(StoreBase):
                 spec.brief,
                 spec.not_before or 0.0,
                 now,
+                depends_on=spec.depends_on,
             )
         return task_id
 
@@ -104,14 +108,31 @@ class TaskOps(StoreBase):
         brief: dict[str, Any],
         not_before: float,
         now: float,
+        *,
+        depends_on: Sequence[str] = (),
     ) -> None:
+        """Insert a task: `ready`, or `waiting` on its dependencies while any is unresolved. A task
+        may only depend on tasks that already exist, so the graph can't contain a cycle."""
+        deps = list(dict.fromkeys(depends_on))
+        if len(deps) > MAX_DEPENDENCIES:
+            raise InvalidRequest(f"at most {MAX_DEPENDENCIES} dependencies per task")
+        unresolved = 0
+        for dep in deps:
+            row = c.execute("SELECT state FROM tasks WHERE id = ?", (dep,)).fetchone()
+            if row is None:
+                raise NotFound(f"dependency '{dep}' does not exist")
+            if row["state"] not in TERMINAL_STATES:
+                unresolved += 1
+        state = "waiting" if unresolved else "ready"
         c.execute(
             "INSERT INTO tasks (id, queue, parent_id, state, kind, effect_class, priority, brief,"
-            " not_before, created_at, updated_at) VALUES (?, ?, ?, 'ready', ?, ?, ?, ?, ?, ?, ?)",
+            " not_before, created_at, updated_at, pending_deps, wait_reason)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 task_id,
                 queue,
                 parent_id,
+                state,
                 kind,
                 effect_class,
                 priority,
@@ -119,17 +140,21 @@ class TaskOps(StoreBase):
                 not_before,
                 now,
                 now,
+                unresolved,
+                "dependencies" if unresolved else None,
             ),
         )
-        self._add(c, queue, "ready")
-        self._event(
-            c,
-            "enqueued",
-            now,
-            task_id=task_id,
-            queue=queue,
-            detail={"kind": kind, "effect_class": effect_class, "parent_id": parent_id},
-        )
+        for dep in deps:
+            c.execute("INSERT INTO task_deps (task_id, depends_on) VALUES (?, ?)", (task_id, dep))
+        self._add(c, queue, state)
+        detail: dict[str, Any] = {
+            "kind": kind,
+            "effect_class": effect_class,
+            "parent_id": parent_id,
+        }
+        if deps:
+            detail.update(depends_on=deps, unresolved=unresolved)
+        self._event(c, "enqueued", now, task_id=task_id, queue=queue, detail=detail)
 
     # -- claim and heartbeat ------------------------------------------------------------------
 
@@ -202,6 +227,8 @@ class TaskOps(StoreBase):
                 hard_expires_at=hard,
                 heartbeat_seconds=config.heartbeat_seconds,
                 children=self._children(c, row["id"]),
+                dependencies=self._dependencies(c, row["id"]),
+                inputs=self._inputs(c, row["id"]),
             )
 
     def heartbeat(self, task_id: str, fencing_token: int) -> Lease:
@@ -244,6 +271,8 @@ class TaskOps(StoreBase):
                     hard_expires_at=row["hard_expires_at"],
                     heartbeat_seconds=config.heartbeat_seconds,
                     children=self._children(c, task_id),
+                    dependencies=self._dependencies(c, task_id),
+                    inputs=self._inputs(c, task_id),
                 )
         if lease is None:
             raise StaleLease(stale or "lease is not live")
@@ -312,6 +341,7 @@ class TaskOps(StoreBase):
                     self._move(c, task["queue"], "leased", "done")
                     if task["parent_id"]:
                         self._child_resolved(c, task["parent_id"], now)
+                    self._dependency_resolved(c, task_id, now)
                     state_after = "done"
                 else:
                     state_after = self._fail(
@@ -363,6 +393,9 @@ class TaskOps(StoreBase):
             raise InvalidRequest("split needs at least one child")
         if len(children) > MAX_CHILDREN:
             raise InvalidRequest(f"at most {MAX_CHILDREN} children per split")
+        for index, child in enumerate(children):
+            if any(not 0 <= j < index for j in child.after):
+                raise InvalidRequest(f"child {index}: 'after' may name only earlier children")
         now = self.clock.now()
         ids: list[str] | None = None
         with self._tx() as c:
@@ -388,12 +421,13 @@ class TaskOps(StoreBase):
                         child.brief,
                         0.0,
                         now,
+                        depends_on=[ids[j] for j in child.after],
                     )
                     ids.append(child_id)
                 c.execute("DELETE FROM leases WHERE task_id = ?", (task_id,))
                 c.execute(
-                    "UPDATE tasks SET state = 'waiting', pending_children = ?, updated_at = ?"
-                    " WHERE id = ?",
+                    "UPDATE tasks SET state = 'waiting', wait_reason = 'children',"
+                    " pending_children = ?, updated_at = ? WHERE id = ?",
                     (len(ids), now, task_id),
                 )
                 self._move(c, task["queue"], "leased", "waiting")
@@ -410,6 +444,70 @@ class TaskOps(StoreBase):
         if ids is None:
             raise StaleLease(stale or "lease is not live")
         return ids
+
+    # -- park and resume ----------------------------------------------------------------------
+
+    def park(
+        self,
+        task_id: str,
+        fencing_token: int,
+        *,
+        reason: str,
+        resume_within: float | None = None,
+    ) -> TaskView:
+        """End the lease without a failure and wait for outside input (a person, another system).
+        `resume` brings the task back with that input; after `resume_within` seconds it comes back
+        by itself with {"timed_out": true}. Running model jobs are asked to stop."""
+        if not reason.strip():
+            raise InvalidRequest("a reason is required")
+        if resume_within is not None and not 0 < resume_within <= MAX_PARK_SECONDS:
+            raise InvalidRequest(f"resume_within must be between 0 and {MAX_PARK_SECONDS} seconds")
+        now = self.clock.now()
+        view: TaskView | None = None
+        with self._tx() as c:
+            row, stale = self._live_lease(c, task_id, fencing_token, now)
+            if row is not None:
+                task = self._task_row(c, task_id)
+                wake = None if resume_within is None else now + resume_within
+                c.execute("DELETE FROM leases WHERE task_id = ?", (task_id,))
+                self._cancel_jobs(c, task_id, now)
+                c.execute(
+                    "UPDATE tasks SET state = 'waiting', wait_reason = 'input', wake_at = ?,"
+                    " updated_at = ? WHERE id = ?",
+                    (wake, now, task_id),
+                )
+                self._move(c, task["queue"], "leased", "waiting")
+                self._event(
+                    c,
+                    "parked",
+                    now,
+                    task_id=task_id,
+                    queue=task["queue"],
+                    worker=row["worker"],
+                    token=fencing_token,
+                    detail={"reason": reason, "wake_at": wake},
+                )
+                view = self._task_view(c, task_id)
+        if view is None:
+            raise StaleLease(stale or "lease is not live")
+        return view
+
+    def resume(self, task_id: str, value: dict[str, Any]) -> TaskView:
+        """Give a parked task the input it waited for; it is ready again and its next claim carries
+        every input it has received, in order."""
+        try:
+            text = canonical_json(value)
+        except (TypeError, ValueError) as exc:
+            raise InvalidRequest(f"input is not JSON: {exc}") from exc
+        if len(text.encode("utf-8")) > MAX_OUTPUT_BYTES:
+            raise InvalidRequest("input is over 1 MiB: store it as a blob and pass its sha256")
+        now = self.clock.now()
+        with self._tx() as c:
+            task = self._task_row(c, task_id)
+            if task["state"] != "waiting" or task["wait_reason"] != "input":
+                raise InvalidState(f"task {task_id} is not parked (state {task['state']})")
+            self._wake(c, task, value, now, event="resumed")
+            return self._task_view(c, task_id)
 
     # -- cancel and reap ----------------------------------------------------------------------
 
@@ -464,6 +562,15 @@ class TaskOps(StoreBase):
         lapsed = [r["task_id"] for r in c.execute(sql, params).fetchall()]
         for task_id in lapsed:
             self._lapse(c, task_id, now)
+        wake_sql = (
+            "SELECT * FROM tasks WHERE wake_at IS NOT NULL AND wake_at <= ? AND state = 'waiting'"
+        )
+        wake_params: list[Any] = [now]
+        if queue is not None:
+            wake_sql += " AND queue = ?"
+            wake_params.append(queue)
+        for task in c.execute(wake_sql, wake_params).fetchall():
+            self._wake(c, task, {"timed_out": True}, now, event="park_expired")
         return len(lapsed)
 
     def _lapse(self, c: sqlite3.Connection, task_id: str, now: float) -> None:
@@ -506,6 +613,7 @@ class TaskOps(StoreBase):
             )
             if task["parent_id"]:
                 self._child_resolved(c, task["parent_id"], now)
+            self._dependency_resolved(c, task["id"], now)
             return "dead"
         ceiling = min(config.backoff_cap_seconds, config.backoff_base_seconds * 2 ** (failures - 1))
         delay = ceiling * self._jitter()
@@ -532,9 +640,14 @@ class TaskOps(StoreBase):
             (now, parent_id),
         )
         parent = self._task_row(c, parent_id)
-        if parent["state"] == "waiting" and int(parent["pending_children"]) == 0:
+        if (
+            parent["state"] == "waiting"
+            and parent["wait_reason"] == "children"
+            and int(parent["pending_children"]) == 0
+        ):
             c.execute(
-                "UPDATE tasks SET state = 'ready', not_before = ?, updated_at = ? WHERE id = ?",
+                "UPDATE tasks SET state = 'ready', wait_reason = NULL, not_before = ?, updated_at = ?"
+                " WHERE id = ?",
                 (now, now, parent_id),
             )
             self._move(c, parent["queue"], "waiting", "ready")
@@ -544,23 +657,7 @@ class TaskOps(StoreBase):
         rows = c.execute(
             "SELECT id, state FROM tasks WHERE parent_id = ? ORDER BY created_at, id", (task_id,)
         ).fetchall()
-        out: list[ChildResult] = []
-        for r in rows:
-            res = c.execute(
-                "SELECT output, receipt_hash FROM results WHERE task_id = ? AND ok = 1"
-                " ORDER BY created_at DESC LIMIT 1",
-                (r["id"],),
-            ).fetchone()
-            out.append(
-                ChildResult(
-                    task_id=r["id"],
-                    state=r["state"],
-                    ok=None if res is None else True,
-                    output=None if res is None else json.loads(res["output"]),
-                    receipt_hash=None if res is None else res["receipt_hash"],
-                )
-            )
-        return out
+        return self._results_of(c, rows)
 
     def _depth(self, c: sqlite3.Connection, task_id: str) -> int:
         depth = 0
@@ -593,6 +690,7 @@ class TaskOps(StoreBase):
             queue=task["queue"],
             detail={"reason": reason, "previous_state": previous},
         )
+        self._dependency_resolved(c, task_id, now)
         children = c.execute("SELECT id FROM tasks WHERE parent_id = ?", (task_id,)).fetchall()
         for child in children:
             self._cancel_tree(

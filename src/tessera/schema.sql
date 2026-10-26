@@ -1,4 +1,4 @@
--- Tessera schema v1 (SPEC §3). SQLite in WAL mode; the same statements run on Cloudflare D1.
+-- Tessera schema v2 (SPEC §3). SQLite in WAL mode; the same statements run on Cloudflare D1.
 -- Every state change writes its counts row in the same transaction.
 
 CREATE TABLE IF NOT EXISTS meta (
@@ -36,10 +36,32 @@ CREATE TABLE IF NOT EXISTS tasks (
   not_before       REAL    NOT NULL DEFAULT 0,
   pending_children INTEGER NOT NULL DEFAULT 0,
   created_at       REAL    NOT NULL,
-  updated_at       REAL    NOT NULL
+  updated_at       REAL    NOT NULL,
+  pending_deps     INTEGER NOT NULL DEFAULT 0,
+  wait_reason      TEXT,
+  wake_at          REAL
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_claim ON tasks (queue, state, priority DESC, created_at, id);
 CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks (parent_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_wake ON tasks (wake_at) WHERE wake_at IS NOT NULL;
+
+-- Dependencies (SPEC §5.2): a task waits until every task it depends on is done, dead or cancelled.
+-- A task can only depend on tasks that already exist, so the graph never has a cycle.
+CREATE TABLE IF NOT EXISTS task_deps (
+  task_id    TEXT NOT NULL REFERENCES tasks(id),
+  depends_on TEXT NOT NULL REFERENCES tasks(id),
+  PRIMARY KEY (task_id, depends_on)
+);
+CREATE INDEX IF NOT EXISTS idx_task_deps_on ON task_deps (depends_on);
+
+-- Input given to a parked task by resume (or a timeout), delivered with its next lease.
+CREATE TABLE IF NOT EXISTS task_inputs (
+  task_id    TEXT    NOT NULL REFERENCES tasks(id),
+  seq        INTEGER NOT NULL,
+  input      TEXT    NOT NULL,
+  created_at REAL    NOT NULL,
+  PRIMARY KEY (task_id, seq)
+);
 
 -- One live lease per task; the row disappears when the lease ends.
 CREATE TABLE IF NOT EXISTS leases (

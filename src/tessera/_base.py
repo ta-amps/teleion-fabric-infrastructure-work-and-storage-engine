@@ -20,7 +20,13 @@ from tessera.models import QueueConfig, TaskView
 from tessera.receipts import canonical_json
 
 COUNT_COLUMNS = frozenset({"ready", "leased", "waiting", "done", "dead", "cancelled"})
-SCHEMA_VERSION = "1"
+SCHEMA_VERSION = "2"
+# Columns added to `tasks` after v1. Older databases get them on open; nothing is ever dropped.
+TASK_COLUMNS_V2 = (
+    ("pending_deps", "INTEGER NOT NULL DEFAULT 0"),
+    ("wait_reason", "TEXT"),
+    ("wake_at", "REAL"),
+)
 PRAGMAS = ("journal_mode=WAL", "synchronous=NORMAL", "foreign_keys=ON", "busy_timeout=30000")
 
 
@@ -95,11 +101,38 @@ class StoreBase:
     def _init_schema(self) -> None:
         script = resources.files("tessera").joinpath("schema.sql").read_text(encoding="utf-8")
         conn = self._conn()
+        self._migrate(conn)
         conn.executescript(script)
         conn.execute(
-            "INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', ?)",
+            "INSERT INTO meta (key, value) VALUES ('schema_version', ?)"
+            " ON CONFLICT (key) DO UPDATE SET value = excluded.value",
             (SCHEMA_VERSION,),
         )
+        if not self._has_wait_reasons(conn):
+            # v1 databases: tasks already waiting were waiting for split children.
+            conn.execute(
+                "UPDATE tasks SET wait_reason = 'children'"
+                " WHERE state = 'waiting' AND wait_reason IS NULL"
+            )
+
+    @staticmethod
+    def _migrate(conn: sqlite3.Connection) -> None:
+        """Add the columns newer versions need to an existing `tasks` table, before the schema
+        script creates indexes on them. Additive only."""
+        columns = {r["name"] for r in conn.execute("PRAGMA table_info(tasks)").fetchall()}
+        if not columns:
+            return
+        for name, decl in TASK_COLUMNS_V2:
+            if name not in columns:
+                # Names and declarations come from TASK_COLUMNS_V2 above, never from callers.
+                conn.execute(f"ALTER TABLE tasks ADD COLUMN {name} {decl}")
+
+    @staticmethod
+    def _has_wait_reasons(conn: sqlite3.Connection) -> bool:
+        row = conn.execute(
+            "SELECT COUNT(*) AS n FROM tasks WHERE state = 'waiting' AND wait_reason IS NULL"
+        ).fetchone()
+        return int(row["n"]) == 0
 
     # -- helpers used inside a transaction ----------------------------------------------------
 
@@ -180,6 +213,15 @@ class StoreBase:
             pending_children=row["pending_children"],
             created_at=row["created_at"],
             updated_at=row["updated_at"],
+            wait_reason=row["wait_reason"],
+            pending_deps=row["pending_deps"],
+            depends_on=[
+                r["depends_on"]
+                for r in c.execute(
+                    "SELECT depends_on FROM task_deps WHERE task_id = ? ORDER BY rowid", (task_id,)
+                )
+            ],
+            wake_at=row["wake_at"],
         )
 
     def _jitter(self) -> float:

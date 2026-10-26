@@ -12,6 +12,10 @@ JobStatus = Literal[
     "queued", "in_progress", "completed", "failed", "cancelled", "incomplete", "cancel_requested"
 ]
 TERMINAL_STATES: frozenset[str] = frozenset({"done", "dead", "cancelled"})
+# Why a task is `waiting`: for its split children, for the tasks it depends on, or parked for input.
+WaitReason = Literal["children", "dependencies", "input"]
+MAX_DEPENDENCIES = 100
+MAX_PARK_SECONDS = 2_592_000  # 30 days
 
 NAME_PATTERN = r"^[a-z0-9][a-z0-9_.-]{0,63}$"
 
@@ -41,6 +45,11 @@ class TaskSpec(_Model):
     effect_class: EffectClass = "write-internal"
     priority: int = Field(default=50, ge=0, le=100)
     not_before: float | None = None
+    depends_on: list[str] = Field(
+        default_factory=list,
+        max_length=MAX_DEPENDENCIES,
+        description="Existing task ids; the task waits until every one is done, dead or cancelled.",
+    )
 
 
 class ChildSpec(_Model):
@@ -49,6 +58,11 @@ class ChildSpec(_Model):
     kind: str | None = Field(default=None, pattern=NAME_PATTERN)
     effect_class: EffectClass | None = None
     priority: int | None = Field(default=None, ge=0, le=100)
+    after: list[int] = Field(
+        default_factory=list,
+        max_length=MAX_DEPENDENCIES,
+        description="Indexes of earlier children in the same split that must resolve first (waves).",
+    )
 
 
 class ChildResult(_Model):
@@ -73,6 +87,8 @@ class Lease(_Model):
     hard_expires_at: float
     heartbeat_seconds: int
     children: list[ChildResult] = Field(default_factory=list)
+    dependencies: list[ChildResult] = Field(default_factory=list)
+    inputs: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class LeaseInfo(_Model):
@@ -123,6 +139,10 @@ class TaskView(_Model):
     pending_children: int
     created_at: float
     updated_at: float
+    wait_reason: WaitReason | None = None
+    pending_deps: int = 0
+    depends_on: list[str] = Field(default_factory=list)
+    wake_at: float | None = None
 
 
 class QueueCounts(_Model):

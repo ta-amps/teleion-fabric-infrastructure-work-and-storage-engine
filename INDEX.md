@@ -55,16 +55,17 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [briefs/done/L8.json](briefs/done/L8.json) | L8: Claim, heartbeat and submit endpoints with fencing tokens and idempotency keys |
 | [briefs/done/L9.json](briefs/done/L9.json) | L9: Reaper loop, backoff and dead letter in the running service |
 
-## conformance-draft/ (6)
+## conformance-draft/ (7)
 
 | File | What it is |
 |---|---|
-| [conformance-draft/SPEC.md](conformance-draft/SPEC.md) | Tessera specification, v0.1 (draft) |
+| [conformance-draft/SPEC.md](conformance-draft/SPEC.md) | Tessera specification, v0.2 (draft) |
 | [conformance-draft/conftest.py](conformance-draft/conftest.py) | Fixtures for the Tessera conformance suite (SPEC.md §10). |
 | [conformance-draft/test_model_jobs.py](conformance-draft/test_model_jobs.py) | T12: model jobs (Meta Model API background responses) are tied to the lease that started them. |
 | [conformance-draft/test_queue_semantics.py](conformance-draft/test_queue_semantics.py) | Queue semantics every backend must meet (SPEC §5). |
 | [conformance-draft/test_service_surface.py](conformance-draft/test_service_surface.py) | Service-only requirements (SPEC §7): keys, POST-only writes, health over HTTP, the MCP door and secret hygien… |
 | [conformance-draft/test_storage.py](conformance-draft/test_storage.py) | ST01 to ST04: atomic storage. |
+| [conformance-draft/test_task_graph.py](conformance-draft/test_task_graph.py) | Task graphs every backend must meet (SPEC §5.2 and §5.6): dependencies (fan-in), children that run in waves,… |
 
 ## deploy/ (8)
 
@@ -112,17 +113,18 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [scripts/dev_stack.sh](scripts/dev_stack.sh) | Run Tessera on this machine behind the real Cloudflare edge code (wrangler dev), with the origin |
 | [scripts/suite_http_local.py](scripts/suite_http_local.py) | Run the whole conformance suite over HTTP against a real tessera serve process on this machine. |
 
-## src/ (21)
+## src/ (22)
 
 | File | What it is |
 |---|---|
 | [src/tessera/__init__.py](src/tessera/__init__.py) | Tessera: atomic work queue and atomic storage for agent swarms. |
 | [src/tessera/_base.py](src/tessera/_base.py) | Plumbing shared by the store's operation mixins: one SQLite connection per thread, IMMEDIATE transactions, th… |
+| [src/tessera/_graph.py](src/tessera/_graph.py) | Task-graph plumbing shared by the verbs: releasing dependents when a task resolves, waking parked tasks, and… |
 | [src/tessera/_jobs.py](src/tessera/_jobs.py) | Model jobs (SPEC §6): each Meta Model API background response is tied to the task and the fencing token that… |
 | [src/tessera/_keys.py](src/tessera/_keys.py) | Worker keys (SPEC §7): random bearer secrets stored only as SHA-256 hashes, scoped to queue patterns, task ki… |
 | [src/tessera/_observe.py](src/tessera/_observe.py) | Read-only views: tasks, results, the counts record, health and the event log (SPEC §5.7 to §5.9). |
 | [src/tessera/_storage.py](src/tessera/_storage.py) | Atomic storage (SPEC §6): versioned records written by compare-and-set, with every version kept, and content-… |
-| [src/tessera/_tasks.py](src/tessera/_tasks.py) | The five verbs (claim, heartbeat, split, submit, cancel) plus enqueue, queue definitions and the reaper. |
+| [src/tessera/_tasks.py](src/tessera/_tasks.py) | The five verbs (claim, heartbeat, split, submit, cancel), park and resume, plus enqueue with dependencies, qu… |
 | [src/tessera/_version.py](src/tessera/_version.py) |  |
 | [src/tessera/backend.py](src/tessera/backend.py) | The contract every Tessera backend meets: the in-process Store, the HTTP Client, and any adapter an app puts… |
 | [src/tessera/cli.py](src/tessera/cli.py) | tessera: drive the in-process store on a SQLite file from a shell. |
@@ -133,7 +135,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [src/tessera/models.py](src/tessera/models.py) | Records that cross Tessera's boundary: what callers send and what every backend returns. |
 | [src/tessera/pages.py](src/tessera/pages.py) | The agent door: /connect, /llms.txt, the agent card, robots rules, the read-only board, and keyed web forms f… |
 | [src/tessera/receipts.py](src/tessera/receipts.py) | Canonical JSON and receipt hashes (SPEC §5.4). |
-| [src/tessera/schema.sql](src/tessera/schema.sql) | Tessera schema v1 (SPEC §3). |
+| [src/tessera/schema.sql](src/tessera/schema.sql) | Tessera schema v2 (SPEC §3). |
 | [src/tessera/service.py](src/tessera/service.py) | Tessera's HTTP service (SPEC §7). |
 | [src/tessera/store.py](src/tessera/store.py) | The in-process Tessera store: the reference implementation of SPEC.md. |
 | [src/tessera/testing.py](src/tessera/testing.py) | Factories the conformance suite loads by name (TESSERABACKENDFACTORY="module:function"). |

@@ -1,4 +1,4 @@
-# Tessera specification, v0.1 (draft)
+# Tessera specification, v0.2 (draft)
 
 Status: **draft for Taylor's approval (task L1)**. Once approved, `make lock-suite` moves this file and
 the tests beside it to `conformance/` and records their hashes in `conformance.lock`. After that, only
@@ -20,6 +20,8 @@ briefs, or anything else.
 | Receipt | The proof of a submit: a SHA-256 over the task, token, outcome and output (§5.4) |
 | Effect class | What a task may change: `read`, `write-internal`, `write-repo` or `public` |
 | Key | A bearer secret for the service, scoped to queues, kinds, effect classes and admin rights |
+| Dependency | A task another task waits for; the dependent becomes ready when every dependency is done, dead or cancelled |
+| Park | Ending a lease without a failure while the task waits for outside input; `resume` supplies the input |
 
 ## 2. Guarantees
 
@@ -29,12 +31,15 @@ briefs, or anything else.
 4. A submit is stored at most once per idempotency key, and a replay returns the first receipt.
 5. Every state change, its counts update and its event commit in one transaction, or none of them do.
 6. Records change only by compare-and-set; every version stays readable.
+7. A task is never claimable while it waits: for its split children, for an unresolved dependency, or for
+   input while parked.
 
 ## 3. Data model
 
 One SQLite database (WAL mode) with the tables in `src/tessera/schema.sql`: `queues`, `tasks`,
-`leases`, `results`, `keys`, `jobs`, `events`, `counts`, plus `records`, `record_heads` and `blobs` for
-storage and `meta` for housekeeping. The same statements run on Cloudflare D1.
+`task_deps`, `task_inputs`, `leases`, `results`, `keys`, `jobs`, `events`, `counts`, plus `records`,
+`record_heads` and `blobs` for storage and `meta` for housekeeping. Schema changes are additive: a database
+from an earlier version gains the new columns and tables when it is opened. The same statements run on Cloudflare D1.
 
 ## 4. Queue settings
 
@@ -54,15 +59,19 @@ Queue names match `^[a-z0-9][a-z0-9_.-]{0,63}$`. Defining an existing queue upda
 
 ### 5.1 States
 
+A `waiting` task records why it waits (`wait_reason`): `children` after a split, `dependencies` until each
+dependency is resolved, or `input` while parked.
+
 ```mermaid
 stateDiagram-v2
   [*] --> ready: enqueue
+  [*] --> waiting: enqueue with unresolved dependencies
   ready --> leased: claim
   leased --> done: submit ok
   leased --> ready: submit failed, lease lapsed, or job cancelled (failures < max_attempts)
   leased --> dead: same, at the max_attempts-th failure
-  leased --> waiting: split
-  waiting --> ready: last child resolved
+  leased --> waiting: split, or park
+  waiting --> ready: last child or dependency resolved, resume, or park time up
   ready --> cancelled: cancel
   leased --> cancelled: cancel
   waiting --> cancelled: cancel
@@ -75,6 +84,9 @@ stateDiagram-v2
 
 - **enqueue(spec)**: inserts a `ready` task. An explicit `task_id` that already exists in the same
   queue is a no-op that returns the id (so pipelines can re-run safely); in another queue it is refused.
+  `depends_on` lists up to 100 existing task ids (an unknown id is `not_found`); while any of them is not
+  done, dead or cancelled, the task is `waiting` with `pending_deps` counting them. Because a task can
+  only depend on tasks that already exist, the graph has no cycles.
 - **claim(queue, worker, kinds?, effect_classes?)**: first reaps lapsed leases in that queue, then
   leases the ready task with `not_before <= now`, ordered by priority (high first), then creation time,
   then id. It increments `attempts` and `fencing_token`, and sets
@@ -86,7 +98,18 @@ stateDiagram-v2
 - **submit(task, token, output, idempotency_key, ok, error)**: see §5.3.
 - **split(task, token, children)**: creates 1 to 100 child tasks (`ready`, `parent_id` set; queue, kind,
   effect class and priority default to the parent's), ends the parent's lease and moves the parent to
-  `waiting` with `pending_children` = the number of children. Nesting stops at 4 levels.
+  `waiting` with `pending_children` = the number of children. Nesting stops at 4 levels. A child's
+  `after` lists indexes of earlier children it depends on, so a split can run in ordered waves; an index
+  that isn't earlier is `invalid_request`.
+- **park(task, token, reason, resume_within?)**: needs the live lease. Ends it without counting a failure,
+  asks the task's running model jobs to stop, and moves the task to `waiting` for `input`. With
+  `resume_within` (up to 30 days) the reaper brings it back after that many seconds with the input
+  `{"timed_out": true}`.
+- **resume(task, input)**: only for a parked task (otherwise `invalid_state`). Stores the input (up to
+  1 MiB) and makes the task `ready`. Its next lease carries every input it has received, in order.
+- **Leases** carry the brief plus `children` (after a split), `dependencies` and `inputs`: each child or
+  dependency with its state and latest successful output. A dead or cancelled dependency still releases
+  its dependent, which sees what happened and decides.
 - **cancel(task, reason)**: moves a non-terminal task to `cancelled`, ends its lease, marks its running
   model jobs `cancel_requested`, cancels its unfinished descendants, and counts as resolved for its
   parent.
@@ -104,8 +127,9 @@ lease has just lapsed, the lapse is processed (§5.3) before answering.
   `delay = min(backoff_cap_seconds, backoff_base_seconds × 2^(failures − 1)) × u` and `u` is drawn
   uniformly from [0.5, 1.0].
 - When a parent's `pending_children` reaches 0 while `waiting`, the parent becomes `ready` for the merge.
-- The reaper (`reap`) processes every lapsed lease and records its run time; the service runs it at
-  least once a minute.
+- The reaper (`reap`) processes every lapsed lease, wakes parked tasks whose time is up, and records its
+  run time; the service runs it at least once a minute. Claims do both for their own queue first.
+- When a task becomes done, dead or cancelled, every task depending on it counts one dependency resolved.
 
 ### 5.4 Idempotency and receipts
 
@@ -156,12 +180,14 @@ nothing. Bodies are JSON. Successful bodies are the models in `src/tessera/model
 |---|---|---|---|
 | POST /v1/queues/define | QueueConfig | 200 QueueConfig | admin |
 | GET /v1/queues | | 200 `{queues}` | any key |
-| POST /v1/tasks | TaskSpec | 201 `{task_id}` | key for the queue |
+| POST /v1/tasks | TaskSpec | 201 `{task_id}` | key for the queue, and for each dependency's queue |
 | GET /v1/tasks/{id}, GET /v1/tasks/{id}/results | | 200 TaskView, `{results}` | key for the queue |
 | POST /v1/tasks/claim | `{queue, worker, kinds?, effect_classes?}` | 200 Lease, or 204 with Retry-After | key for the queue, kind and effect class |
 | POST /v1/tasks/heartbeat | `{task_id, fencing_token}` | 200 Lease | the key that claimed |
 | POST /v1/tasks/submit | `{task_id, fencing_token, output, ok, error}` + `Idempotency-Key` header | 200 Receipt | the key that claimed |
 | POST /v1/tasks/split | `{task_id, fencing_token, children}` | 200 `{children}` | the key that claimed |
+| POST /v1/tasks/park | `{task_id, fencing_token, reason, resume_within?}` | 200 TaskView | the key that claimed |
+| POST /v1/tasks/resume | `{task_id, input}` | 200 TaskView | key for the task's queue |
 | POST /v1/tasks/cancel | `{task_id, reason}` | 200 TaskView | key with the task's effect class |
 | POST /v1/admin/reap | | 200 `{reaped}` | admin |
 | GET /v1/counts (`?recount=true`) | | 200 `{as_of, queues}` | any key |
@@ -181,8 +207,8 @@ nothing. Bodies are JSON. Successful bodies are the models in `src/tessera/model
   No key may hold the `public` effect class without a fresh, single-use approval token from Taylor.
 - **Limits**: 60 claims a minute per key, then 429 with `Retry-After`. Throttled and empty answers
   carry `Retry-After` plus the queue's heartbeat interval.
-- **MCP**: tools `claim`, `heartbeat`, `submit` and `split` with typed input and output schemas,
-  behind the same keys. Tool results carry the same JSON as the HTTP bodies.
+- **MCP**: tools `queues`, `claim`, `heartbeat`, `submit`, `split`, `park` and `resume` with typed input
+  and output schemas, behind the same keys. Tool results carry the same JSON as the HTTP bodies.
 - **Hygiene**: no key, token or credential appears in any response, page or log. CORS allows only
   listed origins, never `*`. Pages carry no instructions aimed at visiting agents.
 - **Edge lockdown**: when `TESSERA_EDGE_SECRET` is set, every request except `GET /v1/health` and
@@ -204,13 +230,14 @@ plus `current_version` for `version_conflict`.
 | `stale_lease` | 409 | The caller's lease isn't live |
 | `version_conflict` | 409 | Compare-and-set lost |
 | `idempotency_conflict` | 409 | The idempotency key belongs to another task |
+| `invalid_state` | 409 | The task isn't in a state that allows this, for example resuming a task that isn't parked |
 | `rate_limited` | 429 | Over the claim rate |
 | `unavailable` | 503 | Overloaded or shutting down; retry after `Retry-After` |
 
 ## 9. Limits
 
-Output 1 MiB per submit; blob 16 MiB; 100 children per split; 4 levels of nesting; 10,000 events per
-page; task ids `^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$`; record keys `^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$`.
+Output 1 MiB per submit; resume input 1 MiB; blob 16 MiB; 100 children per split; 100 dependencies per
+task; parks up to 30 days; 4 levels of nesting; 10,000 events per page; task ids `^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$`; record keys `^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$`.
 
 ## 10. Conformance
 
@@ -232,6 +259,9 @@ page; task ids `^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$`; record keys `^[A-Za-z0-9][
 | T14 | A restart mid-run loses and doubles nothing | every backend |
 | T15 | Every receipt matches its stored result under §5.4's formula | every backend |
 | T16 | No key appears in responses, pages or logs | service |
+| T17 | A dependent waits for every dependency, then carries their results; dead or cancelled dependencies release it; unknown ones are refused | every backend |
+| T18 | Children with `after` run in waves | every backend |
+| T19 | Park ends a lease with no failure; resume brings the task back with its input; only the live lease may park; a parked task wakes when its time is up | every backend |
 | ST01 to ST04 | Compare-and-set has one winner; history is kept; blobs are content-addressed; batches are atomic | every backend |
 
 `make suite BACKEND=store` runs the suite on the in-process store; `make suite BACKEND=http` runs it on

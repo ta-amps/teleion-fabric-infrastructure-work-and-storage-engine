@@ -62,6 +62,13 @@ class IdempotencyConflict(TesseraError):
     code = "idempotency_conflict"
 
 
+class InvalidState(TesseraError):
+    """The task isn't in a state that allows this, for example resuming a task that isn't parked."""
+
+    status = 409
+    code = "invalid_state"
+
+
 class RateLimited(TesseraError):
     status = 429
     code = "rate_limited"
@@ -92,6 +99,7 @@ BY_CODE: dict[str, type[TesseraError]] = {
         StaleLease,
         VersionConflict,
         IdempotencyConflict,
+        InvalidState,
         RateLimited,
         Unavailable,
     )

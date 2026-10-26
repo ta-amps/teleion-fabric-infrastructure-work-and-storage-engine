@@ -287,3 +287,44 @@ def test_no_key_appears_in_any_response(service: tuple[TestClient, Store, Keys])
     for resp in responses:
         text = resp.text + json.dumps(dict(resp.headers))
         assert not any(k in text for k in keys.values())
+
+
+def test_dependencies_stay_inside_the_key_scope(service: tuple[TestClient, Store, Keys]) -> None:
+    """A dependent's lease carries its dependencies' outputs, so a key may only depend on tasks in
+    queues it can use."""
+    client, store, keys = service
+    other = enqueue(client, keys, queue="q-b")
+    resp = client.post(
+        "/v1/tasks",
+        json={"queue": "q-a", "brief": {}, "depends_on": [other]},
+        headers=auth(keys["a"]),
+    )
+    assert resp.status_code == 403
+    own = enqueue(client, keys, queue="q-a")
+    resp = client.post(
+        "/v1/tasks",
+        json={"queue": "q-a", "brief": {}, "depends_on": [own]},
+        headers=auth(keys["a"]),
+    )
+    assert resp.status_code == 201
+    assert store.task(resp.json()["task_id"]).state == "waiting"
+
+
+def test_park_and_resume_follow_the_holder_and_queue_rules(
+    service: tuple[TestClient, Store, Keys],
+) -> None:
+    client, store, keys = service
+    task = enqueue(client, keys)
+    lease = client.post(
+        "/v1/tasks/claim", json={"queue": "q-a", "worker": "w"}, headers=auth(keys["a"])
+    ).json()
+    park = {"task_id": task, "fencing_token": lease["fencing_token"], "reason": "need documents"}
+    assert client.post("/v1/tasks/park", json=park, headers=auth(keys["a2"])).status_code == 403
+    resp = client.post("/v1/tasks/park", json=park, headers=auth(keys["a"]))
+    assert resp.status_code == 200 and resp.json()["wait_reason"] == "input"
+    resume = {"task_id": task, "input": {"documents": ["payslip"]}}
+    assert client.post("/v1/tasks/resume", json=resume, headers=auth(keys["b"])).status_code == 403
+    assert client.post("/v1/tasks/resume", json=resume, headers=auth(keys["a2"])).status_code == 200
+    again = client.post("/v1/tasks/resume", json=resume, headers=auth(keys["a2"]))
+    assert again.status_code == 409 and again.json()["code"] == "invalid_state"
+    assert store.task(task).state == "ready"

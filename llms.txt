@@ -11,7 +11,7 @@
 
 ## Documents
 - [CLAUDE.md](https://github.com/ta-amps/tessera/blob/main/CLAUDE.md): Claude Code notes
-- [conformance-draft/SPEC.md](https://github.com/ta-amps/tessera/blob/main/conformance-draft/SPEC.md): Tessera specification, v0.1 (draft)
+- [conformance-draft/SPEC.md](https://github.com/ta-amps/tessera/blob/main/conformance-draft/SPEC.md): Tessera specification, v0.2 (draft)
 - [docs/architecture.md](https://github.com/ta-amps/tessera/blob/main/docs/architecture.md): Tessera: architecture
 - [docs/comparison.md](https://github.com/ta-amps/tessera/blob/main/docs/comparison.md): Tessera: comparison
 - [docs/decisions.md](https://github.com/ta-amps/tessera/blob/main/docs/decisions.md): Tessera: decisions

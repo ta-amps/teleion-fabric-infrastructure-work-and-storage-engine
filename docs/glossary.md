@@ -22,6 +22,12 @@ the terms the code and docs use around it.
 | Dead letter | The terminal state after `max_attempts` failures | state `dead` |
 | Split | Ending a lease by creating child tasks; the parent waits | `split`, state `waiting` |
 | Merge | The parent's next claim, which carries its children's states and outputs | `Lease.children` |
+| Dependency | A task another task waits for; resolved when it is done, dead or cancelled | `TaskSpec.depends_on`, `task_deps` |
+| Join | A task with several dependencies; its lease carries their states and outputs | `Lease.dependencies` |
+| Wave | Split children that wait for earlier siblings named in `after` | `ChildSpec.after` |
+| Park | Ending a lease without a failure while the task waits for outside input | `park`, `wait_reason = 'input'` |
+| Resume | Giving a parked task its input; it becomes ready again | `resume`, `task_inputs`, `Lease.inputs` |
+| Wait reason | Why a task is waiting: `children`, `dependencies` or `input` | `TaskView.wait_reason` |
 | Submit | Ending a lease with an outcome and output | `submit` |
 | Idempotency key | A caller-chosen key per submit; a repeat returns the first receipt | `Idempotency-Key` header |
 | Receipt | Proof of a submit: SHA-256 over canonical JSON of task, token, outcome and output | `receipts.py`, `Receipt` |

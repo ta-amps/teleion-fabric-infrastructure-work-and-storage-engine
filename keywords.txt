@@ -34,3 +34,6 @@ trust boundary: boundaries
 layering: import_rules
 generalizing: extension point
 llms-full.txt
+dependencies: depends_on, dependency
+park: parked, resume
+waves: after

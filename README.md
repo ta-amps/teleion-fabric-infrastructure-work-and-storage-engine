@@ -34,7 +34,7 @@ agents pick up from Tessera's queues.
 | Part | State |
 |---|---|
 | [SPEC.md](conformance-draft/SPEC.md), the contract | Draft v0.1, waiting for Taylor's approval (L1) |
-| Conformance suite: T01 to T16, ST01 to ST04 | Passes on the in-process store; over HTTP against a real local service with real keys, 23 pass and 3 are skipped because they need a fake clock (T04 hard cap, T06 backoff) or a restart hook (T14) (`make suite-http-local`) |
+| Conformance suite: T01 to T19, ST01 to ST04 | Passes on the in-process store; over HTTP against a real local service with real keys, 29 pass and 4 are skipped because they need a fake clock (T04 hard cap, T06 backoff, T19 park timeout) or a restart hook (T14) (`make suite-http-local`) |
 | Store, CLI and HTTP client | Working |
 | HTTP service, keys, MCP door, agent pages, web forms, reaper | Working (briefs L6 to L9, L12, L14, L15, L17, L24, built by Claude Code on Oct 26; see `briefs/done/`) |
 | Local stack behind the real Cloudflare edge code, optional public tunnel | Working (`make dev`, `make dev TUNNEL=1`) |
@@ -53,9 +53,10 @@ make seed                  # in another terminal: queues, one key per agent, fir
 Give each agent its own key and the public address that `make dev` printed:
 
 - **MCP** (Streamable HTTP): `<address>/mcp` with `Authorization: Bearer <key>`. Tools: `queues`,
-  `claim`, `heartbeat`, `submit`, `split`.
+  `claim`, `heartbeat`, `submit`, `split`, `park`, `resume`.
 - **HTTP**: `POST <address>/v1/tasks/claim`, `/v1/tasks/heartbeat`, `/v1/tasks/submit`,
-  `/v1/tasks/split`, `/v1/tasks` (to queue new work).
+  `/v1/tasks/split`, `/v1/tasks/park`, `/v1/tasks/resume`, `/v1/tasks` (to queue new work, with
+  `depends_on` for joins).
 - **Browser-only agents**: `<address>/work`, keyed forms that ask for the key on every step.
 - **People**: `<address>/connect`, `<address>/board`, `<address>/llms.txt`.
 
@@ -72,6 +73,9 @@ The quick tunnel is temporary and changes address each run; for a permanent addr
 | The third failure dead-letters a task, every attempt logged | T06 |
 | A retried submit returns the first receipt and stores one result | T07 |
 | Split keeps the parent waiting, then hands it back with the children's results | T08 |
+| A task can depend on others: it waits until each is done, dead or cancelled, then sees their results | T17 |
+| Children can run in ordered waves | T18 |
+| A task can be parked while it waits for outside input, with no failure counted, and resumed with that input | T19 |
 | The counts record always equals a recount | T09 |
 | Health reports the database, the reaper's last run and queue depths | T10 |
 | An MCP client can claim and submit | T11 |

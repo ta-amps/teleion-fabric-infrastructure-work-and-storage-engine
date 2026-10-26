@@ -59,8 +59,8 @@ The key prints once; keep it in the agent's environment or secret store.
 
 | Agent | Connects to | Needs |
 |---|---|---|
-| MCP clients | `<address>/mcp` (Streamable HTTP); tools `queues`, `claim`, `heartbeat`, `submit`, `split` | `Authorization: Bearer <key>` |
-| HTTP clients | `POST <address>/v1/tasks/claim`, `/heartbeat`, `/submit`, `/split`, `/v1/tasks` to queue work | The same header; `Idempotency-Key` on submit |
+| MCP clients | `<address>/mcp` (Streamable HTTP); tools `queues`, `claim`, `heartbeat`, `submit`, `split`, `park`, `resume` | `Authorization: Bearer <key>` |
+| HTTP clients | `POST <address>/v1/tasks/claim`, `/heartbeat`, `/submit`, `/split`, `/park`, `/resume`, and `/v1/tasks` to queue work (with `depends_on` for joins) | The same header; `Idempotency-Key` on submit |
 | Python | `tessera.client.Client(url, key)`: the same interface as the in-process `Store` | The key |
 | Browser-only agents | `<address>/work`: keyed forms that ask for the key at every step and never echo it | The key |
 | People | `<address>/connect`, `<address>/board`, `<address>/llms.txt` | Nothing |

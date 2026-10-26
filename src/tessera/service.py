@@ -45,6 +45,8 @@ WRITE_PATHS = (
     "/v1/tasks/heartbeat",
     "/v1/tasks/submit",
     "/v1/tasks/split",
+    "/v1/tasks/park",
+    "/v1/tasks/resume",
     "/v1/tasks/cancel",
     "/v1/admin/reap",
     "/v1/jobs/{job_id}",
@@ -123,6 +125,18 @@ class ClaimLimiter:
 
 class _Body(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+
+class ParkBody(_Body):
+    task_id: str
+    fencing_token: int
+    reason: str
+    resume_within: float | None = None
+
+
+class ResumeBody(_Body):
+    task_id: str
+    input: dict[str, Any]
 
 
 class ClaimBody(_Body):
@@ -351,6 +365,9 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
         gate.queue(grant, spec.queue)
         if spec.effect_class == "public" and not grant.is_admin:
             raise Forbidden("only an admin key may queue a task with the public effect class")
+        # A dependent's lease carries its dependencies' outputs, so the key must cover their queues.
+        for dep in spec.depends_on:
+            gate.queue(grant, store.task(dep).queue)
         return {"task_id": store.enqueue(spec)}
 
     @app.get("/v1/tasks/{task_id}")
@@ -416,6 +433,19 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
         for child in body.children:
             gate.queue(grant, child.queue or parent_queue)
         return {"children": store.split(body.task_id, body.fencing_token, body.children)}
+
+    @app.post("/v1/tasks/park")
+    def park(body: ParkBody, grant: KeyGrant = key) -> dict[str, Any]:
+        gate.holder(grant, body.task_id)
+        view = store.park(
+            body.task_id, body.fencing_token, reason=body.reason, resume_within=body.resume_within
+        )
+        return view.model_dump(mode="json")
+
+    @app.post("/v1/tasks/resume")
+    def resume(body: ResumeBody, grant: KeyGrant = key) -> dict[str, Any]:
+        gate.queue(grant, store.task(body.task_id).queue)
+        return store.resume(body.task_id, body.input).model_dump(mode="json")
 
     @app.post("/v1/tasks/cancel")
     def cancel(body: CancelBody, grant: KeyGrant = key) -> dict[str, Any]:

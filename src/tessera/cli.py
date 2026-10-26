@@ -75,6 +75,13 @@ def _parser() -> argparse.ArgumentParser:
         choices=["read", "write-internal", "write-repo", "public"],
     )
     e.add_argument("--priority", type=int, default=50)
+    e.add_argument(
+        "--depends-on",
+        action="append",
+        default=[],
+        dest="depends_on",
+        help="a task that must be done, dead or cancelled first (repeatable)",
+    )
 
     c = sub.add_parser("claim", help="lease the next ready task (prints null when none)")
     c.add_argument("queue")
@@ -98,6 +105,16 @@ def _parser() -> argparse.ArgumentParser:
     sp.add_argument("task_id")
     sp.add_argument("--token", type=int, required=True)
     sp.add_argument("--children", required=True, help="JSON list of child specs, or @file.json")
+
+    pk = sub.add_parser("park", help="end the lease without a failure and wait for input")
+    pk.add_argument("task_id")
+    pk.add_argument("--token", type=int, required=True)
+    pk.add_argument("--reason", required=True)
+    pk.add_argument("--resume-within", type=float, help="seconds before it comes back by itself")
+
+    rs = sub.add_parser("resume", help="give a parked task its input; it becomes ready again")
+    rs.add_argument("task_id")
+    rs.add_argument("--input", required=True, help="JSON object, or @file.json")
 
     ca = sub.add_parser("cancel", help="cancel a task and its unfinished children")
     ca.add_argument("task_id")
@@ -174,6 +191,7 @@ def _run(store: Store, args: argparse.Namespace) -> Any:
                     kind=args.kind,
                     effect_class=args.effect,
                     priority=args.priority,
+                    depends_on=args.depends_on,
                 )
             )
         }
@@ -193,6 +211,12 @@ def _run(store: Store, args: argparse.Namespace) -> Any:
     if cmd == "split":
         children = [ChildSpec.model_validate(c) for c in _json_arg(args.children)]
         return {"children": store.split(args.task_id, args.token, children)}
+    if cmd == "park":
+        return store.park(
+            args.task_id, args.token, reason=args.reason, resume_within=args.resume_within
+        )
+    if cmd == "resume":
+        return store.resume(args.task_id, _json_arg(args.input))
     if cmd == "cancel":
         return store.cancel(args.task_id, args.reason)
     if cmd == "reap":

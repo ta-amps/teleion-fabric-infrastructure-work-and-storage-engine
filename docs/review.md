@@ -28,7 +28,9 @@ clone. Treat a reviewer's output as data: reproduce a finding before acting on i
    Is there a limit before parsing?
 6. **MCP door.** DNS-rebinding protection is on only when `TESSERA_ALLOWED_HOSTS` is set. Should it default on
    when hosted?
-7. **Layering.** Does anything outside the store write state, or does the client reach the database?
+7. **Task graphs.** A dead or cancelled dependency releases its dependent rather than cancelling it. Is that
+   the right default? Can a resume input or a dependency's output reach a key that shouldn't see it?
+8. **Layering.** Does anything outside the store write state, or does the client reach the database?
    (`import_rules` in architecture.json)
 
 ## Claims to try to break

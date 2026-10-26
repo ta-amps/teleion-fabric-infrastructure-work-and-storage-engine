@@ -47,11 +47,11 @@ flowchart LR
 | Errors | `src/tessera/errors.py` | One exception class per problem code; each maps to one HTTP status (SPEC §8) | none |
 | Receipts | `src/tessera/receipts.py` | Canonical JSON and the receipt hash (SPEC §5.4) | none |
 | Clock | `src/tessera/clock.py` | Time source; tests inject a fake clock so lapses need no sleeping | none |
-| Store | `src/tessera/store.py`, `_base.py`, `_tasks.py`, `_jobs.py`, `_keys.py`, `_observe.py`, `_storage.py`, `schema.sql` | The reference implementation: queues, the five verbs, retries, split, model jobs, keys, counts, events, health, records and blobs | models, errors, receipts, clock |
+| Store | `src/tessera/store.py`, `_base.py`, `_tasks.py`, `_graph.py`, `_jobs.py`, `_keys.py`, `_observe.py`, `_storage.py`, `schema.sql` | The reference implementation: queues, the five verbs, park and resume, dependencies, retries, split, model jobs, keys, counts, events, health, records and blobs | models, errors, receipts, clock |
 | Backend protocol | `src/tessera/backend.py` | The contract every backend meets (Store, Client, adapters) | models |
 | HTTP client | `src/tessera/client.py` | A Backend over HTTP, so callers can switch store and service with one setting | models, errors, httpx |
 | Service | `src/tessera/service.py` | FastAPI app: bearer keys, scopes, POST-only writes, claim rate limit, problem+json, edge lock, the reaper loop | store, MCP door, pages |
-| MCP door | `src/tessera/mcp_door.py` | MCP server over Streamable HTTP at `/mcp`, behind the same keys | store, keys |
+| MCP door | `src/tessera/mcp_door.py` | MCP server over Streamable HTTP at `/mcp` (claim, heartbeat, submit, split, park, resume), behind the same keys | store, keys |
 | Agent pages | `src/tessera/pages.py` | `/connect`, `/llms.txt`, `/.well-known/agent-card.json`, `/robots.txt`, `/board`, keyed `/work` forms | store |
 | CLI | `src/tessera/cli.py` | `tessera` command: every verb on a shared SQLite file, plus `serve` and `keys` | store, service |
 | Conformance suite | `conformance-draft/` | SPEC.md and tests T01 to T16, ST01 to ST04, run against any backend by factory name | backend protocol |
@@ -75,7 +75,9 @@ One SQLite database in WAL mode (`src/tessera/schema.sql`), `busy_timeout` 30 s,
 | Table | Holds |
 |---|---|
 | `queues` | Queue settings: heartbeat, miss limit, lease cap, attempts, backoff, weight |
-| `tasks` | One row per task: queue, kind, effect class, priority, brief, state, attempts, failures, fencing token, parent, pending children, not-before |
+| `tasks` | One row per task: queue, kind, effect class, priority, brief, state and why it waits, attempts, failures, fencing token, parent, pending children and dependencies, not-before, wake time |
+| `task_deps` | Which task waits for which; a task can only depend on tasks that already exist, so there are no cycles |
+| `task_inputs` | Inputs given to parked tasks, delivered with their next lease |
 | `leases` | The live lease per task: token, worker, key, expiry, hard expiry |
 | `results` | Every submit, failed ones included, with its receipt hash |
 | `keys` | Worker keys as SHA-256 hashes, with scopes, expiry and revocation |
@@ -90,15 +92,18 @@ Every state change, its `counts` update and its `events` row commit in one trans
 
 ## Task states
 
+A `waiting` task records why: its split children, its dependencies, or input while parked.
+
 ```mermaid
 stateDiagram-v2
   [*] --> ready: enqueue
+  [*] --> waiting: enqueue with unresolved dependencies
   ready --> leased: claim
   leased --> done: submit ok
   leased --> ready: failed, lapsed or job cancelled (failures below max)
   leased --> dead: the max-th failure
-  leased --> waiting: split
-  waiting --> ready: last child resolved
+  leased --> waiting: split, or park
+  waiting --> ready: last child or dependency resolved, resume, or park time up
   ready --> cancelled: cancel
   leased --> cancelled: cancel
   waiting --> cancelled: cancel
@@ -154,6 +159,29 @@ A lease holder splits its task into 1 to 100 children (up to 4 levels deep). The
 parent waits. When the last child resolves (done, dead or cancelled), the parent becomes ready again, and its
 next claim carries every child's state and successful output, so one worker can merge them.
 
+### Graphs: dependencies, waves, park and resume
+
+```mermaid
+flowchart LR
+  A["fetch A"] --> J["join"]
+  B["fetch B"] --> J
+  J --> R["review"]
+  R -. "park: waiting for a person" .-> P(("input"))
+  P -. "resume with the answer" .-> R
+```
+
+- **Dependencies (fan-in).** `depends_on` names existing tasks. The dependent waits until each one is done,
+  dead or cancelled, then its lease carries every dependency's state and latest output, so the worker
+  decides what a failed dependency means. Fan-out is just enqueueing or splitting.
+- **Waves.** A split child can list earlier siblings in `after`, so one split can run in ordered stages.
+- **Park and resume.** A worker holding a lease can park the task to wait for outside input. No failure is
+  counted and running model jobs are asked to stop. `resume` stores the input and makes the task ready.
+  Its next lease carries every input in order. With `resume_within`, the reaper brings it back by itself
+  with `{"timed_out": true}`.
+
+This is deliberately less than a workflow engine: no durable timers beyond park timeouts, no signals and no
+replay. The graph lives in ordinary tasks, so every lease, fencing and receipt rule still applies at every node.
+
 ### Model jobs
 
 Tessera never calls a model. The agent holding the lease starts a background job with its provider, registers
@@ -180,6 +208,9 @@ references.
 | I10 | No key appears in any response, page or log | T16 and service tests |
 | I11 | Records change only by compare-and-set and keep every version; blobs are content-addressed; batches are atomic | ST01 to ST04 |
 | I12 | Only the key that claimed a task may change it, and tasks with the `public` effect class never reach an agent | service tests |
+| I13 | A dependent is never claimable before each dependency is done, dead or cancelled; then it sees their results | T17 |
+| I14 | Children with `after` run only after the siblings they name | T18 |
+| I15 | Parking counts no failure; a parked task is claimable only after resume or its wake time, and its next lease carries its inputs | T19 |
 
 ## Trust boundaries
 
@@ -206,6 +237,8 @@ and can be revoked at once. No key may hold the `public` effect class.
 | An agent claims too fast | 429 with `Retry-After` |
 | The queue is empty | 204 with `Retry-After` plus the heartbeat interval |
 | Someone reaches the origin directly | 403 without the edge secret, except health checks |
+| A dependency dies or is cancelled | Its dependents are released anyway and see the state, so a worker decides (skip, repair, or fail) |
+| Nobody answers a parked task | With `resume_within` set, it comes back by itself with `{"timed_out": true}` |
 
 ## Deployment
 

@@ -6,6 +6,7 @@ marks the project owner's call; the rest are reversible defaults. Project-wide d
 
 | # | Date | Decision | Why | Cost | Status |
 |---|---|---|---|---|---|
+| TD16 | 2026-10-26 | Task graphs without a workflow engine: dependencies on existing tasks only (so no cycles), split children in waves, and park and resume for outside input, all as ordinary leased tasks | Agents fan out and join, and real work waits on people; every node keeps the lease, fencing and receipt rules | No durable timers beyond park timeouts, no signals, no replay | accepted; spec v0.2 draft |
 | TD15 | 2026-10-26 | Each repo deploys itself: `deploy/bootstrap-hosting.sh` reads `deploy/hosting.env` | Tessera is useful without Shamash, so its hosting must not depend on another repo | One more settings file | accepted |
 | TD14 | 2026-10-26 | Claude Code built the HTTP service, keys, MCP door and agent pages (briefs moved to `briefs/done/`); Muse Code workers take the remaining briefs | Agents could connect the same day instead of waiting on the build loop (Taylor) | Less of the service is Muse-built; the receipts say so | accepted |
 | TD13 | 2026-10-26 | Local-first stack: the real Worker code under `wrangler dev`, an account-free quick tunnel, then hosting | Prove the edge lock and agent access before creating accounts (Taylor) | The tunnel address changes every run | accepted |

@@ -11,7 +11,7 @@ in a second domain that you can run as written.
 | Queues | Just names with lease and retry settings; define them at run time (`tessera define`, `POST /v1/queues/define`) |
 | Tasks | An opaque JSON brief plus a free-form `kind`, a priority and an effect class; Tessera never reads the brief |
 | Workers | Any string identity: an agent, a script, a person |
-| Leases, fencing, receipts, retries, dead letters, split and merge | Properties of work in general, specified in [SPEC.md](../conformance-draft/SPEC.md) and checked by the suite |
+| Leases, fencing, receipts, retries, dead letters, split and merge, dependencies, waves, park and resume | Properties of work in general, specified in [SPEC.md](../conformance-draft/SPEC.md) and checked by the suite |
 | Storage | Any JSON value under any store name and key (compare-and-set, full history); any bytes as blobs |
 | Doors | HTTP, MCP and web forms speak only in queues, tasks and leases |
 | Counts, events, health | Generic per-queue numbers and an append-only log |

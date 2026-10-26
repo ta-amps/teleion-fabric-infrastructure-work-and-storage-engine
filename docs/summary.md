@@ -21,7 +21,9 @@ Every guarantee is a rule with a test, and every write path ends in one SQLite t
 - **Idempotent submits with receipts.** A retried submit returns the first receipt; the receipt is a SHA-256
   over the task, token, outcome and output.
 - **Retries with jittered backoff, then a dead letter**, with every attempt logged.
-- **Split and merge.** A task can split into children; the parent waits and comes back with their results.
+- **Task graphs without a workflow engine.** A task can split into children (which may run in ordered
+  waves) and come back with their results; any task can depend on others and wait until they resolve; and
+  a task can be parked while it waits for a person or another system, then resumed with that input.
 - **One counts record**, updated in the same transaction as every state change, and an **append-only event
   log**. Boards read the counts; the event log is the audit trail.
 - **Atomic storage:** versioned records changed only by compare-and-set, content-addressed blobs, atomic batches.
@@ -36,9 +38,9 @@ model itself: the agent holding the lease does, and Tessera records the job agai
 
 | Part | Status | How to check |
 |---|---|---|
-| Spec and conformance suite (T01 to T16, ST01 to ST04) | Built; spec still a draft | `make suite BACKEND=store`, `make suite-stub` |
+| Spec v0.2 and conformance suite (T01 to T19, ST01 to ST04) | Built; spec still a draft | `make suite BACKEND=store`, `make suite-stub` |
 | In-process store, CLI, HTTP client | Built | `make test` |
-| HTTP service, keys, MCP door, agent pages, web forms, reaper | Built | `make suite-http-local` runs the suite over HTTP with real keys: 23 pass; 3 need a fake clock or a restart hook and run on the store |
+| HTTP service, keys, MCP door, agent pages, web forms, reaper | Built | `make suite-http-local` runs the suite over HTTP with real keys: 29 pass; 4 need a fake clock or a restart hook and run on the store |
 | Local stack behind the real Cloudflare edge code, optional public tunnel | Built | `make dev TUNNEL=1`, then `make seed` |
 | Hosting on Fly.io behind a Cloudflare Worker | Configured, not deployed | `deploy/bootstrap-hosting.sh --dry-run` |
 | Making-of export, model-job runner, receipts gate, board v2, soak test | Planned (open briefs) | `briefs/` |

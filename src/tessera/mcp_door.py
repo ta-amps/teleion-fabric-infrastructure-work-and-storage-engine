@@ -167,6 +167,32 @@ def build_mcp(
         ids = await run(lambda: store.split(task_id, fencing_token, specs))
         return {"children": ids}
 
+    @server.tool(
+        description="Park a task you hold while it waits for outside input (a person or another "
+        "system). Nothing counts as failed. It comes back when someone resumes it, or after "
+        'resume_within seconds with {"timed_out": true}.'
+    )
+    async def park(
+        task_id: str, fencing_token: int, reason: str, resume_within: float | None = None
+    ) -> dict[str, Any]:
+        grant = await current_grant()
+        await run(lambda: gate.holder(grant, task_id))
+        view = await run(
+            lambda: store.park(task_id, fencing_token, reason=reason, resume_within=resume_within)
+        )
+        return view.model_dump(mode="json")
+
+    @server.tool(
+        description="Give a parked task the input it is waiting for. It becomes ready again, and "
+        "its next claim carries every input it has received."
+    )
+    async def resume(task_id: str, input: dict[str, Any]) -> dict[str, Any]:
+        grant = await current_grant()
+        queue = (await run(lambda: store.task(task_id))).queue
+        await run(lambda: gate.queue(grant, queue))
+        view = await run(lambda: store.resume(task_id, input))
+        return view.model_dump(mode="json")
+
     security = TransportSecuritySettings(
         enable_dns_rebinding_protection=bool(settings.allowed_hosts),
         allowed_hosts=list(settings.allowed_hosts),
