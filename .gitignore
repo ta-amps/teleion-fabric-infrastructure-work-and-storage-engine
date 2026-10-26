@@ -1,0 +1,31 @@
+# Secrets and private material never leave this machine
+.env
+.env.*
+!.env.example
+private/
+secrets/
+
+# Local state
+.tessera/
+*.db
+*.db-wal
+*.db-shm
+traces/*.jsonl
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+build/
+dist/
+*.egg-info/
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+.claude/settings.local.json

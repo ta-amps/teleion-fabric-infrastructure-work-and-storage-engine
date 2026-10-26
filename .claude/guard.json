@@ -1,0 +1,47 @@
+{
+  "allow": [".env.example"],
+  "deny_read": [".env", ".env.local", ".env.*.local", "private/**", "secrets/**", ".tessera/keys/**"],
+  "deny_write": [".env", ".env.local", ".env.*.local", "private/**", "secrets/**", "conformance/**", "conformance.lock"],
+  "deny_commands": [
+    {
+      "pattern": "--dangerously-skip-permissions|--yolo\\b|--disable-sandbox\\b|--approval-mode[= ]never\\b|--contributor-mode[= ]on\\b|MUSE_CONTRIBUTOR_MODE=1",
+      "reason": "No agent runs with its sandbox, approvals or Standard mode switched off (hard rule)."
+    },
+    {
+      "pattern": "(^|[\\s;|&(<'\"=])(\\./)?\\.env(\\.local)?(?![\\w.-])",
+      "reason": "Secrets in .env are never read, printed or logged by agents (hard rule)."
+    },
+    {
+      "pattern": "\\bprintenv\\b|(^|[;|&]\\s*)env\\s*($|[|;&])|\\becho\\s+[^;|&]*\\$\\{?[A-Z0-9_]*(KEY|TOKEN|SECRET|PASSWORD)|\\bgh\\s+auth\\s+token\\b",
+      "reason": "Never print environment secrets or tokens (hard rule)."
+    },
+    {
+      "pattern": "(^|[\\s;|&(<'\"=/])private/",
+      "reason": "private/ is never read, written or committed by agents (hard rule)."
+    },
+    {
+      "pattern": "https?://(?!localhost|127\\.0\\.0\\.1|0\\.0\\.0\\.0|\\[::1\\])[^\\s'\"]*/v1/(tasks/(claim|submit)|muse/(claim|submit)|public/queues/claim)",
+      "reason": "Never call a remote fabric's claim or submit endpoints from a command; work goes through the adapter with a scoped key (hard rule)."
+    },
+    {
+      "pattern": "\\b(curl|wget)\\b[^|;&]*\\|\\s*(sudo\\s+)?(ba|z|da)?sh\\b",
+      "reason": "Never pipe a download into a shell: download it, read it, then run it."
+    },
+    {
+      "pattern": "\\bgit\\s+push\\b[^;|&]*\\s(--force|--force-with-lease|-f)(\\s|$|=)",
+      "reason": "No force pushes."
+    },
+    {
+      "pattern": "\\brm\\s+-[a-zA-Z]*[rR][a-zA-Z]*\\s+(/|~|\\$HOME|\\.\\.?)(/?\\s|/?$)",
+      "reason": "Refusing a recursive delete of a root, home or parent directory."
+    },
+    {
+      "pattern": "(>>?|\\btee\\b|\\bcp\\b|\\bmv\\b|\\brm\\b|\\bsed\\s+-i|\\btruncate\\b)[^;|&]*\\bconformance(/|\\.lock)",
+      "reason": "conformance/ is the locked suite; only Taylor changes it (hard rule)."
+    },
+    {
+      "pattern": "https://[^\\s/@:]+:[^\\s/@]+@github\\.com",
+      "reason": "Never put a token in a git remote URL."
+    }
+  ]
+}

@@ -1,0 +1,236 @@
+# Tessera specification, v0.1 (draft)
+
+Status: **draft for Taylor's approval (task L1)**. Once approved, `make lock-suite` moves this file and
+the tests beside it to `conformance/` and records their hashes in `conformance.lock`. After that, only
+Taylor changes them.
+
+Tessera is an atomic work queue and an atomic store for agent swarms. A backend is any implementation
+that passes the tests in §10: the in-process store in `src/tessera/`, the HTTP service built from the
+briefs, or anything else.
+
+## 1. Terms
+
+| Term | Meaning |
+|---|---|
+| Queue | A named list of tasks with its own lease and retry settings (§4) |
+| Task | One unit of work: a JSON brief, a kind, an effect class, a priority |
+| Worker | Whoever claims a task: a Muse Code run, a Claude Code session, a person |
+| Lease | The right to work on one task until it lapses; at most one live lease per task |
+| Fencing token | A per-task integer that rises on every claim; writes carry it, stale tokens are refused |
+| Receipt | The proof of a submit: a SHA-256 over the task, token, outcome and output (§5.4) |
+| Effect class | What a task may change: `read`, `write-internal`, `write-repo` or `public` |
+| Key | A bearer secret for the service, scoped to queues, kinds, effect classes and admin rights |
+
+## 2. Guarantees
+
+1. No task is ever leased to two workers at once.
+2. A lease ends by submit, split, cancel, lapse or a cancelled model job; never silently.
+3. A write from a stale lease is refused and changes nothing.
+4. A submit is stored at most once per idempotency key, and a replay returns the first receipt.
+5. Every state change, its counts update and its event commit in one transaction, or none of them do.
+6. Records change only by compare-and-set; every version stays readable.
+
+## 3. Data model
+
+One SQLite database (WAL mode) with the tables in `src/tessera/schema.sql`: `queues`, `tasks`,
+`leases`, `results`, `keys`, `jobs`, `events`, `counts`, plus `records`, `record_heads` and `blobs` for
+storage and `meta` for housekeeping. The same statements run on Cloudflare D1.
+
+## 4. Queue settings
+
+| Field | Default | Bounds | Meaning |
+|---|---|---|---|
+| `heartbeat_seconds` | 60 | 1 to 600 | Expected interval between heartbeats |
+| `miss_limit` | 3 | 1 to 10 | Missed heartbeats before the lease lapses |
+| `lease_seconds` | 600 | 1 to 3,600 | Hard cap on one lease's total length, heartbeats or not |
+| `max_attempts` | 3 | 1 to 20 | Failures before dead letter |
+| `backoff_base_seconds` | 30 | 0 or more | First retry delay ceiling |
+| `backoff_cap_seconds` | 900 | 0 or more | Largest retry delay ceiling |
+| `weight` | 1 | 1 or more | Relative share when a worker serves several queues |
+
+Queue names match `^[a-z0-9][a-z0-9_.-]{0,63}$`. Defining an existing queue updates its settings.
+
+## 5. Tasks and leases
+
+### 5.1 States
+
+```mermaid
+stateDiagram-v2
+  [*] --> ready: enqueue
+  ready --> leased: claim
+  leased --> done: submit ok
+  leased --> ready: submit failed, lease lapsed, or job cancelled (failures < max_attempts)
+  leased --> dead: same, at the max_attempts-th failure
+  leased --> waiting: split
+  waiting --> ready: last child resolved
+  ready --> cancelled: cancel
+  leased --> cancelled: cancel
+  waiting --> cancelled: cancel
+  done --> [*]
+  dead --> [*]
+  cancelled --> [*]
+```
+
+### 5.2 Verbs
+
+- **enqueue(spec)**: inserts a `ready` task. An explicit `task_id` that already exists in the same
+  queue is a no-op that returns the id (so pipelines can re-run safely); in another queue it is refused.
+- **claim(queue, worker, kinds?, effect_classes?)**: first reaps lapsed leases in that queue, then
+  leases the ready task with `not_before <= now`, ordered by priority (high first), then creation time,
+  then id. It increments `attempts` and `fencing_token`, and sets
+  `expires_at = min(now + heartbeat_seconds × miss_limit, now + lease_seconds)` and
+  `hard_expires_at = now + lease_seconds`. The lease carries the brief and, for a parent back from a
+  split, every child's state and successful output. Nothing ready: no lease (HTTP 204).
+- **heartbeat(task, token)**: if the lease is live, sets
+  `expires_at = min(now + heartbeat_seconds × miss_limit, hard_expires_at)`.
+- **submit(task, token, output, idempotency_key, ok, error)**: see §5.3.
+- **split(task, token, children)**: creates 1 to 100 child tasks (`ready`, `parent_id` set; queue, kind,
+  effect class and priority default to the parent's), ends the parent's lease and moves the parent to
+  `waiting` with `pending_children` = the number of children. Nesting stops at 4 levels.
+- **cancel(task, reason)**: moves a non-terminal task to `cancelled`, ends its lease, marks its running
+  model jobs `cancel_requested`, cancels its unfinished descendants, and counts as resolved for its
+  parent.
+
+A lease is **live** while its token is the task's current token and `now < expires_at` and
+`now < hard_expires_at`. Any verb that finds the caller's lease not live answers `stale_lease`; if the
+lease has just lapsed, the lapse is processed (§5.3) before answering.
+
+### 5.3 Outcomes, retries and dead letter
+
+- `ok = true`: the task becomes `done`; its parent, if any, counts one more child resolved.
+- `ok = false`, a lapse, or a model job cancelled under the live lease: `failures` rises by one. At
+  `failures >= max_attempts` the task becomes `dead` (and counts as resolved for its parent). Otherwise
+  it becomes `ready` with `not_before = now + delay`, where
+  `delay = min(backoff_cap_seconds, backoff_base_seconds × 2^(failures − 1)) × u` and `u` is drawn
+  uniformly from [0.5, 1.0].
+- When a parent's `pending_children` reaches 0 while `waiting`, the parent becomes `ready` for the merge.
+- The reaper (`reap`) processes every lapsed lease and records its run time; the service runs it at
+  least once a minute.
+
+### 5.4 Idempotency and receipts
+
+Idempotency keys are global. A submit whose key was already used for the same task returns the first
+receipt with `replayed = true` and writes nothing; for a different task it is refused
+(`idempotency_conflict`). Every submit, failed ones included, stores one result row. The receipt hash is
+
+```
+sha256( canonical_json({"task_id", "fencing_token", "ok", "output", "error"}) )
+```
+
+where `canonical_json` sorts keys, uses `,` and `:` without spaces, keeps UTF-8 and rejects NaN.
+Outputs above 1 MiB are refused: store the bytes as a blob and submit its hash.
+
+### 5.5 Counts, events and health
+
+- **Counts**: one row per queue with `ready`, `leased`, `waiting`, `done`, `dead`, `cancelled`,
+  updated in the transaction that changes a task's state. `recount` recomputes them from `tasks`; the
+  two must always agree. Every board and manifest reads counts, never its own tally.
+- **Events**: an append-only log with a rising `seq`: `queue_defined`, `enqueued`, `claimed`,
+  `heartbeat`, `submitted`, `retry_scheduled`, `dead_lettered`, `lease_lapsed`, `split`,
+  `parent_ready`, `cancelled`, `jobs_cancel_requested`, `job_registered`, `job_updated`,
+  `records_written`, `blob_stored`. Read in pages of up to 10,000 after a given `seq`.
+- **Health**: `db_ok`, version, time, the reaper's last run, and per queue the counts, the age of the
+  oldest claimable ready task and the number of expired leases not yet reaped.
+
+## 6. Model jobs and atomic storage
+
+- **Jobs**: `register_job(task, token, job_id, model)` needs a live lease; `update_job(job_id, status,
+  usage, cost_usd)` records progress. Statuses follow the Meta Model API's background responses
+  (`queued`, `in_progress`, `completed`, `failed`, `cancelled`, `incomplete`) plus `cancel_requested`,
+  which Tessera sets when a lease lapses or a task is cancelled. A job reported `cancelled` under the
+  live lease returns its task as a failure (§5.3). Whoever runs the model lane polls Meta and reports
+  back; Tessera itself never calls a model.
+- **Records**: `put_record(store, key, value, expected_version)` writes version `head + 1` only if the
+  head is still `expected_version` (`None` means the key must not exist); otherwise `version_conflict`
+  with the current version. Every version is kept (`record_history`); `get_record` reads the head or a
+  given version. `put_records` applies a batch in one transaction: all writes or none.
+- **Blobs**: `put_blob(bytes)` stores up to 16 MiB under its SHA-256 and returns it; storing the same
+  bytes again is a no-op. `get_blob` verifies the hash before returning.
+
+## 7. HTTP service
+
+Every write is a POST with `Authorization: Bearer <key>`. A GET on a write path answers 405 and changes
+nothing. Bodies are JSON. Successful bodies are the models in `src/tessera/models.py`.
+
+| Method and path | Body | Success | Needs |
+|---|---|---|---|
+| POST /v1/queues/define | QueueConfig | 200 QueueConfig | admin |
+| GET /v1/queues | | 200 `{queues}` | any key |
+| POST /v1/tasks | TaskSpec | 201 `{task_id}` | key for the queue |
+| GET /v1/tasks/{id}, GET /v1/tasks/{id}/results | | 200 TaskView, `{results}` | key for the queue |
+| POST /v1/tasks/claim | `{queue, worker, kinds?, effect_classes?}` | 200 Lease, or 204 with Retry-After | key for the queue, kind and effect class |
+| POST /v1/tasks/heartbeat | `{task_id, fencing_token}` | 200 Lease | the key that claimed |
+| POST /v1/tasks/submit | `{task_id, fencing_token, output, ok, error}` + `Idempotency-Key` header | 200 Receipt | the key that claimed |
+| POST /v1/tasks/split | `{task_id, fencing_token, children}` | 200 `{children}` | the key that claimed |
+| POST /v1/tasks/cancel | `{task_id, reason}` | 200 TaskView | key with the task's effect class |
+| POST /v1/admin/reap | | 200 `{reaped}` | admin |
+| GET /v1/counts (`?recount=true`) | | 200 `{as_of, queues}` | any key |
+| GET /v1/health | | 200 Health | none |
+| GET /v1/events (`?after=&limit=`) | | 200 `{events}` | admin |
+| POST /v1/jobs, POST /v1/jobs/{id}, GET /v1/jobs (`?task_id=`) | | 201 Job, 200 Job, 200 `{jobs}` | the key that claimed |
+| POST /v1/stores/{store}/records/{key} | `{value, expected_version}` | 200 RecordVersion | key with store scope |
+| POST /v1/stores/batch | `{writes}` | 200 `{records}` | key with store scope |
+| GET /v1/stores/{store}/records/{key} (`?version=`), `/history` | | 200 RecordVersion, `{versions}` | key with store scope |
+| POST /v1/blobs (raw bytes) | | 201 `{sha256, size}` | key with store scope |
+| GET /v1/blobs/{sha256} | | 200 bytes | key with store scope |
+| POST /mcp | MCP over Streamable HTTP | | any key |
+| GET /board | | 200 HTML, read-only, reads `/v1/counts` | none |
+
+- **Keys**: random, at least 32 bytes; stored only as SHA-256; scoped to queues, kinds, effect classes
+  and scopes (`admin`, `store`); expire after 14 days; revocable; issued from the command line.
+  No key may hold the `public` effect class without a fresh, single-use approval token from Taylor.
+- **Limits**: 60 claims a minute per key, then 429 with `Retry-After`. Throttled and empty answers
+  carry `Retry-After` plus the queue's heartbeat interval.
+- **MCP**: tools `claim`, `heartbeat`, `submit` and `split` with typed input and output schemas,
+  behind the same keys. Tool results carry the same JSON as the HTTP bodies.
+- **Hygiene**: no key, token or credential appears in any response, page or log. CORS allows only
+  listed origins, never `*`. Pages carry no instructions aimed at visiting agents.
+
+## 8. Errors
+
+Errors are `application/problem+json`: `{"type": "about:blank", "title", "status", "detail", "code"}`,
+plus `current_version` for `version_conflict`.
+
+| Code | Status | When |
+|---|---|---|
+| `invalid_request` | 400 | Bad body, unknown field, limit exceeded |
+| `unauthorized` | 401 | No key, or an unknown, expired or revoked key |
+| `forbidden` | 403 | The key's scope doesn't cover the queue, kind, effect class or store |
+| `not_found` | 404 | Unknown queue, task, job, record or blob |
+| `method_not_allowed` | 405 | GET (or another method) on a write path |
+| `stale_lease` | 409 | The caller's lease isn't live |
+| `version_conflict` | 409 | Compare-and-set lost |
+| `idempotency_conflict` | 409 | The idempotency key belongs to another task |
+| `rate_limited` | 429 | Over the claim rate |
+| `unavailable` | 503 | Overloaded or shutting down; retry after `Retry-After` |
+
+## 9. Limits
+
+Output 1 MiB per submit; blob 16 MiB; 100 children per split; 4 levels of nesting; 10,000 events per
+page; task ids `^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$`; record keys `^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$`.
+
+## 10. Conformance
+
+| Test | Proves | Applies to |
+|---|---|---|
+| T01 | Keys are required; a key for another queue gets 403 | service |
+| T02 | Writes are POST-only; GET on a write path is 405 and changes nothing | service |
+| T03 | 8 workers race for 1,000 claims; no task is leased twice | every backend |
+| T04 | Missed heartbeats lapse a lease; the task returns with a higher token; heartbeats keep a lease; the hard cap holds | every backend |
+| T05 | The old holder's submit after a re-lease is refused; the new holder's succeeds | every backend |
+| T06 | The third failure dead-letters the task, every attempt logged; backoff stays in bounds | every backend |
+| T07 | The same submit twice stores one result; a key reused for another task is refused | every backend |
+| T08 | Split keeps the parent waiting, then returns it with the children's results | every backend |
+| T09 | After 500 mixed outcomes, counts equal a recount | every backend |
+| T10 | Health reports the database, the reaper's last run and queue depths | every backend |
+| T11 | An MCP client initializes, lists the four tools, claims and submits | service |
+| T12 | Model jobs carry cost; a cancelled job returns its task; a lapse asks jobs to stop | every backend |
+| T13 | 4 workers move 50 tasks through 2 queues: none lost, none doubled, all receipted | every backend |
+| T14 | A restart mid-run loses and doubles nothing | every backend |
+| T15 | Every receipt matches its stored result under §5.4's formula | every backend |
+| T16 | No key appears in responses, pages or logs | service |
+| ST01 to ST04 | Compare-and-set has one winner; history is kept; blobs are content-addressed; batches are atomic | every backend |
+
+`make suite BACKEND=store` runs the suite on the in-process store; `make suite BACKEND=http` runs it on
+the service at `TESSERA_URL` (see `README.md` in this folder). `make suite-stub` proves the suite fails
+against an empty backend. A backend carries real work only when every test that applies to it passes.
