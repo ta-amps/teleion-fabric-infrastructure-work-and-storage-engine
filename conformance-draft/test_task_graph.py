@@ -171,3 +171,15 @@ def test_T19_a_parked_task_wakes_when_its_time_is_up(
     again = backend.claim("q-park-timeout", "w2")
     assert again is not None and again.task_id == task
     assert again.inputs == [{"timed_out": True}]
+
+
+def test_T20_a_child_is_never_broader_than_its_parent(backend: Any, make_queue: Any) -> None:
+    """T20: split may not widen what a task may change (read < write-internal < write-repo)."""
+    make_queue("q-effect")
+    task = backend.enqueue(TaskSpec(queue="q-effect", brief={}, effect_class="read"))
+    lease = backend.claim("q-effect", "w1")
+    assert lease is not None and lease.task_id == task
+    with pytest.raises(InvalidRequest):
+        backend.split(task, lease.fencing_token, [ChildSpec(brief={}, effect_class="write-repo")])
+    kids = backend.split(task, lease.fencing_token, [ChildSpec(brief={}, effect_class="read")])
+    assert backend.task(kids[0]).effect_class == "read"

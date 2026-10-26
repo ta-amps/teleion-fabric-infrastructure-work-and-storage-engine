@@ -39,7 +39,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   updated_at       REAL    NOT NULL,
   pending_deps     INTEGER NOT NULL DEFAULT 0,
   wait_reason      TEXT,
-  wake_at          REAL
+  wake_at          REAL,
+  parked_by        TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_claim ON tasks (queue, state, priority DESC, created_at, id);
 CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks (parent_id);

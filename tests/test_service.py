@@ -328,3 +328,43 @@ def test_park_and_resume_follow_the_holder_and_queue_rules(
     again = client.post("/v1/tasks/resume", json=resume, headers=auth(keys["a2"]))
     assert again.status_code == 409 and again.json()["code"] == "invalid_state"
     assert store.task(task).state == "ready"
+
+
+def test_the_key_that_parked_a_task_may_not_resume_it(
+    service: tuple[TestClient, Store, Keys],
+) -> None:
+    """Outside input comes from someone else: an agent that parks to wait for a person can't
+    answer itself. Admin keys may; every resume records the key that made it."""
+    client, store, keys = service
+    task = enqueue(client, keys)
+    lease = client.post(
+        "/v1/tasks/claim", json={"queue": "q-a", "worker": "w"}, headers=auth(keys["a"])
+    ).json()
+    park = {"task_id": task, "fencing_token": lease["fencing_token"], "reason": "need approval"}
+    assert client.post("/v1/tasks/park", json=park, headers=auth(keys["a"])).status_code == 200
+    resume = {"task_id": task, "input": {"approved": True}}
+    resp = client.post("/v1/tasks/resume", json=resume, headers=auth(keys["a"]))
+    assert resp.status_code == 403
+    assert client.post("/v1/tasks/resume", json=resume, headers=auth(keys["a2"])).status_code == 200
+    resumed = [e for e in store.events() if e.type == "resumed" and e.task_id == task]
+    assert len(resumed) == 1 and resumed[0].detail.get("by_key")
+    assert store.task(task).parked_by is None
+
+
+def test_split_children_need_an_effect_class_the_key_holds(
+    service: tuple[TestClient, Store, Keys],
+) -> None:
+    client, _, keys = service
+    task = enqueue(client, keys)
+    lease = client.post(
+        "/v1/tasks/claim", json={"queue": "q-a", "worker": "w"}, headers=auth(keys["a"])
+    ).json()
+    body = {
+        "task_id": task,
+        "fencing_token": lease["fencing_token"],
+        "children": [{"brief": {}, "effect_class": "write-repo"}],
+    }
+    assert client.post("/v1/tasks/split", json=body, headers=auth(keys["a"])).status_code in {
+        400,
+        403,
+    }

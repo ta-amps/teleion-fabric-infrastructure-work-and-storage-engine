@@ -21,6 +21,7 @@ class GraphOps(StoreBase):
         now: float,
         *,
         event: str,
+        by: str | None = None,
     ) -> None:
         seq = c.execute(
             "SELECT COALESCE(MAX(seq), 0) + 1 AS n FROM task_inputs WHERE task_id = ?",
@@ -31,13 +32,16 @@ class GraphOps(StoreBase):
             (task["id"], seq, canonical_json(value), now),
         )
         c.execute(
-            "UPDATE tasks SET state = 'ready', wait_reason = NULL, wake_at = NULL, not_before = ?,"
-            " updated_at = ? WHERE id = ?",
+            "UPDATE tasks SET state = 'ready', wait_reason = NULL, wake_at = NULL, parked_by = NULL,"
+            " not_before = ?, updated_at = ? WHERE id = ?",
             (now, now, task["id"]),
         )
         self._move(c, task["queue"], "waiting", "ready")
         # The input itself stays out of the event log; only its position is recorded.
-        self._event(c, event, now, task_id=task["id"], queue=task["queue"], detail={"input": seq})
+        detail: dict[str, Any] = {"input": seq}
+        if by is not None:
+            detail["by_key"] = by
+        self._event(c, event, now, task_id=task["id"], queue=task["queue"], detail=detail)
 
     def _dependency_resolved(self, c: sqlite3.Connection, task_id: str, now: float) -> None:
         """A task reached done, dead or cancelled: release whatever was waiting on it."""

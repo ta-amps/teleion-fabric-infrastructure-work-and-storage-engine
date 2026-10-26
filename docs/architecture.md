@@ -213,6 +213,8 @@ references.
 | I15 | A dependent is never claimable before each dependency is done, dead or cancelled, and then it sees their states and outputs; unknown dependencies are refused | `test_T17_a_dependent_waits_for_every_dependency`, `test_T17_failed_or_cancelled_dependencies_still_release`, `test_T17_dependencies_must_exist_and_resolved_ones_cost_nothing` |
 | I16 | Split children with `after` run only after the siblings they name | `test_T18_children_can_run_in_waves` |
 | I17 | Parking counts no failure; a parked task is claimable only after resume or its wake time, and its next lease carries its inputs; only the live lease may park | `test_T19_park_waits_for_input_without_a_failure`, `test_T19_a_stale_holder_cannot_park`, `test_T19_a_parked_task_wakes_when_its_time_is_up` |
+| I18 | A split child is never broader than its parent (read < write-internal < write-repo < public) | `test_T20_a_child_is_never_broader_than_its_parent`, `test_split_children_need_an_effect_class_the_key_holds` |
+| I19 | The key that parked a task may not resume it, and every resume records the resuming key | `test_the_key_that_parked_a_task_may_not_resume_it` |
 
 ## Trust boundaries
 
@@ -221,7 +223,8 @@ references.
 | Internet to edge | TLS; cookies stripped; writes never cached | `deploy/cloudflare/worker.js` |
 | Edge to origin | With `TESSERA_EDGE_SECRET` set, every request except the health checks must carry a matching `x-edge-auth` (constant-time compare), else 403 | `service.py`, tested by `test_the_edge_lock` |
 | Caller to service | Bearer key required; scoped to queues (globs), kinds, effect classes and `admin` or `store`; 60 claims a minute per key; writes are POST-only | `service.py`, `_keys.py`, tests T01, T02 and the service tests |
-| Lease holder to task | Heartbeat, submit and split need the claiming key and the current fencing token | `_tasks.py`, `service.py` |
+| Lease holder to task | Heartbeat, submit, split and park need the claiming key and the current fencing token; split never widens the effect class | `_tasks.py`, `service.py` |
+| Parker to resumer | The key that parked a task may not resume it; every resume records its key | `_tasks.py`, `service.py` |
 | Service to model provider | None: Tessera holds no model key and makes no model call | by construction; `MODEL_API_KEY` is only for workers |
 
 Keys are random 32-byte secrets, printed once when issued and stored only as SHA-256. They expire after 14 days

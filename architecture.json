@@ -443,6 +443,21 @@
       "checked_by": [
         "tests/test_service.py::test_public_effect_tasks_never_reach_agents"
       ]
+    },
+    {
+      "id": "parker-resumer",
+      "between": [
+        "parking key",
+        "resuming key"
+      ],
+      "rule": "Outside input comes from someone else: the parking key may not resume; admin keys may; resumes are recorded",
+      "enforced_by": [
+        "src/tessera/_tasks.py",
+        "src/tessera/service.py"
+      ],
+      "checked_by": [
+        "tests/test_service.py::test_the_key_that_parked_a_task_may_not_resume_it"
+      ]
     }
   ],
   "invariants": [
@@ -597,6 +612,23 @@
         "conformance-draft/test_task_graph.py::test_T19_park_waits_for_input_without_a_failure",
         "conformance-draft/test_task_graph.py::test_T19_a_stale_holder_cannot_park",
         "conformance-draft/test_task_graph.py::test_T19_a_parked_task_wakes_when_its_time_is_up"
+      ]
+    },
+    {
+      "id": "I18",
+      "statement": "A split child is never broader than its parent (read < write-internal < write-repo < public)",
+      "enforced_by": "store",
+      "checked_by": [
+        "conformance-draft/test_task_graph.py::test_T20_a_child_is_never_broader_than_its_parent",
+        "tests/test_service.py::test_split_children_need_an_effect_class_the_key_holds"
+      ]
+    },
+    {
+      "id": "I19",
+      "statement": "The key that parked a task may not resume it, and every resume records the resuming key",
+      "enforced_by": "service",
+      "checked_by": [
+        "tests/test_service.py::test_the_key_that_parked_a_task_may_not_resume_it"
       ]
     }
   ],

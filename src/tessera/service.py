@@ -432,6 +432,12 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
         parent_queue = store.task(body.task_id).queue
         for child in body.children:
             gate.queue(grant, child.queue or parent_queue)
+            if (
+                child.effect_class
+                and not grant.is_admin
+                and child.effect_class not in grant.effect_classes
+            ):
+                raise Forbidden("this key may not create tasks of that effect class")
         return {"children": store.split(body.task_id, body.fencing_token, body.children)}
 
     @app.post("/v1/tasks/park")
@@ -445,7 +451,8 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
     @app.post("/v1/tasks/resume")
     def resume(body: ResumeBody, grant: KeyGrant = key) -> dict[str, Any]:
         gate.queue(grant, store.task(body.task_id).queue)
-        return store.resume(body.task_id, body.input).model_dump(mode="json")
+        view = store.resume(body.task_id, body.input, by=grant.key_id, allow_self=grant.is_admin)
+        return view.model_dump(mode="json")
 
     @app.post("/v1/tasks/cancel")
     def cancel(body: CancelBody, grant: KeyGrant = key) -> dict[str, Any]:

@@ -190,7 +190,9 @@ def build_mcp(
         grant = await current_grant()
         queue = (await run(lambda: store.task(task_id))).queue
         await run(lambda: gate.queue(grant, queue))
-        view = await run(lambda: store.resume(task_id, input))
+        view = await run(
+            lambda: store.resume(task_id, input, by=grant.key_id, allow_self=grant.is_admin)
+        )
         return view.model_dump(mode="json")
 
     security = TransportSecuritySettings(

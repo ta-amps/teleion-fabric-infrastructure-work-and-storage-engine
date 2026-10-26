@@ -26,6 +26,7 @@ TASK_COLUMNS_V2 = (
     ("pending_deps", "INTEGER NOT NULL DEFAULT 0"),
     ("wait_reason", "TEXT"),
     ("wake_at", "REAL"),
+    ("parked_by", "TEXT"),
 )
 PRAGMAS = ("journal_mode=WAL", "synchronous=NORMAL", "foreign_keys=ON", "busy_timeout=30000")
 
@@ -222,6 +223,7 @@ class StoreBase:
                 )
             ],
             wake_at=row["wake_at"],
+            parked_by=row["parked_by"],
         )
 
     def _jitter(self) -> float:

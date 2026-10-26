@@ -12,6 +12,8 @@ JobStatus = Literal[
     "queued", "in_progress", "completed", "failed", "cancelled", "incomplete", "cancel_requested"
 ]
 TERMINAL_STATES: frozenset[str] = frozenset({"done", "dead", "cancelled"})
+# Effect classes from narrowest to broadest; a split child may not be broader than its parent.
+EFFECT_RANK: dict[str, int] = {"read": 0, "write-internal": 1, "write-repo": 2, "public": 3}
 # Why a task is `waiting`: for its split children, for the tasks it depends on, or parked for input.
 WaitReason = Literal["children", "dependencies", "input"]
 MAX_DEPENDENCIES = 100
@@ -143,6 +145,7 @@ class TaskView(_Model):
     pending_deps: int = 0
     depends_on: list[str] = Field(default_factory=list)
     wake_at: float | None = None
+    parked_by: str | None = None
 
 
 class QueueCounts(_Model):

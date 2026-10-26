@@ -100,13 +100,16 @@ stateDiagram-v2
   effect class and priority default to the parent's), ends the parent's lease and moves the parent to
   `waiting` with `pending_children` = the number of children. Nesting stops at 4 levels. A child's
   `after` lists indexes of earlier children it depends on, so a split can run in ordered waves; an index
-  that isn't earlier is `invalid_request`.
+  that isn't earlier is `invalid_request`. A child's effect class may not be broader than its parent's
+  (`read` < `write-internal` < `write-repo` < `public`): splitting never widens what work may change.
 - **park(task, token, reason, resume_within?)**: needs the live lease. Ends it without counting a failure,
   asks the task's running model jobs to stop, and moves the task to `waiting` for `input`. With
   `resume_within` (up to 30 days) the reaper brings it back after that many seconds with the input
   `{"timed_out": true}`.
 - **resume(task, input)**: only for a parked task (otherwise `invalid_state`). Stores the input (up to
-  1 MiB) and makes the task `ready`. Its next lease carries every input it has received, in order.
+  1 MiB) and makes the task `ready`. Its next lease carries every input it has received, in order. The
+  task records the key that parked it; that key may not resume it (`forbidden`), so outside input comes
+  from someone else. Admin keys may. The `resumed` event records the resuming key.
 - **Leases** carry the brief plus `children` (after a split), `dependencies` and `inputs`: each child or
   dependency with its state and latest successful output. A dead or cancelled dependency still releases
   its dependent, which sees what happened and decides.
@@ -187,9 +190,9 @@ nothing. Bodies are JSON. Successful bodies are the models in `src/tessera/model
 | POST /v1/tasks/claim | `{queue, worker, kinds?, effect_classes?}` | 200 Lease, or 204 with Retry-After | key for the queue, kind and effect class |
 | POST /v1/tasks/heartbeat | `{task_id, fencing_token}` | 200 Lease | the key that claimed |
 | POST /v1/tasks/submit | `{task_id, fencing_token, output, ok, error}` + `Idempotency-Key` header | 200 Receipt | the key that claimed |
-| POST /v1/tasks/split | `{task_id, fencing_token, children}` | 200 `{children}` | the key that claimed |
+| POST /v1/tasks/split | `{task_id, fencing_token, children}` | 200 `{children}` | the key that claimed, holding each child's effect class |
 | POST /v1/tasks/park | `{task_id, fencing_token, reason, resume_within?}` | 200 TaskView | the key that claimed |
-| POST /v1/tasks/resume | `{task_id, input}` | 200 TaskView | key for the task's queue |
+| POST /v1/tasks/resume | `{task_id, input}` | 200 TaskView | key for the task's queue, other than the key that parked it |
 | POST /v1/tasks/cancel | `{task_id, reason}` | 200 TaskView | key with the task's effect class |
 | POST /v1/admin/reap | | 200 `{reaped}` | admin |
 | GET /v1/counts (`?recount=true`) | | 200 `{as_of, queues}` | any key |
@@ -264,6 +267,8 @@ task; parks up to 30 days; 4 levels of nesting; 10,000 events per page; task ids
 | T17 | A dependent waits for every dependency, then carries their results; dead or cancelled dependencies release it; unknown ones are refused | every backend |
 | T18 | Children with `after` run in waves | every backend |
 | T19 | Park ends a lease with no failure; resume brings the task back with its input; only the live lease may park; a parked task wakes when its time is up | every backend |
+| T20 | A split child is never broader than its parent | every backend |
+| T21 | The key that parked a task may not resume it; the resume records its key | service |
 | ST01 to ST04 | Compare-and-set has one winner; history is kept; blobs are content-addressed; batches are atomic | every backend |
 
 `make suite BACKEND=store` runs the suite on the in-process store; `make suite BACKEND=http` runs it on

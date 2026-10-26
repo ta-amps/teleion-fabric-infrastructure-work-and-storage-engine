@@ -10,8 +10,16 @@ from typing import Any
 
 from tessera._base import new_id
 from tessera._graph import GraphOps
-from tessera.errors import IdempotencyConflict, InvalidRequest, InvalidState, NotFound, StaleLease
+from tessera.errors import (
+    Forbidden,
+    IdempotencyConflict,
+    InvalidRequest,
+    InvalidState,
+    NotFound,
+    StaleLease,
+)
 from tessera.models import (
+    EFFECT_RANK,
     MAX_DEPENDENCIES,
     MAX_PARK_SECONDS,
     TERMINAL_STATES,
@@ -402,6 +410,13 @@ class TaskOps(GraphOps):
             row, stale = self._live_lease(c, task_id, fencing_token, now)
             if row is not None:
                 task = self._task_row(c, task_id)
+                for index, child in enumerate(children):
+                    effect = child.effect_class or task["effect_class"]
+                    if EFFECT_RANK[effect] > EFFECT_RANK[task["effect_class"]]:
+                        raise InvalidRequest(
+                            f"child {index}: effect class {effect!r} is broader than the parent's "
+                            f"{task['effect_class']!r}"
+                        )
                 if self._depth(c, task_id) >= MAX_DEPTH:
                     raise InvalidRequest(f"tasks may nest at most {MAX_DEPTH} levels deep")
                 ids = []
@@ -473,8 +488,8 @@ class TaskOps(GraphOps):
                 self._cancel_jobs(c, task_id, now)
                 c.execute(
                     "UPDATE tasks SET state = 'waiting', wait_reason = 'input', wake_at = ?,"
-                    " updated_at = ? WHERE id = ?",
-                    (wake, now, task_id),
+                    " parked_by = ?, updated_at = ? WHERE id = ?",
+                    (wake, row["key_id"], now, task_id),
                 )
                 self._move(c, task["queue"], "leased", "waiting")
                 self._event(
@@ -492,9 +507,17 @@ class TaskOps(GraphOps):
             raise StaleLease(stale or "lease is not live")
         return view
 
-    def resume(self, task_id: str, value: dict[str, Any]) -> TaskView:
+    def resume(
+        self,
+        task_id: str,
+        value: dict[str, Any],
+        *,
+        by: str | None = None,
+        allow_self: bool = False,
+    ) -> TaskView:
         """Give a parked task the input it waited for; it is ready again and its next claim carries
-        every input it has received, in order."""
+        every input it has received, in order. `by` is the resuming key: the key that parked the
+        task may not resume it (outside input comes from someone else) unless `allow_self`."""
         try:
             text = canonical_json(value)
         except (TypeError, ValueError) as exc:
@@ -506,7 +529,9 @@ class TaskOps(GraphOps):
             task = self._task_row(c, task_id)
             if task["state"] != "waiting" or task["wait_reason"] != "input":
                 raise InvalidState(f"task {task_id} is not parked (state {task['state']})")
-            self._wake(c, task, value, now, event="resumed")
+            if by is not None and by == task["parked_by"] and not allow_self:
+                raise Forbidden("the key that parked this task may not resume it")
+            self._wake(c, task, value, now, event="resumed", by=by)
             return self._task_view(c, task_id)
 
     # -- cancel and reap ----------------------------------------------------------------------

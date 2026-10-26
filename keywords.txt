@@ -37,3 +37,4 @@ llms-full.txt
 dependencies: depends_on, dependency
 park: parked, resume
 waves: after
+effect class: effect_class, EFFECT_RANK
