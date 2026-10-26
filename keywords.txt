@@ -28,3 +28,9 @@ conformance suite: conformance-draft
 SPEC
 seed: seed.py
 SQLite: WAL
+architecture.json: check_architecture
+invariants: invariant
+trust boundary: boundaries
+layering: import_rules
+generalizing: extension point
+llms-full.txt

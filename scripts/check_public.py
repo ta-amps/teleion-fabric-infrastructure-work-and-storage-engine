@@ -2,19 +2,22 @@
 """Fail if a file headed for a public repo holds a secret or a private name.
 
 Scans the files git tracks (or the working tree before `git init`) for:
-  * credentials: GitHub, Meta Model API, Hugging Face, AWS, Slack and OpenAI-style keys, private keys;
-  * private names: products and accounts that must not be linked from this project. Only SHA-256 hashes
-    of those names live here, so this file never leaks them itself.
+  * credentials: GitHub, Meta Model API, Hugging Face, AWS, Slack and OpenAI-style keys, worker keys,
+    private keys;
+  * private names: products, accounts and domains this repo must not name. Only SHA-256 hashes of them
+    are stored, in `private-names.sha256` next to this script, so the list never leaks the names.
 
 Usage: python3 scripts/check_public.py [ROOT]
+       python3 scripts/check_public.py --hash      (prompts for a name, prints the line to add)
 Exit 0 when clean, 1 with a report otherwise. Matches are masked in the report.
 A line ending in the marker `check-public: allow` is skipped; so are paths listed in
-`.check-public-allow` (one glob per line).
+`.check-public-allow` (one glob per line). Stdlib only; copy it into any repo.
 """
 
 from __future__ import annotations
 
 import fnmatch
+import getpass
 import hashlib
 import re
 import subprocess
@@ -25,7 +28,7 @@ SECRET_PATTERNS: dict[str, re.Pattern[str]] = {
     "github token": re.compile(r"\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,})"),
     "meta model api key": re.compile(r"\bLLM_[A-Za-z0-9_\-]{20,}"),
     "hugging face token": re.compile(r"\bhf_[A-Za-z0-9]{30,}"),
-    "tessera key": re.compile(r"\btsk_[A-Za-z0-9_\-]{30,}"),
+    "worker key": re.compile(r"\btsk_[A-Za-z0-9_\-]{30,}"),
     "aws access key": re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"),
     "slack token": re.compile(r"\bxox[abposr]-[A-Za-z0-9-]{10,}"),
     "openai-style key": re.compile(r"\bsk-(?:ant-|proj-)?[A-Za-z0-9_\-]{24,}"),
@@ -35,29 +38,8 @@ SECRET_PATTERNS: dict[str, re.Pattern[str]] = {
     ),
 }
 
-# SHA-256 of lowercased private names (products, accounts and domains kept out of public repos).
-PRIVATE_NAME_HASHES = frozenset(
-    {
-        "c56a6b2453ec7e601ec43eb9eff3dc57639b189b4047f36c854bbc97d3e31611",
-        "250cbac9037ac2bf5b7ae28410f9a7fc5a5d14bdd0c2208a1fb78dd94d23b84f",
-        "395db1170c8432dc6903d3e0f0073876afa2dc7a264a5da1897386ace3a72c14",
-        "f2a94c3d85aa8aa25172ed8a044651185719c5ef2ebe6704aba68e31a696ca72",
-        "52bba447c070c819244cd5cb783cafbc9df4f1036f48a92f168968e4a0792df1",
-        "01f029eec716e1a97c4dc5c948fd9df7f486f18b92be4fd6c23df75d38feab30",
-        "14522cf6de1e7deb81a88d54ca15624bf3a23a5c0a633b4349caf36673c9f70e",
-        "3b12ea4035d39940ea4dfa3d7345fdeaf17d6658bfe0060a48e3007237364a9d",
-        "253c0ed8af21c5f8fce99b5e1efa92711d5833a979f7ad7e08472f661e27ec54",
-        "c13c416a27186d4df2a0fa8840e922d6ce63fe66603ff3c0658c9bd6ce63a59d",
-        "6933746bf5e89d143a03dd8e3a7c79aba711d634efd0ef724629191ab38fcf5d",
-        "85b44b3af2ad97c8be1db24cf7a69b297cdd4d1748be608b7e0851b396ea47d0",
-        "6bca81d7bdcf9fb6f98f4c4653c323f7106125cd07d7efd2aa05e2e21172c02c",
-        "c33ad02d415db403ff4336eb3cd3de97c05f144cfe50816b450c3968bc187580",
-        "6ccccbd9ccb22840d21fc81a2eb745f2dd020430472c4bf872287606b2a609a2",
-        "4dac5ef5a91ee7822c105e3649a3869b48cbb65c6294e428f17c4e38f93fec4b",
-        "434e1978f5a7214f757b43cd50483a75f0ebd2132f870de0a515c0a853cfe8f2",
-    }
-)
-
+HASH_FILE = Path(__file__).resolve().with_name("private-names.sha256")
+HEX64 = re.compile(r"[0-9a-f]{64}")
 WORD = re.compile(r"[a-z0-9]+")
 COMPOUND = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)+")
 SKIP_DIRS = {
@@ -71,8 +53,6 @@ SKIP_DIRS = {
     ".ruff_cache",
     ".pytest_cache",
     "private",
-    ".tessera",
-    ".shamash",
     "test-results",
 }
 SKIP_SUFFIXES = {
@@ -97,6 +77,21 @@ SKIP_SUFFIXES = {
     ".lock",
 }
 ALLOW_MARKER = "check-public: allow"
+
+
+def load_hashes(path: Path = HASH_FILE) -> frozenset[str]:
+    """Hashes from a file of one SHA-256 hex digest per line; `#` starts a comment."""
+    if not path.exists():
+        return frozenset()
+    found = set()
+    for line in path.read_text(encoding="utf-8").splitlines():
+        value = line.split("#", 1)[0].strip().lower()
+        if HEX64.fullmatch(value):
+            found.add(value)
+    return frozenset(found)
+
+
+PRIVATE_NAME_HASHES = load_hashes()
 
 
 def tracked_files(root: Path) -> list[Path]:
@@ -133,13 +128,13 @@ def mask(text: str) -> str:
     return text[:4] + "…" + f"({len(text)} chars)"
 
 
-def private_names(line: str) -> bool:
+def private_names(line: str, hashes: frozenset[str] = PRIVATE_NAME_HASHES) -> bool:
     lowered = line.lower()
     tokens = set(WORD.findall(lowered)) | set(COMPOUND.findall(lowered))
-    return any(hashlib.sha256(t.encode()).hexdigest() in PRIVATE_NAME_HASHES for t in tokens)
+    return any(hashlib.sha256(t.encode()).hexdigest() in hashes for t in tokens)
 
 
-def scan(root: Path) -> list[str]:
+def scan(root: Path, hashes: frozenset[str] = PRIVATE_NAME_HASHES) -> list[str]:
     findings: list[str] = []
     globs = allow_globs(root)
     for path in tracked_files(root):
@@ -156,14 +151,32 @@ def scan(root: Path) -> list[str]:
             for kind, pattern in SECRET_PATTERNS.items():
                 for match in pattern.finditer(line):
                     findings.append(f"{rel}:{number}: {kind}: {mask(match.group(0))}")
-            if private_names(line):
+            if private_names(line, hashes):
                 findings.append(
-                    f"{rel}:{number}: private name (see the name map in your private notes)"
+                    f"{rel}:{number}: private name (compare with your private name list)"
                 )
     return findings
 
 
+def hash_line(name: str) -> str:
+    """The line to add to private-names.sha256 for one name. Names match whole words or hyphenated words."""
+    token = name.strip().lower()
+    if not (WORD.fullmatch(token) or COMPOUND.fullmatch(token)):
+        raise ValueError(
+            "use one word or one hyphenated word (letters and digits), for example acme or acme-labs"
+        )
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
 def main(argv: list[str]) -> int:
+    if len(argv) > 1 and argv[1] == "--hash":
+        name = getpass.getpass("Name (hidden): ") if sys.stdin.isatty() else sys.stdin.readline()
+        try:
+            print(hash_line(name))
+        except ValueError as exc:
+            print(f"check_public: {exc}", file=sys.stderr)
+            return 2
+        return 0
     root = Path(argv[1] if len(argv) > 1 else ".").resolve()
     findings = scan(root)
     if findings:
@@ -171,7 +184,7 @@ def main(argv: list[str]) -> int:
         for f in findings:
             print("  " + f, file=sys.stderr)
         return 1
-    print(f"check_public: clean ({root.name})")
+    print(f"check_public: clean ({root.name}, {len(PRIVATE_NAME_HASHES)} private names)")
     return 0
 
 

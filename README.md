@@ -10,21 +10,35 @@ idempotent submits, dead letters, receipts, one counts record that every board r
 changes only by compare-and-set.
 
 Tessera is a general work backend: any project defines queues, issues one key per agent, and lets
-agents claim, split and finish tasks over HTTP or MCP. Its first project is
-[Shamash](https://github.com/ta-amps/shamash), our entry in the Meta Global AI Developer Hackathon,
-whose research, drafting, review and build work Muse agents pick up from Tessera's queues. Shared
-context lives in [hackathon-context](https://github.com/ta-amps/hackathon-context).
+agents claim, split and finish tasks over HTTP, MCP or plain web forms. It knows nothing about any
+domain and never calls a model itself. Its first project is [Shamash](https://github.com/ta-amps/shamash),
+our entry in the Meta Global AI Developer Hackathon, whose research, drafting, review and build work Muse
+agents pick up from Tessera's queues.
+
+## Review it
+
+| Read | For |
+|---|---|
+| [docs/summary.md](docs/summary.md) | One page: the problem, the approach, what works, the claims |
+| [docs/architecture.md](docs/architecture.md) | Components, data, task states, flows, invariants, trust boundaries, failure handling |
+| [docs/setup.md](docs/setup.md) | Install, run, connect agents, every setting, deploy, troubleshooting |
+| [docs/comparison.md](docs/comparison.md) | How it differs from established queues and workflow engines, with sources |
+| [docs/generalizing.md](docs/generalizing.md) | What is domain-neutral, the extension points, a worked example in another domain |
+| [docs/decisions.md](docs/decisions.md), [docs/glossary.md](docs/glossary.md) | Why it is built this way; one term, one meaning |
+| [docs/review.md](docs/review.md) | What we most want checked, claims to try to break, a prompt for model reviewers |
+| [architecture.json](architecture.json) | The architecture as data; `make architecture` proves it still matches the code |
+| [llms-full.txt](llms-full.txt) | Everything above in one file, for review tools and models |
 
 ## Status (Oct 26, 2026)
 
 | Part | State |
 |---|---|
 | [SPEC.md](conformance-draft/SPEC.md), the contract | Draft v0.1, waiting for Taylor's approval (L1) |
-| Conformance suite: T01 to T16, ST01 to ST04 | Passes on the in-process store, and over HTTP against a real local service with real keys (`make suite-http-local`) |
+| Conformance suite: T01 to T16, ST01 to ST04 | Passes on the in-process store; over HTTP against a real local service with real keys, 23 pass and 3 are skipped because they need a fake clock (T04 hard cap, T06 backoff) or a restart hook (T14) (`make suite-http-local`) |
 | Store, CLI and HTTP client | Working |
 | HTTP service, keys, MCP door, agent pages, web forms, reaper | Working (briefs L6 to L9, L12, L14, L15, L17, L24, built by Claude Code on Oct 26; see `briefs/done/`) |
 | Local stack behind the real Cloudflare edge code, optional public tunnel | Working (`make dev`, `make dev TUNNEL=1`) |
-| Hosted on Fly.io behind Cloudflare | Configured, not deployed (`deploy/`, brief L20) |
+| Hosted on Fly.io behind Cloudflare | Configured, not deployed (`deploy/bootstrap-hosting.sh`, brief L20) |
 | Making-of export, model-job runner, receipts gate, board v2, soak, Shamash on the service | Open briefs for Muse Code: L11, L13, L16, L18, L19, L21, L23 |
 
 ## Connect your agents (local, no accounts needed)
@@ -90,11 +104,14 @@ requests that came through the edge.
 conformance-draft/   SPEC.md and the suite (draft until Taylor locks it)
 src/tessera/         store (_base, _tasks, _jobs, _observe, _storage, _keys), service, mcp_door, pages, client, cli
 tests/               service, tools, guard-hook and leak-scan tests
-scripts/             dev_stack.sh, suite_http_local.py, check_public.py
+scripts/             dev_stack.sh, suite_http_local.py, and the shared checks: check_public.py,
+                     build_index.py, check_architecture.py
 tools/               seed.py, load_briefs.py, muse_worker.py
 briefs/              open briefs for Muse Code; briefs/done/ for finished ones
-docs/                architecture, operations, making-of
-deploy/              Cloudflare edge Worker and Fly.io configs
+docs/                summary, architecture, setup, comparison, generalizing, decisions, glossary,
+                     review, operations, making-of
+deploy/              Cloudflare edge Worker, Fly.io configs, bootstrap-hosting.sh and hosting.env
+architecture.json    the architecture as data, checked by `make architecture`
 harness/             work-harness design and starting config
 ```
 

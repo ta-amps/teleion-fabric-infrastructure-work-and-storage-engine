@@ -2,7 +2,7 @@
 // Deploy only with Taylor's approval, through the GitHub `deploy` workflow (part `edge`) or by hand:
 //   npx wrangler@4.149.0 deploy --config deploy/cloudflare/wrangler.jsonc
 // EDGE_SECRET is a secret, never a var: `npx wrangler@4.149.0 secret put EDGE_SECRET --config deploy/cloudflare/wrangler.jsonc`
-// (the bootstrap script in hackathon-context sets it to the same value as TESSERA_EDGE_SECRET on Fly).
+// (deploy/bootstrap-hosting.sh sets it to the same value as TESSERA_EDGE_SECRET on Fly).
 {
   "name": "tessera",
   "main": "worker.js",

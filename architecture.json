@@ -1,0 +1,894 @@
+{
+  "$schema": "https://github.com/ta-amps/hackathon-context/blob/main/agents/schemas/architecture.schema.json",
+  "schema_version": 1,
+  "name": "tessera",
+  "summary": "A single-node atomic work queue and atomic store for AI agent swarms. Many agents share one backlog safely: leases with heartbeats and a hard cap, fencing tokens, idempotent submits with receipts, retries then dead letters, split and merge, one counts record, an append-only event log, and versioned records with compare-and-set. Agents connect over HTTP, MCP, web forms or a CLI. It knows nothing about any domain and never calls a model itself.",
+  "status": {
+    "as_of": "2026-10-26",
+    "stage": "prototype",
+    "notes": "Store, CLI, client, HTTP service, keys, MCP door and agent pages built and passing the suite over HTTP; hosting configured, not deployed; spec still a draft."
+  },
+  "docs": {
+    "summary": "docs/summary.md",
+    "architecture": "docs/architecture.md",
+    "setup": "docs/setup.md",
+    "comparison": "docs/comparison.md",
+    "generalizing": "docs/generalizing.md",
+    "decisions": "docs/decisions.md",
+    "glossary": "docs/glossary.md",
+    "review": "docs/review.md",
+    "spec": "conformance-draft/SPEC.md",
+    "operations": "docs/operations.md",
+    "making_of": "docs/making-of.md"
+  },
+  "read_order": [
+    "README.md",
+    "docs/summary.md",
+    "docs/architecture.md",
+    "conformance-draft/SPEC.md",
+    "docs/setup.md",
+    "docs/comparison.md",
+    "docs/generalizing.md",
+    "docs/decisions.md",
+    "docs/glossary.md",
+    "docs/review.md",
+    "docs/operations.md",
+    "docs/making-of.md",
+    "AGENTS.md"
+  ],
+  "commands": {
+    "setup": "make setup",
+    "check": "make check",
+    "test": "make test",
+    "suite": "make suite BACKEND=store",
+    "suite_stub": "make suite-stub",
+    "suite_http": "make suite-http-local",
+    "run": "make dev",
+    "run_public": "make dev TUNNEL=1",
+    "seed": "make seed",
+    "architecture": "make architecture",
+    "index": "make index"
+  },
+  "components": [
+    {
+      "id": "models",
+      "title": "Models",
+      "path": "src/tessera/models.py",
+      "kind": "library",
+      "domain": "neutral",
+      "role": "Pydantic records that cross the boundary: what callers send and what every backend returns"
+    },
+    {
+      "id": "errors",
+      "title": "Errors",
+      "path": "src/tessera/errors.py",
+      "kind": "library",
+      "domain": "neutral",
+      "role": "One exception per problem code, each mapped to one HTTP status"
+    },
+    {
+      "id": "receipts",
+      "title": "Receipts",
+      "path": "src/tessera/receipts.py",
+      "kind": "library",
+      "domain": "neutral",
+      "role": "Canonical JSON and the receipt hash"
+    },
+    {
+      "id": "clock",
+      "title": "Clock",
+      "path": "src/tessera/clock.py",
+      "kind": "library",
+      "domain": "neutral",
+      "role": "Time source; tests inject a fake clock"
+    },
+    {
+      "id": "store",
+      "title": "Store",
+      "kind": "library",
+      "domain": "neutral",
+      "path": [
+        "src/tessera/store.py",
+        "src/tessera/_base.py",
+        "src/tessera/_tasks.py",
+        "src/tessera/_jobs.py",
+        "src/tessera/_keys.py",
+        "src/tessera/_observe.py",
+        "src/tessera/_storage.py",
+        "src/tessera/schema.sql"
+      ],
+      "role": "The reference backend and the only place state changes: queues, the five verbs, retries, split, model jobs, keys, counts, events, health, records and blobs, each operation one IMMEDIATE transaction",
+      "depends_on": [
+        "models",
+        "errors",
+        "receipts",
+        "clock"
+      ],
+      "interfaces": [
+        "library"
+      ],
+      "tests": [
+        "conformance-draft/test_queue_semantics.py",
+        "conformance-draft/test_storage.py",
+        "conformance-draft/test_model_jobs.py"
+      ]
+    },
+    {
+      "id": "backend",
+      "title": "Backend protocol",
+      "path": "src/tessera/backend.py",
+      "kind": "library",
+      "domain": "neutral",
+      "role": "The contract every backend meets: Store, Client and any adapter",
+      "depends_on": [
+        "models"
+      ]
+    },
+    {
+      "id": "client",
+      "title": "HTTP client",
+      "path": "src/tessera/client.py",
+      "kind": "library",
+      "domain": "neutral",
+      "role": "A Backend over HTTP, so callers switch between store and service with one setting",
+      "depends_on": [
+        "models",
+        "errors"
+      ],
+      "interfaces": [
+        "library"
+      ]
+    },
+    {
+      "id": "service",
+      "title": "HTTP service",
+      "path": "src/tessera/service.py",
+      "kind": "service",
+      "domain": "neutral",
+      "role": "FastAPI app: bearer keys, scopes, POST-only writes, claim rate limit, problem+json, edge lock, reaper loop",
+      "depends_on": [
+        "store",
+        "mcp-door",
+        "pages",
+        "models",
+        "errors"
+      ],
+      "interfaces": [
+        "http"
+      ],
+      "tests": [
+        "tests/test_service.py",
+        "conformance-draft/test_service_surface.py"
+      ]
+    },
+    {
+      "id": "mcp-door",
+      "title": "MCP door",
+      "path": "src/tessera/mcp_door.py",
+      "kind": "service",
+      "domain": "neutral",
+      "role": "MCP server over Streamable HTTP at /mcp: queues, claim, heartbeat, submit, split, behind the same keys",
+      "depends_on": [
+        "store",
+        "models",
+        "errors"
+      ],
+      "interfaces": [
+        "mcp"
+      ],
+      "tests": [
+        "tests/test_service.py::test_the_mcp_door",
+        "conformance-draft/test_service_surface.py::test_T11_an_mcp_client_can_claim_and_submit"
+      ]
+    },
+    {
+      "id": "pages",
+      "title": "Agent pages",
+      "path": "src/tessera/pages.py",
+      "kind": "web",
+      "domain": "neutral",
+      "role": "/connect, /llms.txt, agent card, robots, the read-only board and keyed /work forms",
+      "depends_on": [
+        "store",
+        "models",
+        "errors"
+      ],
+      "interfaces": [
+        "web"
+      ],
+      "tests": [
+        "tests/test_service.py::test_the_agent_door",
+        "tests/test_service.py::test_web_forms_never_echo_the_key"
+      ]
+    },
+    {
+      "id": "cli",
+      "title": "CLI",
+      "path": "src/tessera/cli.py",
+      "kind": "cli",
+      "domain": "neutral",
+      "role": "The tessera command: every verb on a shared SQLite file, plus serve and keys",
+      "depends_on": [
+        "store",
+        "service",
+        "models",
+        "errors"
+      ],
+      "interfaces": [
+        "cli"
+      ]
+    },
+    {
+      "id": "suite",
+      "title": "Conformance suite",
+      "path": [
+        "conformance-draft",
+        "src/tessera/testing.py"
+      ],
+      "kind": "tests",
+      "domain": "neutral",
+      "role": "SPEC.md and tests T01 to T16, ST01 to ST04, run against any backend by factory name",
+      "depends_on": [
+        "backend",
+        "store",
+        "client"
+      ]
+    },
+    {
+      "id": "edge",
+      "title": "Edge Worker",
+      "path": [
+        "deploy/cloudflare/worker.js",
+        "deploy/cloudflare/wrangler.jsonc"
+      ],
+      "kind": "edge",
+      "domain": "neutral",
+      "role": "Reverse proxy: adds x-edge-auth, strips cookies and hop-by-hop headers, sets security headers, never caches writes",
+      "depends_on": [
+        "service"
+      ]
+    },
+    {
+      "id": "tools",
+      "title": "Worker tools",
+      "path": [
+        "tools/seed.py",
+        "tools/load_briefs.py",
+        "tools/muse_worker.py"
+      ],
+      "kind": "worker",
+      "domain": "specific",
+      "role": "Seed queues and keys; queue briefs whose dependencies are done; run one Muse Code worker on one brief",
+      "depends_on": [
+        "client",
+        "store"
+      ],
+      "tests": [
+        "tests/test_tools.py"
+      ]
+    }
+  ],
+  "interfaces": [
+    {
+      "id": "http",
+      "kind": "http",
+      "served_by": "service",
+      "spec": "conformance-draft/SPEC.md",
+      "auth": "Bearer key; Idempotency-Key header on submit",
+      "entry_points": [
+        "POST /v1/queues/define",
+        "GET /v1/queues",
+        "POST /v1/tasks",
+        "GET /v1/tasks/{id}",
+        "GET /v1/tasks/{id}/results",
+        "POST /v1/tasks/claim",
+        "POST /v1/tasks/heartbeat",
+        "POST /v1/tasks/submit",
+        "POST /v1/tasks/split",
+        "POST /v1/tasks/cancel",
+        "POST /v1/admin/reap",
+        "GET /v1/counts",
+        "GET /v1/health",
+        "GET /v1/events",
+        "POST /v1/jobs",
+        "POST /v1/jobs/{id}",
+        "GET /v1/jobs",
+        "POST /v1/stores/{store}/records/{key}",
+        "POST /v1/stores/batch",
+        "GET /v1/stores/{store}/records/{key}",
+        "GET /v1/stores/{store}/records/{key}/history",
+        "POST /v1/blobs",
+        "GET /v1/blobs/{sha256}"
+      ]
+    },
+    {
+      "id": "mcp",
+      "kind": "mcp",
+      "served_by": "mcp-door",
+      "spec": "conformance-draft/SPEC.md",
+      "auth": "Bearer key",
+      "entry_points": [
+        "POST /mcp (Streamable HTTP): tools queues, claim, heartbeat, submit, split"
+      ]
+    },
+    {
+      "id": "web",
+      "kind": "web",
+      "served_by": "pages",
+      "auth": "None for pages; the key typed into each /work form",
+      "entry_points": [
+        "/connect",
+        "/llms.txt",
+        "/.well-known/agent-card.json",
+        "/robots.txt",
+        "/board",
+        "/work"
+      ]
+    },
+    {
+      "id": "cli",
+      "kind": "cli",
+      "served_by": "cli",
+      "auth": "Access to the SQLite file",
+      "entry_points": [
+        "tessera init|define|enqueue|claim|heartbeat|submit|split|cancel|reap|counts|health|queues|events|task|results|serve|keys|version"
+      ]
+    },
+    {
+      "id": "library",
+      "kind": "library",
+      "served_by": "store",
+      "auth": "In process",
+      "entry_points": [
+        "tessera.Store",
+        "tessera.client.Client",
+        "tessera.backend.Backend"
+      ]
+    }
+  ],
+  "data_stores": [
+    {
+      "id": "sqlite",
+      "kind": "sqlite (WAL, busy_timeout 30 s)",
+      "owned_by": "store",
+      "path": "src/tessera/schema.sql",
+      "location": "TESSERA_DB, default .tessera/tessera.db; /data on the Fly volume",
+      "holds": [
+        "queues",
+        "tasks",
+        "leases",
+        "results",
+        "keys (hashed)",
+        "jobs",
+        "events",
+        "counts",
+        "records",
+        "record_heads",
+        "blobs",
+        "meta"
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "id": "internet-edge",
+      "between": [
+        "internet",
+        "edge"
+      ],
+      "rule": "TLS; cookies and hop-by-hop headers stripped; writes never cached",
+      "enforced_by": "deploy/cloudflare/worker.js"
+    },
+    {
+      "id": "edge-origin",
+      "between": [
+        "edge",
+        "service"
+      ],
+      "rule": "With TESSERA_EDGE_SECRET set, every request except the health checks needs a matching x-edge-auth (constant-time compare), else 403",
+      "enforced_by": "src/tessera/service.py",
+      "checked_by": [
+        "tests/test_service.py::test_the_edge_lock"
+      ]
+    },
+    {
+      "id": "caller-service",
+      "between": [
+        "agent",
+        "service"
+      ],
+      "rule": "Bearer key scoped to queues, kinds, effect classes and admin or store; per-key claim rate limit; writes are POST-only",
+      "enforced_by": [
+        "src/tessera/service.py",
+        "src/tessera/_keys.py"
+      ],
+      "checked_by": [
+        "conformance-draft/test_service_surface.py::test_T01_keys_are_required",
+        "conformance-draft/test_service_surface.py::test_T02_writes_are_post_only",
+        "tests/test_service.py::test_keys_are_required_and_scoped",
+        "tests/test_service.py::test_claims_are_rate_limited",
+        "tests/test_service.py::test_storage_needs_the_store_scope"
+      ]
+    },
+    {
+      "id": "holder-task",
+      "between": [
+        "lease holder",
+        "task"
+      ],
+      "rule": "Heartbeat, submit and split need the claiming key and the current fencing token",
+      "enforced_by": [
+        "src/tessera/_tasks.py",
+        "src/tessera/service.py"
+      ],
+      "checked_by": [
+        "conformance-draft/test_queue_semantics.py::test_T05_fencing_refuses_the_old_holder",
+        "tests/test_service.py::test_only_the_claiming_key_may_change_a_task"
+      ]
+    },
+    {
+      "id": "agents-public",
+      "between": [
+        "agents",
+        "public effects"
+      ],
+      "rule": "No key holds the public effect class; public tasks never reach an agent",
+      "enforced_by": "src/tessera/_keys.py",
+      "checked_by": [
+        "tests/test_service.py::test_public_effect_tasks_never_reach_agents"
+      ]
+    }
+  ],
+  "invariants": [
+    {
+      "id": "I1",
+      "statement": "No task is leased to two workers at once",
+      "enforced_by": "store",
+      "checked_by": [
+        "conformance-draft/test_queue_semantics.py::test_T03_no_task_is_held_twice"
+      ]
+    },
+    {
+      "id": "I2",
+      "statement": "A lease ends only by submit, split, cancel, lapse or a cancelled job; a lapsed task returns with a higher fencing token; heartbeats never extend past the hard cap",
+      "enforced_by": "store",
+      "checked_by": [
+        "conformance-draft/test_queue_semantics.py::test_T04_lapsed_leases_come_back",
+        "conformance-draft/test_queue_semantics.py::test_T04_heartbeats_keep_a_lease",
+        "conformance-draft/test_queue_semantics.py::test_T04_lease_has_a_hard_cap"
+      ]
+    },
+    {
+      "id": "I3",
+      "statement": "A write from a stale lease is refused and changes nothing",
+      "enforced_by": "store",
+      "checked_by": [
+        "conformance-draft/test_queue_semantics.py::test_T05_fencing_refuses_the_old_holder"
+      ]
+    },
+    {
+      "id": "I4",
+      "statement": "Failures retry with bounded jittered backoff, then dead-letter, every attempt logged",
+      "enforced_by": "store",
+      "checked_by": [
+        "conformance-draft/test_queue_semantics.py::test_T06_dead_letter_after_three_failures",
+        "conformance-draft/test_queue_semantics.py::test_T06_backoff_grows_within_bounds"
+      ]
+    },
+    {
+      "id": "I5",
+      "statement": "One stored result per idempotency key; a replay returns the first receipt",
+      "enforced_by": "store",
+      "checked_by": [
+        "conformance-draft/test_queue_semantics.py::test_T07_submit_is_idempotent"
+      ]
+    },
+    {
+      "id": "I6",
+      "statement": "A split parent waits, then returns with its children's results",
+      "enforced_by": "store",
+      "checked_by": [
+        "conformance-draft/test_queue_semantics.py::test_T08_split_keeps_the_parent"
+      ]
+    },
+    {
+      "id": "I7",
+      "statement": "The counts record always equals a recount",
+      "enforced_by": "store",
+      "checked_by": [
+        "conformance-draft/test_queue_semantics.py::test_T09_one_counts_record"
+      ]
+    },
+    {
+      "id": "I8",
+      "statement": "Health reports the database, the reaper's last run and queue depths honestly",
+      "enforced_by": "store",
+      "checked_by": [
+        "conformance-draft/test_queue_semantics.py::test_T10_health_is_honest",
+        "conformance-draft/test_service_surface.py::test_T10_health_over_http"
+      ]
+    },
+    {
+      "id": "I9",
+      "statement": "Model jobs are tied to the lease that started them; a lapse asks them to stop; a cancelled job returns its task",
+      "enforced_by": "store",
+      "checked_by": [
+        "conformance-draft/test_model_jobs.py::test_T12_a_job_is_polled_to_done_with_its_cost",
+        "conformance-draft/test_model_jobs.py::test_T12_a_cancelled_job_returns_its_task",
+        "conformance-draft/test_model_jobs.py::test_T12_a_lapsed_lease_asks_its_jobs_to_stop"
+      ]
+    },
+    {
+      "id": "I10",
+      "statement": "Nothing is lost or doubled across workers, queues and restarts",
+      "enforced_by": "store",
+      "checked_by": [
+        "conformance-draft/test_queue_semantics.py::test_T13_it_holds_up",
+        "conformance-draft/test_queue_semantics.py::test_T14_it_survives_a_restart"
+      ]
+    },
+    {
+      "id": "I11",
+      "statement": "Every receipt hash matches its stored result",
+      "enforced_by": "store",
+      "checked_by": [
+        "conformance-draft/test_queue_semantics.py::test_T15_receipts_match_results"
+      ]
+    },
+    {
+      "id": "I12",
+      "statement": "No key appears in any response, page or log",
+      "enforced_by": "service",
+      "checked_by": [
+        "conformance-draft/test_service_surface.py::test_T16_no_secret_leaks",
+        "tests/test_service.py::test_no_key_appears_in_any_response",
+        "tests/test_service.py::test_web_forms_never_echo_the_key"
+      ]
+    },
+    {
+      "id": "I13",
+      "statement": "Records change only by compare-and-set and keep every version; blobs are content-addressed; batches are atomic",
+      "enforced_by": "store",
+      "checked_by": [
+        "conformance-draft/test_storage.py::test_ST01_compare_and_set_has_one_winner",
+        "conformance-draft/test_storage.py::test_ST02_every_version_is_kept",
+        "conformance-draft/test_storage.py::test_ST03_blobs_are_content_addressed",
+        "conformance-draft/test_storage.py::test_ST04_a_batch_applies_completely_or_not_at_all"
+      ]
+    },
+    {
+      "id": "I14",
+      "statement": "Writes are POST-only; a GET never changes state",
+      "enforced_by": "service",
+      "checked_by": [
+        "conformance-draft/test_service_surface.py::test_T02_writes_are_post_only",
+        "tests/test_service.py::test_writes_are_post_only"
+      ]
+    }
+  ],
+  "import_rules": [
+    {
+      "id": "store-below-doors",
+      "package": "tessera",
+      "package_root": "src/tessera",
+      "files": [
+        "src/tessera/models.py",
+        "src/tessera/errors.py",
+        "src/tessera/receipts.py",
+        "src/tessera/clock.py",
+        "src/tessera/backend.py",
+        "src/tessera/store.py",
+        "src/tessera/_base.py",
+        "src/tessera/_tasks.py",
+        "src/tessera/_jobs.py",
+        "src/tessera/_keys.py",
+        "src/tessera/_observe.py",
+        "src/tessera/_storage.py"
+      ],
+      "must_not_import": [
+        "fastapi",
+        "starlette",
+        "uvicorn",
+        "httpx",
+        "mcp",
+        "anyio",
+        "tessera.service",
+        "tessera.pages",
+        "tessera.mcp_door",
+        "tessera.client",
+        "tessera.cli"
+      ],
+      "why": "The store must work on its own, in process, with no web stack"
+    },
+    {
+      "id": "client-without-database",
+      "package": "tessera",
+      "package_root": "src/tessera",
+      "files": [
+        "src/tessera/client.py"
+      ],
+      "must_not_import": [
+        "sqlite3",
+        "tessera.store",
+        "tessera._base",
+        "tessera._tasks",
+        "tessera._jobs",
+        "tessera._keys",
+        "tessera._observe",
+        "tessera._storage",
+        "tessera.service",
+        "fastapi"
+      ],
+      "why": "The client speaks HTTP only, so it works against any service that passes the suite"
+    },
+    {
+      "id": "doors-without-sql",
+      "package": "tessera",
+      "package_root": "src/tessera",
+      "files": [
+        "src/tessera/service.py",
+        "src/tessera/mcp_door.py",
+        "src/tessera/pages.py"
+      ],
+      "must_not_import": [
+        "sqlite3",
+        "tessera._base"
+      ],
+      "why": "Every door changes state only through Store methods, so every guarantee holds on every door"
+    }
+  ],
+  "claims": [
+    {
+      "id": "C1",
+      "claim": "No task is leased to two workers at once (8 workers, 1,000 claims)",
+      "status": "built",
+      "evidence": [
+        "conformance-draft/test_queue_semantics.py::test_T03_no_task_is_held_twice"
+      ],
+      "verify": "make suite BACKEND=store"
+    },
+    {
+      "id": "C2",
+      "claim": "A stalled worker's late write is refused",
+      "status": "built",
+      "evidence": [
+        "conformance-draft/test_queue_semantics.py::test_T05_fencing_refuses_the_old_holder"
+      ],
+      "verify": "make suite BACKEND=store"
+    },
+    {
+      "id": "C3",
+      "claim": "A retried submit stores one result and every receipt matches its result",
+      "status": "built",
+      "evidence": [
+        "conformance-draft/test_queue_semantics.py::test_T07_submit_is_idempotent",
+        "conformance-draft/test_queue_semantics.py::test_T15_receipts_match_results"
+      ],
+      "verify": "make suite BACKEND=store"
+    },
+    {
+      "id": "C4",
+      "claim": "The counts record always equals a recount",
+      "status": "built",
+      "evidence": [
+        "conformance-draft/test_queue_semantics.py::test_T09_one_counts_record"
+      ],
+      "verify": "make suite BACKEND=store"
+    },
+    {
+      "id": "C5",
+      "claim": "Nothing is lost or doubled across workers, queues and a restart",
+      "status": "built",
+      "evidence": [
+        "conformance-draft/test_queue_semantics.py::test_T13_it_holds_up",
+        "conformance-draft/test_queue_semantics.py::test_T14_it_survives_a_restart"
+      ],
+      "verify": "make suite BACKEND=store"
+    },
+    {
+      "id": "C6",
+      "claim": "The suite passes over HTTP against a real local service with real keys (23 tests; the 3 that need a fake clock or a restart hook run on the in-process store)",
+      "status": "built",
+      "evidence": [
+        "scripts/suite_http_local.py"
+      ],
+      "verify": "make suite-http-local"
+    },
+    {
+      "id": "C7",
+      "claim": "MCP clients can claim and submit through the same keys",
+      "status": "built",
+      "evidence": [
+        "conformance-draft/test_service_surface.py::test_T11_an_mcp_client_can_claim_and_submit",
+        "tests/test_service.py::test_the_mcp_door"
+      ],
+      "verify": "make suite-http-local"
+    },
+    {
+      "id": "C8",
+      "claim": "Agents that can only browse can work through keyed forms that never echo the key",
+      "status": "built",
+      "evidence": [
+        "tests/test_service.py::test_web_forms_never_echo_the_key"
+      ],
+      "verify": "make test"
+    },
+    {
+      "id": "C9",
+      "claim": "No key appears in any response, page or log",
+      "status": "built",
+      "evidence": [
+        "conformance-draft/test_service_surface.py::test_T16_no_secret_leaks",
+        "tests/test_service.py::test_no_key_appears_in_any_response"
+      ],
+      "verify": "make suite-http-local"
+    },
+    {
+      "id": "C10",
+      "claim": "The suite fails against an empty backend, so passing it means something",
+      "status": "built",
+      "evidence": [
+        "src/tessera/testing.py"
+      ],
+      "verify": "make suite-stub"
+    },
+    {
+      "id": "C11",
+      "claim": "Model jobs are tied to their lease and asked to stop when it lapses",
+      "status": "built",
+      "evidence": [
+        "conformance-draft/test_model_jobs.py::test_T12_a_lapsed_lease_asks_its_jobs_to_stop"
+      ],
+      "verify": "make suite BACKEND=store"
+    },
+    {
+      "id": "C12",
+      "claim": "Runs hosted on Fly.io behind a Cloudflare Worker, reachable only through the edge",
+      "status": "partial",
+      "evidence": [
+        "deploy/fly/fly.toml",
+        "deploy/cloudflare/worker.js",
+        "deploy/bootstrap-hosting.sh",
+        "tests/test_service.py::test_the_edge_lock"
+      ],
+      "verify": "deploy/bootstrap-hosting.sh --dry-run"
+    },
+    {
+      "id": "C13",
+      "claim": "A model-job runner polls the Meta Model API and cancels jobs on lapse",
+      "status": "planned",
+      "evidence": [
+        "briefs/L16.json"
+      ]
+    },
+    {
+      "id": "C14",
+      "claim": "The event log exports a nightly making-of",
+      "status": "planned",
+      "evidence": [
+        "briefs/L11.json"
+      ]
+    },
+    {
+      "id": "C15",
+      "claim": "Soak and restart runs on the deployed service",
+      "status": "planned",
+      "evidence": [
+        "briefs/L21.json"
+      ]
+    },
+    {
+      "id": "C16",
+      "claim": "Shamash's run loop runs on the service",
+      "status": "planned",
+      "evidence": [
+        "briefs/L23.json"
+      ]
+    }
+  ],
+  "deployment": [
+    {
+      "id": "local",
+      "how": "make dev",
+      "parts": [
+        "service on 127.0.0.1:7700",
+        "the real Worker code under wrangler dev on 127.0.0.1:7701",
+        "a per-run edge secret"
+      ]
+    },
+    {
+      "id": "local-public",
+      "how": "make dev TUNNEL=1",
+      "parts": [
+        "the same",
+        "a temporary *.trycloudflare.com address"
+      ]
+    },
+    {
+      "id": "hosted",
+      "how": "deploy/bootstrap-hosting.sh, then the GitHub deploy workflow with approval",
+      "parts": [
+        "Cloudflare Worker tessera",
+        "Fly.io app tessera-fabric with SQLite on a 1 GB volume",
+        "one always-on machine for the reaper"
+      ]
+    }
+  ],
+  "generalization": {
+    "neutral": [
+      "queues are names",
+      "tasks carry opaque JSON briefs and free-form kinds",
+      "workers are any identity",
+      "leases, fencing, receipts, retries, dead letters, split and merge",
+      "records and blobs under any store name",
+      "HTTP, MCP and web doors",
+      "counts, events, health"
+    ],
+    "specific": [
+      "effect classes are a fixed set shaped by coding work",
+      "model-job statuses follow Meta Model API background responses",
+      "tools/ runs Muse Code on this repo's briefs",
+      "the edge is a Cloudflare Worker",
+      "agent pages link to this repo"
+    ],
+    "extension_points": [
+      {
+        "id": "backend",
+        "what": "A new backend (Postgres, D1, another language)",
+        "how": "Meet the Backend protocol and pass the suite by factory name",
+        "path": "src/tessera/backend.py"
+      },
+      {
+        "id": "work-kind",
+        "what": "A new kind of work",
+        "how": "Define a queue and use a kind string; no code",
+        "path": "src/tessera/cli.py"
+      },
+      {
+        "id": "worker",
+        "what": "A new kind of worker",
+        "how": "Any HTTP or MCP client, or a person on /work, with a key scoped to its queues",
+        "path": "src/tessera/client.py"
+      },
+      {
+        "id": "model-provider",
+        "what": "Another model provider",
+        "how": "The worker registers the provider's job id and maps its statuses",
+        "path": "src/tessera/_jobs.py"
+      },
+      {
+        "id": "storage",
+        "what": "A new storage namespace",
+        "how": "Use a new store name in /v1/stores/{store} with a store-scoped key",
+        "path": "src/tessera/_storage.py"
+      },
+      {
+        "id": "host",
+        "what": "Another host",
+        "how": "Run the Docker image anywhere with a persistent volume; any proxy can add x-edge-auth",
+        "path": [
+          "deploy/fly/Dockerfile",
+          "deploy/bootstrap-hosting.sh"
+        ]
+      }
+    ]
+  },
+  "limitations": [
+    "One machine, one SQLite file, one writer at a time; no replication or failover",
+    "The claim rate limiter lives in process memory and resets on restart",
+    "Load beyond the suite's scale has not been measured",
+    "The spec is a draft until it is locked; the tests can still change",
+    "No D1 or Postgres backend exists yet"
+  ],
+  "open_questions": [
+    "Should the hosted service refuse to start without TESSERA_EDGE_SECRET?",
+    "Should DNS-rebinding protection on the MCP door default on when hosted?",
+    "Should effect classes be configurable?",
+    "Is there a request-size limit before parsing large bodies?",
+    "Which MCP protocol version do clients negotiate with the door (current spec revision 2026-07-28)?"
+  ],
+  "feedback": {
+    "how": "Open an issue on GitHub; docs/review.md has the questions we most want answered and a prompt for model reviewers",
+    "url": "https://github.com/ta-amps/tessera/issues"
+  }
+}

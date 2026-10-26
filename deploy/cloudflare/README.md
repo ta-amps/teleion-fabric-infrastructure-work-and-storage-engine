@@ -25,7 +25,7 @@ With the free hostname the edge is `https://tessera.<your-subdomain>.workers.dev
 `EDGE_SECRET` on this Worker and `TESSERA_EDGE_SECRET` on the Fly app hold the same random value. With it
 set, the service answers 403 `forbidden` to any request without a matching `x-edge-auth`, except
 `GET /v1/health` and `GET /healthz` (health checks). See SPEC §7.
-`hackathon-context/scripts/bootstrap-hosting.sh` sets both sides without printing the value.
+`deploy/bootstrap-hosting.sh` sets both sides without printing the value.
 
 ## Deploy
 

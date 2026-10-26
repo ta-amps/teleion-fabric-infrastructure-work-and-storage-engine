@@ -37,6 +37,7 @@ def test_allow_marker_skips_line(tmp_path: Path) -> None:
 
 def test_private_name_hashes_only() -> None:
     source = (REPO / "scripts" / "check_public.py").read_text()
+    source += (REPO / "scripts" / "private-names.sha256").read_text()
     # The scanner must flag a private name without containing it in plain text.
     assert check_public.private_names("see " + "".join(["tel", "eon"]) + ".dev for details")
     assert "".join(["tel", "eon"]) not in source.lower()

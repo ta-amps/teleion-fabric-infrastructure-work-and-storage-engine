@@ -12,7 +12,7 @@ from the command line on the machine and are stored only as hashes.
 ## First time
 
 1. Create a Fly.io account for ta-amps and run `fly auth login`.
-2. From the workspace root run `hackathon-context/scripts/bootstrap-hosting.sh`. It creates the app and
+2. Run `deploy/bootstrap-hosting.sh` from this repo. It creates the app and
    its `tessera_data` volume and sets the edge secret on both sides without printing it.
 
 ## Deploy

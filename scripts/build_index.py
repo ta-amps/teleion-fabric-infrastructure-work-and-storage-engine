@@ -4,23 +4,27 @@
   INDEX.md     every file, grouped by folder, with a one-line description taken from the file
   KEYWORDS.md  each term listed in keywords.txt, with the files that use it
   llms.txt     a short map for agents (llmstxt.org format): what the repo is and where to start
+  llms-full.txt  the main documents in full, in reading order, for review tools and model reviewers
 
 Usage: python3 scripts/build_index.py [--check]
 --check exits 1 when a generated file is stale, so `make check` catches drift. Standard library only;
-the same file lives in every ta-amps repo.
+copy it into any repo. Links point at the GitHub `origin` remote (or INDEX_BASE_URL when set). The
+reading order is `read_order` in architecture.json when that file exists, otherwise README.md,
+AGENTS.md, DISCLAIMER.md and then the Markdown files in the document folders below.
 """
 
 from __future__ import annotations
 
 import ast
 import json
+import os
 import re
 import subprocess
 import sys
 from collections import defaultdict
 from pathlib import Path
 
-GENERATED = ("INDEX.md", "KEYWORDS.md", "llms.txt")
+GENERATED = ("INDEX.md", "KEYWORDS.md", "llms.txt", "llms-full.txt")
 SKIP_DIRS = {
     ".git",
     "node_modules",
@@ -32,8 +36,6 @@ SKIP_DIRS = {
     ".ruff_cache",
     ".pytest_cache",
     "private",
-    ".tessera",
-    ".shamash",
     "test-results",
     ".hypothesis",
 }
@@ -59,6 +61,27 @@ TEXT_SUFFIXES = {
 }
 BARE_NAMES = {"Makefile", "LICENSE", "Dockerfile"}
 MAX_FILES_PER_TERM = 12
+# Folders whose Markdown pages are listed in llms.txt and, by default, read in full in llms-full.txt.
+DOC_FOLDERS = ("docs", "guides", "event", "meta-platform", "conformance-draft", "conformance")
+GITHUB = re.compile(r"github\.com[:/]([\w.-]+)/([\w.-]+?)(?:\.git)?/?$")
+
+
+def link_base(root: Path) -> str:
+    """Prefix for links in llms.txt: INDEX_BASE_URL, else the GitHub origin remote, else relative."""
+    if os.environ.get("INDEX_BASE_URL"):
+        return os.environ["INDEX_BASE_URL"].rstrip("/") + "/"
+    try:
+        url = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return ""
+    match = GITHUB.search(url)  # owner and repo only, so a credential in the URL never gets copied
+    return f"https://github.com/{match.group(1)}/{match.group(2)}/blob/main/" if match else ""
 
 
 def files(root: Path) -> list[Path]:
@@ -238,20 +261,16 @@ def build_keywords(root: Path, paths: list[Path]) -> str:
 
 def build_llms(root: Path, paths: list[Path]) -> str:
     title, summary = readme_summary(root)
-    base = f"https://github.com/ta-amps/{root.name}/blob/main/"
+    base = link_base(root)
     # INDEX.md and KEYWORDS.md are written by this script, so they are always listed.
     start = [p for p in ("README.md", "AGENTS.md") if (root / p).exists()]
-    start += ["INDEX.md", "KEYWORDS.md"]
+    start += ["INDEX.md", "KEYWORDS.md", "llms-full.txt"]
     docs = [
         p
         for p in paths
         if p.suffix == ".md"
         and p.relative_to(root).as_posix() not in start
-        and (
-            len(p.relative_to(root).parts) == 1
-            or p.relative_to(root).parts[0]
-            in {"docs", "conformance-draft", "conformance", "event", "project", "meta-platform"}
-        )
+        and (len(p.relative_to(root).parts) == 1 or p.relative_to(root).parts[0] in DOC_FOLDERS)
     ]
     out = [
         f"# {title}",
@@ -265,6 +284,7 @@ def build_llms(root: Path, paths: list[Path]) -> str:
         "AGENTS.md": "rules every agent follows here",
         "INDEX.md": "every file with a description",
         "KEYWORDS.md": "where each term appears",
+        "llms-full.txt": "the main documents in full, in reading order",
     }
     out += [f"- [{p}]({base}{p}): {names[p]}" for p in start]
     if docs:
@@ -275,6 +295,56 @@ def build_llms(root: Path, paths: list[Path]) -> str:
     return "\n".join(out) + "\n"
 
 
+def read_order(root: Path, paths: list[Path]) -> tuple[list[str], str]:
+    """The documents for llms-full.txt and where their order came from."""
+    known = {p.relative_to(root).as_posix() for p in paths}
+    manifest = root / "architecture.json"
+    if manifest.exists():
+        try:
+            order = json.loads(manifest.read_text(encoding="utf-8")).get("read_order")
+        except json.JSONDecodeError:
+            order = None
+        if isinstance(order, list) and all(isinstance(x, str) for x in order):
+            return [x for x in order if x in known], "read_order in architecture.json"
+    first = [p for p in ("README.md", "AGENTS.md", "DISCLAIMER.md") if p in known]
+    rest = sorted(
+        rel
+        for rel in known
+        if rel.endswith(".md") and rel.split("/", 1)[0] in DOC_FOLDERS and "/" in rel
+    )
+    return first + rest, "README.md, AGENTS.md, DISCLAIMER.md, then the document folders"
+
+
+def build_llms_full(root: Path, paths: list[Path]) -> str:
+    title, summary = readme_summary(root)
+    base = link_base(root)
+    order, source = read_order(root, paths)
+    out = [
+        f"# {title}: full text",
+        "",
+        f"> {summary}" if summary else f"> The {root.name} repository.",
+        "",
+        f"The main documents of this repo in full, in reading order ({source}), so a review tool or a model can "
+        "read the whole design from one file. Generated by `scripts/build_index.py`; the files themselves win "
+        "if they ever differ.",
+        "",
+        "Contents: " + ", ".join(order),
+        "",
+    ]
+    for rel in order:
+        text = (root / rel).read_text(encoding="utf-8").rstrip()
+        out += [
+            "=" * 72,
+            f"FILE: {rel}",
+            f"URL: {base}{rel}" if base else f"PATH: {rel}",
+            "=" * 72,
+            "",
+            text,
+            "",
+        ]
+    return "\n".join(out)
+
+
 def main(argv: list[str]) -> int:
     root = Path(__file__).resolve().parent.parent
     paths = files(root)
@@ -282,6 +352,7 @@ def main(argv: list[str]) -> int:
         "INDEX.md": build_index(root, paths),
         "KEYWORDS.md": build_keywords(root, paths),
         "llms.txt": build_llms(root, paths),
+        "llms-full.txt": build_llms_full(root, paths),
     }
     if "--check" in argv:
         stale = [

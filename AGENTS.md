@@ -33,8 +33,10 @@ tests/               unit tests, guard-hook and leak-scan tests
 briefs/              open briefs for Muse Code workers; briefs/done/ for finished ones
 tools/               muse_worker.py: claim a brief, run Muse Code headless, submit a receipt
 harness/             work-harness design and starting config
-docs/                architecture, operations, making-of
-deploy/              Fly.io service with a volume; Cloudflare notes
+docs/                summary, architecture, setup, comparison, generalizing, decisions, glossary,
+                     review, operations, making-of
+deploy/              Fly.io service with a volume, the Cloudflare edge, bootstrap-hosting.sh
+architecture.json    the architecture as data; keep it true (`make architecture` checks it)
 ```
 
 ## Commands
@@ -45,7 +47,9 @@ deploy/              Fly.io service with a volume; Cloudflare notes
 - `make suite-stub`: proves the suite fails against an empty backend.
 - `uv run tessera --help`: the CLI on a shared SQLite file (`TESSERA_DB`).
 - `make dev` (add `TUNNEL=1` for a public address) and `make seed`: the local stack and its keys.
-- `make suite-http-local`: the whole suite over HTTP against a real local service.
+- `make suite-http-local`: the suite over HTTP against a real local service (the 3 tests that need a fake clock or a restart hook skip).
+- `make architecture`: architecture.json must match the code (paths, tests, layering rules).
+- `make index`: rebuild INDEX.md, KEYWORDS.md, llms.txt and llms-full.txt after adding files.
 
 ## Hard rules
 

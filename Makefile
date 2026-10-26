@@ -9,7 +9,7 @@ FACTORY_store := tessera.testing:create_store_backend
 FACTORY_http := tessera.testing:create_http_backend
 FACTORY_empty := tessera.testing:create_empty_backend
 
-.PHONY: help setup check lint types test suite suite-stub suite-http-local public lock-suite clean serve dev seed index index-check
+.PHONY: help setup check lint types test suite suite-stub suite-http-local public lock-suite clean serve dev seed index index-check architecture
 
 help: ## List the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-12s %s\n", $$1, $$2}'
@@ -17,7 +17,7 @@ help: ## List the targets
 setup: ## Install Python 3.12 and every dependency with uv
 	uv sync --all-groups --all-extras
 
-check: lint types test public lock-check index-check ## Lint, types, unit tests, leak scan; run before every commit
+check: lint types test public lock-check index-check architecture ## Lint, types, unit tests, leak scan; run before every commit
 
 lint: ## ruff lint and format check
 	uv run ruff check .
@@ -49,7 +49,7 @@ dev: ## Service behind the local Cloudflare edge; TUNNEL=1 adds a temporary publ
 seed: ## Queues, one key per agent (private file, mode 600) and the first tasks
 	uv run python tools/seed.py --db $(DB)
 
-index: ## Rebuild INDEX.md, KEYWORDS.md and llms.txt from the files
+index: ## Rebuild INDEX.md, KEYWORDS.md, llms.txt and llms-full.txt from the files
 	python3 scripts/build_index.py
 
 index-check: ## Fail when the indexes are stale
@@ -70,3 +70,6 @@ lock-suite: ## Taylor only: move the approved draft to conformance/ and write co
 
 clean: ## Remove caches and local databases
 	rm -rf .pytest_cache .mypy_cache .ruff_cache .tessera build dist
+
+architecture: ## architecture.json must match the code: paths, tests, layering rules
+	python3 scripts/check_architecture.py . --summary
