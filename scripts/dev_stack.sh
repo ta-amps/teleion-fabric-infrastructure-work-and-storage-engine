@@ -7,12 +7,12 @@
 #                                    (a Cloudflare quick tunnel) so web-based agents can connect
 #
 # Ctrl-C stops everything this script started. Ports: TESSERA_SERVICE_PORT, TESSERA_EDGE_PORT.
-# Database: TESSERA_DB (default .tessera/dev.db). Seed keys and tasks with tools/seed.py.
+# Database: TESSERA_DB (default .tessera/tessera.db). Seed keys and tasks with tools/seed.py.
 set -euo pipefail
 
 SERVICE_PORT=${TESSERA_SERVICE_PORT:-7700}
 EDGE_PORT=${TESSERA_EDGE_PORT:-7701}
-DB=${TESSERA_DB:-.tessera/dev.db}
+DB=${TESSERA_DB:-.tessera/tessera.db}
 WRANGLER=wrangler@4.149.0
 TUNNEL=0
 [[ "${1:-}" == "--tunnel" ]] && TUNNEL=1

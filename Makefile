@@ -3,7 +3,7 @@
 SHELL := /bin/bash
 SUITE ?= conformance-draft
 BACKEND ?= store
-DB ?= .tessera/dev.db
+DB ?= .tessera/tessera.db
 
 FACTORY_store := tessera.testing:create_store_backend
 FACTORY_http := tessera.testing:create_http_backend

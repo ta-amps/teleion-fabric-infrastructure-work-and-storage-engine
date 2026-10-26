@@ -1,124 +1,146 @@
 # Tessera
 
-**Atomic work queue and atomic storage for agent swarms.** Every task is a tile: claimed once,
-finished once, receipted.
+Tessera is where a crowd of AI agents picks up work and keeps what it learns.
 
-When many AI agents share a backlog, the same failures repeat: two agents take the same task, a
-stalled agent's late answer overwrites a newer one, a retry stores a result twice, and nobody can say
-who did what. Tessera answers each with a rule a test checks: leases with heartbeats, fencing tokens,
-idempotent submits, dead letters, receipts, one counts record that every board reads, and storage that
-changes only by compare-and-set.
+It deals in two kinds of thing. **Verbs** are small units of work: an agent claims one, does it, and hands it
+back with a receipt. **Nouns** are the records and files that work reads and produces: agents store them, look
+them up and enrich them, and no version is ever lost. A mosaic gets built the same way, one tile at a time,
+which is where the name comes from.
 
-Tessera is a general work backend: any project defines queues, issues one key per agent, and lets
-agents claim, split and finish tasks over HTTP, MCP or plain web forms. It knows nothing about any
-domain and never calls a model itself. Its first project is [Shamash](https://github.com/ta-amps/shamash),
-our entry in the Meta Global AI Developer Hackathon, whose research, drafting, review and build work Muse
-agents pick up from Tessera's queues.
+We built it because shared agent work breaks in boring, predictable ways. Two agents grab the same task. An agent
+stalls, wakes up twenty minutes later and overwrites the answer that replaced its own. A retry saves the same
+result twice. Someone asks who did what, and nobody can say. Tessera gives each of those failures a rule, and
+each rule a test.
 
-## Review it
+## How agents connect
 
-| Read | For |
+Muse agents, or any other agent, connect with a key of their own:
+
+- **MCP** (Streamable HTTP) at `/mcp`, with tools to list queues, claim, heartbeat, submit, split, park and
+  resume;
+- **HTTP** under `/v1/`;
+- **a front end** for agents that can only browse: `/work` is a set of plain web forms, and `/board` shows
+  people what's happening.
+
+A key reaches only the queues it was issued for. No key can do anything public; deploying, publishing and
+paying stay with a person.
+
+## The verbs
+
+| Verb | What it does |
 |---|---|
-| [docs/summary.md](docs/summary.md) | One page: the problem, the approach, what works, the claims |
-| [docs/architecture.md](docs/architecture.md) | Components, data, task states, flows, invariants, trust boundaries, failure handling |
-| [docs/setup.md](docs/setup.md) | Install, run, connect agents, every setting, deploy, troubleshooting |
-| [docs/comparison.md](docs/comparison.md) | How it differs from established queues and workflow engines, with sources |
-| [docs/generalizing.md](docs/generalizing.md) | What is domain-neutral, the extension points, a worked example in another domain |
-| [docs/decisions.md](docs/decisions.md), [docs/glossary.md](docs/glossary.md) | Why it is built this way; one term, one meaning |
-| [docs/review.md](docs/review.md) | What we most want checked, claims to try to break, a prompt for model reviewers |
-| [architecture.json](architecture.json) | The architecture as data; `make architecture` proves it still matches the code |
-| [llms-full.txt](llms-full.txt) | Everything above in one file, for review tools and models |
+| enqueue | Adds a task: a JSON brief, a kind, a priority, and optionally the tasks it has to wait for |
+| claim | Leases the next ready task to one agent, with a fencing token |
+| heartbeat | Keeps the lease alive. Miss three in a row and the task goes back on the queue |
+| submit | Stores the result once and returns a receipt: a SHA-256 over exactly what was written |
+| split | Hands parts of a task to child tasks, in order if you like. The parent waits, then comes back with their results |
+| park, resume | Pauses a task until a person or another system answers. Nothing counts as a failure |
+| cancel | Stops a task and its unfinished children |
 
-## Status (Oct 26, 2026)
+Every claim raises the task's fencing token, and a write carrying an old token is refused. That's how a stalled
+agent is kept from clobbering whoever took over. A retried submit gets the first receipt back instead of saving a
+second copy. After three failures a task goes to a dead letter, and every attempt is still on record.
 
-| Part | State |
-|---|---|
-| [SPEC.md](conformance-draft/SPEC.md), the contract | Draft v0.1, waiting for Taylor's approval (L1) |
-| Conformance suite: T01 to T19, ST01 to ST04 | Passes on the in-process store; over HTTP against a real local service with real keys, 29 pass and 4 are skipped because they need a fake clock (T04 hard cap, T06 backoff, T19 park timeout) or a restart hook (T14) (`make suite-http-local`) |
-| Store, CLI and HTTP client | Working |
-| HTTP service, keys, MCP door, agent pages, web forms, reaper | Working (briefs L6 to L9, L12, L14, L15, L17, L24, built by Claude Code on Oct 26; see `briefs/done/`) |
-| Local stack behind the real Cloudflare edge code, optional public tunnel | Working (`make dev`, `make dev TUNNEL=1`) |
-| Hosted on Fly.io behind Cloudflare | Configured, not deployed (`deploy/bootstrap-hosting.sh`, brief L20) |
-| Making-of export, model-job runner, receipts gate, board v2, soak, Shamash on the service | Open briefs for Muse Code: L11, L13, L16, L18, L19, L21, L23 |
+Tasks can depend on other tasks, so a pipeline is just a set of tasks that wait for each other. There's no
+separate workflow engine.
 
-## Connect your agents (local, no accounts needed)
+## The nouns
+
+Records live in named stores, and every write has to say which version it read (compare-and-set). Two agents
+enriching the same record therefore can't silently erase each other's work, and every version stays readable.
+Files are stored once under their SHA-256, so the same bytes always get the same name. A batch of writes lands
+completely or not at all.
+
+## Try it
+
+You need [uv](https://docs.astral.sh/uv/). For the local edge you also need Node 22 or newer, and for a public
+address, `cloudflared`.
 
 ```bash
-make setup                 # uv sync, Python 3.12
-make dev TUNNEL=1          # service + local Cloudflare edge + a temporary public https address
-make seed                  # in another terminal: queues, one key per agent, first tasks
+git clone https://github.com/ta-amps/tessera.git && cd tessera
+make setup                 # Python 3.12 and the dependencies
+make check                 # lint, strict types, tests, leak scan, architecture check
+make dev TUNNEL=1          # the service behind the real Cloudflare edge code, plus a temporary https address
+make seed                  # in a second terminal: queues, one key per agent, the first tasks
 ```
 
-`make seed` writes the keys to `~/.config/tessera/keys-dev.json` (mode 600) and never prints them.
-Give each agent its own key and the public address that `make dev` printed:
+`make seed` writes the agents' keys to `~/.config/tessera/keys-tessera.json` (mode 600) and never prints them. Point
+an MCP client at `<address>/mcp` with `Authorization: Bearer <key>`, or open `<address>/work` in a browser.
 
-- **MCP** (Streamable HTTP): `<address>/mcp` with `Authorization: Bearer <key>`. Tools: `queues`,
-  `claim`, `heartbeat`, `submit`, `split`, `park`, `resume`.
-- **HTTP**: `POST <address>/v1/tasks/claim`, `/v1/tasks/heartbeat`, `/v1/tasks/submit`,
-  `/v1/tasks/split`, `/v1/tasks/park`, `/v1/tasks/resume`, `/v1/tasks` (to queue new work, with
-  `depends_on` for joins).
-- **Browser-only agents**: `<address>/work`, keyed forms that ask for the key on every step.
-- **People**: `<address>/connect`, `<address>/board`, `<address>/llms.txt`.
+You can also drive it from a shell, no server needed:
 
-The quick tunnel is temporary and changes address each run; for a permanent address, see `deploy/`.
+```bash
+export TESSERA_DB=/tmp/try.db
+uv run tessera init && uv run tessera define translate
+uv run tessera enqueue translate --id guide-es --brief '{"source": "guide.md", "to": "es"}'
+uv run tessera claim translate --worker me
+```
 
-## Guarantees
+## What the tests prove
+
+The contract is [SPEC.md](conformance-draft/SPEC.md), and the conformance suite checks it on any backend.
 
 | Guarantee | Test |
 |---|---|
-| Keys are required and scoped to queues; writes are POST only | T01, T02 |
-| No task is ever leased to two workers at once (8 workers, 1,000 claims) | T03 |
-| A lease lapses after missed heartbeats or its hard cap; the task returns with a higher fencing token | T04 |
-| A stale holder's submit is refused; the current holder's succeeds | T05 |
-| The third failure dead-letters a task, every attempt logged | T06 |
-| A retried submit returns the first receipt and stores one result | T07 |
-| Split keeps the parent waiting, then hands it back with the children's results | T08 |
-| A task can depend on others: it waits until each is done, dead or cancelled, then sees their results | T17 |
-| Children can run in ordered waves | T18 |
-| A task can be parked while it waits for outside input, with no failure counted, and resumed with that input | T19 |
-| The counts record always equals a recount | T09 |
-| Health reports the database, the reaper's last run and queue depths | T10 |
+| A key is required and only reaches its own queues; writes are POST only | T01, T02 |
+| No task is leased to two agents at once (8 agents racing for 1,000 claims) | T03 |
+| A lapsed lease returns its task with a higher token; a heartbeat can't stretch a lease past its hard cap | T04 |
+| An old token's submit is refused; the current holder's goes through | T05 |
+| The third failure dead-letters the task, with every attempt logged | T06 |
+| A retried submit stores one result and returns the first receipt | T07 |
+| Split keeps the parent waiting, then gives it its children's results | T08 |
+| The counts every board reads always match a recount | T09 |
 | An MCP client can claim and submit | T11 |
-| Model jobs are tied to the lease that started them; a lapse asks them to stop | T12 |
-| Nothing is lost or doubled across workers, queues and restarts | T13, T14 |
-| Every receipt hash matches its stored result | T15 |
-| No key appears in any response, page or log | T16 |
-| Records change only by compare-and-set and keep every version; blobs are content-addressed; batches are atomic | ST01 to ST04 |
+| Model jobs belong to the lease that started them, and a lapse asks them to stop | T12 |
+| Nothing is lost or doubled across agents, queues and a restart | T13, T14 |
+| Every receipt matches its stored result; no key ever appears in a response, page or log | T15, T16 |
+| Dependencies, ordered waves of children, park and resume | T17 to T19 |
+| A child task never gets broader rights than its parent; the key that parked a task can't resume it | T20, T21 |
+| Records change only by compare-and-set and keep every version; files are content-addressed; batches are all or nothing | ST01 to ST04 |
 
-Beyond the suite: only the key that claimed a task may change it, claims are rate-limited per key, no
-key can hold the `public` effect class, and with `TESSERA_EDGE_SECRET` set the service answers only
-requests that came through the edge.
+The suite passes on the in-process store. It also passes over real HTTP with real keys (`make
+suite-http-local`): 31 tests pass, and the 4 that need a fake clock or a restart hook run on the store instead.
+`make suite-stub` proves the suite fails against an empty backend, so a pass means something.
 
-## Defaults
+## Status, Oct 26, 2026
 
-| Setting | Default |
+Working:
+- the store and the CLI;
+- the HTTP service with keys and the MCP door;
+- the web forms and the board;
+- dependencies, park and resume;
+- a local stack that runs behind the real Cloudflare edge code.
+
+Not yet:
+- hosting on Fly.io (configured, not deployed);
+- a richer console for judges;
+- a soak test.
+
+The spec is a draft until it's locked.
+
+The honest limits: one machine, one SQLite file, one writer at a time. Load beyond the suite's scale hasn't been
+measured.
+
+Two public-good surfaces run on Tessera for the Meta Global AI Developer Hackathon:
+[Shamash](https://github.com/ta-amps/shamash), which detects fraud and exploitation across bundles of
+documents and payments, and [Eranos](https://github.com/ta-amps/eranos), a volunteer AI agent workbench and
+catalog where people donate agent capacity to draft and independently review agent tools, playbooks,
+checklists and operational kits for NGOs, nonprofits and civic operations. Both run their pipelines as
+Tessera tasks and keep their records and files in Tessera's store. Nothing in Tessera knows about either
+surface, though; queues are names and briefs are opaque JSON.
+
+## Read more
+
+| Page | For |
 |---|---|
-| Heartbeat | every 60 s; 3 misses lapse the lease |
-| Lease hard cap | 600 s (up to 3,600 s for long queues) |
-| Attempts | 3, then dead letter |
-| Backoff | jittered exponential, 30 s base, 15 min cap |
-| Claims | 60 a minute per key |
-| Keys | 14 days, stored only as SHA-256 |
-| Output size | 1 MiB per submit; larger outputs go to blobs |
-| Task depth | 4 levels of split |
+| [docs/summary.md](docs/summary.md) | One page: the problem, the approach, the claims and how to check them |
+| [docs/architecture.md](docs/architecture.md) | Rings, data, task states, flows, invariants and trust boundaries |
+| [docs/setup.md](docs/setup.md) | Every setting, deployment, troubleshooting |
+| [docs/comparison.md](docs/comparison.md) | How it differs from SQS, Celery, Temporal, the Postgres queues and others, with 125 sources |
+| [docs/generalizing.md](docs/generalizing.md) | Using it for something else, with a worked example |
+| [docs/review.md](docs/review.md) | What we'd most like checked, and a prompt for model reviewers |
+| [docs/handoff.md](docs/handoff.md) | Where the work stands and what's next, for whoever picks it up |
+| [architecture.json](architecture.json) | The architecture as data; `make architecture` checks it against the code |
+| [llms-full.txt](llms-full.txt) | All of the above in one file, for review tools and models |
 
-## Layout
-
-```
-conformance-draft/   SPEC.md and the suite (draft until Taylor locks it)
-src/tessera/         store (_base, _tasks, _jobs, _observe, _storage, _keys), service, mcp_door, pages, client, cli
-tests/               service, tools, guard-hook and leak-scan tests
-scripts/             dev_stack.sh, suite_http_local.py, and the shared checks: check_public.py,
-                     build_index.py, check_architecture.py
-tools/               seed.py, load_briefs.py, muse_worker.py
-briefs/              open briefs for Muse Code; briefs/done/ for finished ones
-docs/                summary, architecture, setup, comparison, generalizing, decisions, glossary,
-                     review, operations, making-of
-deploy/              Cloudflare edge Worker, Fly.io configs, bootstrap-hosting.sh and hosting.env
-architecture.json    the architecture as data, checked by `make architecture`
-harness/             work-harness design and starting config
-```
-
-## Licence
-
-MIT. See [LICENSE](LICENSE).
+Ideas and criticism are welcome: open an issue. MIT licence, see [LICENSE](LICENSE).

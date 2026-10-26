@@ -5,7 +5,7 @@
 ```bash
 make dev TUNNEL=1     # service on 127.0.0.1:7700, Cloudflare edge code on 127.0.0.1:7701,
                       # and a temporary public https://*.trycloudflare.com address
-make seed             # queues, one key per agent in ~/.config/tessera/keys-dev.json, first tasks
+make seed             # queues, one key per agent in ~/.config/tessera/keys-tessera.json, first tasks
 ```
 
 The edge adds a per-run secret that the service requires, so nothing reaches the service except
@@ -25,7 +25,7 @@ uv run python tools/muse_worker.py --worker muse-01  # one Muse Code worker, one
 
 ## Keys
 
-- `make seed` issues the first set. More: `uv run tessera --db .tessera/dev.db keys issue --label muse-web-06 --queue research --queue draft --scope store`.
+- `make seed` issues the first set. More: `uv run tessera --db .tessera/tessera.db keys issue --label muse-web-06 --queue research --queue draft --scope store`.
 - Each key is scoped to its queues, task kinds and effect classes; keys expire in 14 days. `keys list` and `keys revoke <key_id>` manage them.
 - The key prints once at issue time. Store it in the worker's environment or the host's secret store,
   never in a repo or a chat.

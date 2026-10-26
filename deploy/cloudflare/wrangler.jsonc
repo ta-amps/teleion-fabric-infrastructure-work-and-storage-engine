@@ -7,6 +7,8 @@
   "name": "tessera",
   "main": "worker.js",
   "compatibility_date": "2026-10-01",
+  // Uncomment to attach a subdomain under your shared single domain in Cloudflare:
+  // "routes": [{ "pattern": "tessera.<your-domain>", "custom_domain": true }],
   "vars": {
     // Change this if the Fly app name in deploy/fly/fly.toml changes.
     "ORIGIN": "https://tessera-fabric.fly.dev"

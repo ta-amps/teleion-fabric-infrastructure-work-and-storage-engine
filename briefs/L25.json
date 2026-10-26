@@ -1,0 +1,38 @@
+{
+  "task_id": "L25",
+  "title": "Resume effect-class gate: require the task's effect class and admin for write-repo (T22)",
+  "repo": "tessera",
+  "kind": "build",
+  "effect_class": "write-repo",
+  "owner_type": "muse-code",
+  "done_when": "make check and make suite-http-local pass, including conformance test T22 across HTTP, MCP and /work",
+  "context": [
+    "AGENTS.md",
+    "conformance-draft/SPEC.md",
+    "src/tessera/access.py",
+    "src/tessera/service.py",
+    "src/tessera/mcp_door.py",
+    "src/tessera/pages.py",
+    "conformance-draft/test_service_surface.py",
+    "tests/test_service.py"
+  ],
+  "constraints": [
+    "Read AGENTS.md first; keep SPEC.md and architecture.json in sync with the gate",
+    "Never edit conformance/ or conformance.lock, and never weaken an existing test",
+    "Resuming a parked task requires a key holding the task's effect class, and an admin key when effect_class is write-repo",
+    "Enforce the same rule in access.py so HTTP (/v1/tasks/resume), MCP (resume) and /work share one gate",
+    "Writes are POST only; a GET on a write path answers 405 and changes nothing",
+    "No key, token or credential in any response, page, log or commit",
+    "Run make check before committing; one task per branch; do not push"
+  ],
+  "budget": {
+    "max_model_steps": 200,
+    "usd": 2.0
+  },
+  "depends_on": [
+    "L8",
+    "L17"
+  ],
+  "branch": "t/L25-resume-effect-gate",
+  "notes": "Add T22 to conformance-draft/SPEC.md (§7 and §10) and conformance-draft/test_service_surface.py proving a read-only key cannot resume a write-internal task and a non-admin key cannot resume a write-repo task."
+}

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Seed a Tessera database for Muse agents: the standard queues, one key per agent, and first tasks.
 
-    uv run python tools/seed.py --db .tessera/dev.db --agents 5 --code-agents 2
+    uv run python tools/seed.py --db .tessera/tessera.db --agents 5 --code-agents 2
 
 Keys are written once to a private file (default ~/.config/tessera/keys-<db name>.json, mode 0600)
 and never printed. Hand each agent its own key with the connect page's instructions. Running the
@@ -19,13 +19,14 @@ from typing import Any
 
 from tessera import QueueConfig, Store, TaskSpec
 
-# Work queues for agents, plus Shamash's five run-loop queues.
+# Work queues for agents, plus Shamash's five run-loop queues and Eranos's three workbench queues.
 QUEUES = [
     QueueConfig(name="research", lease_seconds=3600, heartbeat_seconds=120, miss_limit=3),
     QueueConfig(name="draft", lease_seconds=3600, heartbeat_seconds=120, miss_limit=3),
     QueueConfig(name="review", lease_seconds=1800, heartbeat_seconds=120, miss_limit=3),
     QueueConfig(name="build", lease_seconds=3600, heartbeat_seconds=60, miss_limit=3),
     *(QueueConfig(name=q) for q in ("aq02", "aq85", "aq04", "aq05", "aq86")),
+    *(QueueConfig(name=q) for q in ("eq01", "eq02", "eq03")),
 ]
 
 AREAS = {
@@ -139,7 +140,7 @@ def main() -> int:
     p = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    p.add_argument("--db", default=os.environ.get("TESSERA_DB", ".tessera/dev.db"))
+    p.add_argument("--db", default=os.environ.get("TESSERA_DB", ".tessera/tessera.db"))
     p.add_argument("--agents", type=int, default=5, help="keys for web-based Muse agents")
     p.add_argument("--code-agents", type=int, default=2, help="keys for Muse Code workers")
     p.add_argument(

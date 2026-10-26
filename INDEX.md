@@ -33,7 +33,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [.github/workflows/ci.yml](.github/workflows/ci.yml) |  |
 | [.github/workflows/deploy.yml](.github/workflows/deploy.yml) |  |
 
-## briefs/ (17)
+## briefs/ (19)
 
 | File | What it is |
 |---|---|
@@ -45,6 +45,8 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [briefs/L20.json](briefs/L20.json) | L20: Deploy to one Fly machine with a volume; keys in the secret store |
 | [briefs/L21.json](briefs/L21.json) | L21: Soak and restart runs on the deployed service |
 | [briefs/L23.json](briefs/L23.json) | L23: Move Shamash's run loop onto the service |
+| [briefs/L25.json](briefs/L25.json) | L25: Resume effect-class gate: require the task's effect class and admin for write-repo (T22) |
+| [briefs/L26.json](briefs/L26.json) | L26: Versioned receipt hash test vectors for cross-language verification |
 | [briefs/done/L12.json](briefs/done/L12.json) | L12: Split-keep-parent and cancel endpoints |
 | [briefs/done/L14.json](briefs/done/L14.json) | L14: Counts, health and events endpoints |
 | [briefs/done/L15.json](briefs/done/L15.json) | L15: Queue definitions endpoint and Shamash's five queues |
@@ -80,7 +82,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [deploy/fly/README.md](deploy/fly/README.md) | Fly.io: the Tessera service |
 | [deploy/fly/fly.toml](deploy/fly/fly.toml) | Tessera service on one Fly.io machine with a volume (brief L20), reached through the Cloudflare edge |
 
-## docs/ (10)
+## docs/ (11)
 
 | File | What it is |
 |---|---|
@@ -89,6 +91,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [docs/decisions.md](docs/decisions.md) | Tessera: decisions |
 | [docs/generalizing.md](docs/generalizing.md) | Tessera: generalizing it |
 | [docs/glossary.md](docs/glossary.md) | Tessera: glossary |
+| [docs/handoff.md](docs/handoff.md) | Tessera: handoff |
 | [docs/making-of.md](docs/making-of.md) | The making-of |
 | [docs/operations.md](docs/operations.md) | Operations |
 | [docs/review.md](docs/review.md) | Tessera: review guide |

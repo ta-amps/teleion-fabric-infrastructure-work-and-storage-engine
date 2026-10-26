@@ -29,7 +29,7 @@ done
 
 # Read KEY=value lines without sourcing the file, so a settings file can never run code. Only FLY_ORG
 # and FLY_REGION may come from the environment; everything else comes from the file.
-KEYS="APP VOLUME VOLUME_GB FLY_ORG FLY_REGION EDGE_SECRET_NAME EDGE_CONFIG PROMPT_SECRETS HEALTH_URL GITHUB_REPO"
+KEYS="APP VOLUME VOLUME_GB FLY_ORG FLY_REGION EDGE_SECRET_NAME EDGE_CONFIG PROMPT_SECRETS CUSTOM_DOMAIN HEALTH_URL GITHUB_REPO"
 ENV_FLY_ORG="${FLY_ORG:-}"
 ENV_FLY_REGION="${FLY_REGION:-}"
 for key in $KEYS; do printf -v "$key" '%s' ""; done
@@ -51,12 +51,18 @@ VOLUME_GB="${VOLUME_GB:-1}"
 FLY_ORG="${ENV_FLY_ORG:-${FLY_ORG:-personal}}"
 FLY_REGION="${ENV_FLY_REGION:-${FLY_REGION:-iad}}"
 PROMPT_SECRETS="${PROMPT_SECRETS:-}"
+CUSTOM_DOMAIN="${CUSTOM_DOMAIN:-}"
 HEALTH_URL="${HEALTH_URL:-the Worker URL}"
 GITHUB_REPO="${GITHUB_REPO:-this repo}"
 EDGE_CONFIG_PATH="$REPO/$EDGE_CONFIG"
 for name in $EDGE_SECRET_NAME $PROMPT_SECRETS; do
   case "$name" in *[!A-Z0-9_]*) echo "secret names are A-Z, 0-9 and _ only: $name" >&2; exit 2 ;; esac
 done
+if [ -n "$CUSTOM_DOMAIN" ]; then
+  case "$CUSTOM_DOMAIN" in
+    *[!a-z0-9.-]*|.*|*.|*..*) echo "CUSTOM_DOMAIN must be a hostname like app.example.org: $CUSTOM_DOMAIN" >&2; exit 2 ;;
+  esac
+fi
 
 wrangler() { npx --yes "wrangler@$WRANGLER_VERSION" "$@"; }
 
@@ -68,7 +74,8 @@ Plan for $APP (nothing secret is printed, nothing is deployed):
   3. A fresh random edge secret, stored as $EDGE_SECRET_NAME on $APP and as EDGE_SECRET on the
      Worker in $EDGE_CONFIG. Secrets go through stdin only, never the command line.
 EOF
-  [ -z "$PROMPT_SECRETS" ] || echo "  4. Typed with input hidden (Enter skips): $PROMPT_SECRETS"
+  [ -z "$CUSTOM_DOMAIN" ] || echo "  4. Custom subdomain in $EDGE_CONFIG: https://$CUSTOM_DOMAIN (Cloudflare creates DNS + TLS on deploy)."
+  [ -z "$PROMPT_SECRETS" ] || echo "  5. Typed with input hidden (Enter skips): $PROMPT_SECRETS"
 }
 
 next_steps() {

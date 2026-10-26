@@ -50,9 +50,9 @@ make seed                  # in another terminal: queues, one key per agent, fir
 
 `make dev` starts the service on 127.0.0.1:7700 and the edge on 127.0.0.1:7701 with a fresh per-run edge
 secret, so requests reach the service only through the edge, as in production. Ctrl-C stops everything it
-started. `make seed` writes keys to `~/.config/tessera/keys-dev.json` (mode 600) and never prints them.
+started. `make seed` writes keys to `~/.config/tessera/keys-tessera.json` (mode 600) and never prints them.
 
-More keys: `uv run tessera --db .tessera/dev.db keys issue --label my-agent --queue research --scope store`.
+More keys: `uv run tessera --db .tessera/tessera.db keys issue --label my-agent --queue research --scope store`.
 The key prints once; keep it in the agent's environment or secret store.
 
 ## Connect agents

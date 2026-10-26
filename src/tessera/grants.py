@@ -16,7 +16,7 @@ SCOPES = frozenset({"admin", "store"})
 
 
 class KeyGrant(_Model):
-    """What a key may do. Queue patterns are shell-style globs: `shamash.*`, `aq0?`, `*`."""
+    """What a key may do. Queue patterns are shell-style globs: `ingest.*`, `q0?`, `*`."""
 
     key_id: str
     label: str

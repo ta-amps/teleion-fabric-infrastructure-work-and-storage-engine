@@ -19,7 +19,8 @@
     "review": "docs/review.md",
     "spec": "conformance-draft/SPEC.md",
     "operations": "docs/operations.md",
-    "making_of": "docs/making-of.md"
+    "making_of": "docs/making-of.md",
+    "handoff": "docs/handoff.md"
   },
   "read_order": [
     "README.md",
@@ -34,6 +35,7 @@
     "docs/review.md",
     "docs/operations.md",
     "docs/making-of.md",
+    "docs/handoff.md",
     "AGENTS.md"
   ],
   "commands": {

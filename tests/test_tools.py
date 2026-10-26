@@ -63,3 +63,59 @@ def test_briefs_load_only_when_their_dependencies_are_done(
     # L16 depends on L8, which is in briefs/done; L21 waits for L20, which is a person's task.
     assert {"L11", "L16"} <= queued
     assert "L20" not in queued and "L21" not in queued and "L8" not in queued
+
+
+@pytest.mark.parametrize(
+    ("bad_fields", "pattern"),
+    [
+        ({"repo": "../etc"}, "unsupported repo"),
+        ({"repo": "unknown-repo"}, "unsupported repo"),
+        ({"task_id": "../etc"}, "invalid task_id"),
+        ({"task_id": "-leading-dash"}, "invalid task_id"),
+        ({"branch": "--detach"}, "invalid branch"),
+        ({"branch": "../etc"}, "invalid branch"),
+        ({"branch": "t/L1/../etc"}, "invalid branch"),
+    ],
+)
+def test_worktree_rejects_unsafe_brief_fields_before_touching_git(
+    bad_fields: dict[str, str], pattern: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    worker = load("muse_worker")
+
+    def forbid_subprocess(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("subprocess.run must not be called when brief validation fails")
+
+    monkeypatch.setattr(worker.subprocess, "run", forbid_subprocess)
+    brief = {"repo": "tessera", "task_id": "L25", "branch": "t/L25-safe", **bad_fields}
+    with pytest.raises(ValueError, match=pattern):
+        worker.worktree(brief)
+
+
+def test_seed_defines_shamash_and_eranos_queues(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seeder = load("seed")
+    db = tmp_path / "tessera.db"
+    keys_out = tmp_path / "keys.json"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "seed",
+            "--db",
+            str(db),
+            "--agents",
+            "1",
+            "--code-agents",
+            "1",
+            "--keys-out",
+            str(keys_out),
+        ],
+    )
+    assert seeder.main() == 0
+    store = Store(str(db))
+    try:
+        names = {q.name for q in store.queues()}
+    finally:
+        store.close()
+    assert {"aq02", "aq85", "aq04", "aq05", "aq86", "eq01", "eq02", "eq03"} <= names

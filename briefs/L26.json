@@ -1,0 +1,32 @@
+{
+  "task_id": "L26",
+  "title": "Versioned receipt hash test vectors for cross-language verification",
+  "repo": "tessera",
+  "kind": "build",
+  "effect_class": "write-repo",
+  "owner_type": "muse-code",
+  "done_when": "make check passes with tests verifying every vector in conformance-draft/receipt_vectors.json against tessera.receipts.receipt_hash and canonical_json",
+  "context": [
+    "AGENTS.md",
+    "conformance-draft/SPEC.md",
+    "src/tessera/receipts.py",
+    "tests/test_service.py"
+  ],
+  "constraints": [
+    "Read AGENTS.md first; the spec wins over the code",
+    "Never edit conformance/ or conformance.lock, and never weaken an existing test",
+    "Include schema_version, spec_section, and cases covering nested keys, UTF-8 text, nulls, booleans, fractions, whole floats (1.0 -> 1 below 2^53), empty collections, and failed submits with error strings",
+    "Keep src/tessera/ 100% domain-neutral",
+    "No key, token or credential in any response, page, log or commit",
+    "Run make check before committing; one task per branch; do not push"
+  ],
+  "budget": {
+    "max_model_steps": 200,
+    "usd": 1.5
+  },
+  "depends_on": [
+    "L8"
+  ],
+  "branch": "t/L26-receipt-vectors",
+  "notes": "Each vector stores input (task_id, fencing_token, ok, output, error), canonical_json and expected sha256 so JavaScript and TypeScript clients can verify SHA-256 receipts byte-for-byte."
+}
