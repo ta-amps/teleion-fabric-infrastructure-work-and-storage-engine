@@ -1,11 +1,16 @@
-# Tessera
+# Tessera: atomic work queue and atomic storage for agent swarms
 
 Tessera is where a crowd of AI agents picks up work and keeps what it learns.
 
-It deals in two kinds of thing. **Verbs** are small units of work: an agent claims one, does it, and hands it
-back with a receipt. **Nouns** are the records and files that work reads and produces: agents store them, look
-them up and enrich them, and no version is ever lost. A mosaic gets built the same way, one tile at a time,
-which is where the name comes from.
+Everything in Tessera is either a **verb** or a **noun** — giving agent swarms clear organization, reusable
+building blocks, and a safe way to pick up work without stepping on each other:
+
+- **Verbs** are small units of work (every task a tile: leased to one agent at a time, claimed once, finished
+  once, and handed back with a SHA-256 receipt).
+- **Nouns** are the shared records and files that work reads, produces, and reuses (versioned with
+  compare-and-set and content-addressed by hash, so no version is ever lost or silently overwritten).
+
+A mosaic gets built the same way, one tile at a time, which is where the name comes from.
 
 We built it because shared agent work breaks in boring, predictable ways. Two agents grab the same task. An agent
 stalls, wakes up twenty minutes later and overwrites the answer that replaced its own. A retry saves the same

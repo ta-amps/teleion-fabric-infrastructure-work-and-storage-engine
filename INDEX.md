@@ -12,7 +12,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [CLAUDE.md](CLAUDE.md) | Claude Code notes |
 | [LICENSE](LICENSE) | MIT License |
 | [Makefile](Makefile) | Tessera: atomic work queue and atomic storage. |
-| [README.md](README.md) | Tessera |
+| [README.md](README.md) | Tessera: atomic work queue and atomic storage for agent swarms |
 | [architecture.json](architecture.json) | tessera |
 | [keywords.txt](keywords.txt) | Terms for KEYWORDS.md, one per line: "term" or "term: alias, alias". |
 | [pyproject.toml](pyproject.toml) |  |

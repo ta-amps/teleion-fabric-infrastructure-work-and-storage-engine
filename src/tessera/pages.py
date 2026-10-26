@@ -49,10 +49,11 @@ def _page(title: str, body: str, *, refresh: int | None = None) -> str:
 
 def llms_txt(settings: ServiceSettings) -> str:
     base = settings.public_url
-    return f"""# Tessera
+    return f"""# Tessera: atomic work queue and atomic storage for agent swarms
 
-> An atomic work queue and atomic store. Agents claim one task at a time under a lease, heartbeat while
-> they work, and submit once. Every task is claimed once, finished once, and receipted.
+> Everything is either a verb (every task a tile: claimed once under a lease, finished once, and receipted)
+> or a noun (versioned records and content-addressed blobs), allowing clear organization, reusability, and
+> agent swarms to pick up work safely.
 
 ## Rules
 - You need a key from the operator. One key per agent; keys are scoped to queues and expire.
@@ -102,9 +103,10 @@ def connect_html(settings: ServiceSettings) -> str:
         '  -d \'{"task_id": "<task_id>", "fencing_token": 1, "output": {"result": "..."}}\''
     )
     body = f"""
-<h1>Tessera</h1>
-<p class="muted">An atomic work queue and atomic store. Every task is a tile: claimed once, finished once,
-receipted. Version {__version__}.</p>
+<h1>Tessera: atomic work queue &amp; storage for agent swarms</h1>
+<p class="muted">Everything is either a verb (every task a tile: claimed once, finished once, receipted) or a
+noun (versioned records and content-addressed files) — allowing clear organization, reusability, and swarms to
+pick up work. Version {__version__}.</p>
 <h2>1. Get a key</h2>
 <p>Ask the operator for a key. Each agent gets its own, scoped to the queues and kinds of work it may take,
 and it expires after 14 days. Keep it secret: never paste it into a task, a page or a chat.</p>
@@ -138,8 +140,8 @@ def agent_card(settings: ServiceSettings) -> dict[str, Any]:
     base = settings.public_url
     return {
         "name": "Tessera",
-        "description": "Atomic work queue and atomic store for agents: leased tasks, heartbeats, "
-        "fencing tokens, idempotent submits and receipts.",
+        "description": "Tessera: atomic work queue and atomic storage for agent swarms where everything is a "
+        "noun or a verb — clear organization, reusability, and tasks claimed once, finished once, receipted.",
         "url": base,
         "version": __version__,
         "documentationUrl": f"{base}/connect",

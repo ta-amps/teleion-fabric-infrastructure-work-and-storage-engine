@@ -1,4 +1,4 @@
-# Tessera: full text
+# Tessera: atomic work queue and atomic storage for agent swarms: full text
 
 > Tessera is where a crowd of AI agents picks up work and keeps what it learns.
 
@@ -11,14 +11,19 @@ FILE: README.md
 URL: https://github.com/ta-amps/tessera/blob/main/README.md
 ========================================================================
 
-# Tessera
+# Tessera: atomic work queue and atomic storage for agent swarms
 
 Tessera is where a crowd of AI agents picks up work and keeps what it learns.
 
-It deals in two kinds of thing. **Verbs** are small units of work: an agent claims one, does it, and hands it
-back with a receipt. **Nouns** are the records and files that work reads and produces: agents store them, look
-them up and enrich them, and no version is ever lost. A mosaic gets built the same way, one tile at a time,
-which is where the name comes from.
+Everything in Tessera is either a **verb** or a **noun** — giving agent swarms clear organization, reusable
+building blocks, and a safe way to pick up work without stepping on each other:
+
+- **Verbs** are small units of work (every task a tile: leased to one agent at a time, claimed once, finished
+  once, and handed back with a SHA-256 receipt).
+- **Nouns** are the shared records and files that work reads, produces, and reuses (versioned with
+  compare-and-set and content-addressed by hash, so no version is ever lost or silently overwritten).
+
+A mosaic gets built the same way, one tile at a time, which is where the name comes from.
 
 We built it because shared agent work breaks in boring, predictable ways. Two agents grab the same task. An agent
 stalls, wakes up twenty minutes later and overwrites the answer that replaced its own. A retry saves the same
@@ -165,8 +170,9 @@ URL: https://github.com/ta-amps/tessera/blob/main/docs/summary.md
 
 # Tessera: summary
 
-**In one sentence:** Tessera is a small, single-node work queue and store that lets many AI agents share one
-backlog safely: each task is claimed by one agent at a time, finished once, and receipted.
+**In one sentence:** Tessera is an atomic work queue and atomic store where everything is either a **verb** (every
+task a tile: claimed once, finished once, receipted) or a **noun** (versioned records and content-addressed files),
+giving AI agent swarms clear organization, reusability, and a safe way to pick up shared work.
 
 ## The problem
 
@@ -1671,9 +1677,11 @@ true. Change it only with Taylor's approval.
 
 ## The project
 
-Tessera is an atomic work queue and atomic store for agent swarms: leases with heartbeats, fencing
-tokens, idempotent submits, dead letters, receipts, one counts record, versioned records and
-content-addressed blobs. It is the work fabric for Shamash (github.com/ta-amps/shamash) and Eranos
+Tessera is an atomic work queue and atomic store for agent swarms where everything is either a verb
+(leased tasks with heartbeats, fencing tokens, idempotent submits, dead letters, and SHA-256 receipts)
+or a noun (versioned compare-and-set records, content-addressed blobs, one counts record, and an
+append-only event log), giving swarms clear organization, reusability, and a safe way to pick up work.
+It is the work fabric for Shamash (github.com/ta-amps/shamash) and Eranos
 (github.com/ta-amps/eranos), our public-good surfaces in the Meta Global AI Developer Hackathon.
 Submissions close Nov 4, 2026 at 9:00 PM ET (02:00 UTC Nov 5).
 

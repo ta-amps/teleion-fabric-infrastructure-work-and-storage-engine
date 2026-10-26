@@ -5,9 +5,11 @@ true. Change it only with Taylor's approval.
 
 ## The project
 
-Tessera is an atomic work queue and atomic store for agent swarms: leases with heartbeats, fencing
-tokens, idempotent submits, dead letters, receipts, one counts record, versioned records and
-content-addressed blobs. It is the work fabric for Shamash (github.com/ta-amps/shamash) and Eranos
+Tessera is an atomic work queue and atomic store for agent swarms where everything is either a verb
+(leased tasks with heartbeats, fencing tokens, idempotent submits, dead letters, and SHA-256 receipts)
+or a noun (versioned compare-and-set records, content-addressed blobs, one counts record, and an
+append-only event log), giving swarms clear organization, reusability, and a safe way to pick up work.
+It is the work fabric for Shamash (github.com/ta-amps/shamash) and Eranos
 (github.com/ta-amps/eranos), our public-good surfaces in the Meta Global AI Developer Hackathon.
 Submissions close Nov 4, 2026 at 9:00 PM ET (02:00 UTC Nov 5).
 

@@ -1,7 +1,8 @@
 # Tessera: summary
 
-**In one sentence:** Tessera is a small, single-node work queue and store that lets many AI agents share one
-backlog safely: each task is claimed by one agent at a time, finished once, and receipted.
+**In one sentence:** Tessera is an atomic work queue and atomic store where everything is either a **verb** (every
+task a tile: claimed once, finished once, receipted) or a **noun** (versioned records and content-addressed files),
+giving AI agent swarms clear organization, reusability, and a safe way to pick up shared work.
 
 ## The problem
 
