@@ -82,13 +82,14 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [deploy/fly/README.md](deploy/fly/README.md) | Fly.io: the Tessera service |
 | [deploy/fly/fly.toml](deploy/fly/fly.toml) | Tessera service on one Fly.io machine with a volume (brief L20), reached through the Cloudflare edge |
 
-## docs/ (11)
+## docs/ (12)
 
 | File | What it is |
 |---|---|
 | [docs/architecture.md](docs/architecture.md) | Tessera: architecture |
 | [docs/comparison.md](docs/comparison.md) | Tessera: comparison |
 | [docs/decisions.md](docs/decisions.md) | Tessera: decisions |
+| [docs/expansion.md](docs/expansion.md) | Seeding & expanding atomic nouns and verbs with Muse / Meta agents |
 | [docs/generalizing.md](docs/generalizing.md) | Tessera: generalizing it |
 | [docs/glossary.md](docs/glossary.md) | Tessera: glossary |
 | [docs/handoff.md](docs/handoff.md) | Tessera: handoff |
@@ -155,10 +156,11 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [tests/test_spec_events.py](tests/test_spec_events.py) | SPEC §5.5 lists every event type, and the code emits only listed types: a new event can't ship without a line… |
 | [tests/test_tools.py](tests/test_tools.py) | The Muse worker keeps its safety flags whatever the brief says, and briefs load in dependency order. |
 
-## tools/ (3)
+## tools/ (4)
 
 | File | What it is |
 |---|---|
 | [tools/load_briefs.py](tools/load_briefs.py) | Put briefs on the build queue once their dependencies are done. |
 | [tools/muse_worker.py](tools/muse_worker.py) | Run one Muse Code worker on one Tessera brief. |
 | [tools/seed.py](tools/seed.py) | Seed a Tessera database for Muse agents: the standard queues, one key per agent, and first tasks. |
+| [tools/swarm_expander.py](tools/swarm_expander.py) | Run a Muse / Meta Model API swarm worker that seeds, expands, processes, and promotes atomic nouns and verbs… |

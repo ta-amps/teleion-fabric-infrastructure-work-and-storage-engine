@@ -272,6 +272,170 @@ def test_the_mcp_door(service: tuple[TestClient, Store, Keys]) -> None:
     assert submitted["result"]["structuredContent"]["receipt"]["state_after"] == "done"
 
 
+def test_mcp_door_enqueues_verbs_and_writes_cas_nouns(
+    service: tuple[TestClient, Store, Keys],
+) -> None:
+    client, store, keys = service
+    store_worker, _ = store.issue_key("worker-store-a", queues=["q-a"], scopes=["store"])
+    init = {
+        "protocolVersion": "2025-06-18",
+        "capabilities": {},
+        "clientInfo": {"name": "swarm-mcp", "version": "0"},
+    }
+    version = _rpc(client, store_worker, "initialize", init).json()["result"]["protocolVersion"]
+    names = {
+        t["name"]
+        for t in _rpc(client, store_worker, "tools/list", {}, version).json()["result"]["tools"]
+    }
+    assert {"enqueue", "put_record", "put_records", "get_record", "record_history"} <= names
+
+    # Key without 'store' scope cannot touch noun stores over MCP.
+    denied_store = _rpc(
+        client,
+        keys["a"],
+        "tools/call",
+        {
+            "name": "put_record",
+            "arguments": {"store_name": "proposals", "key": "p-1", "value": {"v": 1}},
+        },
+        version,
+    ).json()["result"]
+    assert denied_store["isError"] is True
+    assert "forbidden" in denied_store["content"][0]["text"]
+
+    # Key scoped to q-a cannot enqueue into q-b or request 'public' effects over MCP.
+    denied_queue = _rpc(
+        client,
+        store_worker,
+        "tools/call",
+        {"name": "enqueue", "arguments": {"queue": "q-b", "brief": {"n": 1}}},
+        version,
+    ).json()["result"]
+    assert denied_queue["isError"] is True
+    denied_public = _rpc(
+        client,
+        store_worker,
+        "tools/call",
+        {
+            "name": "enqueue",
+            "arguments": {"queue": "q-a", "brief": {"n": 1}, "effect_class": "public"},
+        },
+        version,
+    ).json()["result"]
+    assert denied_public["isError"] is True
+
+    # Authorized enqueue creates a verb on q-a.
+    queued = _rpc(
+        client,
+        store_worker,
+        "tools/call",
+        {
+            "name": "enqueue",
+            "arguments": {"queue": "q-a", "task_id": "mcp-t-1", "brief": {"step": "expand"}},
+        },
+        version,
+    ).json()["result"]["structuredContent"]
+    assert queued["task_id"] == "mcp-t-1"
+    assert store.task("mcp-t-1").brief == {"step": "expand"}
+
+    # Compare-and-set noun lifecycle over MCP: v1 -> v2 -> stale conflict -> atomic batch.
+    v1 = _rpc(
+        client,
+        store_worker,
+        "tools/call",
+        {
+            "name": "put_record",
+            "arguments": {
+                "store_name": "proposals",
+                "key": "p-1",
+                "value": {"status": "drafting"},
+                "expected_version": None,
+            },
+        },
+        version,
+    ).json()["result"]["structuredContent"]["record"]
+    assert v1["version"] == 1
+
+    v2 = _rpc(
+        client,
+        store_worker,
+        "tools/call",
+        {
+            "name": "put_record",
+            "arguments": {
+                "store_name": "proposals",
+                "key": "p-1",
+                "value": {"status": "enriched"},
+                "expected_version": 1,
+            },
+        },
+        version,
+    ).json()["result"]["structuredContent"]["record"]
+    assert v2["version"] == 2
+
+    conflict = _rpc(
+        client,
+        store_worker,
+        "tools/call",
+        {
+            "name": "put_record",
+            "arguments": {
+                "store_name": "proposals",
+                "key": "p-1",
+                "value": {"status": "stale"},
+                "expected_version": 1,
+            },
+        },
+        version,
+    ).json()["result"]
+    assert conflict["isError"] is True and "version_conflict" in conflict["content"][0]["text"]
+
+    batch = _rpc(
+        client,
+        store_worker,
+        "tools/call",
+        {
+            "name": "put_records",
+            "arguments": {
+                "writes": [
+                    {
+                        "store": "proposals",
+                        "key": "p-1",
+                        "value": {"status": "promoted"},
+                        "expected_version": 2,
+                    },
+                    {
+                        "store": "canonical",
+                        "key": "c-1",
+                        "value": {"from": "p-1"},
+                        "expected_version": None,
+                    },
+                ]
+            },
+        },
+        version,
+    ).json()["result"]["structuredContent"]["records"]
+    assert [r["version"] for r in batch] == [3, 1]
+
+    fetched = _rpc(
+        client,
+        store_worker,
+        "tools/call",
+        {"name": "get_record", "arguments": {"store_name": "canonical", "key": "c-1"}},
+        version,
+    ).json()["result"]["structuredContent"]["record"]
+    assert fetched["value"] == {"from": "p-1"}
+
+    hist = _rpc(
+        client,
+        store_worker,
+        "tools/call",
+        {"name": "record_history", "arguments": {"store_name": "proposals", "key": "p-1"}},
+        version,
+    ).json()["result"]["structuredContent"]["versions"]
+    assert [h["version"] for h in hist] == [1, 2, 3]
+
+
 def test_no_key_appears_in_any_response(service: tuple[TestClient, Store, Keys]) -> None:
     client, _, keys = service
     responses = [

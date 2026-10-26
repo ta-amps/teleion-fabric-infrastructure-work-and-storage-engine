@@ -19,6 +19,7 @@
     "review": "docs/review.md",
     "spec": "conformance-draft/SPEC.md",
     "operations": "docs/operations.md",
+    "expansion": "docs/expansion.md",
     "making_of": "docs/making-of.md",
     "handoff": "docs/handoff.md"
   },
@@ -28,6 +29,7 @@
     "docs/architecture.md",
     "conformance-draft/SPEC.md",
     "docs/setup.md",
+    "docs/expansion.md",
     "docs/comparison.md",
     "docs/generalizing.md",
     "docs/decisions.md",
@@ -48,6 +50,7 @@
     "run": "make dev",
     "run_public": "make dev TUNNEL=1",
     "seed": "make seed",
+    "expand_demo": "make expand-demo",
     "architecture": "make architecture",
     "index": "make index"
   },
@@ -187,7 +190,7 @@
       "path": "src/tessera/mcp_door.py",
       "kind": "service",
       "domain": "neutral",
-      "role": "MCP server over Streamable HTTP at /mcp: queues, claim, heartbeat, submit, split, park, resume, behind the same keys",
+      "role": "MCP server over Streamable HTTP at /mcp: verb tools (queues, enqueue, claim, heartbeat, submit, split, park, resume) and compare-and-set noun tools (put_record, put_records, get_record, record_history), behind the same keys and Gate",
       "depends_on": [
         "errors",
         "grants",
@@ -199,6 +202,7 @@
       ],
       "tests": [
         "tests/test_service.py::test_the_mcp_door",
+        "tests/test_service.py::test_mcp_door_enqueues_verbs_and_writes_cas_nouns",
         "conformance-draft/test_service_surface.py::test_T11_an_mcp_client_can_claim_and_submit"
       ]
     },
@@ -276,11 +280,12 @@
       "path": [
         "tools/seed.py",
         "tools/load_briefs.py",
-        "tools/muse_worker.py"
+        "tools/muse_worker.py",
+        "tools/swarm_expander.py"
       ],
       "kind": "worker",
       "domain": "specific",
-      "role": "Seed queues and keys; queue briefs whose dependencies are done; run one Muse Code worker on one brief",
+      "role": "Seed queues, seed nouns and keys; queue briefs whose dependencies are done; run one Muse Code worker on one brief; expand seed nouns into reviewed canonical nouns via Meta's Model API",
       "depends_on": [
         "client",
         "store"
@@ -332,7 +337,7 @@
       "spec": "conformance-draft/SPEC.md",
       "auth": "Bearer key",
       "entry_points": [
-        "POST /mcp (Streamable HTTP): tools queues, claim, heartbeat, submit, split, park, resume"
+        "POST /mcp (Streamable HTTP): tools queues, enqueue, claim, heartbeat, submit, split, park, resume, put_record, put_records, get_record, record_history"
       ]
     },
     {
@@ -982,13 +987,24 @@
     },
     {
       "id": "C7",
-      "claim": "MCP clients can claim and submit through the same keys",
+      "claim": "MCP clients can enqueue, claim, submit and read/write compare-and-set records through the same keys",
       "status": "built",
       "evidence": [
         "conformance-draft/test_service_surface.py::test_T11_an_mcp_client_can_claim_and_submit",
-        "tests/test_service.py::test_the_mcp_door"
+        "tests/test_service.py::test_the_mcp_door",
+        "tests/test_service.py::test_mcp_door_enqueues_verbs_and_writes_cas_nouns"
       ],
       "verify": "make suite-http-local"
+    },
+    {
+      "id": "C18",
+      "claim": "Swarm workers expand seed nouns into reviewed canonical nouns with bounded depth, non-self review and Standard-mode Meta Model API job tracking",
+      "status": "built",
+      "evidence": [
+        "tools/swarm_expander.py",
+        "tests/test_tools.py::test_swarm_expander_demo_promotes_seed_to_canonical"
+      ],
+      "verify": "make expand-demo"
     },
     {
       "id": "C8",

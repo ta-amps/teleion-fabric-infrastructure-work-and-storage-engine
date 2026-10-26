@@ -113,9 +113,185 @@ def test_seed_defines_shamash_and_eranos_queues(
         ],
     )
     assert seeder.main() == 0
+    # Running seed a second time is idempotent on seed nouns and expand tasks.
+    assert seeder.main() == 0
     store = Store(str(db))
     try:
         names = {q.name for q in store.queues()}
+        shamash_seed = store.get_record("seeds", "seed-shamash-social-harm")
+        eranos_seed = store.get_record("seeds", "seed-eranos-ngo-intake")
+        expand_task = store.task("expand-seed-shamash-social-harm")
     finally:
         store.close()
-    assert {"aq02", "aq85", "aq04", "aq05", "aq86", "eq01", "eq02", "eq03"} <= names
+    assert {
+        "seed",
+        "expand",
+        "aq02",
+        "aq85",
+        "aq04",
+        "aq05",
+        "aq86",
+        "eq01",
+        "eq02",
+        "eq03",
+    } <= names
+    assert shamash_seed.version == 1 and eranos_seed.version == 1
+    assert expand_task.queue == "expand" and expand_task.kind == "expand"
+
+
+def test_swarm_expander_demo_promotes_seed_to_canonical() -> None:
+    expander = load("swarm_expander")
+    summary = expander.run_demo(dry_model=True)
+    assert summary["ok"] is True
+    assert summary["steps_completed"] == 4
+    assert summary["proposal_versions"] == 4
+    assert summary["canonical_key"] == "shamash.harm_pack:prop-seed-shamash-social-harm"
+    assert summary["canonical_version"] == 1
+    assert summary["jobs_recorded"] == 3
+    assert len(summary["receipts"]) == 4
+
+
+def test_swarm_expander_refuses_contributor_models() -> None:
+    expander = load("swarm_expander")
+    with pytest.raises(expander.ContributorModelRefused):
+        expander.check_model("muse-spark-1.3-contributor")
+
+
+def test_swarm_expander_enforces_max_depth_and_independent_reviewer(tmp_path: Path) -> None:
+    from tessera import NotFound, QueueConfig, RecordWrite, TaskSpec
+
+    expander = load("swarm_expander")
+    store = Store(str(tmp_path / "exp.db"))
+    try:
+        for q in ("expand", "research", "draft", "review"):
+            store.define_queue(QueueConfig(name=q))
+        store.put_records(
+            [
+                RecordWrite(
+                    store="seeds",
+                    key="s-1",
+                    value={"seed_id": "s-1"},
+                    expected_version=None,
+                )
+            ]
+        )
+        # 1. Depth guard refuses runaway recursion.
+        store.enqueue(
+            TaskSpec(
+                queue="expand",
+                task_id="too-deep",
+                kind="expand",
+                brief={"seed_key": "s-1", "depth": 2, "max_depth": 2},
+            )
+        )
+        deep = expander.step_once(store, queue="expand", worker="muse-01", dry_model=True)
+        assert deep is not None and deep["ok"] is False
+        assert "exceeds max_depth" in deep["error"]
+
+        # 2. Valid expand + enrich by muse-01, then self-review by muse-01 is refused.
+        store.enqueue(
+            TaskSpec(
+                queue="expand",
+                task_id="ok-expand",
+                kind="expand",
+                brief={
+                    "seed_key": "s-1",
+                    "depth": 0,
+                    "max_depth": 2,
+                    "max_children": 2,
+                    "target_namespace": "eranos.kit",
+                },
+            )
+        )
+        assert expander.step_once(store, queue="expand", worker="muse-01", dry_model=True)["ok"]
+        assert expander.step_once(store, queue="research", worker="muse-01", dry_model=True)["ok"]
+        self_rev = expander.step_once(store, queue="review", worker="muse-01", dry_model=True)
+        assert self_rev is not None and self_rev["ok"] is False
+        assert "independent review required" in self_rev["error"]
+        with pytest.raises(NotFound):
+            store.get_record("canonical", "eranos.kit:prop-s-1")
+    finally:
+        store.close()
+
+
+def test_swarm_expander_tracks_meta_responses_api_job_on_lease(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import httpx
+
+    from tessera import QueueConfig, RecordWrite, TaskSpec
+
+    expander = load("swarm_expander")
+    monkeypatch.setenv("MODEL_API_KEY", "test-meta-standard-key")
+    monkeypatch.setattr(expander.time, "sleep", lambda _s: None)
+
+    calls: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append((request.method, request.url.path))
+        if request.method == "POST" and request.url.path.endswith("/responses"):
+            body = json.loads(request.content.decode("utf-8"))
+            assert body["model"] == "muse-spark-1.3"
+            assert body["background"] is True
+            return httpx.Response(200, json={"id": "resp_meta_01", "status": "in_progress"})
+        return httpx.Response(
+            200,
+            json={
+                "id": "resp_meta_01",
+                "status": "completed",
+                "usage": {"input_tokens": 95, "output_tokens": 140},
+                "output": [
+                    {
+                        "content": [
+                            {
+                                "type": "output_text",
+                                "text": json.dumps(
+                                    {
+                                        "summary": "SYNTHETIC plan",
+                                        "candidate_nouns": [{"slot": "kit", "title": "NGO intake"}],
+                                    }
+                                ),
+                            }
+                        ]
+                    }
+                ],
+            },
+        )
+
+    transport = httpx.MockTransport(handler)
+    store = Store(str(tmp_path / "jobs.db"))
+    try:
+        for q in ("expand", "research", "draft", "review"):
+            store.define_queue(QueueConfig(name=q))
+        store.put_records(
+            [
+                RecordWrite(
+                    store="seeds", key="s-job", value={"seed_id": "s-job"}, expected_version=None
+                )
+            ]
+        )
+        store.enqueue(
+            TaskSpec(
+                queue="expand",
+                task_id="exp-job",
+                kind="expand",
+                brief={"seed_key": "s-job", "depth": 0, "max_depth": 2, "max_children": 2},
+            )
+        )
+        res = expander.step_once(
+            store,
+            queue="expand",
+            worker="muse-01",
+            model="muse-spark-1.3",
+            dry_model=False,
+            transport=transport,
+        )
+        assert res is not None and res["ok"] is True
+        jobs = store.jobs(task_id="exp-job")
+        assert len(jobs) == 1
+        assert jobs[0].job_id == "resp_meta_01"
+        assert jobs[0].status == "completed"
+        assert jobs[0].input_tokens == 95 and jobs[0].output_tokens == 140
+        assert len(calls) == 2
+    finally:
+        store.close()

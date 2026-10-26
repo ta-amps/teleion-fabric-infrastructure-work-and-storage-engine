@@ -18,9 +18,12 @@ Where the work stands as of Oct 26, 2026, how to verify every guarantee from a f
   and are scoped to queue globs, task kinds, effect classes (`read`, `write-internal`, `write-repo`) and
   `admin` / `store`. No key holds `public`.
 - **One default local SQLite path.** `Makefile`, `scripts/dev_stack.sh`, `tools/seed.py`,
-  `tools/load_briefs.py`, `tools/muse_worker.py` and `uv run tessera` all default to `.tessera/tessera.db`
-  (overridable via `TESSERA_DB`), so `make dev`, `make serve` and `make seed` share the same database out of
-  the box. `make seed` writes worker keys to `~/.config/tessera/keys-tessera.json` (mode `0600`).
+  `tools/load_briefs.py`, `tools/muse_worker.py`, `tools/swarm_expander.py` and `uv run tessera` all default to
+  `.tessera/tessera.db` (overridable via `TESSERA_DB`), so `make dev`, `make serve` and `make seed` share the
+  same database out of the box. `make seed` defines the `seed` and `expand` queues alongside the general and
+  surface queues, writes initial `seeds/*` nouns, and saves worker keys to
+  `~/.config/tessera/keys-tessera.json` (mode `0600`). `make expand-demo` runs the full four-stage bounded
+  expansion loop (`seeds` -> `proposals` -> `canonical`, see [expansion.md](expansion.md)).
 - **Local edge and hosting scripts.** `make dev` runs the service behind the real Cloudflare Worker code
   (`deploy/cloudflare/worker.js`) with a fresh per-run `x-edge-auth` secret (`TUNNEL=1` adds a temporary
   `*.trycloudflare.com` tunnel). `deploy/bootstrap-hosting.sh` and `deploy/hosting.env` prepare the Fly.io
@@ -107,4 +110,4 @@ Read [AGENTS.md](../AGENTS.md) before changing anything:
   `make check` before every commit.
 
 More detail: [summary.md](summary.md) · [architecture.md](architecture.md) · [setup.md](setup.md) ·
-[operations.md](operations.md) · [review.md](review.md)
+[expansion.md](expansion.md) · [operations.md](operations.md) · [review.md](review.md)

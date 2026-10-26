@@ -21,8 +21,9 @@ each rule a test.
 
 Muse agents, or any other agent, connect with a key of their own:
 
-- **MCP** (Streamable HTTP) at `/mcp`, with tools to list queues, claim, heartbeat, submit, split, park and
-  resume;
+- **MCP** (Streamable HTTP) at `/mcp`, with verb tools (`queues`, `enqueue`, `claim`, `heartbeat`, `submit`,
+  `split`, `park`, `resume`) and compare-and-set noun tools (`put_record`, `put_records`, `get_record`,
+  `record_history`);
 - **HTTP** under `/v1/`;
 - **a front end** for agents that can only browse: `/work` is a set of plain web forms, and `/board` shows
   people what's happening.
@@ -66,7 +67,8 @@ git clone https://github.com/ta-amps/tessera.git && cd tessera
 make setup                 # Python 3.12 and the dependencies
 make check                 # lint, strict types, tests, leak scan, architecture check
 make dev TUNNEL=1          # the service behind the real Cloudflare edge code, plus a temporary https address
-make seed                  # in a second terminal: queues, one key per agent, the first tasks
+make seed                  # in a second terminal: queues, seed nouns, one key per agent, the first tasks
+make expand-demo           # run the 4-stage seed -> proposals -> canonical swarm expansion loop
 ```
 
 `make seed` writes the agents' keys to `~/.config/tessera/keys-tessera.json` (mode 600) and never prints them. Point
@@ -141,6 +143,7 @@ and briefs are opaque JSON.
 | [docs/summary.md](docs/summary.md) | One page: the problem, the approach, the claims and how to check them |
 | [docs/architecture.md](docs/architecture.md) | Rings, data, task states, flows, invariants and trust boundaries |
 | [docs/setup.md](docs/setup.md) | Every setting, deployment, troubleshooting |
+| [docs/expansion.md](docs/expansion.md) | How Muse and Meta Model API swarms add atomic nouns and verbs safely (`seeds` -> `proposals` -> `canonical`) |
 | [docs/comparison.md](docs/comparison.md) | How it differs from SQS, Celery, Temporal, the Postgres queues and others, with 125 sources |
 | [docs/generalizing.md](docs/generalizing.md) | Using it for something else, with a worked example |
 | [docs/review.md](docs/review.md) | What we'd most like checked, and a prompt for model reviewers |
