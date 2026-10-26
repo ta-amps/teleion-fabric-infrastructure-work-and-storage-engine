@@ -40,6 +40,7 @@ MODEL_API_KEY_ENV = "MODEL_API_KEY"
 DEFAULT_MODEL = "muse-spark-1.3"
 HARD_MAX_DEPTH = 3
 HARD_MAX_CHILDREN = 8
+SUPPORTED_KINDS = ("expand", "enrich_proposal", "review_proposal", "split_demo")
 
 BANNED_WORDS = frozenset(
     {
@@ -440,9 +441,10 @@ def step_once(
     kinds: list[str] | None = None,
     transport: httpx.BaseTransport | None = None,
 ) -> dict[str, Any] | None:
-    """Claim at most one task from `queue`, execute its noun/verb handler, and submit once."""
+    """Claim at most one expansion task from `queue`, execute its noun/verb handler, and submit once."""
     check_model(model)
-    lease = backend.claim(queue, worker, kinds=kinds)
+    claim_kinds = list(SUPPORTED_KINDS) if kinds is None else kinds
+    lease = backend.claim(queue, worker, kinds=claim_kinds)
     if lease is None:
         return None
     idem = f"{lease.task_id}:{lease.fencing_token}"

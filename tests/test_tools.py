@@ -188,6 +188,17 @@ def test_swarm_expander_enforces_max_depth_and_independent_reviewer(tmp_path: Pa
         assert deep is not None and deep["ok"] is False
         assert "exceeds max_depth" in deep["error"]
 
+        # Non-expansion tasks on shared queues (e.g. kind='research') are left untouched.
+        store.enqueue(
+            TaskSpec(
+                queue="research",
+                task_id="general-research-1",
+                kind="research",
+                priority=1,
+                brief={"topic": "unrelated"},
+            )
+        )
+
         # 2. Valid expand + enrich by muse-01, then self-review by muse-01 is refused.
         store.enqueue(
             TaskSpec(
@@ -204,7 +215,10 @@ def test_swarm_expander_enforces_max_depth_and_independent_reviewer(tmp_path: Pa
             )
         )
         assert expander.step_once(store, queue="expand", worker="muse-01", dry_model=True)["ok"]
-        assert expander.step_once(store, queue="research", worker="muse-01", dry_model=True)["ok"]
+        enrich_step = expander.step_once(store, queue="research", worker="muse-01", dry_model=True)
+        assert enrich_step is not None and enrich_step["ok"] is True
+        assert enrich_step["task_id"] == "enrich-s-1-research"
+        assert store.task("general-research-1").state == "ready"
         self_rev = expander.step_once(store, queue="review", worker="muse-01", dry_model=True)
         assert self_rev is not None and self_rev["ok"] is False
         assert "independent review required" in self_rev["error"]
