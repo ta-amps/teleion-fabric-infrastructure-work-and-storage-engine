@@ -16,8 +16,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
       - name: Install
-        run: uv sync --all-groups
+        run: uv sync --all-groups --all-extras
       - name: Lint, types, tests, conformance on the in-process store, leak scan
         run: make check
       - name: The suite must fail against an empty backend
         run: make suite-stub
+      - name: The whole suite over HTTP against a real local service
+        run: make suite-http-local

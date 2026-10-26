@@ -1,15 +1,15 @@
 {
-  "task_id": "L14",
-  "title": "Counts, health and events endpoints",
+  "task_id": "L12",
+  "title": "Split-keep-parent and cancel endpoints",
   "repo": "tessera",
   "kind": "build",
   "effect_class": "write-repo",
   "owner_type": "muse-code",
-  "done_when": "make suite BACKEND=http passes T09 and T10 against a local server",
+  "done_when": "make suite BACKEND=http passes T08 against a local server",
   "context": [
     "AGENTS.md",
     "conformance-draft/SPEC.md",
-    "src/tessera/_observe.py"
+    "src/tessera/_tasks.py"
   ],
   "constraints": [
     "Read AGENTS.md first; the spec wins over the code",
@@ -23,7 +23,8 @@
     "usd": 3.0
   },
   "depends_on": [
-    "L6"
+    "L8"
   ],
-  "branch": "t/L14-counts-health-events"
+  "branch": "t/L12-split-cancel",
+  "notes": "Done Oct 26, 2026 by claude-code (taken over from muse-code so agents could connect the same day); verified by tests/test_service.py and scripts/suite_http_local.py."
 }

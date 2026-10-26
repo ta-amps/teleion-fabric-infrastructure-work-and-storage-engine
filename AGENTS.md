@@ -15,9 +15,12 @@ spec; the spec does not bend to the code.
 
 ## Who builds what
 
-- Claude Code wrote the spec draft, the suite and the in-process reference store.
-- Muse Code workers build the HTTP service, keys, reaper loop, MCP door, model-job lane, board and
-  deploy from `briefs/L*.json`, one brief per branch, claimed through Tessera itself.
+- Claude Code wrote the spec draft, the suite, the store, the HTTP service, the MCP door and the agent
+  pages (briefs in `briefs/done/` say so).
+- Muse agents are the workforce: they connect with their own keys and claim, split and finish tasks
+  through Tessera, for this repo and for Shamash.
+- Muse Code workers take the open briefs in `briefs/` (L11, L13, L16, L18, L19, L21, L23), one per
+  branch, claimed through Tessera with `tools/muse_worker.py`.
 - Every receipt names who did the work: claude-code, muse-code, muse-assistant or human.
 
 ## Repo map
@@ -25,9 +28,9 @@ spec; the spec does not bend to the code.
 ```
 conformance-draft/   SPEC.md and tests T01 to T16, ST01 to ST04 (draft)
 conformance/         the locked suite, after `make lock-suite`; never edit
-src/tessera/         _base, _tasks, _jobs, _observe, _storage (the store), models, client, cli
+src/tessera/         store (_base, _tasks, _jobs, _observe, _storage, _keys), service, mcp_door, pages, client, cli
 tests/               unit tests, guard-hook and leak-scan tests
-briefs/              JSON briefs for Muse Code workers
+briefs/              open briefs for Muse Code workers; briefs/done/ for finished ones
 tools/               muse_worker.py: claim a brief, run Muse Code headless, submit a receipt
 harness/             work-harness design and starting config
 docs/                architecture, operations, making-of
@@ -41,6 +44,8 @@ deploy/              Fly.io service with a volume; Cloudflare notes
 - `make suite BACKEND=store|http`: the conformance suite on one backend.
 - `make suite-stub`: proves the suite fails against an empty backend.
 - `uv run tessera --help`: the CLI on a shared SQLite file (`TESSERA_DB`).
+- `make dev` (add `TUNNEL=1` for a public address) and `make seed`: the local stack and its keys.
+- `make suite-http-local`: the whole suite over HTTP against a real local service.
 
 ## Hard rules
 

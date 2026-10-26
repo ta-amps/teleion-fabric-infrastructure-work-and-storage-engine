@@ -27,5 +27,5 @@
   },
   "depends_on": [],
   "branch": "t/L6-service-skeleton",
-  "notes": "Map each TesseraError to its status and problem code from SPEC section 8. `tessera serve` starts the app."
+  "notes": "Done Oct 26, 2026 by claude-code (taken over from muse-code so agents could connect the same day); verified by tests/test_service.py and scripts/suite_http_local.py."
 }

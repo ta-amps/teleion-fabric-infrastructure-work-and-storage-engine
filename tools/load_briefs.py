@@ -19,7 +19,10 @@ from tessera import NotFound, QueueConfig, Store, TaskSpec
 BUILD_QUEUE = QueueConfig(name="build", lease_seconds=3600, heartbeat_seconds=60, miss_limit=3)
 
 
-def done(store: Store, task_id: str) -> bool:
+def done(store: Store, task_id: str, finished: set[str]) -> bool:
+    """A dependency is done when its brief sits in briefs/done/ or its task is done in the store."""
+    if task_id in finished:
+        return True
     try:
         return store.task(task_id).state == "done"
     except NotFound:
@@ -36,13 +39,14 @@ def main() -> int:
     store = Store(args.db)
     try:
         store.define_queue(BUILD_QUEUE)
+        finished = {p.stem for p in Path(args.briefs, "done").glob("*.json")}
         for path in sorted(Path(args.briefs).glob("*.json")):
             brief = json.loads(path.read_text(encoding="utf-8"))
             task_id = brief["task_id"]
             if brief["owner_type"] == "human":
                 print(f"{task_id}: for Taylor, not queued")
                 continue
-            waiting = [d for d in brief.get("depends_on", []) if not done(store, d)]
+            waiting = [d for d in brief.get("depends_on", []) if not done(store, d, finished)]
             if waiting:
                 print(f"{task_id}: waits for {', '.join(waiting)}")
                 continue

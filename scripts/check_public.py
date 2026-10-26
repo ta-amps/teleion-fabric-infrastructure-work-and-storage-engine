@@ -25,6 +25,7 @@ SECRET_PATTERNS: dict[str, re.Pattern[str]] = {
     "github token": re.compile(r"\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,})"),
     "meta model api key": re.compile(r"\bLLM_[A-Za-z0-9_\-]{20,}"),
     "hugging face token": re.compile(r"\bhf_[A-Za-z0-9]{30,}"),
+    "tessera key": re.compile(r"\btsk_[A-Za-z0-9_\-]{30,}"),
     "aws access key": re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"),
     "slack token": re.compile(r"\bxox[abposr]-[A-Za-z0-9-]{10,}"),
     "openai-style key": re.compile(r"\bsk-(?:ant-|proj-)?[A-Za-z0-9_\-]{24,}"),

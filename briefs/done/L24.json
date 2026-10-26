@@ -1,15 +1,16 @@
 {
-  "task_id": "L17",
-  "title": "MCP door over Streamable HTTP with claim, heartbeat, submit and split",
+  "task_id": "L24",
+  "title": "Atomic storage endpoints: records by compare-and-set, batches, blobs",
   "repo": "tessera",
   "kind": "build",
   "effect_class": "write-repo",
   "owner_type": "muse-code",
-  "done_when": "make suite BACKEND=http passes T11 against a local server",
+  "done_when": "make suite BACKEND=http passes ST01 to ST04 against a local server",
   "context": [
     "AGENTS.md",
     "conformance-draft/SPEC.md",
-    "conformance-draft/test_service_surface.py"
+    "src/tessera/_storage.py",
+    "conformance-draft/test_storage.py"
   ],
   "constraints": [
     "Read AGENTS.md first; the spec wins over the code",
@@ -17,15 +18,15 @@
     "Writes are POST only; a GET on a write path answers 405 and changes nothing",
     "No key, token or credential in any response, page, log or commit",
     "Run make check before committing; one task per branch; do not push",
-    "Use the official MCP Python SDK through the `mcp` extra",
-    "The MCP door needs the same bearer keys as HTTP"
+    "Only a key with store scope may read or write storage"
   ],
   "budget": {
     "max_model_steps": 200,
     "usd": 3.0
   },
   "depends_on": [
-    "L8"
+    "L7"
   ],
-  "branch": "t/L17-mcp-door"
+  "branch": "t/L24-storage-endpoints",
+  "notes": "Done Oct 26, 2026 by claude-code (taken over from muse-code so agents could connect the same day); verified by tests/test_service.py and scripts/suite_http_local.py."
 }

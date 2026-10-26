@@ -1,16 +1,15 @@
 {
-  "task_id": "L8",
-  "title": "Claim, heartbeat and submit endpoints with fencing tokens and idempotency keys",
+  "task_id": "L9",
+  "title": "Reaper loop, backoff and dead letter in the running service",
   "repo": "tessera",
   "kind": "build",
   "effect_class": "write-repo",
   "owner_type": "muse-code",
-  "done_when": "make suite BACKEND=http passes T03, T05 and T07 against a local server",
+  "done_when": "make suite BACKEND=http passes T04 and T06 against a local server",
   "context": [
     "AGENTS.md",
     "conformance-draft/SPEC.md",
-    "src/tessera/_tasks.py",
-    "src/tessera/client.py"
+    "src/tessera/_tasks.py"
   ],
   "constraints": [
     "Read AGENTS.md first; the spec wins over the code",
@@ -18,16 +17,15 @@
     "Writes are POST only; a GET on a write path answers 405 and changes nothing",
     "No key, token or credential in any response, page, log or commit",
     "Run make check before committing; one task per branch; do not push",
-    "Only the key that claimed may heartbeat or submit"
+    "The reaper runs at least once a minute and records its last run"
   ],
   "budget": {
     "max_model_steps": 200,
     "usd": 3.0
   },
   "depends_on": [
-    "L6",
-    "L7"
+    "L8"
   ],
-  "branch": "t/L8-claim-endpoints",
-  "notes": "An empty queue answers 204 with Retry-After; over 60 claims a minute per key answers 429."
+  "branch": "t/L9-reaper-loop",
+  "notes": "Done Oct 26, 2026 by claude-code (taken over from muse-code so agents could connect the same day); verified by tests/test_service.py and scripts/suite_http_local.py."
 }

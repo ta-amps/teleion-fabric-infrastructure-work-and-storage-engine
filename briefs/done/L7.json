@@ -1,15 +1,16 @@
 {
-  "task_id": "L15",
-  "title": "Queue definitions endpoint and Shamash's five queues",
+  "task_id": "L7",
+  "title": "Worker keys: hashed storage, scopes, 14-day expiry, a command-line issuer",
   "repo": "tessera",
   "kind": "build",
   "effect_class": "write-repo",
   "owner_type": "muse-code",
-  "done_when": "POST /v1/queues/define creates aq02, aq85, aq04, aq05 and aq86, and GET /v1/counts lists all five",
+  "done_when": "make suite BACKEND=http passes T01, T02 and T16 against a local server",
   "context": [
     "AGENTS.md",
     "conformance-draft/SPEC.md",
-    "src/tessera/models.py"
+    "src/tessera/schema.sql",
+    "conformance-draft/test_service_surface.py"
   ],
   "constraints": [
     "Read AGENTS.md first; the spec wins over the code",
@@ -17,14 +18,16 @@
     "Writes are POST only; a GET on a write path answers 405 and changes nothing",
     "No key, token or credential in any response, page, log or commit",
     "Run make check before committing; one task per branch; do not push",
-    "Only an admin-scoped key may define queues"
+    "Store only SHA-256 of keys; print a new key once, at issue time",
+    "No key may hold the public effect class"
   ],
   "budget": {
     "max_model_steps": 200,
-    "usd": 1.0
+    "usd": 3.0
   },
   "depends_on": [
-    "L7"
+    "L6"
   ],
-  "branch": "t/L15-queue-define"
+  "branch": "t/L7-worker-keys",
+  "notes": "Done Oct 26, 2026 by claude-code (taken over from muse-code so agents could connect the same day); verified by tests/test_service.py and scripts/suite_http_local.py."
 }

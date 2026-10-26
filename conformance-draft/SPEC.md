@@ -185,6 +185,9 @@ nothing. Bodies are JSON. Successful bodies are the models in `src/tessera/model
   behind the same keys. Tool results carry the same JSON as the HTTP bodies.
 - **Hygiene**: no key, token or credential appears in any response, page or log. CORS allows only
   listed origins, never `*`. Pages carry no instructions aimed at visiting agents.
+- **Edge lockdown**: when `TESSERA_EDGE_SECRET` is set, every request except `GET /v1/health` and
+  `GET /healthz` must carry an `x-edge-auth` header equal to it (compared in constant time), else 403
+  `forbidden`. The Cloudflare edge adds the header, so the origin answers only through the edge.
 
 ## 8. Errors
 

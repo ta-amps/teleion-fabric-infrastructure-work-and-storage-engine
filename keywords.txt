@@ -1,0 +1,30 @@
+# Terms for KEYWORDS.md, one per line: "term" or "term: alias, alias". Run `make index` after editing.
+lease: leases, leased
+heartbeat: heartbeats
+fencing token: fencing_token
+idempotency key: idempotency_key, Idempotency-Key
+receipt: receipts, receipt_hash
+dead letter: dead-letter, dead_lettered
+backoff
+reaper: reap
+split: split-keep-parent
+counts record: recount
+health: healthz
+event log: events
+model job: register_job, update_job
+compare-and-set: expected_version, VersionConflict
+blob: blobs
+MCP: mcp_door
+edge secret: TESSERA_EDGE_SECRET, x-edge-auth, EDGE_SECRET
+worker key: KeyGrant, issue_key
+scope: scopes
+effect class: effect_class, effect_classes
+quick tunnel: trycloudflare, cloudflared
+Cloudflare: wrangler, workers.dev
+Fly.io: fly.toml, flyctl
+brief: briefs
+Muse Code: muse_worker
+conformance suite: conformance-draft
+SPEC
+seed: seed.py
+SQLite: WAL

@@ -1,15 +1,15 @@
 {
-  "task_id": "L9",
-  "title": "Reaper loop, backoff and dead letter in the running service",
+  "task_id": "L15",
+  "title": "Queue definitions endpoint and Shamash's five queues",
   "repo": "tessera",
   "kind": "build",
   "effect_class": "write-repo",
   "owner_type": "muse-code",
-  "done_when": "make suite BACKEND=http passes T04 and T06 against a local server",
+  "done_when": "POST /v1/queues/define creates aq02, aq85, aq04, aq05 and aq86, and GET /v1/counts lists all five",
   "context": [
     "AGENTS.md",
     "conformance-draft/SPEC.md",
-    "src/tessera/_tasks.py"
+    "src/tessera/models.py"
   ],
   "constraints": [
     "Read AGENTS.md first; the spec wins over the code",
@@ -17,14 +17,15 @@
     "Writes are POST only; a GET on a write path answers 405 and changes nothing",
     "No key, token or credential in any response, page, log or commit",
     "Run make check before committing; one task per branch; do not push",
-    "The reaper runs at least once a minute and records its last run"
+    "Only an admin-scoped key may define queues"
   ],
   "budget": {
     "max_model_steps": 200,
-    "usd": 3.0
+    "usd": 1.0
   },
   "depends_on": [
-    "L8"
+    "L7"
   ],
-  "branch": "t/L9-reaper-loop"
+  "branch": "t/L15-queue-define",
+  "notes": "Done Oct 26, 2026 by claude-code (taken over from muse-code so agents could connect the same day); verified by tests/test_service.py and scripts/suite_http_local.py."
 }

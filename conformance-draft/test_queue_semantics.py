@@ -258,7 +258,8 @@ def test_T09_one_counts_record(backend: Any, make_queue: Any) -> None:
             backend.cancel(lease.task_id, "conformance test")
     counts = backend.counts()
     assert counts == backend.recount()
-    assert sum(sum(c.model_dump().values()) for c in counts.values()) == 500
+    # Only this test's queues: a shared service also holds other tests' tasks.
+    assert sum(sum(counts[q].model_dump().values()) for q in ("q-a", "q-b")) == 500
 
 
 def test_T10_health_is_honest(backend: Any, make_queue: Any, tick: Any) -> None:

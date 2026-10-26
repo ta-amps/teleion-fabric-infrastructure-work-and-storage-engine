@@ -29,3 +29,6 @@ dist/
 .vscode/
 *.swp
 .claude/settings.local.json
+
+# Local Cloudflare secrets for `wrangler dev`
+.dev.vars

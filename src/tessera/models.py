@@ -75,6 +75,15 @@ class Lease(_Model):
     children: list[ChildResult] = Field(default_factory=list)
 
 
+class LeaseInfo(_Model):
+    task_id: str
+    fencing_token: int
+    worker: str
+    key_id: str | None
+    expires_at: float
+    hard_expires_at: float
+
+
 class Receipt(_Model):
     task_id: str
     fencing_token: int

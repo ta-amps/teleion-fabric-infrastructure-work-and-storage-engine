@@ -1,6 +1,9 @@
-# Tessera service on one Fly.io machine with a volume (brief L20). Deploys need Taylor's approval.
-#   fly deploy --config deploy/fly/fly.toml --dockerfile deploy/fly/Dockerfile
-app = "tessera-fabric"          # change if the name is taken
+# Tessera service on one Fly.io machine with a volume (brief L20), reached through the Cloudflare edge
+# (worker `tessera`). Deploys need Taylor's approval: the GitHub `deploy` workflow, part `service`.
+# Secrets (never here): TESSERA_EDGE_SECRET. Fly app names are global: if "tessera-fabric" is taken,
+# pick another, put it here, in ORIGIN in deploy/cloudflare/wrangler.jsonc, and in TESSERA_APP when
+# running the bootstrap script.
+app = "tessera-fabric"
 primary_region = "iad"
 
 [env]
@@ -11,7 +14,7 @@ primary_region = "iad"
   force_https = true
   auto_stop_machines = "off"    # a queue with leases must keep its reaper running
   auto_start_machines = true
-  min_machines_running = 1
+  min_machines_running = 1       # keep 1 at all times, and certainly through judging week (Nov 4 to 9)
 
   [[http_service.checks]]
     grace_period = "10s"

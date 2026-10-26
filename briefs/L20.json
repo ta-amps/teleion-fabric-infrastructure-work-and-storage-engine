@@ -17,7 +17,8 @@
     "Writes are POST only; a GET on a write path answers 405 and changes nothing",
     "No key, token or credential in any response, page, log or commit",
     "Run make check before committing; one task per branch; do not push",
-    "Taylor runs and approves every deploy"
+    "Taylor runs and approves every deploy",
+    "Serve only behind the Cloudflare edge: TESSERA_EDGE_SECRET on Fly equals EDGE_SECRET on the tessera Worker, and /board loads there with no content-security-policy violations"
   ],
   "budget": {
     "max_model_steps": 200,

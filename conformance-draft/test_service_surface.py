@@ -10,7 +10,6 @@ Optionally TESSERA_LOG_PATH points at the service's log file for the T16 scan.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import os
 import uuid
@@ -36,7 +35,7 @@ WRITE_PATHS = [
     "/v1/tasks/cancel",
     "/v1/queues/define",
     "/v1/admin/reap",
-    "/v1/jobs",
+    "/v1/jobs/resp_x",
     "/v1/stores/batch",
     "/v1/blobs",
 ]
@@ -81,35 +80,53 @@ def test_T10_health_over_http(http: httpx.Client) -> None:
 
 @needs_service
 def test_T11_an_mcp_client_can_claim_and_submit(http: httpx.Client) -> None:
-    pytest.importorskip("mcp")
-    from mcp import ClientSession
-    from mcp.client.streamable_http import streamablehttp_client
-
+    """Raw MCP JSON-RPC over Streamable HTTP, so the test doesn't depend on any one SDK version."""
     task = {"queue": "conformance-a", "brief": {"conformance": "T11"}}
     assert http.post("/v1/tasks", json=task, headers=auth(KEYS["admin"])).status_code == 201
+    headers = {**auth(KEYS["q_a"]), "accept": "application/json, text/event-stream"}
 
-    async def session_run() -> None:
-        async with (
-            streamablehttp_client(f"{URL}/mcp", headers=auth(KEYS["q_a"])) as (read, write, _),
-            ClientSession(read, write) as session,
-        ):
-            await session.initialize()
-            names = {t.name for t in (await session.list_tools()).tools}
-            assert {"claim", "heartbeat", "submit", "split"} <= names
-            claimed = await session.call_tool("claim", {"queue": "conformance-a", "worker": "mcp"})
-            lease = json.loads(claimed.content[0].text)  # type: ignore[union-attr]
-            submitted = await session.call_tool(
-                "submit",
-                {
-                    "task_id": lease["task_id"],
-                    "fencing_token": lease["fencing_token"],
-                    "output": {"via": "mcp"},
-                    "idempotency_key": uuid.uuid4().hex,
-                },
-            )
-            assert not submitted.isError
+    def rpc(method: str, params: dict[str, Any], version: str | None = None) -> dict[str, Any]:
+        extra = {"mcp-protocol-version": version} if version else {}
+        resp = http.post(
+            "/mcp",
+            headers={**headers, **extra},
+            json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params},
+        )
+        assert resp.status_code == 200, resp.text
+        body: dict[str, Any] = resp.json()
+        return body["result"]
 
-    asyncio.run(session_run())
+    init = rpc(
+        "initialize",
+        {
+            "protocolVersion": "2025-06-18",
+            "capabilities": {},
+            "clientInfo": {"name": "conformance", "version": "0"},
+        },
+    )
+    version = init["protocolVersion"]
+    names = {t["name"] for t in rpc("tools/list", {}, version)["tools"]}
+    assert {"claim", "heartbeat", "submit", "split"} <= names
+    lease = rpc(
+        "tools/call",
+        {"name": "claim", "arguments": {"queue": "conformance-a", "worker": "mcp"}},
+        version,
+    )
+    lease_body = lease["structuredContent"]["lease"]
+    submitted = rpc(
+        "tools/call",
+        {
+            "name": "submit",
+            "arguments": {
+                "task_id": lease_body["task_id"],
+                "fencing_token": lease_body["fencing_token"],
+                "output": {"via": "mcp"},
+                "idempotency_key": uuid.uuid4().hex,
+            },
+        },
+        version,
+    )
+    assert not submitted.get("isError")
 
 
 @needs_service

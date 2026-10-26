@@ -15,6 +15,7 @@ from tessera.models import (
     ChildResult,
     ChildSpec,
     Lease,
+    LeaseInfo,
     QueueConfig,
     Receipt,
     TaskSpec,
@@ -139,8 +140,10 @@ class TaskOps(StoreBase):
         *,
         kinds: Sequence[str] | None = None,
         effect_classes: Sequence[str] | None = None,
+        key_id: str | None = None,
     ) -> Lease | None:
-        """Lease the next ready task, or return None when nothing is ready."""
+        """Lease the next ready task, or return None when nothing is ready. `key_id` records which
+        service key holds the lease, so only that key may heartbeat, split or submit."""
         if not worker:
             raise InvalidRequest("worker is required")
         now = self.clock.now()
@@ -169,10 +172,10 @@ class TaskOps(StoreBase):
                 (attempt, token, now, row["id"]),
             )
             c.execute(
-                "INSERT INTO leases (task_id, fencing_token, worker, claimed_at,"
+                "INSERT INTO leases (task_id, fencing_token, worker, key_id, claimed_at,"
                 " last_heartbeat_at, expires_at, hard_expires_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (row["id"], token, worker, now, now, expires, hard),
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (row["id"], token, worker, key_id, now, now, expires, hard),
             )
             self._move(c, queue, "ready", "leased")
             self._event(
@@ -245,6 +248,22 @@ class TaskOps(StoreBase):
         if lease is None:
             raise StaleLease(stale or "lease is not live")
         return lease
+
+    def lease_info(self, task_id: str) -> LeaseInfo | None:
+        """The live lease on a task (holder, key and expiry), or None."""
+        with self._read() as c:
+            self._task_row(c, task_id)
+            row = c.execute("SELECT * FROM leases WHERE task_id = ?", (task_id,)).fetchone()
+        if row is None:
+            return None
+        return LeaseInfo(
+            task_id=task_id,
+            fencing_token=row["fencing_token"],
+            worker=row["worker"],
+            key_id=row["key_id"],
+            expires_at=row["expires_at"],
+            hard_expires_at=row["hard_expires_at"],
+        )
 
     # -- submit and split ---------------------------------------------------------------------
 

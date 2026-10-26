@@ -8,9 +8,10 @@ share one database file (the `tessera` CLI does), because SQLite serializes writ
 from __future__ import annotations
 
 from tessera._jobs import JobOps
+from tessera._keys import KeyOps
 from tessera._observe import ObserveOps
 from tessera._storage import StorageOps
 
 
-class Store(JobOps, ObserveOps, StorageOps):
-    """Queues, leases, receipts, model jobs and atomic storage on one SQLite file."""
+class Store(JobOps, ObserveOps, StorageOps, KeyOps):
+    """Queues, leases, receipts, model jobs, atomic storage and worker keys on one SQLite file."""

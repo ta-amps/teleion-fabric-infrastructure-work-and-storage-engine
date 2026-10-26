@@ -6,5 +6,5 @@ COPY src ./src
 RUN uv sync --frozen --no-dev --extra server --extra mcp
 ENV PATH="/app/.venv/bin:$PATH"
 EXPOSE 8080
-# `tessera serve` arrives with brief L6.
+# The service listens on 8080 (fly.toml internal_port); health check GET /v1/health.
 CMD ["tessera", "serve", "--host", "0.0.0.0", "--port", "8080"]

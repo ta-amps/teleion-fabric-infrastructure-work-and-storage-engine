@@ -115,7 +115,35 @@ def _parser() -> argparse.ArgumentParser:
     ev.add_argument("--limit", type=int, default=1000)
     for name in ("task", "results"):
         sub.add_parser(name, help=f"print one task's {name}").add_argument("task_id")
-    sub.add_parser("serve", help="run the HTTP service (built from briefs L6 to L24)")
+    sv = sub.add_parser("serve", help="run the HTTP service, MCP door and agent pages")
+    sv.add_argument("--host", default="127.0.0.1", help="use 0.0.0.0 only inside a container")
+    sv.add_argument("--port", type=int, default=8080)
+
+    keys = sub.add_parser("keys", help="issue, list or revoke worker keys").add_subparsers(
+        dest="keys_command", required=True
+    )
+    issue = keys.add_parser("issue", help="create a key; it is printed once and never stored")
+    issue.add_argument("--label", required=True, help="who holds it, for example muse-web-01")
+    issue.add_argument(
+        "--queue",
+        action="append",
+        required=True,
+        dest="queues",
+        help="queue name or glob (repeatable), for example 'research.*'",
+    )
+    issue.add_argument("--kind", action="append", dest="kinds", help="task kinds (default: any)")
+    issue.add_argument(
+        "--effect",
+        action="append",
+        dest="effects",
+        choices=["read", "write-internal", "write-repo"],
+        help="effect classes (default: all but public)",
+    )
+    issue.add_argument("--scope", action="append", dest="scopes", choices=["admin", "store"])
+    issue.add_argument("--days", type=float, default=14.0)
+    keys.add_parser("list", help="list keys (never their secrets)")
+    revoke = keys.add_parser("revoke", help="revoke a key at once")
+    revoke.add_argument("key_id")
     sub.add_parser("version", help="print the version")
     return p
 
@@ -181,7 +209,47 @@ def _run(store: Store, args: argparse.Namespace) -> Any:
         return store.task(args.task_id)
     if cmd == "results":
         return store.results(args.task_id)
+    if cmd == "keys":
+        return _keys(store, args)
     raise SystemExit(f"unknown command {cmd}")
+
+
+def _keys(store: Store, args: argparse.Namespace) -> Any:
+    if args.keys_command == "issue":
+        secret, grant = store.issue_key(
+            args.label,
+            queues=args.queues,
+            kinds=args.kinds or ["*"],
+            effect_classes=args.effects or ["read", "write-internal", "write-repo"],
+            scopes=args.scopes or [],
+            days=args.days,
+        )
+        print(
+            f"key for {grant.label} ({grant.key_id}), shown once; store it somewhere safe:",
+            file=sys.stderr,
+        )
+        return {"key_id": grant.key_id, "key": secret, "expires_at": grant.expires_at}
+    if args.keys_command == "list":
+        return store.list_keys()
+    return store.revoke_key(args.key_id)
+
+
+def _serve(args: argparse.Namespace) -> int:
+    import uvicorn
+
+    from tessera.service import ServiceSettings, create_app
+
+    settings = ServiceSettings.from_env()
+    settings = ServiceSettings(**{**settings.__dict__, "db_path": args.db})
+    uvicorn.run(
+        create_app(Store(args.db), settings),
+        host=args.host,
+        port=args.port,
+        proxy_headers=True,
+        forwarded_allow_ips="*",
+        log_level="info",
+    )
+    return 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -190,12 +258,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(__version__)
         return 0
     if args.command == "serve":
-        print(
-            "The HTTP service is not built yet; it is briefs L6 to L24 (see briefs/ and SPEC.md). "
-            "Until then, use these commands on a shared --db file.",
-            file=sys.stderr,
-        )
-        return 2
+        return _serve(args)
     store = Store(args.db)
     try:
         _emit(_run(store, args))

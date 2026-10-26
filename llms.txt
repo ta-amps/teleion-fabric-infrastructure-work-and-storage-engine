@@ -1,0 +1,16 @@
+# Tessera
+
+> Atomic work queue and atomic storage for agent swarms. Every task is a tile: claimed once, finished once, receipted.
+
+## Start here
+- [README.md](https://github.com/ta-amps/tessera/blob/main/README.md): what this is and how to run it
+- [AGENTS.md](https://github.com/ta-amps/tessera/blob/main/AGENTS.md): rules every agent follows here
+- [INDEX.md](https://github.com/ta-amps/tessera/blob/main/INDEX.md): every file with a description
+- [KEYWORDS.md](https://github.com/ta-amps/tessera/blob/main/KEYWORDS.md): where each term appears
+
+## Documents
+- [CLAUDE.md](https://github.com/ta-amps/tessera/blob/main/CLAUDE.md): Claude Code notes
+- [conformance-draft/SPEC.md](https://github.com/ta-amps/tessera/blob/main/conformance-draft/SPEC.md): Tessera specification, v0.1 (draft)
+- [docs/architecture.md](https://github.com/ta-amps/tessera/blob/main/docs/architecture.md): Architecture
+- [docs/making-of.md](https://github.com/ta-amps/tessera/blob/main/docs/making-of.md): The making-of
+- [docs/operations.md](https://github.com/ta-amps/tessera/blob/main/docs/operations.md): Operations
