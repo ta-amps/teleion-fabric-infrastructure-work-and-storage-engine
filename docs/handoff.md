@@ -78,8 +78,9 @@ Two public-good surfaces share one Tessera instance (`tessera.<domain>` when hos
 `http://127.0.0.1:7701` locally under `make dev`). `make seed` (`tools/seed.py`) defines the general agent
 queues (`research`, `draft`, `review`, `build`) together with both surfaces' pipeline queues:
 
-- **[Shamash](https://github.com/ta-amps/shamash)** (`shamash.<domain>`) detects fraud and exploitation across
-  bundles of documents and payments. Its five-stage case loop runs on queues `aq02` (Ingest), `aq85`
+- **[Shamash](https://github.com/ta-amps/shamash)** (`shamash.<domain>`) finds, quantifies and combats human harm,
+  scams and exploitation across social media, websites, messages, documents and payments. Its five-stage case loop
+  runs on queues `aq02` (Ingest), `aq85`
   (Situate), `aq04` (Problemize), `aq05` (Investigate) and `aq86` (Gate + audit). Stages join through
   `depends_on`, pause with `park` / `resume` when a case needs missing documents or human review, and store
   versioned case records and content-addressed evidence blobs through the `store` scope. Shamash's service and

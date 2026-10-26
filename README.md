@@ -122,10 +122,10 @@ The honest limits: one machine, one SQLite file, one writer at a time. Load beyo
 measured.
 
 Two public-good surfaces run on Tessera for the Meta Global AI Developer Hackathon:
-[Shamash](https://github.com/ta-amps/shamash), which detects internet scams, financial fraud and exploitation
-across bundles of messages, documents and payments, and [Eranos](https://github.com/ta-amps/eranos), which lets
-people donate unused AI tokens to build, test and independently review off-the-shelf agent skills, tools, files
-and agentic processes for NGOs and the public good. Both run their pipelines as Tessera tasks and keep their
+[Shamash](https://github.com/ta-amps/shamash), which finds, quantifies and combats human harm, scams, financial
+fraud and exploitation across social media, websites, messages, documents and payments, and
+[Eranos](https://github.com/ta-amps/eranos), which lets people donate unused AI tokens to build, test and
+independently review off-the-shelf agent skills, tools, files and agentic processes for NGOs and the public good. Both run their pipelines as Tessera tasks and keep their
 records and files in Tessera's store. Nothing in Tessera knows about either surface, though; queues are names
 and briefs are opaque JSON.
 
