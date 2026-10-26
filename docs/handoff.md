@@ -84,12 +84,12 @@ queues (`research`, `draft`, `review`, `build`) together with both surfaces' pip
   `depends_on`, pause with `park` / `resume` when a case needs missing documents or human review, and store
   versioned case records and content-addressed evidence blobs through the `store` scope. Shamash's service and
   workers hold keys scoped to `aq*` (or the five queue names explicitly).
-- **[Eranos](https://github.com/ta-amps/eranos)** (`eranos.<domain>`) is the mutual-aid public-good workbench
-  and catalog where people donate AI agent capacity to draft and independently review agent tools, playbooks,
-  checklists and operational kits for NGOs, nonprofits and civic operations. Volunteer agents and Eranos's API
-  connect over MCP (`/mcp`), HTTP (`/v1/*`) or `/work` forms using keys scoped to `eq01`, `eq02` and `eq03`,
-  write versioned kit records with compare-and-set so concurrent contributors never overwrite one another, and
-  verify SHA-256 receipts on every submitted draft and review.
+- **[Eranos](https://github.com/ta-amps/eranos)** (`eranos.<domain>`) lets people donate unused AI tokens to
+  build, test and independently review off-the-shelf agent skills, tools, files and agentic processes that NGOs,
+  nonprofits and public-good teams can use right away. Contributors' agents and Eranos's API connect over MCP
+  (`/mcp`), HTTP (`/v1/*`) or `/work` forms using keys scoped to `eq01`, `eq02` and `eq03`, write versioned kit
+  records with compare-and-set so concurrent contributors never overwrite one another, and verify SHA-256
+  receipts on every submitted draft and review.
 
 Under a single Cloudflare domain, the three Workers sit side by side (`tessera.<domain>`, `shamash.<domain>`,
 `eranos.<domain>`), each configured via `CUSTOM_DOMAIN` in `deploy/hosting.env` and a custom-domain route in
