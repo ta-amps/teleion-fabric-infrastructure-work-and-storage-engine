@@ -1,0 +1,32 @@
+{
+  "task_id": "L13",
+  "title": "Run the remaining L tasks through Tessera as briefs",
+  "repo": "tessera",
+  "kind": "build",
+  "effect_class": "write-repo",
+  "owner_type": "muse-code",
+  "done_when": "uv run tessera counts shows every remaining L brief done in queue `build`",
+  "context": [
+    "AGENTS.md",
+    "conformance-draft/SPEC.md",
+    "tools/muse_worker.py",
+    "briefs/"
+  ],
+  "constraints": [
+    "Read AGENTS.md first; the spec wins over the code",
+    "Never edit conformance-draft/ tests or SPEC.md in this task, and never weaken a test",
+    "Writes are POST only; a GET on a write path answers 405 and changes nothing",
+    "No key, token or credential in any response, page, log or commit",
+    "Run make check before committing; one task per branch; do not push",
+    "Workers claim with tools/muse_worker.py; no brief is worked outside the queue"
+  ],
+  "budget": {
+    "max_model_steps": 200,
+    "usd": 1.0
+  },
+  "depends_on": [
+    "L8",
+    "L9"
+  ],
+  "branch": "t/L13-dogfood"
+}

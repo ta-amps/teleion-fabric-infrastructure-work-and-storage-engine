@@ -1,0 +1,30 @@
+{
+  "task_id": "L21",
+  "title": "Soak and restart runs on the deployed service",
+  "repo": "tessera",
+  "kind": "test",
+  "effect_class": "write-repo",
+  "owner_type": "muse-code",
+  "done_when": "make suite BACKEND=http passes T13 and T14 twice in a row against the deployed URL",
+  "context": [
+    "AGENTS.md",
+    "conformance-draft/SPEC.md",
+    "conformance-draft/test_queue_semantics.py"
+  ],
+  "constraints": [
+    "Read AGENTS.md first; the spec wins over the code",
+    "Never edit conformance-draft/ tests or SPEC.md in this task, and never weaken a test",
+    "Writes are POST only; a GET on a write path answers 405 and changes nothing",
+    "No key, token or credential in any response, page, log or commit",
+    "Run make check before committing; one task per branch; do not push",
+    "Test only our own service; no scanning or security testing (fly.io AUP)"
+  ],
+  "budget": {
+    "max_model_steps": 200,
+    "usd": 1.0
+  },
+  "depends_on": [
+    "L20"
+  ],
+  "branch": "t/L21-soak-restart"
+}

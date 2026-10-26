@@ -1,0 +1,15 @@
+# Task rating rubric and priority weights. Only Taylor changes these.
+[scores]
+impact = { min = 1, max = 5, low = "Moves nothing", high = "A plan gate fails without it" }
+urgency = { min = 1, max = 5, low = "Its gate is more than 5 days away", high = "Its gate is due within 24 hours" }
+unblocks = { min = 1, max = 5, low = "Nothing waits on it", high = "Five or more tasks wait on it" }
+confidence = { min = 1, max = 5, low = "Vague acceptance check", high = "A command or test that passes or fails" }
+learning = { min = 1, max = 5, low = "Teaches nothing new", high = "Settles an open question" }
+
+[weights]
+impact = 3
+urgency = 2
+unblocks = 2
+learning = 1
+effort_unit_minutes = 30
+min_effort_units = 0.5

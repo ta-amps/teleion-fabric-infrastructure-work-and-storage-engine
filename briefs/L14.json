@@ -1,0 +1,29 @@
+{
+  "task_id": "L14",
+  "title": "Counts, health and events endpoints",
+  "repo": "tessera",
+  "kind": "build",
+  "effect_class": "write-repo",
+  "owner_type": "muse-code",
+  "done_when": "make suite BACKEND=http passes T09 and T10 against a local server",
+  "context": [
+    "AGENTS.md",
+    "conformance-draft/SPEC.md",
+    "src/tessera/_observe.py"
+  ],
+  "constraints": [
+    "Read AGENTS.md first; the spec wins over the code",
+    "Never edit conformance-draft/ tests or SPEC.md in this task, and never weaken a test",
+    "Writes are POST only; a GET on a write path answers 405 and changes nothing",
+    "No key, token or credential in any response, page, log or commit",
+    "Run make check before committing; one task per branch; do not push"
+  ],
+  "budget": {
+    "max_model_steps": 200,
+    "usd": 3.0
+  },
+  "depends_on": [
+    "L6"
+  ],
+  "branch": "t/L14-counts-health-events"
+}

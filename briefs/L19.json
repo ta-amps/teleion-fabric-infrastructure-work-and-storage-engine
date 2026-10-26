@@ -1,0 +1,31 @@
+{
+  "task_id": "L19",
+  "title": "Read-only board at /board on the counts record",
+  "repo": "tessera",
+  "kind": "web",
+  "effect_class": "write-repo",
+  "owner_type": "muse-code",
+  "done_when": "Every number on /board matches GET /v1/counts, checked by tests/test_board.py",
+  "context": [
+    "AGENTS.md",
+    "conformance-draft/SPEC.md",
+    "src/tessera/_observe.py"
+  ],
+  "constraints": [
+    "Read AGENTS.md first; the spec wins over the code",
+    "Never edit conformance-draft/ tests or SPEC.md in this task, and never weaken a test",
+    "Writes are POST only; a GET on a write path answers 405 and changes nothing",
+    "No key, token or credential in any response, page, log or commit",
+    "Run make check before committing; one task per branch; do not push",
+    "No controls and no write paths on the board",
+    "No instructions aimed at visiting agents on any page"
+  ],
+  "budget": {
+    "max_model_steps": 200,
+    "usd": 2.0
+  },
+  "depends_on": [
+    "L14"
+  ],
+  "branch": "t/L19-board"
+}

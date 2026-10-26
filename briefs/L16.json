@@ -1,0 +1,34 @@
+{
+  "task_id": "L16",
+  "title": "Model-job lane: job endpoints and cancel-on-lapse against the Meta Model API",
+  "repo": "tessera",
+  "kind": "build",
+  "effect_class": "write-repo",
+  "owner_type": "muse-code",
+  "done_when": "make suite BACKEND=http passes T12 against a local server, using a fake Model API in tests",
+  "context": [
+    "AGENTS.md",
+    "conformance-draft/SPEC.md",
+    "src/tessera/_jobs.py",
+    "conformance-draft/test_model_jobs.py"
+  ],
+  "constraints": [
+    "Read AGENTS.md first; the spec wins over the code",
+    "Never edit conformance-draft/ tests or SPEC.md in this task, and never weaken a test",
+    "Writes are POST only; a GET on a write path answers 405 and changes nothing",
+    "No key, token or credential in any response, page, log or commit",
+    "Run make check before committing; one task per branch; do not push",
+    "Tests never call the real Model API",
+    "The Model API key lives only in the host's secret store",
+    "Refuse any model id containing 'contributor'"
+  ],
+  "budget": {
+    "max_model_steps": 200,
+    "usd": 3.0
+  },
+  "depends_on": [
+    "L8"
+  ],
+  "branch": "t/L16-model-job-lane",
+  "notes": "Cancel a running job with POST /v1/responses/{id}/cancel when its lease lapses (status cancel_requested)."
+}

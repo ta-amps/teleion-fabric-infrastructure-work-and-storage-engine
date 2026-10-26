@@ -1,0 +1,29 @@
+{
+  "task_id": "L11",
+  "title": "Making-of export: event log and a board snapshot each evening",
+  "repo": "tessera",
+  "kind": "build",
+  "effect_class": "write-repo",
+  "owner_type": "muse-code",
+  "done_when": "uv run python tools/export_making_of.py --db .tessera/tessera.db --out making-of/ writes one events.jsonl and one counts.json",
+  "context": [
+    "AGENTS.md",
+    "conformance-draft/SPEC.md",
+    "src/tessera/_observe.py",
+    "docs/making-of.md"
+  ],
+  "constraints": [
+    "Read AGENTS.md first; the spec wins over the code",
+    "Never edit conformance-draft/ tests or SPEC.md in this task, and never weaken a test",
+    "Writes are POST only; a GET on a write path answers 405 and changes nothing",
+    "No key, token or credential in any response, page, log or commit",
+    "Run make check before committing; one task per branch; do not push",
+    "Export only events and counts; never briefs' private context or keys"
+  ],
+  "budget": {
+    "max_model_steps": 200,
+    "usd": 1.0
+  },
+  "depends_on": [],
+  "branch": "t/L11-making-of-export"
+}

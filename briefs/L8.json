@@ -1,0 +1,33 @@
+{
+  "task_id": "L8",
+  "title": "Claim, heartbeat and submit endpoints with fencing tokens and idempotency keys",
+  "repo": "tessera",
+  "kind": "build",
+  "effect_class": "write-repo",
+  "owner_type": "muse-code",
+  "done_when": "make suite BACKEND=http passes T03, T05 and T07 against a local server",
+  "context": [
+    "AGENTS.md",
+    "conformance-draft/SPEC.md",
+    "src/tessera/_tasks.py",
+    "src/tessera/client.py"
+  ],
+  "constraints": [
+    "Read AGENTS.md first; the spec wins over the code",
+    "Never edit conformance-draft/ tests or SPEC.md in this task, and never weaken a test",
+    "Writes are POST only; a GET on a write path answers 405 and changes nothing",
+    "No key, token or credential in any response, page, log or commit",
+    "Run make check before committing; one task per branch; do not push",
+    "Only the key that claimed may heartbeat or submit"
+  ],
+  "budget": {
+    "max_model_steps": 200,
+    "usd": 3.0
+  },
+  "depends_on": [
+    "L6",
+    "L7"
+  ],
+  "branch": "t/L8-claim-endpoints",
+  "notes": "An empty queue answers 204 with Retry-After; over 60 claims a minute per key answers 429."
+}

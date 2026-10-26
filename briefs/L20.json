@@ -1,0 +1,32 @@
+{
+  "task_id": "L20",
+  "title": "Deploy to one Fly machine with a volume; keys in the secret store",
+  "repo": "tessera",
+  "kind": "build",
+  "effect_class": "public",
+  "owner_type": "human",
+  "done_when": "make suite BACKEND=http passes every test against the deployed URL",
+  "context": [
+    "AGENTS.md",
+    "conformance-draft/SPEC.md",
+    "deploy/fly/README.md"
+  ],
+  "constraints": [
+    "Read AGENTS.md first; the spec wins over the code",
+    "Never edit conformance-draft/ tests or SPEC.md in this task, and never weaken a test",
+    "Writes are POST only; a GET on a write path answers 405 and changes nothing",
+    "No key, token or credential in any response, page, log or commit",
+    "Run make check before committing; one task per branch; do not push",
+    "Taylor runs and approves every deploy"
+  ],
+  "budget": {
+    "max_model_steps": 200,
+    "usd": 0.0
+  },
+  "depends_on": [
+    "L9",
+    "L14",
+    "L17"
+  ],
+  "branch": "t/L20-deploy"
+}

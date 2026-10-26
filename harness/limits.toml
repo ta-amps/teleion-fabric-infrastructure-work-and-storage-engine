@@ -1,0 +1,16 @@
+# Starting limits for the work harness (workstream W). Only Taylor changes these.
+[tasks]
+max_open = 400
+max_depth = 4
+max_children_per_split = 100
+max_created_per_agent_per_day = 40
+
+[budget]
+daily_cap_usd = 12.0
+stop_at_share_of_credit = 0.80
+reserve_for_demo_usd = 15.0
+max_model_steps_per_run = 200
+
+[review]
+human_sample_share = 0.10
+approval_expiry_hours = 24

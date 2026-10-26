@@ -1,0 +1,31 @@
+{
+  "task_id": "L24",
+  "title": "Atomic storage endpoints: records by compare-and-set, batches, blobs",
+  "repo": "tessera",
+  "kind": "build",
+  "effect_class": "write-repo",
+  "owner_type": "muse-code",
+  "done_when": "make suite BACKEND=http passes ST01 to ST04 against a local server",
+  "context": [
+    "AGENTS.md",
+    "conformance-draft/SPEC.md",
+    "src/tessera/_storage.py",
+    "conformance-draft/test_storage.py"
+  ],
+  "constraints": [
+    "Read AGENTS.md first; the spec wins over the code",
+    "Never edit conformance-draft/ tests or SPEC.md in this task, and never weaken a test",
+    "Writes are POST only; a GET on a write path answers 405 and changes nothing",
+    "No key, token or credential in any response, page, log or commit",
+    "Run make check before committing; one task per branch; do not push",
+    "Only a key with store scope may read or write storage"
+  ],
+  "budget": {
+    "max_model_steps": 200,
+    "usd": 3.0
+  },
+  "depends_on": [
+    "L7"
+  ],
+  "branch": "t/L24-storage-endpoints"
+}

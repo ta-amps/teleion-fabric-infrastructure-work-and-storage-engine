@@ -1,0 +1,31 @@
+{
+  "task_id": "L6",
+  "title": "HTTP service skeleton: FastAPI app, problem+json errors, health and counts",
+  "repo": "tessera",
+  "kind": "build",
+  "effect_class": "write-repo",
+  "owner_type": "muse-code",
+  "done_when": "uv run pytest tests/test_service.py passes, and GET /v1/health answers 200 on `uv run tessera serve`",
+  "context": [
+    "AGENTS.md",
+    "conformance-draft/SPEC.md",
+    "src/tessera/store.py",
+    "src/tessera/errors.py",
+    "src/tessera/client.py"
+  ],
+  "constraints": [
+    "Read AGENTS.md first; the spec wins over the code",
+    "Never edit conformance-draft/ tests or SPEC.md in this task, and never weaken a test",
+    "Writes are POST only; a GET on a write path answers 405 and changes nothing",
+    "No key, token or credential in any response, page, log or commit",
+    "Run make check before committing; one task per branch; do not push",
+    "Add fastapi and uvicorn only through the existing `server` extra"
+  ],
+  "budget": {
+    "max_model_steps": 200,
+    "usd": 3.0
+  },
+  "depends_on": [],
+  "branch": "t/L6-service-skeleton",
+  "notes": "Map each TesseraError to its status and problem code from SPEC section 8. `tessera serve` starts the app."
+}
