@@ -11,7 +11,7 @@ from collections.abc import Sequence
 
 from tessera._base import StoreBase, new_id
 from tessera.errors import InvalidRequest, NotFound
-from tessera.grants import EFFECTS, SCOPES, KeyGrant
+from tessera.grants import EFFECTS, KeyGrant, is_valid_scope
 
 KEY_PREFIX = "tsk_"
 
@@ -36,10 +36,11 @@ class KeyOps(StoreBase):
             raise InvalidRequest("a key needs at least one queue pattern")
         if "public" in effect_classes:
             raise InvalidRequest("no key may hold the public effect class")
-        unknown = set(effect_classes) - set(EFFECTS)
-        if unknown or not set(scopes) <= SCOPES:
+        unknown_effects = set(effect_classes) - set(EFFECTS)
+        bad_scopes = {s for s in scopes if not is_valid_scope(s)}
+        if unknown_effects or bad_scopes:
             raise InvalidRequest(
-                f"unknown effect classes or scopes: {sorted(unknown | (set(scopes) - SCOPES))}"
+                f"unknown effect classes or scopes: {sorted(unknown_effects | bad_scopes)}"
             )
         secret = KEY_PREFIX + secrets.token_urlsafe(32)
         now = self.clock.now()

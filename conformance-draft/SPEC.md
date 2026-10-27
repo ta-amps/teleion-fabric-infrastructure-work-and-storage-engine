@@ -201,14 +201,14 @@ nothing. Bodies are JSON. Successful bodies are the models in `src/tessera/model
 |---|---|---|---|
 | POST /v1/queues/define | QueueConfig | 200 QueueConfig | admin |
 | GET /v1/queues | | 200 `{queues}` | any key |
-| POST /v1/tasks | TaskSpec | 201 `{task_id}` | key for the queue, and for each dependency's queue |
+| POST /v1/tasks | TaskSpec | 201 `{task_id}` | key for the queue and each dependency's queue, holding the task's effect class (`admin` for `write-repo` and `public`) |
 | GET /v1/tasks/{id}, GET /v1/tasks/{id}/results | | 200 TaskView, `{results}` | key for the queue |
 | POST /v1/tasks/claim | `{queue, worker, kinds?, effect_classes?}` | 200 Lease, or 204 with Retry-After | key for the queue, kind and effect class |
 | POST /v1/tasks/heartbeat | `{task_id, fencing_token}` | 200 Lease | the key that claimed |
 | POST /v1/tasks/submit | `{task_id, fencing_token, output, ok, error}` + `Idempotency-Key` header | 200 Receipt | the key that claimed |
 | POST /v1/tasks/split | `{task_id, fencing_token, children}` | 200 `{children}` | the key that claimed, holding each child's effect class |
 | POST /v1/tasks/park | `{task_id, fencing_token, reason, resume_within?}` | 200 TaskView | the key that claimed |
-| POST /v1/tasks/resume | `{task_id, input, park?}` | 200 TaskView | key for the task's queue, other than the key that parked it |
+| POST /v1/tasks/resume | `{task_id, input, park?}` | 200 TaskView | key for the task's queue holding the task's effect class (`admin` for `write-repo` and `public`), other than the key that parked it |
 | POST /v1/tasks/cancel | `{task_id, reason}` | 200 TaskView | key with the task's effect class |
 | POST /v1/admin/reap | | 200 `{reaped}` | admin |
 | GET /v1/counts (`?recount=true`) | | 200 `{as_of, queues}` | any key |
@@ -250,7 +250,8 @@ plus `current_version` for `version_conflict`.
 |---|---|---|
 | `invalid_request` | 400 | Bad body, unknown field, limit exceeded |
 | `unauthorized` | 401 | No key, or an unknown, expired or revoked key |
-| `forbidden` | 403 | The key's scope doesn't cover the queue, kind, effect class or store |
+| `forbidden` | 403 | The key's scope doesn't cover the queue, kind or store |
+| `scope_denied` | 403 | The key lacks the task's effect class, `admin` for `write-repo` / `public`, or surface ownership |
 | `not_found` | 404 | Unknown queue, task, job, record or blob |
 | `method_not_allowed` | 405 | GET (or another method) on a write path |
 | `stale_lease` | 409 | The caller's lease isn't live |
@@ -290,6 +291,7 @@ task; parks up to 30 days; 4 levels of nesting; 10,000 events per page; task ids
 | T19 | Park ends a lease with no failure; resume brings the task back with its input; only the live lease may park; a parked task wakes when its time is up | every backend |
 | T20 | A split child is never broader than its parent | every backend |
 | T21 | The key that parked a task may not resume it; the resume records its key | service |
+| T22 | Resuming a parked task requires the task's effect class and `admin` for `write-repo` across HTTP, MCP and `/work` | service |
 | ST01 to ST04 | Compare-and-set has one winner; history is kept; blobs are content-addressed; batches are atomic | every backend |
 
 `make suite BACKEND=store` runs the suite on the in-process store; `make suite BACKEND=http` runs it on

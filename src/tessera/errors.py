@@ -27,6 +27,13 @@ class Forbidden(TesseraError):
     code = "forbidden"
 
 
+class ScopeDenied(Forbidden):
+    """The caller's key or surface identity lacks permission for the requested effect class or store."""
+
+    status = 403
+    code = "scope_denied"
+
+
 class NotFound(TesseraError):
     status = 404
     code = "not_found"
@@ -94,6 +101,7 @@ BY_CODE: dict[str, type[TesseraError]] = {
         InvalidRequest,
         Unauthorized,
         Forbidden,
+        ScopeDenied,
         NotFound,
         MethodNotAllowed,
         StaleLease,

@@ -61,7 +61,7 @@ receipt.
 
 | Brief | Owner | Effect | Depends on | Summary |
 |---|---|---|---|---|
-| [briefs/L11.json](../briefs/L11.json) | `muse-code` | `write-repo` | — | Nightly making-of export (`events.jsonl` and `counts.json`) |
+| [briefs/L11.json](../briefs/L11.json) | `muse-code` | `write-repo` | -- | Nightly making-of export (`events.jsonl` and `counts.json`) |
 | [briefs/L13.json](../briefs/L13.json) | `muse-code` | `write-repo` | `L8`, `L9` (done) | Run the remaining `L*` briefs through Tessera's `build` queue |
 | [briefs/L16.json](../briefs/L16.json) | `muse-code` | `write-repo` | `L8` (done) | Model-job lane polling and cancel-on-lapse (`T12` over HTTP) |
 | [briefs/L18.json](../briefs/L18.json) | `muse-code` | `write-repo` | `L8` (done) | Receipts gate verified over HTTP (`T15`) |

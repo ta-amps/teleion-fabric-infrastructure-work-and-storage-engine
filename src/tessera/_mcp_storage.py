@@ -16,18 +16,21 @@ from tessera.models import (
     HandshakeResponse,
     RecordWrite,
     ReflexMatch,
+    VisibilityScope,
 )
 
 if TYPE_CHECKING:
     from tessera.access import Gate
     from tessera.store import Store
 
+RunFn = Callable[..., Awaitable[Any]]
+
 
 def register_storage_and_intelligence_tools(
     server: MCPServer[Any],
     store: Store,
     gate: Gate,
-    run: Callable[[Callable[[], Any]], Awaitable[Any]],
+    run: RunFn,
     current_grant: Callable[[], Awaitable[KeyGrant]],
 ) -> None:
     @server.tool(
@@ -39,13 +42,26 @@ def register_storage_and_intelligence_tools(
         key: str,
         value: Any,
         expected_version: int | None = None,
+        visibility_scope: VisibilityScope = "public_commons",
+        allowed_surfaces: list[str] | None = None,
+        target_cohorts: list[str] | None = None,
+        tags: list[str] | None = None,
     ) -> dict[str, Any]:
         grant = await current_grant()
-        await run(lambda: gate.store_scope(grant))
+        surf_hdr = store.current_scope().surface
+        await run(lambda: gate.store_scope(grant), grant)
+        await run(lambda: gate.surface_write(grant, store_name, surf_hdr), grant)
         write = RecordWrite(
-            store=store_name, key=key, value=value, expected_version=expected_version
+            store=store_name,
+            key=key,
+            value=value,
+            expected_version=expected_version,
+            visibility_scope=visibility_scope,
+            allowed_surfaces=allowed_surfaces or [],
+            target_cohorts=target_cohorts or ["all"],
+            tags=tags or [],
         )
-        saved = await run(lambda: store.put_records([write]))
+        saved = await run(lambda: store.put_records([write]), grant)
         return {"record": saved[0].model_dump(mode="json")}
 
     @server.tool(
@@ -54,23 +70,27 @@ def register_storage_and_intelligence_tools(
     )
     async def put_records(writes: list[dict[str, Any]]) -> dict[str, Any]:
         grant = await current_grant()
-        await run(lambda: gate.store_scope(grant))
+        surf_hdr = store.current_scope().surface
+        await run(lambda: gate.store_scope(grant), grant)
         parsed = [RecordWrite.model_validate(w) for w in writes]
-        saved = await run(lambda: store.put_records(parsed))
+        for w in parsed:
+            store_for_w = w.store
+            await run(lambda s=store_for_w: gate.surface_write(grant, s, surf_hdr), grant)
+        saved = await run(lambda: store.put_records(parsed), grant)
         return {"records": [r.model_dump(mode="json") for r in saved]}
 
     @server.tool(description="Read the latest (or a specific) version of an atomic noun (record).")
     async def get_record(store_name: str, key: str, version: int | None = None) -> dict[str, Any]:
         grant = await current_grant()
-        await run(lambda: gate.store_scope(grant))
-        rec = await run(lambda: store.get_record(store_name, key, version))
+        await run(lambda: gate.store_scope(grant), grant)
+        rec = await run(lambda: store.get_record(store_name, key, version), grant)
         return {"record": rec.model_dump(mode="json")}
 
     @server.tool(description="List every saved version of an atomic noun (record) in order.")
     async def record_history(store_name: str, key: str) -> dict[str, Any]:
         grant = await current_grant()
-        await run(lambda: gate.store_scope(grant))
-        versions = await run(lambda: store.record_history(store_name, key))
+        await run(lambda: gate.store_scope(grant), grant)
+        versions = await run(lambda: store.record_history(store_name, key), grant)
         return {"versions": [v.model_dump(mode="json") for v in versions]}
 
     @server.tool(
@@ -78,17 +98,40 @@ def register_storage_and_intelligence_tools(
     )
     async def list_stores() -> dict[str, Any]:
         grant = await current_grant()
-        await run(lambda: gate.store_scope(grant))
-        items = await run(store.stores)
+        await run(lambda: gate.store_scope(grant), grant)
+        items = await run(store.stores, grant)
         return {"stores": [s.model_dump(mode="json") for s in items]}
 
     @server.tool(
-        description="Query current head records in a noun store, optionally filtered by key prefix."
+        description="Query current head records in a noun store, optionally filtered by prefix and tags."
     )
-    async def list_records(store_name: str, prefix: str = "", limit: int = 100) -> dict[str, Any]:
+    async def list_records(
+        store_name: str,
+        prefix: str = "",
+        limit: int = 100,
+        q: str = "",
+        tag: str | None = None,
+        category: str | None = None,
+        cohort: str | None = None,
+        surface: str | None = None,
+        include_restricted: bool = False,
+    ) -> dict[str, Any]:
         grant = await current_grant()
-        await run(lambda: gate.store_scope(grant))
-        recs = await run(lambda: store.list_records(store_name, prefix=prefix, limit=limit))
+        await run(lambda: gate.store_scope(grant), grant)
+        recs = await run(
+            lambda: store.list_records(
+                store_name,
+                prefix=prefix,
+                limit=limit,
+                q=q,
+                tag=tag,
+                category=category,
+                cohort=cohort,
+                surface=surface,
+                include_restricted=include_restricted,
+            ),
+            grant,
+        )
         return {"records": [r.model_dump(mode="json") for r in recs]}
 
     @server.tool(
@@ -96,16 +139,16 @@ def register_storage_and_intelligence_tools(
     )
     async def define_bucket(name: str, description: str = "") -> dict[str, Any]:
         grant = await current_grant()
-        await run(lambda: gate.store_scope(grant))
+        await run(lambda: gate.store_scope(grant), grant)
         cfg = BucketConfig(name=name, description=description)
-        info = await run(lambda: store.define_bucket(cfg))
+        info = await run(lambda: store.define_bucket(cfg), grant)
         return {"bucket": info.model_dump(mode="json")}
 
     @server.tool(description="List persistent file buckets with object counts and byte totals.")
     async def buckets() -> dict[str, Any]:
         grant = await current_grant()
-        await run(lambda: gate.store_scope(grant))
-        items = await run(store.buckets)
+        await run(lambda: gate.store_scope(grant), grant)
+        items = await run(store.buckets, grant)
         return {"buckets": [b.model_dump(mode="json") for b in items]}
 
     @server.tool(
@@ -120,9 +163,13 @@ def register_storage_and_intelligence_tools(
         content_type: str = "text/plain; charset=utf-8",
         metadata: dict[str, Any] | None = None,
         expected_version: int | None = None,
+        visibility_scope: VisibilityScope = "public_commons",
+        allowed_surfaces: list[str] | None = None,
+        target_cohorts: list[str] | None = None,
+        tags: list[str] | None = None,
     ) -> dict[str, Any]:
         grant = await current_grant()
-        await run(lambda: gate.store_scope(grant))
+        await run(lambda: gate.store_scope(grant), grant)
         if encoding == "base64":
             data = base64.b64decode(content.encode("ascii"))
         elif encoding == "utf-8":
@@ -137,7 +184,12 @@ def register_storage_and_intelligence_tools(
                 content_type=content_type,
                 metadata=metadata,
                 expected_version=expected_version,
-            )
+                visibility_scope=visibility_scope,
+                allowed_surfaces=allowed_surfaces,
+                target_cohorts=target_cohorts,
+                tags=tags,
+            ),
+            grant,
         )
         return {"object": saved.model_dump(mode="json")}
 
@@ -154,8 +206,8 @@ def register_storage_and_intelligence_tools(
         max_bytes: int | None = None,
     ) -> dict[str, Any]:
         grant = await current_grant()
-        await run(lambda: gate.store_scope(grant))
-        meta, full_data = await run(lambda: store.get_object(bucket, key, version))
+        await run(lambda: gate.store_scope(grant), grant)
+        meta, full_data = await run(lambda: store.get_object(bucket, key, version), grant)
         start = max(0, offset)
         data = (
             full_data[start:] if max_bytes is None else full_data[start : start + max(0, max_bytes)]
@@ -178,18 +230,43 @@ def register_storage_and_intelligence_tools(
             "slice": {"offset": start, "returned_bytes": len(data), "total_bytes": len(full_data)},
         }
 
-    @server.tool(description="List head files in a bucket, optionally filtered by key prefix.")
-    async def list_objects(bucket: str, prefix: str = "", limit: int = 100) -> dict[str, Any]:
+    @server.tool(
+        description="List head files in a bucket, optionally filtered by key prefix and tags."
+    )
+    async def list_objects(
+        bucket: str,
+        prefix: str = "",
+        limit: int = 100,
+        q: str = "",
+        tag: str | None = None,
+        category: str | None = None,
+        cohort: str | None = None,
+        surface: str | None = None,
+        include_restricted: bool = False,
+    ) -> dict[str, Any]:
         grant = await current_grant()
-        await run(lambda: gate.store_scope(grant))
-        objs = await run(lambda: store.list_objects(bucket, prefix=prefix, limit=limit))
+        await run(lambda: gate.store_scope(grant), grant)
+        objs = await run(
+            lambda: store.list_objects(
+                bucket,
+                prefix=prefix,
+                limit=limit,
+                q=q,
+                tag=tag,
+                category=category,
+                cohort=cohort,
+                surface=surface,
+                include_restricted=include_restricted,
+            ),
+            grant,
+        )
         return {"objects": [o.model_dump(mode="json") for o in objs]}
 
     @server.tool(description="List every saved version of a file in a bucket in order.")
     async def object_history(bucket: str, key: str) -> dict[str, Any]:
         grant = await current_grant()
-        await run(lambda: gate.store_scope(grant))
-        versions = await run(lambda: store.object_history(bucket, key))
+        await run(lambda: gate.store_scope(grant), grant)
+        versions = await run(lambda: store.object_history(bucket, key), grant)
         return {"versions": [v.model_dump(mode="json") for v in versions]}
 
     @server.tool(
@@ -201,28 +278,67 @@ def register_storage_and_intelligence_tools(
         store_name: str | None = None,
         bucket: str | None = None,
         limit: int = 20,
+        tag: str | None = None,
+        category: str | None = None,
+        cohort: str | None = None,
+        surface: str | None = None,
+        include_restricted: bool = False,
     ) -> dict[str, Any]:
         grant = await current_grant()
-        await run(lambda: gate.store_scope(grant))
+        await run(lambda: gate.store_scope(grant), grant)
         scents = await run(
-            lambda: store.search_nouns(query, store=store_name, bucket=bucket, limit=limit)
+            lambda: store.search_nouns(
+                query,
+                store=store_name,
+                bucket=bucket,
+                limit=limit,
+                tag=tag,
+                category=category,
+                cohort=cohort,
+                surface=surface,
+                include_restricted=include_restricted,
+            ),
+            grant,
         )
         return {"scents": [s.model_dump(mode="json") for s in scents]}
 
     @server.tool(description="List monotonic cursor-sequenced live delta feeds.")
     async def list_feeds() -> dict[str, Any]:
         grant = await current_grant()
-        await run(lambda: gate.store_scope(grant))
-        items = await run(store.feeds)
+        await run(lambda: gate.store_scope(grant), grant)
+        items = await run(store.feeds, grant)
         return {"feeds": [f.model_dump(mode="json") for f in items]}
 
     @server.tool(
         description="Poll monotonic delta entries in a live feed since cursor `after` (`seq > after`)."
     )
-    async def poll_feed(feed: str, after: int = 0, limit: int = 100) -> dict[str, Any]:
+    async def poll_feed(
+        feed: str,
+        after: int = 0,
+        limit: int = 100,
+        q: str = "",
+        tag: str | None = None,
+        category: str | None = None,
+        cohort: str | None = None,
+        surface: str | None = None,
+        include_restricted: bool = False,
+    ) -> dict[str, Any]:
         grant = await current_grant()
-        await run(lambda: gate.store_scope(grant))
-        entries = await run(lambda: store.poll_feed(feed, after=after, limit=limit))
+        await run(lambda: gate.store_scope(grant), grant)
+        entries = await run(
+            lambda: store.poll_feed(
+                feed,
+                after=after,
+                limit=limit,
+                q=q,
+                tag=tag,
+                category=category,
+                cohort=cohort,
+                surface=surface,
+                include_restricted=include_restricted,
+            ),
+            grant,
+        )
         next_cursor = entries[-1].seq if entries else max(0, after)
         return {
             "feed": feed,
@@ -236,20 +352,55 @@ def register_storage_and_intelligence_tools(
         payload: dict[str, Any],
         kind: str = "delta",
         summary: str = "",
+        visibility_scope: VisibilityScope = "public_commons",
+        allowed_surfaces: list[str] | None = None,
+        target_cohorts: list[str] | None = None,
+        tags: list[str] | None = None,
     ) -> dict[str, Any]:
         grant = await current_grant()
-        await run(lambda: gate.store_scope(grant))
-        entry = await run(lambda: store.publish_feed(feed, payload, kind=kind, summary=summary))
+        await run(lambda: gate.store_scope(grant), grant)
+        entry = await run(
+            lambda: store.publish_feed(
+                feed,
+                payload,
+                kind=kind,
+                summary=summary,
+                visibility_scope=visibility_scope,
+                allowed_surfaces=allowed_surfaces,
+                target_cohorts=target_cohorts,
+                tags=tags,
+            ),
+            grant,
+        )
         return {"entry": entry.model_dump(mode="json")}
 
     @server.tool(
         description="0-call dual-resolution muscle-memory + fuzzy step recall + dead-end tombstone "
         "lookup. Call before solving to reuse verified 0-call recipes and avoid known dead ends."
     )
-    async def match_reflex(query: str, limit: int = 5) -> dict[str, Any]:
+    async def match_reflex(
+        query: str,
+        limit: int = 5,
+        tag: str | None = None,
+        category: str | None = None,
+        cohort: str | None = None,
+        surface: str | None = None,
+        include_restricted: bool = False,
+    ) -> dict[str, Any]:
         grant = await current_grant()
-        await run(lambda: gate.store_scope(grant))
-        matched: ReflexMatch = await run(lambda: store.match_reflex(query, limit=limit))
+        await run(lambda: gate.store_scope(grant), grant)
+        matched: ReflexMatch = await run(
+            lambda: store.match_reflex(
+                query,
+                limit=limit,
+                tag=tag,
+                category=category,
+                cohort=cohort,
+                surface=surface,
+                include_restricted=include_restricted,
+            ),
+            grant,
+        )
         return matched.model_dump(mode="json")
 
     @server.tool(
@@ -278,6 +429,7 @@ def register_storage_and_intelligence_tools(
                 req,
                 grant_queues=grant.queues,
                 store_scope=grant.can_store,
-            )
+            ),
+            grant,
         )
         return negotiated.model_dump(mode="json")

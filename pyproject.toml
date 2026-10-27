@@ -1,7 +1,7 @@
 [project]
 name = "tessera"
-version = "0.1.0"
-description = "Tessera: atomic work queue and atomic storage for agent swarms — everything is a noun or a verb for clear organization and reusability, with every task claimed once, finished once, receipted."
+version = "0.2.0"
+description = "Tessera: atomic work queue and atomic storage for agent swarms -- everything is a noun or a verb for clear organization and reusability, with every task claimed once, finished once, receipted."
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"

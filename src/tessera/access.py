@@ -1,6 +1,6 @@
 """What every door shares: the service settings, the claim rate limiter, reading the bearer key, and
-the Gate that decides who may use which queue and task. The HTTP service, the MCP door and the agent pages
-all import these from here, never from each other."""
+the Gate that decides who may use which queue, effect class, surface store, and task. The HTTP service,
+the MCP door and the agent pages all import these from here, never from each other."""
 
 from __future__ import annotations
 
@@ -11,8 +11,9 @@ from dataclasses import dataclass
 
 from fastapi import Request
 
-from tessera.errors import Forbidden, Unauthorized
-from tessera.grants import KeyGrant
+from tessera.errors import Forbidden, ScopeDenied, Unauthorized
+from tessera.grants import PROTECTED_SURFACES, KeyGrant
+from tessera.models import surface_slug
 from tessera.store import Store
 
 
@@ -88,6 +89,57 @@ class Gate:
     def queue(grant: KeyGrant, queue: str) -> None:
         if not (grant.is_admin or grant.allows_queue(queue)):
             raise Forbidden(f"this key may not use queue '{queue}'")
+
+    @staticmethod
+    def effect(grant: KeyGrant, effect_class: str) -> None:
+        """Require the task's effect class; `write-repo` and `public` require `admin` (T22 / L25)."""
+        if effect_class in ("write-repo", "public"):
+            if not grant.is_admin:
+                raise ScopeDenied(
+                    f"effect class '{effect_class}' requires a key with the admin scope"
+                )
+            return
+        if not grant.is_admin and effect_class not in grant.effect_classes:
+            raise ScopeDenied(f"this key may not act on tasks with effect class '{effect_class}'")
+
+    @staticmethod
+    def effective_surface(grant: KeyGrant, surface_header: str | None) -> str | None:
+        """Resolve the authenticated caller surface without allowing bound keys to spoof others."""
+        hdr = surface_slug(surface_header) if (surface_header and surface_header.strip()) else None
+        if grant.is_admin:
+            return f"surface:{hdr}" if hdr else None
+        bound = grant.bound_surface()
+        if bound is not None:
+            return f"surface:{bound}"
+        return f"surface:{hdr}" if hdr else None
+
+    @staticmethod
+    def surface_write(grant: KeyGrant, store_name: str, surface_header: str | None = None) -> None:
+        """Enforce surface ownership on protected surface stores (`<surface>.*`) and `eq03` on catalog/index."""
+        if grant.is_admin:
+            return
+        for surf in PROTECTED_SURFACES:
+            if store_name.startswith(f"{surf}."):
+                bound = grant.bound_surface()
+                hdr = (
+                    surface_slug(surface_header)
+                    if (surface_header and surface_header.strip())
+                    else None
+                )
+                if bound is not None and hdr is not None and bound != hdr:
+                    raise ScopeDenied(
+                        f"key bound to surface '{bound}' cannot spoof X-Surface-Id '{hdr}'"
+                    )
+                caller_surf = bound or hdr
+                if caller_surf != surf:
+                    raise ScopeDenied(
+                        f"non-admin writers to '{store_name}' must match surface '{surf}'"
+                    )
+                if store_name in ("eranos.catalog", "eranos.index") and "eq03" not in grant.queues:
+                    raise ScopeDenied(
+                        f"writing '{store_name}' requires an explicit 'eq03' queue grant"
+                    )
+                return
 
     def holder(self, grant: KeyGrant, task_id: str) -> None:
         """Only the key that claimed a task may heartbeat, split, submit or register jobs for it."""

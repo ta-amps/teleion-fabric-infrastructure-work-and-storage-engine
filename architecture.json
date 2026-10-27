@@ -80,7 +80,10 @@
       "path": "src/tessera/receipts.py",
       "kind": "library",
       "domain": "neutral",
-      "role": "Canonical JSON and the receipt hash"
+      "role": "Canonical JSON and the receipt hash",
+      "tests": [
+        "tests/test_phase4_atomicity_and_vectors.py::test_l26_receipt_vectors_python_and_cloudflare_edge_node_parity"
+      ]
     },
     {
       "id": "clock",
@@ -136,7 +139,9 @@
         "conformance-draft/test_model_jobs.py",
         "conformance-draft/test_task_graph.py",
         "tests/test_buckets.py",
-        "tests/test_intelligence.py"
+        "tests/test_intelligence.py",
+        "tests/test_governance_and_isolation.py",
+        "tests/test_phase4_atomicity_and_vectors.py"
       ]
     },
     {
@@ -185,6 +190,24 @@
       ]
     },
     {
+      "id": "ontology",
+      "title": "Categorized Ontology, Ranking, Fragility & Reconciliation",
+      "path": [
+        "src/tessera/ontology/__init__.py",
+        "src/tessera/ontology/categories.py",
+        "src/tessera/ontology/rankings.py",
+        "src/tessera/ontology/fragility.py",
+        "src/tessera/ontology/reconcile.py",
+        "src/tessera/ontology/profiles.py"
+      ],
+      "kind": "library",
+      "domain": "neutral",
+      "role": "14 canonical Noun categories, 12 canonical Verb categories, Empirical-Bayes/Dirichlet/Wilson/Pareto rankings, exponential fragility decay and recheck planning, 0-call 3-way CAS merge, Sybil-fenced calibration-weighted voting, and 6 CallerProfile adaptive lenses",
+      "tests": [
+        "tests/test_ontology_and_reconcile.py"
+      ]
+    },
+    {
       "id": "service",
       "title": "HTTP service",
       "path": [
@@ -201,6 +224,7 @@
         "grants",
         "mcp-door",
         "models",
+        "ontology",
         "pages",
         "store"
       ],
@@ -209,6 +233,9 @@
       ],
       "tests": [
         "tests/test_service.py",
+        "tests/test_governance_and_isolation.py",
+        "tests/test_phase4_atomicity_and_vectors.py",
+        "tests/test_ontology_and_reconcile.py",
         "conformance-draft/test_service_surface.py"
       ]
     },
@@ -244,7 +271,7 @@
       "path": "src/tessera/pages.py",
       "kind": "web",
       "domain": "neutral",
-      "role": "/connect, /llms.txt, agent card, robots, the read-only board and keyed /work forms",
+      "role": "/connect, /llms.txt, /llms-full.txt, /favicon.svg, agent card, robots, the read-only Console Board v2 and keyed /work forms",
       "depends_on": [
         "errors",
         "grants",
@@ -256,7 +283,8 @@
       ],
       "tests": [
         "tests/test_service.py::test_the_agent_door",
-        "tests/test_service.py::test_web_forms_never_echo_the_key"
+        "tests/test_service.py::test_web_forms_never_echo_the_key",
+        "tests/test_board.py"
       ]
     },
     {
@@ -285,7 +313,7 @@
       ],
       "kind": "tests",
       "domain": "neutral",
-      "role": "SPEC.md and tests T01 to T16, ST01 to ST04, run against any backend by factory name",
+      "role": "SPEC.md, receipt_vectors.json and tests T01 to T22, ST01 to ST04, run against any backend by factory name",
       "depends_on": [
         "backend",
         "store",
@@ -302,6 +330,7 @@
         "deploy/cloudflare/cloud_intelligence.js",
         "deploy/cloudflare/cloud_mcp.js",
         "deploy/cloudflare/cloud_pages.js",
+        "deploy/cloudflare/ontology_engine.js",
         "deploy/cloudflare/d1-fabric.sql",
         "deploy/cloudflare/d1-buckets.sql",
         "deploy/cloudflare/wrangler.jsonc"
@@ -311,6 +340,10 @@
       "role": "24/7 native cloud execution on Cloudflare SQLite Durable Objects (TesseraCoordinator) + Cloudflare D1 (ta-amps-fabric and ta-amps-buckets) + Streamable HTTP /mcp, with optional STORAGE_MODE=origin reverse-proxy fallback",
       "depends_on": [
         "service"
+      ],
+      "tests": [
+        "tests/test_board.py::test_cloudflare_pages_parity",
+        "tests/test_phase4_atomicity_and_vectors.py::test_l26_receipt_vectors_python_and_cloudflare_edge_node_parity"
       ]
     },
     {
@@ -342,7 +375,7 @@
       "kind": "http",
       "served_by": "service",
       "spec": "conformance-draft/SPEC.md",
-      "auth": "Bearer key; Idempotency-Key header on submit",
+      "auth": "Bearer key; Idempotency-Key header on enqueue and submit; optional X-Namespace and X-Surface-Id headers",
       "entry_points": [
         "POST /v1/queues/define",
         "GET /v1/queues",
@@ -359,6 +392,7 @@
         "POST /v1/admin/reap",
         "GET /v1/counts",
         "GET /v1/health",
+        "GET /api/health",
         "GET /v1/events",
         "POST /v1/jobs",
         "POST /v1/jobs/{id}",
@@ -381,7 +415,8 @@
         "GET /v1/reflexes/match",
         "POST /v1/handshake",
         "POST /v1/blobs",
-        "GET /v1/blobs/{sha256}"
+        "GET /v1/blobs/{sha256}",
+        "/ns/{namespace}/v1/*"
       ]
     },
     {
@@ -402,10 +437,13 @@
       "entry_points": [
         "/connect",
         "/llms.txt",
+        "/llms-full.txt",
+        "/favicon.svg",
         "/.well-known/agent-card.json",
         "/robots.txt",
         "/board",
-        "/work"
+        "/work",
+        "/work/resume"
       ]
     },
     {
@@ -440,6 +478,8 @@
       "holds": [
         "queues",
         "tasks",
+        "task_deps",
+        "task_inputs",
         "leases",
         "results",
         "keys (hashed)",
@@ -449,6 +489,12 @@
         "records",
         "record_heads",
         "blobs",
+        "blob_namespaces",
+        "buckets",
+        "bucket_objects",
+        "bucket_object_versions",
+        "feed_entries",
+        "noun_tags",
         "meta"
       ]
     }
@@ -481,7 +527,7 @@
         "agent",
         "service"
       ],
-      "rule": "Bearer key scoped to queues, kinds, effect classes and admin or store; per-key claim rate limit; writes are POST-only; a key may depend only on tasks in queues it can use",
+      "rule": "Bearer key scoped to queues, kinds, effect classes, surfaces and admin or store; per-key claim rate limit; writes are POST-only; write-repo and public require admin; resuming requires the task's effect class; a key may depend only on tasks in queues it can use",
       "enforced_by": [
         "src/tessera/service.py",
         "src/tessera/_keys.py"
@@ -489,11 +535,14 @@
       "checked_by": [
         "conformance-draft/test_service_surface.py::test_T01_keys_are_required",
         "conformance-draft/test_service_surface.py::test_T02_writes_are_post_only",
+        "conformance-draft/test_service_surface.py::test_T22_resume_requires_the_tasks_effect_class",
         "tests/test_service.py::test_keys_are_required_and_scoped",
         "tests/test_service.py::test_claims_are_rate_limited",
         "tests/test_service.py::test_storage_needs_the_store_scope",
         "tests/test_service.py::test_dependencies_stay_inside_the_key_scope",
-        "tests/test_service.py::test_park_and_resume_follow_the_holder_and_queue_rules"
+        "tests/test_service.py::test_park_and_resume_follow_the_holder_and_queue_rules",
+        "tests/test_governance_and_isolation.py::test_layer1_protected_surface_ownership_and_eq03_gate",
+        "tests/test_governance_and_isolation.py::test_namespace_isolation_across_path_and_header"
       ]
     },
     {
@@ -530,13 +579,14 @@
         "parking key",
         "resuming key"
       ],
-      "rule": "Outside input comes from someone else: the parking key may not resume; admin keys may; resumes are recorded",
+      "rule": "Outside input comes from someone else holding the task's effect class (and admin for write-repo): the parking key may not resume; admin keys may; resumes are recorded",
       "enforced_by": [
         "src/tessera/_tasks.py",
         "src/tessera/service.py"
       ],
       "checked_by": [
-        "tests/test_service.py::test_the_key_that_parked_a_task_may_not_resume_it"
+        "tests/test_service.py::test_the_key_that_parked_a_task_may_not_resume_it",
+        "conformance-draft/test_service_surface.py::test_T22_resume_requires_the_tasks_effect_class"
       ]
     }
   ],
@@ -725,6 +775,7 @@
       "enforced_by": "receipts",
       "checked_by": [
         "tests/test_service.py::test_whole_numbers_hash_the_same_in_every_language",
+        "tests/test_phase4_atomicity_and_vectors.py::test_l26_receipt_vectors_python_and_cloudflare_edge_node_parity",
         "conformance-draft/test_queue_semantics.py::test_T15_receipts_match_results"
       ]
     },
@@ -734,6 +785,16 @@
       "enforced_by": "store",
       "checked_by": [
         "tests/test_service.py::test_an_older_build_refuses_a_newer_database"
+      ]
+    },
+    {
+      "id": "I23",
+      "statement": "Namespaces isolate tasks, records, blobs, buckets, feeds and L0 scent search; quarantined items never appear in search or reflex recall; resuming a parked task requires its effect class",
+      "enforced_by": "store",
+      "checked_by": [
+        "conformance-draft/test_service_surface.py::test_T22_resume_requires_the_tasks_effect_class",
+        "tests/test_governance_and_isolation.py::test_namespace_isolation_across_path_and_header",
+        "tests/test_governance_and_isolation.py::test_visibility_quarantine_and_layer2_combinable_filters"
       ]
     }
   ],
@@ -1041,7 +1102,7 @@
     },
     {
       "id": "C6",
-      "claim": "The suite passes over HTTP against a real local service with real keys (29 tests; the 4 that need a fake clock or a restart hook run on the in-process store)",
+      "claim": "The suite passes over HTTP against a real local service with real keys (32 tests; the 4 that need a fake clock or a restart hook run on the in-process store)",
       "status": "built",
       "evidence": [
         "scripts/suite_http_local.py"

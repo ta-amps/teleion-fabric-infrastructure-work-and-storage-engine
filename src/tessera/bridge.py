@@ -25,9 +25,12 @@ from tessera.models import (
     HandshakeRequest,
     HandshakeResponse,
     Lease,
+    NounScent,
     Receipt,
     RecordVersion,
+    RecordWrite,
     TaskSpec,
+    VisibilityScope,
 )
 
 _SURFACE_RE = re.compile(SURFACE_ID_PATTERN)
@@ -42,6 +45,7 @@ class SurfaceBridge:
         surface_id: str,
         backend: Backend,
         *,
+        namespace: str = "main",
         surface_version: str = __version__,
         requested_max_chars: int = 4000,
         requested_queues: Sequence[str] | None = None,
@@ -56,6 +60,7 @@ class SurfaceBridge:
                 f"invalid surface_id '{surface_id}'; must match {SURFACE_ID_PATTERN}"
             )
         self.surface_id = clean_id
+        self.namespace = namespace
         self.surface_version = surface_version
         self.backend = backend
         self.requested_max_chars = requested_max_chars
@@ -140,12 +145,28 @@ class SurfaceBridge:
         expected_version: int | None = None,
         publish_feed: str | None = DEFAULT_PROMOTION_FEED,
         summary: str = "",
+        visibility_scope: VisibilityScope = "public_commons",
+        allowed_surfaces: Sequence[str] | None = None,
+        target_cohorts: Sequence[str] | None = None,
+        tags: Sequence[str] | None = None,
     ) -> tuple[RecordVersion, FeedEntry | None]:
         """Write an isolated surface noun with CAS and optionally broadcast a delta feed event."""
         hs = self.ensure_negotiated()
         store_name = self.surface_store(substore)
         self.assert_store_writable(store_name)
-        rec = self.backend.put_record(store_name, key, value, expected_version=expected_version)
+        write = RecordWrite(
+            namespace=self.namespace,
+            store=store_name,
+            key=key,
+            value=value,
+            expected_version=expected_version,
+            producer_surface=f"surface:{self.surface_id}",
+            visibility_scope=visibility_scope,
+            allowed_surfaces=list(allowed_surfaces or []),
+            target_cohorts=list(target_cohorts or ["all"]),
+            tags=list(tags or []),
+        )
+        rec = self.backend.put_records([write])[0]
         feed_entry: FeedEntry | None = None
         if publish_feed:
             event_summary = summary or (
@@ -177,6 +198,34 @@ class SurfaceBridge:
         """Read any shared or cross-surface noun without mutating foreign namespaces."""
         return self.backend.get_record(store_name, key, version=version)
 
+    def search_shared_nouns(
+        self,
+        query: str = "",
+        *,
+        store: str | None = None,
+        bucket: str | None = None,
+        limit: int = 20,
+        tag: str | None = None,
+        category: str | None = None,
+        cohort: str | None = None,
+        surface: str | None = None,
+    ) -> list[NounScent]:
+        """Search shared L0 scents with optional Layer 2 filters when supported by backend."""
+        fn: Any = self.backend.search_nouns
+        if any(x is not None for x in (tag, category, cohort, surface)):
+            res: list[NounScent] = fn(
+                query,
+                store=store,
+                bucket=bucket,
+                limit=limit,
+                tag=tag,
+                category=category,
+                cohort=cohort,
+                surface=surface,
+            )
+            return res
+        return self.backend.search_nouns(query, store=store, bucket=bucket, limit=limit)
+
     def poll_updates(
         self,
         feed: str = DEFAULT_PROMOTION_FEED,
@@ -197,10 +246,15 @@ class SurfaceBridge:
         brief: dict[str, Any],
         *,
         task_id: str | None = None,
+        idempotency_key: str | None = None,
         kind: str = "task",
         effect_class: EffectClass = "write-internal",
         priority: int = 50,
         depends_on: Sequence[str] | None = None,
+        visibility_scope: VisibilityScope = "public_commons",
+        allowed_surfaces: Sequence[str] | None = None,
+        target_cohorts: Sequence[str] | None = None,
+        tags: Sequence[str] | None = None,
     ) -> str:
         """Enqueue an atomic verb tagged with `surface_id` after verifying negotiated queue access."""
         hs = self.ensure_negotiated()
@@ -211,13 +265,20 @@ class SurfaceBridge:
         enriched_brief = {"surface_id": self.surface_id, **brief}
         return self.backend.enqueue(
             TaskSpec(
+                namespace=self.namespace,
                 queue=queue,
                 brief=enriched_brief,
                 task_id=task_id,
+                idempotency_key=idempotency_key,
                 kind=kind,
                 effect_class=effect_class,
                 priority=priority,
                 depends_on=list(depends_on or []),
+                producer_surface=f"surface:{self.surface_id}",
+                visibility_scope=visibility_scope,
+                allowed_surfaces=list(allowed_surfaces or []),
+                target_cohorts=list(target_cohorts or ["all"]),
+                tags=list(tags or []),
             )
         )
 
@@ -235,7 +296,7 @@ class SurfaceBridge:
         self,
         task_id: str,
         fencing_token: int,
-        output: dict[str, Any],
+        output: Any,
         *,
         idempotency_key: str,
         ok: bool = True,

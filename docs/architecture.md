@@ -224,8 +224,9 @@ references.
 | I18 | A split child is never broader than its parent (read < write-internal < write-repo < public) | `test_T20_a_child_is_never_broader_than_its_parent`, `test_split_children_need_an_effect_class_the_key_holds` |
 | I19 | The key that parked a task may not resume it, and every resume records the resuming key | `test_the_key_that_parked_a_task_may_not_resume_it` |
 | I20 | A resume may name the park it answers, and a late resume for an earlier park is refused | `test_T19_a_resume_can_name_the_park_it_answers` |
-| I21 | Receipt hashes write whole numbers without a fraction, so other languages compute the same hash | `test_whole_numbers_hash_the_same_in_every_language`, `test_T15_receipts_match_results` |
+| I21 | Receipt hashes write whole numbers without a fraction, so other languages compute the same hash | `test_whole_numbers_hash_the_same_in_every_language`, `test_l26_receipt_vectors_python_and_cloudflare_edge_node_parity`, `test_T15_receipts_match_results` |
 | I22 | An older build refuses to open a database with a newer schema instead of downgrading it | `test_an_older_build_refuses_a_newer_database` |
+| I23 | Namespaces isolate tasks, records, blobs, buckets, feeds and L0 scent search; quarantined items never appear in search or reflex recall; resuming a parked task requires its effect class | `test_T22_resume_requires_the_tasks_effect_class`, `test_namespace_isolation_across_path_and_header`, `test_visibility_quarantine_and_layer2_combinable_filters` |
 
 ## Trust boundaries
 

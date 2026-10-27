@@ -1,6 +1,6 @@
 """The MCP door (SPEC §7): atomic verbs, progressive L0 noun search, CAS records, buckets, delta feeds,
-and reflex recall over Streamable HTTP, behind the same keys and rules as the HTTP API. Agents that
-speak MCP connect to {public_url}/mcp with `Authorization: Bearer <key>`."""
+and reflex recall over Streamable HTTP, behind the same keys, namespaces, and governance rules as the HTTP API.
+Agents that speak MCP connect to {public_url}/mcp with `Authorization: Bearer <key>`."""
 
 from __future__ import annotations
 
@@ -19,9 +19,9 @@ from starlette.applications import Starlette
 
 from tessera._mcp_storage import register_storage_and_intelligence_tools
 from tessera._version import __version__
-from tessera.errors import RateLimited, TesseraError
+from tessera.errors import Forbidden, RateLimited, TesseraError
 from tessera.grants import KeyGrant
-from tessera.models import ChildSpec, EffectClass, TaskSpec
+from tessera.models import ChildSpec, EffectClass, TaskSpec, VisibilityScope
 
 if TYPE_CHECKING:
     from tessera.access import ClaimLimiter, Gate, ServiceSettings
@@ -79,9 +79,25 @@ def build_mcp(
         ),
     )
 
-    async def run(fn: Callable[[], T]) -> T:
+    async def run(fn: Callable[[], T], grant: KeyGrant | None = None) -> T:
+        req_scope = store.current_scope()
+        eff_surface = (
+            gate.effective_surface(grant, req_scope.surface)
+            if grant is not None
+            else req_scope.surface
+        )
+
+        def _scoped() -> T:
+            with store.scope_context(
+                namespace=req_scope.namespace,
+                surface=eff_surface,
+                key_id=grant.key_id if grant is not None else req_scope.key_id,
+                is_admin=grant.is_admin if grant is not None else req_scope.is_admin,
+            ):
+                return fn()
+
         try:
-            return await anyio.to_thread.run_sync(fn)
+            return await anyio.to_thread.run_sync(_scoped)
         except TesseraError as exc:
             raise ToolError(f"{exc.code}: {exc.detail}") from exc
 
@@ -94,7 +110,7 @@ def build_mcp(
     @server.tool(description="List the queues this key may use, with their lease settings.")
     async def queues() -> dict[str, Any]:
         grant = await current_grant()
-        configs = await run(store.queues)
+        configs = await run(store.queues, grant)
         return {
             "queues": [
                 q.model_dump() for q in configs if grant.is_admin or grant.allows_queue(q.name)
@@ -112,7 +128,7 @@ def build_mcp(
         effect_classes: list[str] | None = None,
     ) -> dict[str, Any]:
         grant = await current_grant()
-        await run(lambda: gate.queue(grant, queue))
+        await run(lambda: gate.queue(grant, queue), grant)
         if not grant.is_admin and (wait := limiter.retry_after(grant.key_id, time.monotonic())):
             raise ToolError(f"{RateLimited.code}: retry after {wait:.0f} s")
         effects = grant.effect_filter(effect_classes)
@@ -122,7 +138,8 @@ def build_mcp(
         lease = await run(
             lambda: store.claim(
                 queue, worker, kinds=allowed_kinds, effect_classes=effects, key_id=grant.key_id
-            )
+            ),
+            grant,
         )
         return {"lease": None if lease is None else lease.model_dump(mode="json")}
 
@@ -131,8 +148,8 @@ def build_mcp(
     )
     async def heartbeat(task_id: str, fencing_token: int) -> dict[str, Any]:
         grant = await current_grant()
-        await run(lambda: gate.holder(grant, task_id))
-        lease = await run(lambda: store.heartbeat(task_id, fencing_token))
+        await run(lambda: gate.holder(grant, task_id), grant)
+        lease = await run(lambda: store.heartbeat(task_id, fencing_token), grant)
         return {"lease": lease.model_dump(mode="json")}
 
     @server.tool(
@@ -142,17 +159,24 @@ def build_mcp(
     async def submit(
         task_id: str,
         fencing_token: int,
-        output: dict[str, Any],
+        output: Any,
         idempotency_key: str,
         ok: bool = True,
         error: str | None = None,
     ) -> dict[str, Any]:
         grant = await current_grant()
-        await run(lambda: gate.holder(grant, task_id))
+        await run(lambda: gate.holder(grant, task_id), grant)
         receipt = await run(
             lambda: store.submit(
-                task_id, fencing_token, output, idempotency_key=idempotency_key, ok=ok, error=error
-            )
+                task_id,
+                fencing_token,
+                output,
+                idempotency_key=idempotency_key,
+                ok=ok,
+                error=error,
+                completed_by_key=grant.key_id,
+            ),
+            grant,
         )
         return {"receipt": receipt.model_dump(mode="json")}
 
@@ -164,12 +188,20 @@ def build_mcp(
         task_id: str, fencing_token: int, children: list[dict[str, Any]]
     ) -> dict[str, Any]:
         grant = await current_grant()
-        await run(lambda: gate.holder(grant, task_id))
+        await run(lambda: gate.holder(grant, task_id), grant)
         specs = [ChildSpec.model_validate(c) for c in children]
-        parent_queue = (await run(lambda: store.task(task_id))).queue
+        parent = await run(lambda: store.task(task_id), grant)
         for spec in specs:
-            await run(lambda spec=spec: gate.queue(grant, spec.queue or parent_queue))  # type: ignore[misc]
-        ids = await run(lambda: store.split(task_id, fencing_token, specs))
+            await run(lambda spec=spec: gate.queue(grant, spec.queue or parent.queue), grant)  # type: ignore[misc]
+            if (
+                spec.effect_class
+                and not grant.is_admin
+                and spec.effect_class not in grant.effect_classes
+            ):
+                raise ToolError(
+                    f"{Forbidden.code}: this key may not create tasks of that effect class"
+                )
+        ids = await run(lambda: store.split(task_id, fencing_token, specs), grant)
         return {"children": ids}
 
     @server.tool(
@@ -181,9 +213,10 @@ def build_mcp(
         task_id: str, fencing_token: int, reason: str, resume_within: float | None = None
     ) -> dict[str, Any]:
         grant = await current_grant()
-        await run(lambda: gate.holder(grant, task_id))
+        await run(lambda: gate.holder(grant, task_id), grant)
         view = await run(
-            lambda: store.park(task_id, fencing_token, reason=reason, resume_within=resume_within)
+            lambda: store.park(task_id, fencing_token, reason=reason, resume_within=resume_within),
+            grant,
         )
         return view.model_dump(mode="json")
 
@@ -195,49 +228,56 @@ def build_mcp(
         task_id: str, input: dict[str, Any], park: int | None = None
     ) -> dict[str, Any]:
         grant = await current_grant()
-        queue = (await run(lambda: store.task(task_id))).queue
-        await run(lambda: gate.queue(grant, queue))
+        target = await run(lambda: store.task(task_id), grant)
+        await run(lambda: gate.queue(grant, target.queue), grant)
+        await run(lambda: gate.effect(grant, target.effect_class), grant)
         view = await run(
             lambda: store.resume(
                 task_id, input, park=park, by=grant.key_id, allow_self=grant.is_admin
-            )
+            ),
+            grant,
         )
         return view.model_dump(mode="json")
 
     @server.tool(
         description="Enqueue a new atomic verb (task) in a queue this key may use. Idempotent when "
-        "task_id is supplied."
+        "task_id or idempotency_key is supplied."
     )
     async def enqueue(
         queue: str,
         brief: dict[str, Any],
         task_id: str | None = None,
+        idempotency_key: str | None = None,
         kind: str = "task",
         effect_class: EffectClass = "write-internal",
         priority: int = 50,
         depends_on: list[str] | None = None,
+        visibility_scope: VisibilityScope = "public_commons",
+        allowed_surfaces: list[str] | None = None,
+        target_cohorts: list[str] | None = None,
+        tags: list[str] | None = None,
     ) -> dict[str, str]:
         grant = await current_grant()
         spec = TaskSpec(
             queue=queue,
             brief=brief,
             task_id=task_id,
+            idempotency_key=idempotency_key,
             kind=kind,
             effect_class=effect_class,
             priority=priority,
             depends_on=depends_on or [],
+            visibility_scope=visibility_scope,
+            allowed_surfaces=allowed_surfaces or [],
+            target_cohorts=target_cohorts or ["all"],
+            tags=tags or [],
         )
-        await run(lambda: gate.queue(grant, spec.queue))
-        if spec.effect_class == "public" and not grant.is_admin:
-            raise ToolError(
-                "forbidden: only an admin key may queue a task with the public effect class"
-            )
-        if not grant.is_admin and spec.effect_class not in grant.effect_classes:
-            raise ToolError("forbidden: this key may not queue tasks of that effect class")
+        await run(lambda: gate.queue(grant, spec.queue), grant)
+        await run(lambda: gate.effect(grant, spec.effect_class), grant)
         for dep in spec.depends_on:
-            dep_queue = (await run(lambda dep=dep: store.task(dep))).queue  # type: ignore[misc]
-            await run(lambda dep_queue=dep_queue: gate.queue(grant, dep_queue))  # type: ignore[misc]
-        queued_id = await run(lambda: store.enqueue(spec))
+            dep_queue = (await run(lambda dep=dep: store.task(dep), grant)).queue  # type: ignore[misc]
+            await run(lambda dep_queue=dep_queue: gate.queue(grant, dep_queue), grant)  # type: ignore[misc]
+        queued_id = await run(lambda: store.enqueue(spec), grant)
         return {"task_id": queued_id}
 
     register_storage_and_intelligence_tools(server, store, gate, run, current_grant)

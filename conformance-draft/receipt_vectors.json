@@ -1,0 +1,180 @@
+{
+  "schema_version": 1,
+  "spec_section": "5.4",
+  "version": "0.2.0",
+  "vectors": [
+    {
+      "id": "V01_nested_sorted_keys",
+      "description": "Nested object keys sorted lexicographically by Unicode code point without whitespace",
+      "input": {
+        "task_id": "t_vec_01",
+        "fencing_token": 1,
+        "ok": true,
+        "output": {
+          "z": 9,
+          "a": {
+            "beta": 2,
+            "alpha": 1
+          },
+          "m": [
+            3,
+            2,
+            1
+          ]
+        },
+        "error": null
+      },
+      "canonical_json": "{\"error\":null,\"fencing_token\":1,\"ok\":true,\"output\":{\"a\":{\"alpha\":1,\"beta\":2},\"m\":[3,2,1],\"z\":9},\"task_id\":\"t_vec_01\"}",
+      "sha256": "91fd79dd2fb5f46791c429df8b98776e5370e4305413369f76096e29bb32ca76"
+    },
+    {
+      "id": "V02_whole_floats_below_2_pow_53",
+      "description": "Whole floats below 2^53 serialize without a decimal fraction (1.0 -> 1)",
+      "input": {
+        "task_id": "t_vec_02",
+        "fencing_token": 2,
+        "ok": true,
+        "output": {
+          "one": 1.0,
+          "zero": 0.0,
+          "neg": -42.0,
+          "max_safe": 9007199254740991.0
+        },
+        "error": null
+      },
+      "canonical_json": "{\"error\":null,\"fencing_token\":2,\"ok\":true,\"output\":{\"max_safe\":9007199254740991,\"neg\":-42,\"one\":1,\"zero\":0},\"task_id\":\"t_vec_02\"}",
+      "sha256": "10a88c4a90e6a53680e9646bfc2e59835c45b23ddc46c4074aedb4dfc1374cc2"
+    },
+    {
+      "id": "V03_fractions_and_exponents",
+      "description": "Non-whole fractions and small/large scientific notation numbers match across runtimes",
+      "input": {
+        "task_id": "t_vec_03",
+        "fencing_token": 3,
+        "ok": true,
+        "output": {
+          "pi": 3.14159,
+          "ten_thousandth": 0.0001,
+          "small_exp": 5e-05,
+          "tiny_exp": 1e-07,
+          "large_exp": 1.5e+16
+        },
+        "error": null
+      },
+      "canonical_json": "{\"error\":null,\"fencing_token\":3,\"ok\":true,\"output\":{\"large_exp\":1.5e+16,\"pi\":3.14159,\"small_exp\":5e-05,\"ten_thousandth\":0.0001,\"tiny_exp\":1e-07},\"task_id\":\"t_vec_03\"}",
+      "sha256": "0c465cd8c97afd094168d0aa1f1373ba6966e2e9d7b83d8daa70c80190741779"
+    },
+    {
+      "id": "V04_utf8_and_astral_key_order",
+      "description": "UTF-8 strings preserved unescaped and astral plane keys sorted after U+E000 by code point",
+      "input": {
+        "task_id": "t_vec_04",
+        "fencing_token": 4,
+        "ok": true,
+        "output": {
+          "🧩": "tile-astral-U+1F9E9",
+          "": "bmp-private-use-U+E000",
+          "text": "café タイル 🧩"
+        },
+        "error": null
+      },
+      "canonical_json": "{\"error\":null,\"fencing_token\":4,\"ok\":true,\"output\":{\"text\":\"café タイル 🧩\",\"\":\"bmp-private-use-U+E000\",\"🧩\":\"tile-astral-U+1F9E9\"},\"task_id\":\"t_vec_04\"}",
+      "sha256": "0660d942e8822fb8cfc620ef54a8008ff49e94e4b8458f9e001f68c3ad54191f"
+    },
+    {
+      "id": "V05_null_output",
+      "description": "Top-level null output hashes cleanly",
+      "input": {
+        "task_id": "t_vec_05",
+        "fencing_token": 5,
+        "ok": true,
+        "output": null,
+        "error": null
+      },
+      "canonical_json": "{\"error\":null,\"fencing_token\":5,\"ok\":true,\"output\":null,\"task_id\":\"t_vec_05\"}",
+      "sha256": "5eacfadd87700673411b290f466443522fd48bf54ad113d92fefa6f7dcc91198"
+    },
+    {
+      "id": "V06_array_and_booleans",
+      "description": "Top-level array output with booleans, nulls, and nested objects",
+      "input": {
+        "task_id": "t_vec_06",
+        "fencing_token": 6,
+        "ok": true,
+        "output": [
+          true,
+          false,
+          null,
+          {
+            "flag": true,
+            "count": 0
+          }
+        ],
+        "error": null
+      },
+      "canonical_json": "{\"error\":null,\"fencing_token\":6,\"ok\":true,\"output\":[true,false,null,{\"count\":0,\"flag\":true}],\"task_id\":\"t_vec_06\"}",
+      "sha256": "c9b436be016b74be3def2907c55ea8d4d4afb27a77da2a2c24bf3f0f9a1475fa"
+    },
+    {
+      "id": "V07_scalar_string_output",
+      "description": "Top-level scalar string output",
+      "input": {
+        "task_id": "t_vec_07",
+        "fencing_token": 7,
+        "ok": true,
+        "output": "verified-tile-output",
+        "error": null
+      },
+      "canonical_json": "{\"error\":null,\"fencing_token\":7,\"ok\":true,\"output\":\"verified-tile-output\",\"task_id\":\"t_vec_07\"}",
+      "sha256": "b5e7efbd9c0ffd671fbd941cb7233211120796d1be0797df1071bc1910d3a6d3"
+    },
+    {
+      "id": "V08_empty_collections",
+      "description": "Empty object, empty array, and empty string",
+      "input": {
+        "task_id": "t_vec_08",
+        "fencing_token": 8,
+        "ok": true,
+        "output": {
+          "empty_arr": [],
+          "empty_obj": {},
+          "empty_str": ""
+        },
+        "error": null
+      },
+      "canonical_json": "{\"error\":null,\"fencing_token\":8,\"ok\":true,\"output\":{\"empty_arr\":[],\"empty_obj\":{},\"empty_str\":\"\"},\"task_id\":\"t_vec_08\"}",
+      "sha256": "dffa8064363c762cac7a8f527cbbdb4b3e2e97600d874402cc6ba268a603d8f0"
+    },
+    {
+      "id": "V09_failed_submit_with_error",
+      "description": "Failed submit (ok=false) carrying a diagnostic error string",
+      "input": {
+        "task_id": "t_vec_09",
+        "fencing_token": 9,
+        "ok": false,
+        "output": {
+          "attempt": 2,
+          "partial": []
+        },
+        "error": "upstream model timeout after 30s"
+      },
+      "canonical_json": "{\"error\":\"upstream model timeout after 30s\",\"fencing_token\":9,\"ok\":false,\"output\":{\"attempt\":2,\"partial\":[]},\"task_id\":\"t_vec_09\"}",
+      "sha256": "4067e24c6af4dd3300114a4ac4f811d2c1b46835b443a7b9cadca373c04cff1d"
+    },
+    {
+      "id": "V10_escaped_control_characters",
+      "description": "Strings containing quotes, backslashes, tabs, and newlines",
+      "input": {
+        "task_id": "t_vec_10",
+        "fencing_token": 10,
+        "ok": true,
+        "output": {
+          "raw": "line1\nline2\t\"quoted\"\\slash"
+        },
+        "error": null
+      },
+      "canonical_json": "{\"error\":null,\"fencing_token\":10,\"ok\":true,\"output\":{\"raw\":\"line1\\nline2\\t\\\"quoted\\\"\\\\slash\"},\"task_id\":\"t_vec_10\"}",
+      "sha256": "465462aa7d19bffd6d644ee81fc1213ae675886a9deb8c7e99357dd0d2384b2a"
+    }
+  ]
+}

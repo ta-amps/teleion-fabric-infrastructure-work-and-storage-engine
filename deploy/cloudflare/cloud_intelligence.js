@@ -1,6 +1,6 @@
 // 0-call progressive L0 scent search, RFC 9110 HTTP 206 byte-range slicing,
-// monotonic cursor-sequenced live delta feeds, and dual-resolution reflex recall
-// for Tessera Cloud (`TesseraCoordinator` + Worker edge).
+// monotonic cursor-sequenced live delta feeds, dual-resolution reflex recall,
+// and Layer 1 / Layer 2 governance lenses for Tessera Cloud (`TesseraCoordinator` + Worker edge).
 
 const NAME_RE = /^[a-z0-9][a-z0-9_.-]{0,63}$/;
 const TOKEN_RE = /[a-z0-9]{2,}/g;
@@ -8,6 +8,223 @@ const RANGE_RE = /^bytes=(\d*)-(\d*)$/i;
 const MAX_L0_CHARS = 520;
 const REFLEX_STORE = "tessera.reflexes";
 const DEAD_END_STORE = "negative.knowledge";
+
+export const VISIBILITY_SCOPES = new Set([
+  "private",
+  "surface_only",
+  "allowlist_surfaces",
+  "public_commons",
+]);
+
+export const PROTECTED_SURFACES = new Set(["shamash", "eranos", "herma", "kothar", "kinema"]);
+
+export function normalizeNamespace(ns) {
+  if (ns == null) return "main";
+  const clean = String(ns).trim();
+  if (!clean || clean === "primary") return "main";
+  return clean;
+}
+
+export function normalizeSurface(surface) {
+  if (surface == null) return "surface:tessera";
+  const clean = String(surface).trim().toLowerCase();
+  if (!clean) return "surface:tessera";
+  if (clean.startsWith("surface:")) {
+    const slug = clean.slice("surface:".length).trim();
+    return slug ? `surface:${slug}` : "surface:tessera";
+  }
+  return `surface:${clean}`;
+}
+
+export function surfaceSlug(surface) {
+  return normalizeSurface(surface).split(":")[1];
+}
+
+export function normalizeSurfaceList(values, badReq) {
+  if (values == null) return [];
+  if (!Array.isArray(values)) throw badReq("allowed_surfaces must be a list");
+  const out = [];
+  for (const item of values) {
+    const raw = String(item ?? "").trim();
+    if (raw) {
+      const norm = normalizeSurface(raw);
+      if (!out.includes(norm)) out.push(norm);
+    }
+  }
+  return out;
+}
+
+export function normalizeCohorts(values, badReq) {
+  if (values == null) return ["all"];
+  if (!Array.isArray(values)) throw badReq("target_cohorts must be a list");
+  const out = [];
+  for (const item of values) {
+    const clean = String(item ?? "").trim();
+    if (clean && !out.includes(clean)) out.push(clean);
+  }
+  return out.length ? out : ["all"];
+}
+
+export function normalizeTags(values, badReq) {
+  if (values == null) return [];
+  if (!Array.isArray(values)) throw badReq("tags must be a list");
+  const out = [];
+  for (const item of values) {
+    const clean = String(item ?? "").trim();
+    if (clean && !out.includes(clean)) out.push(clean);
+  }
+  return out;
+}
+
+export function normalizeGovernance(
+  raw,
+  { defaultSurface = "surface:tessera", ownerKeyId = null, extraTags = [] } = {},
+  badReq
+) {
+  const src = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+  const prodSurf =
+    src.producer_surface != null
+      ? normalizeSurface(src.producer_surface)
+      : normalizeSurface(defaultSurface || "surface:tessera");
+  const slug = prodSurf.split(":")[1];
+  if (!NAME_RE.test(slug)) throw badReq(`invalid producer_surface '${prodSurf}'`);
+
+  const visScope =
+    src.visibility_scope == null ? "public_commons" : String(src.visibility_scope).trim();
+  if (!VISIBILITY_SCOPES.has(visScope)) {
+    throw badReq(`invalid visibility_scope '${visScope}'`);
+  }
+
+  const allowedSurfaces = normalizeSurfaceList(src.allowed_surfaces, badReq);
+  for (const s of allowedSurfaces) {
+    if (!NAME_RE.test(s.split(":")[1])) throw badReq(`invalid allowed_surfaces item '${s}'`);
+  }
+  const targetCohorts = normalizeCohorts(src.target_cohorts, badReq);
+  const baseTags = normalizeTags(src.tags, badReq);
+  for (const t of extraTags) {
+    const clean = String(t ?? "").trim();
+    if (clean && !baseTags.includes(clean)) baseTags.push(clean);
+  }
+  const resolvedOwner =
+    src.owner_key_id !== undefined
+      ? src.owner_key_id == null
+        ? null
+        : String(src.owner_key_id)
+      : ownerKeyId;
+
+  return {
+    producer_surface: prodSurf,
+    visibility_scope: visScope,
+    allowed_surfaces: allowedSurfaces,
+    target_cohorts: targetCohorts,
+    tags: baseTags,
+    owner_key_id: resolvedOwner,
+  };
+}
+
+export function canViewGoverned({
+  visibility_scope = "public_commons",
+  producer_surface = "surface:tessera",
+  allowed_surfaces = [],
+  owner_key_id = null,
+  tags = [],
+  viewer_surface = null,
+  viewer_key_id = null,
+  is_admin = false,
+  direct_get = false,
+  include_restricted = false,
+}) {
+  const normProd = normalizeSurface(producer_surface);
+  const normViewer = viewer_surface ? normalizeSurface(viewer_surface) : null;
+  if (tags.includes("status:quarantined")) {
+    if (direct_get) {
+      return Boolean(is_admin || (normViewer != null && normViewer === normProd));
+    }
+    return Boolean(is_admin && include_restricted);
+  }
+  if (is_admin) return true;
+  if (visibility_scope === "public_commons") return true;
+  if (visibility_scope === "private") {
+    if (viewer_key_id != null && owner_key_id != null) {
+      return viewer_key_id === owner_key_id;
+    }
+    if (owner_key_id == null && normViewer != null) {
+      return normViewer === normProd;
+    }
+    return false;
+  }
+  if (visibility_scope === "surface_only") {
+    return normViewer != null && normViewer === normProd;
+  }
+  if (visibility_scope === "allowlist_surfaces") {
+    if (normViewer == null) return false;
+    const allowed = new Set([normProd, ...allowed_surfaces.map((s) => normalizeSurface(s))]);
+    return allowed.has(normViewer);
+  }
+  return false;
+}
+
+export function cohortMatches(
+  targetCohorts,
+  cohort = null,
+  { is_admin = false, include_restricted = false } = {}
+) {
+  const cohorts = Array.isArray(targetCohorts) && targetCohorts.length ? targetCohorts : ["all"];
+  const req = String(cohort || "").trim();
+  if (!req) {
+    return cohorts.includes("all") || Boolean(is_admin && include_restricted);
+  }
+  if (cohorts.includes("all") || cohorts.includes(req)) return true;
+  const alt = req.startsWith("cohort:") ? req.slice("cohort:".length) : `cohort:${req}`;
+  return cohorts.includes(alt);
+}
+
+export function tagMatchesCategory(tags, category) {
+  const cat = String(category || "").trim().toLowerCase();
+  if (!cat) return true;
+  const bare = cat.startsWith("category:") ? cat.slice("category:".length) : cat;
+  const candidates = new Set([cat, bare, `category:${bare}`, `cat:${bare}`]);
+  return tags.some((t) => candidates.has(String(t || "").trim().toLowerCase()));
+}
+
+export function matchesLayer2Filters({
+  haystack = "",
+  tags = [],
+  producer_surface = "surface:tessera",
+  target_cohorts = ["all"],
+  q = "",
+  tag = null,
+  category = null,
+  cohort = null,
+  surface = null,
+  is_admin = false,
+  include_restricted = false,
+}) {
+  if (!cohortMatches(target_cohorts, cohort, { is_admin, include_restricted })) {
+    return false;
+  }
+  if (surface && String(surface).trim()) {
+    if (normalizeSurface(producer_surface) !== normalizeSurface(surface)) return false;
+  }
+  if (tag && String(tag).trim()) {
+    const want = String(tag).trim().toLowerCase();
+    if (!tags.some((t) => String(t).trim().toLowerCase() === want)) return false;
+  }
+  if (category && String(category).trim()) {
+    if (!tagMatchesCategory(tags, category)) return false;
+  }
+  const qClean = String(q || "").trim().toLowerCase();
+  if (qClean) {
+    const hayLow = `${haystack} ${tags.join(" ")}`.toLowerCase();
+    if (!hayLow.includes(qClean)) {
+      const qToks = tokenize(qClean);
+      if (!qToks.length) return false;
+      const hToks = new Set(tokenize(hayLow));
+      if (!qToks.every((tok) => hToks.has(tok))) return false;
+    }
+  }
+  return true;
+}
 
 function tokenize(text) {
   return String(text || "").toLowerCase().match(TOKEN_RE) || [];
@@ -52,15 +269,22 @@ function similarity(query, hayTitle, hayBody, hayTags) {
     const union = qTri.size + hTri.size - inter;
     triJaccard = union > 0 ? inter / union : 0.0;
   }
-  return Math.round(Math.min(1.0, 0.55 * tokOverlap + 0.25 * triJaccard + substrBonus + titleBonus) * 10000) / 10000;
+  return (
+    Math.round(
+      Math.min(1.0, 0.55 * tokOverlap + 0.25 * triJaccard + substrBonus + titleBonus) * 10000
+    ) / 10000
+  );
 }
 
-function extractTags(obj) {
+export function extractTags(obj) {
   if (!obj || typeof obj !== "object" || Array.isArray(obj)) return [];
   const out = [];
   for (const k of ["domain", "surface", "stage", "kind", "category", "area", "track"]) {
     const v = obj[k];
-    if (typeof v === "string" && v.trim()) out.push(v.trim());
+    if (typeof v === "string" && v.trim()) {
+      out.push(v.trim());
+      if (k === "category") out.push(`category:${v.trim()}`);
+    }
   }
   const rawTags = obj.tags;
   if (Array.isArray(rawTags)) {
@@ -75,7 +299,30 @@ function extractTags(obj) {
   if (metaTags && typeof metaTags === "object" && !Array.isArray(metaTags)) {
     for (const k of Object.keys(metaTags).sort()) out.push(`${k}:${metaTags[k]}`);
   }
-  return [...new Set(out)].slice(0, 12);
+  return [...new Set(out)].slice(0, 24);
+}
+
+function parseJsonSafe(raw, fallback) {
+  try {
+    return raw == null ? fallback : JSON.parse(raw);
+  } catch {
+    return fallback;
+  }
+}
+
+function rowGovernance(row, extraTags = []) {
+  const tags = [...parseJsonSafe(row.tags, [])];
+  for (const t of extraTags) {
+    if (t && !tags.includes(t)) tags.push(t);
+  }
+  return {
+    producer_surface: row.producer_surface || "surface:tessera",
+    visibility_scope: row.visibility_scope || "public_commons",
+    allowed_surfaces: parseJsonSafe(row.allowed_surfaces, []),
+    target_cohorts: parseJsonSafe(row.target_cohorts, ["all"]),
+    tags,
+    owner_key_id: row.owner_key_id ?? null,
+  };
 }
 
 function extractTitleAndL0(key, val, canonicalJson) {
@@ -92,14 +339,19 @@ function extractTitleAndL0(key, val, canonicalJson) {
     }
     const keysPreview = Object.keys(val).sort().slice(0, 10).join(", ");
     const compact = canonicalJson(val);
-    const snippet = compact.length > 260 ? compact.slice(0, 260) + "…" : compact;
+    const snippet = compact.length > 260 ? compact.slice(0, 260) + "..." : compact;
     return [title.slice(0, 140), `fields=[${keysPreview}] ${snippet}`.slice(0, MAX_L0_CHARS)];
   }
   const compactAny = canonicalJson(val);
   return [String(key).slice(0, 140), compactAny.slice(0, MAX_L0_CHARS)];
 }
 
-export function sliceBytesResponse(bytes, rangeHeader, mediaType = "application/octet-stream", extraHeaders = {}) {
+export function sliceBytesResponse(
+  bytes,
+  rangeHeader,
+  mediaType = "application/octet-stream",
+  extraHeaders = {}
+) {
   const baseHeaders = {
     "content-type": mediaType,
     "accept-ranges": "bytes",
@@ -154,13 +406,10 @@ export function sliceBytesResponse(bytes, rangeHeader, mediaType = "application/
 }
 
 export function recordDeadEndTombstone(coord, task, failures, reason, now, canonicalJson) {
-  let brief = {};
-  try {
-    brief = JSON.parse(task.brief);
-  } catch {
-    brief = {};
-  }
+  const ns = coord.namespace || "main";
+  const brief = parseJsonSafe(task.brief, {});
   const title = String(brief?.title || brief?.goal || task.id).slice(0, 140);
+  const tags = ["dead-letter", String(task.queue), String(task.kind)];
   const tombstone = {
     task_id: task.id,
     queue: task.queue,
@@ -176,36 +425,120 @@ export function recordDeadEndTombstone(coord, task, failures, reason, now, canon
       brief && typeof brief === "object" && !Array.isArray(brief)
         ? Object.keys(brief).sort().slice(0, 16)
         : [],
-    tags: ["dead-letter", String(task.queue), String(task.kind)],
+    tags,
     dead_lettered_at: now,
   };
+  const prodSurf = task.producer_surface || "surface:tessera";
+  const visScope = task.visibility_scope || "public_commons";
+  const allowedJson = task.allowed_surfaces || "[]";
+  const cohortsJson = task.target_cohorts || '["all"]';
+  const tagsJson = JSON.stringify(tags);
+  const ownerKey = task.owner_key_id ?? null;
+
   const head = coord._one(
-    "SELECT version FROM record_heads WHERE store = ? AND key = ?",
+    "SELECT version FROM record_heads WHERE namespace = ? AND store = ? AND key = ?",
+    ns,
     DEAD_END_STORE,
     task.id
   );
   const ver = (head == null ? 0 : Number(head.version)) + 1;
   const text = canonicalJson(tombstone);
   coord.ctx.storage.sql.exec(
-    "INSERT INTO records (store, key, version, value, created_at) VALUES (?, ?, ?, ?, ?)",
+    "INSERT INTO records (namespace, store, key, version, value, created_at, producer_surface, visibility_scope, allowed_surfaces, target_cohorts, tags, owner_key_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    ns,
     DEAD_END_STORE,
     task.id,
     ver,
     text,
-    now
+    now,
+    prodSurf,
+    visScope,
+    allowedJson,
+    cohortsJson,
+    tagsJson,
+    ownerKey
   );
   coord.ctx.storage.sql.exec(
-    "INSERT INTO record_heads (store, key, version) VALUES (?, ?, ?) ON CONFLICT (store, key) DO UPDATE SET version = excluded.version",
+    "INSERT INTO record_heads (namespace, store, key, version, producer_surface, visibility_scope, allowed_surfaces, target_cohorts, tags, owner_key_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (namespace, store, key) DO UPDATE SET version = excluded.version, producer_surface = excluded.producer_surface, visibility_scope = excluded.visibility_scope, allowed_surfaces = excluded.allowed_surfaces, target_cohorts = excluded.target_cohorts, tags = excluded.tags, owner_key_id = excluded.owner_key_id",
+    ns,
     DEAD_END_STORE,
     task.id,
-    ver
+    ver,
+    prodSurf,
+    visScope,
+    allowedJson,
+    cohortsJson,
+    tagsJson,
+    ownerKey
   );
+  coord._syncNounTags("record", DEAD_END_STORE, task.id, tags);
+
+  if (coord.env && coord.env.FABRIC_DB) {
+    const db = coord.env.FABRIC_DB;
+    const d1Stmts = [
+      db
+        .prepare(
+          "INSERT OR IGNORE INTO records (namespace, store, key, version, value, created_at, producer_surface, visibility_scope, allowed_surfaces, target_cohorts, tags, owner_key_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        )
+        .bind(
+          ns,
+          DEAD_END_STORE,
+          task.id,
+          ver,
+          text,
+          now,
+          prodSurf,
+          visScope,
+          allowedJson,
+          cohortsJson,
+          tagsJson,
+          ownerKey
+        ),
+      db
+        .prepare(
+          "INSERT INTO record_heads (namespace, store, key, version, producer_surface, visibility_scope, allowed_surfaces, target_cohorts, tags, owner_key_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (namespace, store, key) DO UPDATE SET version = excluded.version, producer_surface = excluded.producer_surface, visibility_scope = excluded.visibility_scope, allowed_surfaces = excluded.allowed_surfaces, target_cohorts = excluded.target_cohorts, tags = excluded.tags, owner_key_id = excluded.owner_key_id WHERE record_heads.version < excluded.version"
+        )
+        .bind(
+          ns,
+          DEAD_END_STORE,
+          task.id,
+          ver,
+          prodSurf,
+          visScope,
+          allowedJson,
+          cohortsJson,
+          tagsJson,
+          ownerKey
+        ),
+      db
+        .prepare(
+          "DELETE FROM noun_tags WHERE namespace = ? AND noun_kind = 'record' AND container = ? AND noun_id = ?"
+        )
+        .bind(ns, DEAD_END_STORE, task.id),
+    ];
+    for (const tag of tags) {
+      d1Stmts.push(
+        db
+          .prepare(
+            "INSERT OR IGNORE INTO noun_tags (namespace, noun_kind, container, noun_id, tag) VALUES (?, 'record', ?, ?, ?)"
+          )
+          .bind(ns, DEAD_END_STORE, task.id, tag)
+      );
+    }
+    coord._mirrorToD1(d1Stmts);
+  }
 }
 
-export function searchNouns(coord, args, canonicalJson, badReq) {
+export function searchNouns(coord, args, canonicalJson, badReq, viewerCtx = {}) {
+  const ns = coord.namespace || "main";
   const qClean = String(args.query || "").trim();
   const store = args.store ? String(args.store) : null;
   const bucket = args.bucket ? String(args.bucket) : null;
+  const tagFilter = args.tag ? String(args.tag).trim() : null;
+  const categoryFilter = args.category ? String(args.category).trim() : null;
+  const cohortFilter = args.cohort ? String(args.cohort).trim() : null;
+  const surfaceFilter = args.surface ? String(args.surface).trim() : null;
+  const includeRestricted = Boolean(args.include_restricted);
   const cap = Math.max(1, Math.min(Number(args.limit || 20), 200));
   if (store != null && !NAME_RE.test(store)) throw badReq(`invalid store name '${store}'`);
   if (bucket != null && !NAME_RE.test(bucket)) throw badReq(`invalid bucket name '${bucket}'`);
@@ -214,64 +547,182 @@ export function searchNouns(coord, args, canonicalJson, badReq) {
   const enc = new TextEncoder();
 
   if (bucket == null) {
-    const recRows =
-      store != null
-        ? coord._all(
-            "SELECT r.* FROM record_heads h JOIN records r ON r.store = h.store AND r.key = h.key AND r.version = h.version WHERE h.store = ? ORDER BY r.created_at DESC LIMIT 1000",
-            store
-          )
-        : coord._all(
-            "SELECT r.* FROM record_heads h JOIN records r ON r.store = h.store AND r.key = h.key AND r.version = h.version ORDER BY r.created_at DESC LIMIT 1000"
-          );
+    let recRows;
+    if (tagFilter) {
+      recRows =
+        store != null
+          ? coord._all(
+              "SELECT r.* FROM noun_tags nt JOIN record_heads h ON h.namespace = nt.namespace AND h.store = nt.container AND h.key = nt.noun_id JOIN records r ON r.namespace = h.namespace AND r.store = h.store AND r.key = h.key AND r.version = h.version WHERE nt.namespace = ? AND nt.noun_kind = 'record' AND LOWER(nt.tag) = LOWER(?) AND h.store = ? ORDER BY r.created_at DESC LIMIT 1000",
+              ns,
+              tagFilter,
+              store
+            )
+          : coord._all(
+              "SELECT r.* FROM noun_tags nt JOIN record_heads h ON h.namespace = nt.namespace AND h.store = nt.container AND h.key = nt.noun_id JOIN records r ON r.namespace = h.namespace AND r.store = h.store AND r.key = h.key AND r.version = h.version WHERE nt.namespace = ? AND nt.noun_kind = 'record' AND LOWER(nt.tag) = LOWER(?) ORDER BY r.created_at DESC LIMIT 1000",
+              ns,
+              tagFilter
+            );
+    } else {
+      recRows =
+        store != null
+          ? coord._all(
+              "SELECT r.* FROM record_heads h JOIN records r ON r.namespace = h.namespace AND r.store = h.store AND r.key = h.key AND r.version = h.version WHERE h.namespace = ? AND h.store = ? ORDER BY r.created_at DESC LIMIT 1000",
+              ns,
+              store
+            )
+          : coord._all(
+              "SELECT r.* FROM record_heads h JOIN records r ON r.namespace = h.namespace AND r.store = h.store AND r.key = h.key AND r.version = h.version WHERE h.namespace = ? ORDER BY r.created_at DESC LIMIT 1000",
+              ns
+            );
+    }
     for (const row of recRows) {
       const rawVal = String(row.value);
       const parsed = JSON.parse(rawVal);
+      const gov = rowGovernance(row, extractTags(parsed));
+      // Quarantined nouns NEVER appear in /v1/search.
+      if (gov.tags.includes("status:quarantined")) continue;
+      if (
+        !canViewGoverned({
+          ...gov,
+          viewer_surface: viewerCtx.surface,
+          viewer_key_id: viewerCtx.key_id,
+          is_admin: viewerCtx.is_admin,
+          direct_get: false,
+          include_restricted: includeRestricted,
+        })
+      ) {
+        continue;
+      }
       const [title, l0] = extractTitleAndL0(row.key, parsed, canonicalJson);
-      const tags = extractTags(parsed);
-      const score = similarity(qClean, `${row.store} ${row.key} ${title}`, `${l0} ${rawVal.slice(0, 1200)}`, tags);
+      const hay = `${row.store} ${row.key} ${title} ${l0} ${rawVal.slice(0, 1200)}`;
+      if (
+        !matchesLayer2Filters({
+          haystack: hay,
+          tags: gov.tags,
+          producer_surface: gov.producer_surface,
+          target_cohorts: gov.target_cohorts,
+          q: "",
+          tag: tagFilter,
+          category: categoryFilter,
+          cohort: cohortFilter,
+          surface: surfaceFilter,
+          is_admin: viewerCtx.is_admin,
+          include_restricted: includeRestricted,
+        })
+      ) {
+        continue;
+      }
+      const score = similarity(qClean, `${row.store} ${row.key} ${title}`, `${l0} ${rawVal.slice(0, 1200)}`, gov.tags);
       if (qClean && score <= 0.05) continue;
       scents.push({
         kind: "record",
-        namespace: row.store,
+        namespace: ns,
+        container: row.store,
         key: row.key,
         version: Number(row.version),
         title,
         l0_summary: l0,
-        tags,
+        tags: gov.tags.slice(0, 16),
         size_bytes: enc.encode(rawVal).byteLength,
         sha256: null,
         score,
         updated_at: Number(row.created_at),
+        producer_surface: gov.producer_surface,
+        visibility_scope: gov.visibility_scope,
+        allowed_surfaces: gov.allowed_surfaces,
+        target_cohorts: gov.target_cohorts,
+        owner_key_id: gov.owner_key_id,
       });
     }
   }
 
   if (store == null) {
-    const objRows =
-      bucket != null
-        ? coord._all("SELECT * FROM bucket_objects WHERE bucket = ? ORDER BY updated_at DESC LIMIT 1000", bucket)
-        : coord._all("SELECT * FROM bucket_objects ORDER BY updated_at DESC LIMIT 1000");
+    let objRows;
+    if (tagFilter) {
+      objRows =
+        bucket != null
+          ? coord._all(
+              "SELECT o.* FROM noun_tags nt JOIN bucket_objects o ON o.namespace = nt.namespace AND o.bucket = nt.container AND o.key = nt.noun_id WHERE nt.namespace = ? AND nt.noun_kind = 'object' AND LOWER(nt.tag) = LOWER(?) AND o.bucket = ? ORDER BY o.updated_at DESC LIMIT 1000",
+              ns,
+              tagFilter,
+              bucket
+            )
+          : coord._all(
+              "SELECT o.* FROM noun_tags nt JOIN bucket_objects o ON o.namespace = nt.namespace AND o.bucket = nt.container AND o.key = nt.noun_id WHERE nt.namespace = ? AND nt.noun_kind = 'object' AND LOWER(nt.tag) = LOWER(?) ORDER BY o.updated_at DESC LIMIT 1000",
+              ns,
+              tagFilter
+            );
+    } else {
+      objRows =
+        bucket != null
+          ? coord._all(
+              "SELECT * FROM bucket_objects WHERE namespace = ? AND bucket = ? ORDER BY updated_at DESC LIMIT 1000",
+              ns,
+              bucket
+            )
+          : coord._all(
+              "SELECT * FROM bucket_objects WHERE namespace = ? ORDER BY updated_at DESC LIMIT 1000",
+              ns
+            );
+    }
     for (const row of objRows) {
       const meta = JSON.parse(row.metadata);
+      const gov = rowGovernance(row, extractTags(meta));
+      if (gov.tags.includes("status:quarantined")) continue;
+      if (
+        !canViewGoverned({
+          ...gov,
+          viewer_surface: viewerCtx.surface,
+          viewer_key_id: viewerCtx.key_id,
+          is_admin: viewerCtx.is_admin,
+          direct_get: false,
+          include_restricted: includeRestricted,
+        })
+      ) {
+        continue;
+      }
       let [title, l0] = extractTitleAndL0(row.key, meta, canonicalJson);
       if (l0.startsWith("fields=[]")) {
         l0 = `${row.content_type} (${Number(row.size)} B) in bucket '${row.bucket}'`;
       }
-      const tags = extractTags(meta);
-      const score = similarity(qClean, `${row.bucket} ${row.key} ${title}`, `${l0} ${row.metadata}`, tags);
+      const hay = `${row.bucket} ${row.key} ${title} ${l0} ${row.metadata}`;
+      if (
+        !matchesLayer2Filters({
+          haystack: hay,
+          tags: gov.tags,
+          producer_surface: gov.producer_surface,
+          target_cohorts: gov.target_cohorts,
+          q: "",
+          tag: tagFilter,
+          category: categoryFilter,
+          cohort: cohortFilter,
+          surface: surfaceFilter,
+          is_admin: viewerCtx.is_admin,
+          include_restricted: includeRestricted,
+        })
+      ) {
+        continue;
+      }
+      const score = similarity(qClean, `${row.bucket} ${row.key} ${title}`, `${l0} ${row.metadata}`, gov.tags);
       if (qClean && score <= 0.05) continue;
       scents.push({
         kind: "object",
-        namespace: row.bucket,
+        namespace: ns,
+        container: row.bucket,
         key: row.key,
         version: Number(row.version),
         title,
         l0_summary: l0,
-        tags,
+        tags: gov.tags.slice(0, 16),
         size_bytes: Number(row.size),
         sha256: String(row.sha256),
         score,
         updated_at: Number(row.updated_at),
+        producer_surface: gov.producer_surface,
+        visibility_scope: gov.visibility_scope,
+        allowed_surfaces: gov.allowed_surfaces,
+        target_cohorts: gov.target_cohorts,
+        owner_key_id: gov.owner_key_id,
       });
     }
   }
@@ -279,18 +730,21 @@ export function searchNouns(coord, args, canonicalJson, badReq) {
   scents.sort((a, b) => {
     if (b.score !== a.score) return b.score - a.score;
     if (b.updated_at !== a.updated_at) return b.updated_at - a.updated_at;
-    if (a.namespace !== b.namespace) return a.namespace < b.namespace ? -1 : 1;
+    if (a.container !== b.container) return a.container < b.container ? -1 : 1;
     return a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
   });
   return scents.slice(0, cap);
 }
 
 export function listFeeds(coord) {
+  const ns = coord.namespace || "main";
   return coord
     ._all(
-      "SELECT feed, COUNT(*) AS entries, MAX(seq) AS latest_seq, MAX(created_at) AS updated_at FROM feed_entries GROUP BY feed ORDER BY feed"
+      "SELECT feed, COUNT(*) AS entries, MAX(seq) AS latest_seq, MAX(created_at) AS updated_at FROM feed_entries WHERE namespace = ? GROUP BY feed ORDER BY feed",
+      ns
     )
     .map((r) => ({
+      namespace: ns,
       feed: r.feed,
       entries: Number(r.entries),
       latest_seq: Number(r.latest_seq),
@@ -298,7 +752,8 @@ export function listFeeds(coord) {
     }));
 }
 
-export function publishFeed(coord, args, now, canonicalJson, badReq) {
+export function publishFeed(coord, args, now, canonicalJson, badReq, gov) {
+  const ns = coord.namespace || "main";
   const feed = String(args.feed || "");
   if (!NAME_RE.test(feed)) throw badReq(`invalid feed name '${feed}'`);
   const payload = args.payload;
@@ -313,87 +768,214 @@ export function publishFeed(coord, args, now, canonicalJson, badReq) {
   }
 
   let seq = 0;
-  coord.ctx.storage.transactionSync(() => {
-    coord.ctx.storage.sql.exec(
-      "INSERT INTO feed_entries (feed, kind, summary, payload, created_at) VALUES (?, ?, ?, ?, ?)",
-      feed,
-      cleanKind,
-      cleanSummary,
-      payloadJson,
-      now
-    );
-    const idRow = coord._one("SELECT last_insert_rowid() AS id");
-    seq = Number(idRow?.id || 0);
-    coord._event("feed_published", now, { detail: { feed, seq, kind: cleanKind } });
-  });
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      coord.ctx.storage.transactionSync(() => {
+        const nextRow = coord._one(
+          "SELECT COALESCE(MAX(seq), 0) + 1 AS n FROM feed_entries WHERE namespace = ? AND feed = ?",
+          ns,
+          feed
+        );
+        seq = Number(nextRow?.n || 1);
+        coord.ctx.storage.sql.exec(
+          "INSERT INTO feed_entries (namespace, seq, feed, kind, summary, payload, created_at, producer_surface, visibility_scope, allowed_surfaces, target_cohorts, tags, owner_key_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          ns,
+          seq,
+          feed,
+          cleanKind,
+          cleanSummary,
+          payloadJson,
+          now,
+          gov.producer_surface,
+          gov.visibility_scope,
+          JSON.stringify(gov.allowed_surfaces),
+          JSON.stringify(gov.target_cohorts),
+          JSON.stringify(gov.tags),
+          gov.owner_key_id
+        );
+        coord._syncNounTags("feed_entry", feed, String(seq), gov.tags);
+        coord._event("feed_published", now, { detail: { feed, seq, kind: cleanKind } });
+      });
+      break;
+    } catch (e) {
+      if (attempt === 4 || !String(e?.message || e).includes("UNIQUE")) throw e;
+    }
+  }
 
-  if (coord.isPrimary && coord.env.FABRIC_DB) {
+  if (coord.env && coord.env.FABRIC_DB) {
     coord._mirrorToD1([
       coord.env.FABRIC_DB.prepare(
-        "INSERT OR IGNORE INTO feed_entries (seq, feed, kind, summary, payload, created_at) VALUES (?, ?, ?, ?, ?, ?)"
-      ).bind(seq, feed, cleanKind, cleanSummary, payloadJson, now),
+        "INSERT OR IGNORE INTO feed_entries (namespace, seq, feed, kind, summary, payload, created_at, producer_surface, visibility_scope, allowed_surfaces, target_cohorts, tags, owner_key_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      ).bind(
+        ns,
+        seq,
+        feed,
+        cleanKind,
+        cleanSummary,
+        payloadJson,
+        now,
+        gov.producer_surface,
+        gov.visibility_scope,
+        JSON.stringify(gov.allowed_surfaces),
+        JSON.stringify(gov.target_cohorts),
+        JSON.stringify(gov.tags),
+        gov.owner_key_id
+      ),
     ]);
   }
 
   return {
+    namespace: ns,
     seq,
     feed,
     kind: cleanKind,
     summary: cleanSummary,
     payload,
     created_at: now,
+    producer_surface: gov.producer_surface,
+    visibility_scope: gov.visibility_scope,
+    allowed_surfaces: gov.allowed_surfaces,
+    target_cohorts: gov.target_cohorts,
+    tags: gov.tags,
+    owner_key_id: gov.owner_key_id,
   };
 }
 
-export function pollFeed(coord, args, badReq) {
+export function pollFeed(coord, args, badReq, viewerCtx = {}) {
+  const ns = coord.namespace || "main";
   const feed = String(args.feed || "");
   if (!NAME_RE.test(feed)) throw badReq(`invalid feed name '${feed}'`);
   const after = Math.max(0, Number(args.after || 0));
   const cap = Math.max(1, Math.min(Number(args.limit || 100), 1000));
-  const entries = coord
-    ._all(
-      "SELECT * FROM feed_entries WHERE feed = ? AND seq > ? ORDER BY seq LIMIT ?",
-      feed,
-      after,
-      cap
-    )
-    .map((r) => ({
+  const includeRestricted = Boolean(args.include_restricted);
+  const rawRows = coord._all(
+    "SELECT * FROM feed_entries WHERE namespace = ? AND feed = ? AND seq > ? ORDER BY seq LIMIT ?",
+    ns,
+    feed,
+    after,
+    Math.min(cap * 4, 2000)
+  );
+  const entries = [];
+  let scannedSeq = after;
+  for (const r of rawRows) {
+    scannedSeq = Number(r.seq);
+    const payload = JSON.parse(r.payload);
+    const gov = rowGovernance(r, extractTags(payload));
+    if (
+      !canViewGoverned({
+        ...gov,
+        viewer_surface: viewerCtx.surface,
+        viewer_key_id: viewerCtx.key_id,
+        is_admin: viewerCtx.is_admin,
+        direct_get: false,
+        include_restricted: includeRestricted,
+      })
+    ) {
+      continue;
+    }
+    if (
+      !matchesLayer2Filters({
+        haystack: `${r.feed} ${r.kind} ${r.summary} ${r.payload}`,
+        tags: gov.tags,
+        producer_surface: gov.producer_surface,
+        target_cohorts: gov.target_cohorts,
+        q: args.q || "",
+        tag: args.tag || null,
+        category: args.category || null,
+        cohort: args.cohort || null,
+        surface: args.surface || null,
+        is_admin: viewerCtx.is_admin,
+        include_restricted: includeRestricted,
+      })
+    ) {
+      continue;
+    }
+    entries.push({
+      namespace: ns,
       seq: Number(r.seq),
       feed: r.feed,
       kind: String(r.kind),
       summary: String(r.summary),
-      payload: JSON.parse(r.payload),
+      payload,
       created_at: Number(r.created_at),
-    }));
-  const nextCursor = entries.length ? entries[entries.length - 1].seq : after;
-  return { feed, entries, next_cursor: nextCursor };
+      producer_surface: gov.producer_surface,
+      visibility_scope: gov.visibility_scope,
+      allowed_surfaces: gov.allowed_surfaces,
+      target_cohorts: gov.target_cohorts,
+      tags: gov.tags,
+      owner_key_id: gov.owner_key_id,
+    });
+    if (entries.length >= cap) {
+      scannedSeq = Number(r.seq);
+      break;
+    }
+  }
+  const nextCursor = entries.length ? entries[entries.length - 1].seq : scannedSeq;
+  return { namespace: ns, feed, entries, next_cursor: nextCursor };
 }
 
-export function matchReflex(coord, args, canonicalJson, badReq) {
+export function matchReflex(coord, args, canonicalJson, badReq, viewerCtx = {}) {
+  const ns = coord.namespace || "main";
   const qClean = String(args.query || "").trim();
   const cap = Math.max(1, Math.min(Number(args.limit || 5), 50));
+  const includeRestricted = Boolean(args.include_restricted);
   const qSig = canonicalSig(qClean);
   const rows = coord._all(
-    "SELECT r.* FROM record_heads h JOIN records r ON r.store = h.store AND r.key = h.key AND r.version = h.version WHERE h.store = ? ORDER BY r.created_at DESC LIMIT 500",
+    "SELECT r.* FROM record_heads h JOIN records r ON r.namespace = h.namespace AND r.store = h.store AND r.key = h.key AND r.version = h.version WHERE h.namespace = ? AND h.store = ? ORDER BY r.created_at DESC LIMIT 500",
+    ns,
     REFLEX_STORE
   );
   const hits = [];
   for (const row of rows) {
     const val = JSON.parse(row.value);
     if (!val || typeof val !== "object" || Array.isArray(val)) continue;
+    const gov = rowGovernance(row, extractTags(val));
+    // Quarantined reflexes NEVER appear in /v1/reflexes/match.
+    if (gov.tags.includes("status:quarantined")) continue;
+    if (
+      !canViewGoverned({
+        ...gov,
+        viewer_surface: viewerCtx.surface,
+        viewer_key_id: viewerCtx.key_id,
+        is_admin: viewerCtx.is_admin,
+        direct_get: false,
+        include_restricted: includeRestricted,
+      })
+    ) {
+      continue;
+    }
+    if (
+      !matchesLayer2Filters({
+        haystack: `${row.key} ${row.value}`,
+        tags: gov.tags,
+        producer_surface: gov.producer_surface,
+        target_cohorts: gov.target_cohorts,
+        q: "",
+        tag: args.tag || null,
+        category: args.category || null,
+        cohort: args.cohort || null,
+        surface: args.surface || null,
+        is_admin: viewerCtx.is_admin,
+        include_restricted: includeRestricted,
+      })
+    ) {
+      continue;
+    }
     const pattern = String(val.pattern || val.title || row.key);
     const pSig = canonicalSig(pattern);
     const exact = Boolean(qSig && pSig && qSig === pSig);
-    const tags = extractTags(val);
     const [, l0] = extractTitleAndL0(row.key, val, canonicalJson);
     const steps = Array.isArray(val.steps)
       ? val.steps.filter((s) => s && typeof s === "object" && !Array.isArray(s))
       : [];
-    const score = exact ? 1.0 : similarity(qClean, pattern, `${l0} ${canonicalJson(steps)}`, tags);
+    const score = exact
+      ? 1.0
+      : similarity(qClean, pattern, `${l0} ${canonicalJson(steps)}`, gov.tags);
     if (qClean && score < 0.15 && !exact) continue;
     const verifiedHits = Number(val.verified_hits ?? 1);
     const tier = String(val.tier || (verifiedHits >= 3 ? "deterministic_0_call" : "hybrid_1_call"));
     hits.push({
+      namespace: ns,
       reflex_id: String(val.reflex_id || row.key),
       pattern,
       tier,
@@ -402,8 +984,13 @@ export function matchReflex(coord, args, canonicalJson, badReq) {
       score,
       l0_summary: l0,
       steps,
-      tags,
+      tags: gov.tags.slice(0, 16),
       version: Number(row.version),
+      producer_surface: gov.producer_surface,
+      visibility_scope: gov.visibility_scope,
+      allowed_surfaces: gov.allowed_surfaces,
+      target_cohorts: gov.target_cohorts,
+      owner_key_id: gov.owner_key_id,
     });
   }
 
@@ -416,7 +1003,7 @@ export function matchReflex(coord, args, canonicalJson, badReq) {
 
   const topHits = hits.slice(0, cap);
   const deadEnds = qClean
-    ? searchNouns(coord, { query: qClean, store: DEAD_END_STORE, limit: 5 }, canonicalJson, badReq)
+    ? searchNouns(coord, { query: qClean, store: DEAD_END_STORE, limit: 5 }, canonicalJson, badReq, viewerCtx)
     : [];
 
   let recommendedTier = "agent_decompose";
@@ -433,6 +1020,7 @@ export function matchReflex(coord, args, canonicalJson, badReq) {
   }
 
   return {
+    namespace: ns,
     query: qClean,
     recommended_tier: recommendedTier,
     hits: topHits,
@@ -451,6 +1039,8 @@ const HANDSHAKE_CAPABILITIES = [
   "reflex_recall",
   "mcp_streamable_http",
   "surface_handshake_v1",
+  "governance_envelope_v1",
+  "namespace_isolation_v1",
 ];
 
 export async function negotiateHandshake(
@@ -464,6 +1054,7 @@ export async function negotiateHandshake(
   sha256HexFn,
   badReq
 ) {
+  const ns = coord.namespace || "main";
   const proto = String(args.protocol_version ?? "1.0").trim();
   if (!proto.startsWith("1.")) {
     throw badReq(`unsupported handshake protocol_version '${proto}'; expected '1.0'`);
@@ -487,7 +1078,10 @@ export async function negotiateHandshake(
   }
   const clampedMaxChars = Math.max(120, Math.min(16000, Math.trunc(reqCharsRaw)));
 
-  const qRows = coord._all("SELECT name, heartbeat_seconds FROM queues ORDER BY name");
+  const qRows = coord._all(
+    "SELECT name, heartbeat_seconds FROM queues WHERE namespace = ? ORDER BY name",
+    ns
+  );
   const definedQueues = qRows.map((r) => String(r.name));
   const hbSeconds = qRows.length
     ? Math.min(...qRows.map((r) => Number(r.heartbeat_seconds)))
@@ -502,9 +1096,9 @@ export async function negotiateHandshake(
     : definedQueues.length
       ? definedQueues
       : grantQueues;
-  const allowedQueues = candidates.filter((q) =>
-    grantQueues.some((pat) => globMatchFn(q, pat))
-  );
+  const allowedQueues = grant?.is_admin
+    ? candidates
+    : candidates.filter((q) => grantQueues.some((pat) => globMatchFn(q, pat)));
 
   const sharedStores = coord._listStoresInternal().slice(0, 64).map((s) => s.store);
   const isolatedPrefix = `${surfaceId}.`;
@@ -512,6 +1106,7 @@ export async function negotiateHandshake(
   const receiptMaterial = {
     backend: "tessera",
     backend_version: backendVersion,
+    namespace: ns,
     protocol_version: "1.0",
     surface_id: surfaceId,
     isolated_store_prefix: isolatedPrefix,
@@ -524,6 +1119,7 @@ export async function negotiateHandshake(
   );
 
   return {
+    namespace: ns,
     protocol_version: "1.0",
     backend: "tessera",
     backend_version: backendVersion,

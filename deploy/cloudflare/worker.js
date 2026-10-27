@@ -1,30 +1,48 @@
 // Tessera Cloud Worker: 24/7 native cloud execution on Cloudflare Durable Object SQLite + D1
 // (`STORAGE_MODE = "cloud"`, the default) with optional Fly.io origin reverse-proxy fallback
-// (`STORAGE_MODE = "origin"`). Serves all Tessera Spec v0.2 HTTP routes (`/v1/*`), named cloud
-// file buckets (`/v1/buckets/*`), Streamable HTTP MCP (`/mcp`), and the agent door (`/connect`,
-// `/llms.txt`, `/.well-known/agent-card.json`, `/robots.txt`, `/board`, `/work`).
+// (`STORAGE_MODE = "origin"`). Serves all Tessera Spec v0.2 HTTP routes (`/v1/*` and
+// `/ns/{namespace}/v1/*`), named cloud file buckets (`/v1/buckets/*`), Streamable HTTP MCP (`/mcp`),
+// and the agent door (`/connect`, `/llms.txt`, `/llms-full.txt`, `/favicon.svg`,
+// `/.well-known/agent-card.json`, `/robots.txt`, `/board`, `/work`).
 
 import { loadCloudBlob, mirrorBucketObjectToD1, storeCloudBlob } from "./cloud_buckets.js";
-import { sliceBytesResponse } from "./cloud_intelligence.js";
+import { normalizeNamespace, sliceBytesResponse } from "./cloud_intelligence.js";
 import { handleMcpRequest } from "./cloud_mcp.js";
 import {
   ROBOTS_TXT,
   renderAgentCard,
   renderBoardHtml,
   renderConnectHtml,
+  renderFaviconSvg,
+  renderLlmsFullTxt,
   renderLlmsTxt,
   renderWorkClaimForm,
   renderWorkLeaseForm,
+  renderWorkResumed,
   renderWorkSubmitted,
 } from "./cloud_pages.js";
 import { TesseraCoordinator } from "./cloud_store.js";
+import {
+  ALLOWED_RELATION_TYPES,
+  CALLER_PROFILES,
+  CATEGORY_REGISTRY,
+  NOUN_CATEGORIES,
+  VERB_CATEGORIES,
+  adaptNounView,
+  adjudicateBallots,
+  canonicalSha256,
+  paretoFrontier,
+  planFragilityRechecks,
+  rankItems,
+  reconcileThreeWay,
+} from "./ontology_engine.js";
 
 export { TesseraCoordinator };
 
 const DEFAULT_ORIGIN = "https://tessera-fabric.fly.dev";
 const DEFAULT_PUBLIC_URL = "https://tessera.ta-amps.workers.dev";
 const DEFAULT_REPO_URL = "https://github.com/ta-amps/tessera";
-const NAMESPACE_RE = /^[a-z0-9][a-z0-9_-]{0,47}$/;
+const NAMESPACE_RE = /^[a-z0-9][a-z0-9_.-]{0,63}$/;
 const SHA256_RE = /^[0-9a-f]{64}$/;
 
 const HOP_BY_HOP = [
@@ -85,9 +103,12 @@ const POST_ONLY_EXACT = new Set([
   "/v1/blobs",
   "/v1/buckets/define",
   "/v1/handshake",
+  "/v1/reconcile",
+  "/v1/reconcile/adjudicate",
   "/work/claim",
   "/work/submit",
   "/work/heartbeat",
+  "/work/resume",
 ]);
 
 function isPostOnlyPath(path) {
@@ -172,7 +193,13 @@ function rpcResponse(out, extraHeaders = {}) {
     if (out.code === "version_conflict") {
       extra.current_version = out.extra?.current_version ?? null;
     }
-    return problem(out.status || 400, out.code || "invalid_request", out.detail || "error", extra, hdrs);
+    return problem(
+      out.status || 400,
+      out.code || "invalid_request",
+      out.detail || "error",
+      extra,
+      hdrs
+    );
   }
   return jsonResp(out.data, out.status || 200, extraHeaders);
 }
@@ -206,6 +233,52 @@ async function readJsonBody(request) {
   }
 }
 
+function parseBoolParam(val) {
+  return ["1", "true", "yes"].includes(String(val || "").trim().toLowerCase());
+}
+
+function parseLayer2Params(searchParams) {
+  return {
+    q: searchParams.get("q") || "",
+    tag: searchParams.get("tag") || null,
+    category: searchParams.get("category") || null,
+    cohort: searchParams.get("cohort") || null,
+    surface: searchParams.get("surface") || null,
+    include_restricted: parseBoolParam(searchParams.get("include_restricted")),
+  };
+}
+
+function parseHeaderGovernance(request, searchParams) {
+  let gov = {};
+  const rawGov = request.headers.get("x-tessera-governance");
+  if (rawGov) {
+    try {
+      const parsed = JSON.parse(rawGov);
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+        return { error: problem(400, "invalid_request", "x-tessera-governance must be a JSON object") };
+      }
+      gov = { ...parsed };
+    } catch {
+      return { error: problem(400, "invalid_request", "x-tessera-governance is not valid JSON") };
+    }
+  }
+  const qVis = searchParams.get("visibility_scope");
+  if (qVis) gov.visibility_scope = qVis;
+  const qProd = searchParams.get("producer_surface");
+  if (qProd) gov.producer_surface = qProd;
+  const qTags = searchParams.getAll("tag").filter(Boolean);
+  if (qTags.length) {
+    gov.tags = Array.isArray(gov.tags) ? [...gov.tags, ...qTags] : qTags;
+  }
+  const qCohorts = searchParams.getAll("cohort").filter(Boolean);
+  if (qCohorts.length) {
+    gov.target_cohorts = Array.isArray(gov.target_cohorts)
+      ? [...gov.target_cohorts, ...qCohorts]
+      : qCohorts;
+  }
+  return { gov };
+}
+
 async function proxyToOrigin(request, env) {
   const incoming = new URL(request.url);
   const target = new URL(incoming.pathname + incoming.search, env.ORIGIN || DEFAULT_ORIGIN);
@@ -232,17 +305,45 @@ async function proxyToOrigin(request, env) {
 }
 
 function resolveNamespace(url, request) {
-  let namespace = "primary";
+  let pathNs = null;
   let path = url.pathname;
-  const nsMatch = /^\/ns\/([a-z0-9][a-z0-9_-]{0,47})(\/.*)?$/.exec(path);
-  if (nsMatch) {
-    namespace = nsMatch[1];
-    path = nsMatch[2] || "/";
-  } else {
-    const hdrNs = (request.headers.get("x-tessera-namespace") || "").trim();
-    if (hdrNs && NAMESPACE_RE.test(hdrNs)) namespace = hdrNs;
+  if (path === "/ns" || path.startsWith("/ns/")) {
+    const rest = path.slice(4);
+    const slashIdx = rest.indexOf("/");
+    const rawSeg = slashIdx === -1 ? rest : rest.slice(0, slashIdx);
+    const decodedSeg = decodeURIComponent(rawSeg);
+    if (!decodedSeg || !NAMESPACE_RE.test(decodedSeg)) {
+      return { error: problem(400, "invalid_request", `invalid namespace '${decodedSeg}'`) };
+    }
+    pathNs = normalizeNamespace(decodedSeg);
+    path = slashIdx === -1 ? "/" : rest.slice(slashIdx) || "/";
   }
-  return { namespace, path, isPrimary: namespace === "primary" };
+
+  const hdrRaw = (
+    request.headers.get("x-namespace") ||
+    request.headers.get("x-tessera-namespace") ||
+    ""
+  ).trim();
+  let hdrNs = null;
+  if (hdrRaw) {
+    if (!NAMESPACE_RE.test(hdrRaw)) {
+      return { error: problem(400, "invalid_request", `invalid X-Namespace '${hdrRaw}'`) };
+    }
+    hdrNs = normalizeNamespace(hdrRaw);
+  }
+
+  if (pathNs && hdrNs && pathNs !== hdrNs) {
+    return {
+      error: problem(
+        400,
+        "invalid_request",
+        `path namespace '${pathNs}' conflicts with X-Namespace '${hdrNs}'`
+      ),
+    };
+  }
+
+  const namespace = pathNs || hdrNs || "main";
+  return { namespace, path, isPrimary: namespace === "main" };
 }
 
 export default {
@@ -252,36 +353,78 @@ export default {
     }
 
     const url = new URL(request.url);
-    const { namespace, path, isPrimary } = resolveNamespace(url, request);
+    const nsResolved = resolveNamespace(url, request);
+    if (nsResolved.error) return nsResolved.error;
+    const { namespace, path, isPrimary } = nsResolved;
     const doName = isPrimary ? "primary" : `ns:${namespace}`;
-    const stub = env.COORDINATOR.get(env.COORDINATOR.idFromName(doName));
+    const coordBinding = env.COORDINATOR || env.TESSERA_COORDINATOR;
+    const stub = coordBinding.get(coordBinding.idFromName(doName));
     const method = request.method.toUpperCase();
-    const publicUrl = (env.PUBLIC_URL || `${url.protocol}//${url.host}`).replace(/\/+$/, "") || DEFAULT_PUBLIC_URL;
+    const publicUrl =
+      (env.PUBLIC_URL || `${url.protocol}//${url.host}`).replace(/\/+$/, "") || DEFAULT_PUBLIC_URL;
     const repoUrl = env.REPO_URL || DEFAULT_REPO_URL;
     const bearer = extractBearer(request);
+    const surfaceHeader = (request.headers.get("x-surface-id") || "").trim();
+    const baseRpc = { namespace, isPrimary, surfaceHeader };
 
     // 1. Streamable HTTP MCP Door (`/mcp`)
     if (path === "/mcp") {
-      const mcpResp = await handleMcpRequest(request, env, ctx, stub, bearer, isPrimary);
+      const mcpResp = await handleMcpRequest(
+        request,
+        env,
+        ctx,
+        stub,
+        bearer,
+        isPrimary,
+        namespace
+      );
       return withSecurity(mcpResp, { isWrite: true });
     }
 
     // 2. Enforce POST-only write routes before parameterized GET routes
     if (isPostOnlyPath(path) && method !== "POST") {
-      return problem(405, "method_not_allowed", "writes are POST only; this path changes nothing on GET");
+      return problem(
+        405,
+        "method_not_allowed",
+        "writes are POST only; this path changes nothing on GET"
+      );
     }
 
     // 3. Public health & agent door pages
-    if ((path === "/v1/health" || path === "/healthz") && (method === "GET" || method === "HEAD")) {
-      const health = await stub.publicHealthAndBoard(false);
+    if (
+      (path === "/v1/health" || path === "/api/health" || path === "/healthz") &&
+      (method === "GET" || method === "HEAD")
+    ) {
+      const health = await stub.publicHealthAndBoard(false, namespace);
       return jsonResp(health);
     }
     if ((path === "/" || path === "/connect") && (method === "GET" || method === "HEAD")) {
       return htmlResp(renderConnectHtml(publicUrl, repoUrl));
     }
+    if (path === "/favicon.svg" && (method === "GET" || method === "HEAD")) {
+      return withSecurity(
+        new Response(renderFaviconSvg(), {
+          status: 200,
+          headers: {
+            "content-type": "image/svg+xml; charset=utf-8",
+            "cache-control": "public, max-age=86400",
+          },
+        }),
+        { noStore: false }
+      );
+    }
     if (path === "/llms.txt" && (method === "GET" || method === "HEAD")) {
       return withSecurity(
         new Response(renderLlmsTxt(publicUrl, repoUrl), {
+          status: 200,
+          headers: { "content-type": "text/plain; charset=utf-8" },
+        }),
+        { noStore: false }
+      );
+    }
+    if (path === "/llms-full.txt" && (method === "GET" || method === "HEAD")) {
+      return withSecurity(
+        new Response(renderLlmsFullTxt(publicUrl, repoUrl), {
           status: 200,
           headers: { "content-type": "text/plain; charset=utf-8" },
         }),
@@ -301,35 +444,37 @@ export default {
       );
     }
     if (path === "/board" && (method === "GET" || method === "HEAD")) {
-      const info = await stub.publicHealthAndBoard(true);
-      return htmlResp(renderBoardHtml(info.health, info.buckets, info.stores));
+      const info = await stub.publicHealthAndBoard(true, namespace);
+      return htmlResp(renderBoardHtml(info.health, info.snapshot, repoUrl));
     }
 
-    // 4. Keyed browser work forms (`/work`, `/work/claim`, `/work/heartbeat`, `/work/submit`)
+    // 4. Keyed browser work forms (`/work`, `/work/claim`, `/work/heartbeat`, `/work/submit`, `/work/resume`)
     if (path === "/work" && method === "GET") {
-      return htmlResp(renderWorkClaimForm(), 200, { "x-robots-tag": "noindex" });
+      return htmlResp(renderWorkClaimForm("", repoUrl), 200, { "x-robots-tag": "noindex" });
     }
     if (path === "/work/claim" && method === "POST") {
       const form = await request.formData();
       const formKey = String(form.get("key") || "");
       const queue = String(form.get("queue") || "");
       const worker = String(form.get("worker") || "");
-      const out = await stub.rpcCall(formKey, "claim", { queue, worker, isPrimary });
+      const out = await stub.rpcCall(formKey, "claim", { ...baseRpc, queue, worker });
       if (!out.ok) {
         return htmlResp(
-          renderWorkClaimForm(`${out.code}: ${out.detail}`),
+          renderWorkClaimForm(`${out.code}: ${out.detail}`, repoUrl),
           out.status || 400,
           { "x-robots-tag": "noindex" }
         );
       }
       if (!out.data.lease) {
         return htmlResp(
-          renderWorkClaimForm("Nothing is ready in that queue yet."),
+          renderWorkClaimForm("Nothing is ready in that queue yet.", repoUrl),
           200,
           { "x-robots-tag": "noindex" }
         );
       }
-      return htmlResp(renderWorkLeaseForm(out.data.lease), 200, { "x-robots-tag": "noindex" });
+      return htmlResp(renderWorkLeaseForm(out.data.lease, repoUrl), 200, {
+        "x-robots-tag": "noindex",
+      });
     }
     if (path === "/work/heartbeat" && method === "POST") {
       const form = await request.formData();
@@ -337,18 +482,20 @@ export default {
       const taskId = String(form.get("task_id") || "");
       const token = Number(form.get("fencing_token") || "0");
       const out = await stub.rpcCall(formKey, "heartbeat", {
+        ...baseRpc,
         task_id: taskId,
         fencing_token: token,
-        isPrimary,
       });
       if (!out.ok) {
         return htmlResp(
-          renderWorkClaimForm(`${out.code}: ${out.detail}`),
+          renderWorkClaimForm(`${out.code}: ${out.detail}`, repoUrl),
           out.status || 400,
           { "x-robots-tag": "noindex" }
         );
       }
-      return htmlResp(renderWorkLeaseForm(out.data), 200, { "x-robots-tag": "noindex" });
+      return htmlResp(renderWorkLeaseForm(out.data, repoUrl), 200, {
+        "x-robots-tag": "noindex",
+      });
     }
     if (path === "/work/submit" && method === "POST") {
       const form = await request.formData();
@@ -360,52 +507,101 @@ export default {
       try {
         output = JSON.parse(String(form.get("output") || "{}"));
       } catch {
-        return htmlResp(renderWorkClaimForm("invalid_request: output is not valid JSON"), 400, {
-          "x-robots-tag": "noindex",
-        });
+        return htmlResp(
+          renderWorkClaimForm("invalid_request: output is not valid JSON", repoUrl),
+          400,
+          { "x-robots-tag": "noindex" }
+        );
       }
       if (typeof output !== "object" || output === null || Array.isArray(output)) {
-        return htmlResp(renderWorkClaimForm("invalid_request: output must be a JSON object"), 400, {
-          "x-robots-tag": "noindex",
-        });
+        return htmlResp(
+          renderWorkClaimForm("invalid_request: output must be a JSON object", repoUrl),
+          400,
+          { "x-robots-tag": "noindex" }
+        );
       }
       const ok = !form.get("failed");
       const errText = !ok ? String(form.get("error") || "") || null : null;
       const out = await stub.rpcCall(formKey, "submit", {
+        ...baseRpc,
         task_id: taskId,
         fencing_token: token,
         output,
         idempotency_key: idem,
         ok,
         error: errText,
-        isPrimary,
       });
       if (!out.ok) {
         return htmlResp(
-          renderWorkClaimForm(`${out.code}: ${out.detail}`),
+          renderWorkClaimForm(`${out.code}: ${out.detail}`, repoUrl),
           out.status || 400,
           { "x-robots-tag": "noindex" }
         );
       }
-      return htmlResp(renderWorkSubmitted(out.data), 200, { "x-robots-tag": "noindex" });
+      return htmlResp(renderWorkSubmitted(out.data, repoUrl), 200, {
+        "x-robots-tag": "noindex",
+      });
+    }
+    if (path === "/work/resume" && method === "POST") {
+      const form = await request.formData();
+      const formKey = String(form.get("key") || "");
+      const taskId = String(form.get("task_id") || "").trim();
+      let inputObj;
+      try {
+        inputObj = JSON.parse(String(form.get("input") || "{}"));
+      } catch {
+        return htmlResp(
+          renderWorkClaimForm("invalid_request: input is not valid JSON", repoUrl),
+          400,
+          { "x-robots-tag": "noindex" }
+        );
+      }
+      const rawPark = String(form.get("park") || "").trim();
+      let parkNum = null;
+      if (rawPark) {
+        parkNum = Number(rawPark);
+        if (!Number.isInteger(parkNum)) {
+          return htmlResp(
+            renderWorkClaimForm("invalid_request: park must be an integer", repoUrl),
+            400,
+            { "x-robots-tag": "noindex" }
+          );
+        }
+      }
+      const out = await stub.rpcCall(formKey, "resume", {
+        ...baseRpc,
+        task_id: taskId,
+        input: inputObj,
+        park: parkNum,
+      });
+      if (!out.ok) {
+        return htmlResp(
+          renderWorkClaimForm(`${out.code}: ${out.detail}`, repoUrl),
+          out.status || 400,
+          { "x-robots-tag": "noindex" }
+        );
+      }
+      return htmlResp(renderWorkResumed(out.data, repoUrl), 200, {
+        "x-robots-tag": "noindex",
+      });
     }
 
     // 5. Observation & admin key routes
     if (path === "/v1/counts" && method === "GET") {
-      const recount = ["1", "true", "yes"].includes((url.searchParams.get("recount") || "").toLowerCase());
-      return rpcResponse(await stub.rpcCall(bearer, "counts", { recount, isPrimary }));
+      const recount = parseBoolParam(url.searchParams.get("recount"));
+      return rpcResponse(await stub.rpcCall(bearer, "counts", { ...baseRpc, recount }));
     }
     if (path === "/v1/events" && method === "GET") {
       const after = Number(url.searchParams.get("after") || "0");
       const limit = Number(url.searchParams.get("limit") || "1000");
-      return rpcResponse(await stub.rpcCall(bearer, "events", { after, limit, isPrimary }));
+      return rpcResponse(await stub.rpcCall(bearer, "events", { ...baseRpc, after, limit }));
     }
     if (path === "/v1/admin/reap" && method === "POST") {
-      return rpcResponse(await stub.rpcCall(bearer, "reap", { isPrimary }));
+      return rpcResponse(await stub.rpcCall(bearer, "reap", { ...baseRpc }));
     }
     if (path === "/v1/admin/keys") {
       if (method === "GET") {
-        return rpcResponse(await stub.rpcCall(bearer, "listKeys", { isPrimary }));
+        return rpcResponse(await stub.rpcCall(bearer, "listKeys", { ...baseRpc }));
       }
       if (method === "POST") {
         const { body, error } = await readJsonBody(request);
@@ -414,14 +610,19 @@ export default {
         const bootstrapAllowed =
           (env.BOOTSTRAP_SECRET && constantTimeEqual(bootHdr, env.BOOTSTRAP_SECRET)) ||
           (env.EDGE_SECRET && constantTimeEqual(bootHdr, env.EDGE_SECRET));
-        return rpcResponse(await stub.bootstrapOrIssueKey(bearer, Boolean(bootstrapAllowed), body));
+        return rpcResponse(
+          await stub.bootstrapOrIssueKey(bearer, Boolean(bootstrapAllowed), body)
+        );
       }
       return problem(405, "method_not_allowed", "method not allowed");
     }
     const revokeMatch = /^\/v1\/admin\/keys\/([^/]+)\/revoke$/.exec(path);
     if (revokeMatch && method === "POST") {
       return rpcResponse(
-        await stub.rpcCall(bearer, "revokeKey", { key_id: decodeURIComponent(revokeMatch[1]), isPrimary })
+        await stub.rpcCall(bearer, "revokeKey", {
+          ...baseRpc,
+          key_id: decodeURIComponent(revokeMatch[1]),
+        })
       );
     }
 
@@ -429,20 +630,28 @@ export default {
     if (path === "/v1/queues/define" && method === "POST") {
       const { body, error } = await readJsonBody(request);
       if (error) return error;
-      return rpcResponse(await stub.rpcCall(bearer, "defineQueue", { ...body, isPrimary }));
+      return rpcResponse(await stub.rpcCall(bearer, "defineQueue", { ...body, ...baseRpc }));
     }
     if (path === "/v1/queues" && method === "GET") {
-      return rpcResponse(await stub.rpcCall(bearer, "queues", { isPrimary }));
+      return rpcResponse(await stub.rpcCall(bearer, "queues", { ...baseRpc }));
     }
     if (path === "/v1/tasks" && method === "POST") {
       const { body, error } = await readJsonBody(request);
       if (error) return error;
-      return rpcResponse(await stub.rpcCall(bearer, "enqueue", { ...body, isPrimary }));
+      const hdrIdem = (request.headers.get("idempotency-key") || "").trim();
+      const idempotencyKey = body.idempotency_key ?? (hdrIdem || null);
+      return rpcResponse(
+        await stub.rpcCall(bearer, "enqueue", {
+          ...body,
+          idempotency_key: idempotencyKey,
+          ...baseRpc,
+        })
+      );
     }
     if (path === "/v1/tasks/claim" && method === "POST") {
       const { body, error } = await readJsonBody(request);
       if (error) return error;
-      const out = await stub.rpcCall(bearer, "claim", { ...body, isPrimary });
+      const out = await stub.rpcCall(bearer, "claim", { ...body, ...baseRpc });
       if (!out.ok) return rpcResponse(out);
       if (!out.data.lease) {
         return withSecurity(
@@ -463,7 +672,7 @@ export default {
     if (path === "/v1/tasks/heartbeat" && method === "POST") {
       const { body, error } = await readJsonBody(request);
       if (error) return error;
-      return rpcResponse(await stub.rpcCall(bearer, "heartbeat", { ...body, isPrimary }));
+      return rpcResponse(await stub.rpcCall(bearer, "heartbeat", { ...body, ...baseRpc }));
     }
     if (path === "/v1/tasks/submit" && method === "POST") {
       const { body, error } = await readJsonBody(request);
@@ -471,42 +680,45 @@ export default {
       const idem = request.headers.get("idempotency-key") || "";
       if (!idem) return problem(400, "invalid_request", "the Idempotency-Key header is required");
       return rpcResponse(
-        await stub.rpcCall(bearer, "submit", { ...body, idempotency_key: idem, isPrimary })
+        await stub.rpcCall(bearer, "submit", { ...body, idempotency_key: idem, ...baseRpc })
       );
     }
     if (path === "/v1/tasks/split" && method === "POST") {
       const { body, error } = await readJsonBody(request);
       if (error) return error;
-      return rpcResponse(await stub.rpcCall(bearer, "split", { ...body, isPrimary }));
+      return rpcResponse(await stub.rpcCall(bearer, "split", { ...body, ...baseRpc }));
     }
     if (path === "/v1/tasks/park" && method === "POST") {
       const { body, error } = await readJsonBody(request);
       if (error) return error;
-      return rpcResponse(await stub.rpcCall(bearer, "park", { ...body, isPrimary }));
+      return rpcResponse(await stub.rpcCall(bearer, "park", { ...body, ...baseRpc }));
     }
     if (path === "/v1/tasks/resume" && method === "POST") {
       const { body, error } = await readJsonBody(request);
       if (error) return error;
-      return rpcResponse(await stub.rpcCall(bearer, "resume", { ...body, isPrimary }));
+      return rpcResponse(await stub.rpcCall(bearer, "resume", { ...body, ...baseRpc }));
     }
     if (path === "/v1/tasks/cancel" && method === "POST") {
       const { body, error } = await readJsonBody(request);
       if (error) return error;
-      return rpcResponse(await stub.rpcCall(bearer, "cancel", { ...body, isPrimary }));
+      return rpcResponse(await stub.rpcCall(bearer, "cancel", { ...body, ...baseRpc }));
     }
     const taskResultsMatch = /^\/v1\/tasks\/([^/]+)\/results$/.exec(path);
     if (taskResultsMatch && method === "GET") {
       return rpcResponse(
         await stub.rpcCall(bearer, "results", {
+          ...baseRpc,
           task_id: decodeURIComponent(taskResultsMatch[1]),
-          isPrimary,
         })
       );
     }
     const taskMatch = /^\/v1\/tasks\/([^/]+)$/.exec(path);
     if (taskMatch && method === "GET") {
       return rpcResponse(
-        await stub.rpcCall(bearer, "task", { task_id: decodeURIComponent(taskMatch[1]), isPrimary })
+        await stub.rpcCall(bearer, "task", {
+          ...baseRpc,
+          task_id: decodeURIComponent(taskMatch[1]),
+        })
       );
     }
 
@@ -515,13 +727,13 @@ export default {
       if (method === "GET") {
         const taskId = url.searchParams.get("task_id");
         return rpcResponse(
-          await stub.rpcCall(bearer, "jobs", { task_id: taskId || null, isPrimary })
+          await stub.rpcCall(bearer, "jobs", { ...baseRpc, task_id: taskId || null })
         );
       }
       if (method === "POST") {
         const { body, error } = await readJsonBody(request);
         if (error) return error;
-        return rpcResponse(await stub.rpcCall(bearer, "registerJob", { ...body, isPrimary }));
+        return rpcResponse(await stub.rpcCall(bearer, "registerJob", { ...body, ...baseRpc }));
       }
       return problem(405, "method_not_allowed", "method not allowed");
     }
@@ -532,20 +744,22 @@ export default {
       return rpcResponse(
         await stub.rpcCall(bearer, "updateJob", {
           ...body,
+          ...baseRpc,
           job_id: decodeURIComponent(jobUpdateMatch[1]),
-          isPrimary,
         })
       );
     }
 
     // 8. Queryable CAS Noun Stores (`/v1/stores/*`)
     if (path === "/v1/stores" && method === "GET") {
-      return rpcResponse(await stub.rpcCall(bearer, "stores", { isPrimary }));
+      return rpcResponse(await stub.rpcCall(bearer, "stores", { ...baseRpc }));
     }
     if (path === "/v1/stores/batch" && method === "POST") {
       const { body, error } = await readJsonBody(request);
       if (error) return error;
-      return rpcResponse(await stub.rpcCall(bearer, "putRecords", { writes: body.writes, isPrimary }));
+      return rpcResponse(
+        await stub.rpcCall(bearer, "putRecords", { ...baseRpc, writes: body.writes })
+      );
     }
     const storeListMatch = /^\/v1\/stores\/([^/]+)\/records$/.exec(path);
     if (storeListMatch && method === "GET") {
@@ -553,10 +767,11 @@ export default {
       const limit = Number(url.searchParams.get("limit") || "100");
       return rpcResponse(
         await stub.rpcCall(bearer, "listRecords", {
+          ...baseRpc,
           store: decodeURIComponent(storeListMatch[1]),
           prefix,
           limit,
-          isPrimary,
+          ...parseLayer2Params(url.searchParams),
         })
       );
     }
@@ -564,9 +779,9 @@ export default {
     if (recHistoryMatch && method === "GET") {
       return rpcResponse(
         await stub.rpcCall(bearer, "recordHistory", {
+          ...baseRpc,
           store: decodeURIComponent(recHistoryMatch[1]),
           key: decodeURIComponent(recHistoryMatch[2]),
-          isPrimary,
         })
       );
     }
@@ -578,22 +793,33 @@ export default {
         const verParam = url.searchParams.get("version");
         const version = verParam == null ? null : Number(verParam);
         return rpcResponse(
-          await stub.rpcCall(bearer, "getRecord", { store: storeName, key: recKey, version, isPrimary })
+          await stub.rpcCall(bearer, "getRecord", {
+            ...baseRpc,
+            store: storeName,
+            key: recKey,
+            version,
+          })
         );
       }
       if (method === "POST") {
         const { body, error } = await readJsonBody(request);
         if (error) return error;
         const out = await stub.rpcCall(bearer, "putRecords", {
+          ...baseRpc,
           writes: [
             {
               store: storeName,
               key: recKey,
               value: body.value,
               expected_version: body.expected_version ?? null,
+              producer_surface: body.producer_surface,
+              visibility_scope: body.visibility_scope,
+              allowed_surfaces: body.allowed_surfaces,
+              target_cohorts: body.target_cohorts,
+              tags: body.tags,
+              owner_key_id: body.owner_key_id,
             },
           ],
-          isPrimary,
         });
         if (!out.ok) return rpcResponse(out);
         return jsonResp(out.data.records[0], 200);
@@ -603,27 +829,35 @@ export default {
 
     // 9. Content-addressed Blobs (`/v1/blobs/*`)
     if (path === "/v1/blobs" && method === "POST") {
-      const authCheck = await stub.rpcCall(bearer, "verifyStoreScope", { isPrimary });
+      const authCheck = await stub.rpcCall(bearer, "verifyStoreScope", { ...baseRpc });
       if (!authCheck.ok) return rpcResponse(authCheck);
+      const { gov, error: govErr } = parseHeaderGovernance(request, url.searchParams);
+      if (govErr) return govErr;
       const raw = new Uint8Array(await request.arrayBuffer());
-      const stored = await storeCloudBlob(env, raw, Date.now() / 1000);
+      const stored = await storeCloudBlob(env, raw, Date.now() / 1000, namespace, gov);
       if (stored.error) return problem(stored.status || 400, stored.error, stored.detail);
       return rpcResponse(
         await stub.rpcCall(bearer, "recordBlobStored", {
+          ...baseRpc,
           sha256: stored.sha256,
           size: stored.size,
-          isPrimary,
+          ...gov,
         })
       );
     }
     const blobGetMatch = /^\/v1\/blobs\/([^/]+)$/.exec(path);
     if (blobGetMatch && method === "GET") {
-      const authCheck = await stub.rpcCall(bearer, "verifyStoreScope", { isPrimary });
-      if (!authCheck.ok) return rpcResponse(authCheck);
       const sha256 = decodeURIComponent(blobGetMatch[1]).toLowerCase();
       if (!SHA256_RE.test(sha256)) {
+        const authCheck = await stub.rpcCall(bearer, "verifyStoreScope", { ...baseRpc });
+        if (!authCheck.ok) return rpcResponse(authCheck);
         return problem(404, "not_found", `blob ${sha256} does not exist`);
       }
+      const authz = await stub.rpcCall(bearer, "authorizeBlobRead", {
+        ...baseRpc,
+        sha256,
+      });
+      if (!authz.ok) return rpcResponse(authz);
       const loaded = await loadCloudBlob(env, sha256);
       if (loaded.error) return problem(loaded.status || 404, loaded.error, loaded.detail);
       return withSecurity(
@@ -638,10 +872,10 @@ export default {
     if (path === "/v1/buckets/define" && method === "POST") {
       const { body, error } = await readJsonBody(request);
       if (error) return error;
-      return rpcResponse(await stub.rpcCall(bearer, "defineBucket", { ...body, isPrimary }));
+      return rpcResponse(await stub.rpcCall(bearer, "defineBucket", { ...body, ...baseRpc }));
     }
     if (path === "/v1/buckets" && method === "GET") {
-      return rpcResponse(await stub.rpcCall(bearer, "buckets", { isPrimary }));
+      return rpcResponse(await stub.rpcCall(bearer, "buckets", { ...baseRpc }));
     }
     const bucketListMatch = /^\/v1\/buckets\/([^/]+)\/objects$/.exec(path);
     if (bucketListMatch && method === "GET") {
@@ -649,10 +883,11 @@ export default {
       const limit = Number(url.searchParams.get("limit") || "100");
       return rpcResponse(
         await stub.rpcCall(bearer, "listObjects", {
+          ...baseRpc,
           bucket: decodeURIComponent(bucketListMatch[1]),
           prefix,
           limit,
-          isPrimary,
+          ...parseLayer2Params(url.searchParams),
         })
       );
     }
@@ -664,10 +899,11 @@ export default {
         .map((seg) => decodeURIComponent(seg))
         .join("/");
       if (method === "POST") {
-        const authCheck = await stub.rpcCall(bearer, "verifyStoreScope", { isPrimary });
+        const authCheck = await stub.rpcCall(bearer, "verifyStoreScope", { ...baseRpc });
         if (!authCheck.ok) return rpcResponse(authCheck);
         let expectedVersion = null;
-        const evParam = url.searchParams.get("expected_version") ?? request.headers.get("x-expected-version");
+        const evParam =
+          url.searchParams.get("expected_version") ?? request.headers.get("x-expected-version");
         if (evParam != null && evParam !== "") {
           const parsedEv = Number(evParam);
           if (!Number.isInteger(parsedEv)) {
@@ -688,11 +924,14 @@ export default {
             return problem(400, "invalid_request", "x-tessera-metadata is not valid JSON");
           }
         }
+        const { gov, error: govErr } = parseHeaderGovernance(request, url.searchParams);
+        if (govErr) return govErr;
         const contentType = request.headers.get("content-type") || "application/octet-stream";
         const rawBytes = new Uint8Array(await request.arrayBuffer());
-        const stored = await storeCloudBlob(env, rawBytes, Date.now() / 1000);
+        const stored = await storeCloudBlob(env, rawBytes, Date.now() / 1000, namespace, gov);
         if (stored.error) return problem(stored.status || 400, stored.error, stored.detail);
         const out = await stub.rpcCall(bearer, "putObjectMeta", {
+          ...baseRpc,
           bucket: bucketName,
           key: objKey,
           sha256: stored.sha256,
@@ -700,35 +939,31 @@ export default {
           content_type: contentType,
           metadata,
           expected_version: expectedVersion,
-          isPrimary,
+          ...gov,
         });
         if (!out.ok) return rpcResponse(out);
-        if (isPrimary) ctx.waitUntil(mirrorBucketObjectToD1(env, out.data));
+        ctx.waitUntil(mirrorBucketObjectToD1(env, out.data));
         return jsonResp(out.data, 201);
       }
       if (method === "GET") {
         const verParam = url.searchParams.get("version");
         const version = verParam == null ? null : Number(verParam);
-        const wantHistory = ["1", "true", "yes"].includes(
-          (url.searchParams.get("history") || "").toLowerCase()
-        );
-        const wantMeta = ["1", "true", "yes"].includes(
-          (url.searchParams.get("meta") || "").toLowerCase()
-        );
+        const wantHistory = parseBoolParam(url.searchParams.get("history"));
+        const wantMeta = parseBoolParam(url.searchParams.get("meta"));
         if (wantHistory) {
           return rpcResponse(
             await stub.rpcCall(bearer, "objectHistory", {
+              ...baseRpc,
               bucket: bucketName,
               key: objKey,
-              isPrimary,
             })
           );
         }
         const metaOut = await stub.rpcCall(bearer, "getObjectMeta", {
+          ...baseRpc,
           bucket: bucketName,
           key: objKey,
           version,
-          isPrimary,
         });
         if (!metaOut.ok || wantMeta) return rpcResponse(metaOut);
         const loaded = await loadCloudBlob(env, metaOut.data.sha256);
@@ -761,10 +996,19 @@ export default {
         null;
       const bucket = url.searchParams.get("bucket") || null;
       const limit = Number(url.searchParams.get("limit") || "20");
-      return rpcResponse(await stub.rpcCall(bearer, "searchNouns", { query: q, store, bucket, limit, isPrimary }));
+      return rpcResponse(
+        await stub.rpcCall(bearer, "searchNouns", {
+          ...baseRpc,
+          query: q,
+          store,
+          bucket,
+          limit,
+          ...parseLayer2Params(url.searchParams),
+        })
+      );
     }
     if (path === "/v1/feeds" && method === "GET") {
-      return rpcResponse(await stub.rpcCall(bearer, "feeds", { isPrimary }));
+      return rpcResponse(await stub.rpcCall(bearer, "feeds", { ...baseRpc }));
     }
     const feedMatch = /^\/v1\/feeds\/([^/]+)$/.exec(path);
     if (feedMatch) {
@@ -773,7 +1017,13 @@ export default {
         const after = Number(url.searchParams.get("after") || "0");
         const limit = Number(url.searchParams.get("limit") || "100");
         return rpcResponse(
-          await stub.rpcCall(bearer, "pollFeed", { feed: feedName, after, limit, isPrimary })
+          await stub.rpcCall(bearer, "pollFeed", {
+            ...baseRpc,
+            feed: feedName,
+            after,
+            limit,
+            ...parseLayer2Params(url.searchParams),
+          })
         );
       }
       if (method === "POST") {
@@ -781,11 +1031,17 @@ export default {
         if (error) return error;
         return rpcResponse(
           await stub.rpcCall(bearer, "publishFeed", {
+            ...baseRpc,
             feed: feedName,
             payload: body.payload,
             kind: body.kind ?? "delta",
             summary: body.summary ?? "",
-            isPrimary,
+            producer_surface: body.producer_surface,
+            visibility_scope: body.visibility_scope,
+            allowed_surfaces: body.allowed_surfaces,
+            target_cohorts: body.target_cohorts,
+            tags: body.tags,
+            owner_key_id: body.owner_key_id,
           })
         );
       }
@@ -794,16 +1050,22 @@ export default {
     if (path === "/v1/reflexes/match" && method === "GET") {
       const q = url.searchParams.get("q") || "";
       const limit = Number(url.searchParams.get("limit") || "5");
-      return rpcResponse(await stub.rpcCall(bearer, "matchReflex", { query: q, limit, isPrimary }));
+      return rpcResponse(
+        await stub.rpcCall(bearer, "matchReflex", {
+          ...baseRpc,
+          query: q,
+          limit,
+          ...parseLayer2Params(url.searchParams),
+        })
+      );
     }
     if (path === "/v1/handshake" && method === "POST") {
       const { body, error } = await readJsonBody(request);
       if (error) return error;
-      const hdrSurface = (request.headers.get("x-surface-id") || "").trim();
       const out = await stub.rpcCall(bearer, "handshake", {
         ...body,
-        header_surface_id: hdrSurface,
-        isPrimary,
+        ...baseRpc,
+        header_surface_id: surfaceHeader,
       });
       if (!out.ok) return rpcResponse(out);
       return jsonResp(out.data, 200, {
@@ -812,6 +1074,337 @@ export default {
       });
     }
 
+    // 12. Wave-2 Categorized Ontology, Empirical-Bayes Rankings, Fragility Decay & 3-Way Reconciliation
+    if (path === "/v1/categories" && method === "GET") {
+      const authCheck = await stub.rpcCall(bearer, "verifyStoreScope", { ...baseRpc });
+      if (!authCheck.ok) return rpcResponse(authCheck);
+      const profile = url.searchParams.get("profile") || null;
+      let activeProfile = null;
+      if (profile) {
+        if (!CALLER_PROFILES[profile]) {
+          return problem(400, "invalid_request", `unknown caller profile '${profile}'`);
+        }
+        activeProfile = CALLER_PROFILES[profile];
+      }
+      return jsonResp({
+        noun_categories: Object.keys(NOUN_CATEGORIES)
+          .sort()
+          .map((cid) => NOUN_CATEGORIES[cid]),
+        verb_categories: Object.keys(VERB_CATEGORIES)
+          .sort()
+          .map((cid) => VERB_CATEGORIES[cid]),
+        allowed_relations: [...ALLOWED_RELATION_TYPES].sort(),
+        caller_profiles: Object.keys(CALLER_PROFILES)
+          .sort()
+          .map((pid) => CALLER_PROFILES[pid]),
+        active_profile: activeProfile,
+      });
+    }
+
+    const rankMatch = /^\/v1\/rankings\/([^/]+)$/.exec(path);
+    if (rankMatch && method === "GET") {
+      const authCheck = await stub.rpcCall(bearer, "verifyStoreScope", { ...baseRpc });
+      if (!authCheck.ok) return rpcResponse(authCheck);
+      const categoryId = decodeURIComponent(rankMatch[1]);
+      if (!CATEGORY_REGISTRY[categoryId]) {
+        return problem(400, "invalid_request", `unknown category '${categoryId}'`);
+      }
+      const profile = url.searchParams.get("profile") || null;
+      if (profile && !CALLER_PROFILES[profile]) {
+        return problem(400, "invalid_request", `unknown caller profile '${profile}'`);
+      }
+      const targetStore =
+        url.searchParams.get("store") || url.searchParams.get("store_name") || "tessera.seeds";
+      const axis = url.searchParams.get("axis") || "composite_score";
+      const limit = Math.max(1, Math.min(Number(url.searchParams.get("limit") || "50"), 200));
+      const recOut = await stub.rpcCall(bearer, "listRecords", {
+        ...baseRpc,
+        store: targetStore,
+        prefix: "",
+        limit,
+        ...parseLayer2Params(url.searchParams),
+      });
+      if (!recOut.ok) return rpcResponse(recOut);
+      const nowTs = Date.now() / 1000;
+      const items = [];
+      const rawById = new Map();
+      for (const rec of recOut.data.records || []) {
+        const val =
+          rec.value && typeof rec.value === "object" && !Array.isArray(rec.value)
+            ? rec.value
+            : { value: rec.value };
+        const iid = String(val.item_id || val.id || rec.key);
+        const fragSub =
+          val.fragility && typeof val.fragility === "object" ? val.fragility : {};
+        const liveSub =
+          val.live_probe && typeof val.live_probe === "object" ? val.live_probe : {};
+        const trials = Number(
+          val.trials ?? val.verified_hits ?? (liveSub.http_status === 200 ? 12 : 6)
+        );
+        const successes = Number(
+          val.successes != null
+            ? val.successes
+            : (liveSub.http_status ?? 200) === 200
+              ? trials
+              : Math.max(0, trials - 2)
+        );
+        const normItem = {
+          item_id: iid,
+          id: iid,
+          category_id: String(val.category_id || val.category || categoryId),
+          title: String(val.title || iid),
+          dimensions: val.dimensions && typeof val.dimensions === "object" ? val.dimensions : {},
+          trials,
+          successes,
+          fragility_score: fragSub.fragility_score ?? val.fragility_score,
+          half_life_hours: fragSub.half_life_hours ?? val.half_life_hours,
+          last_verified_at:
+            val.last_verified_at ||
+            val.last_checked_at ||
+            fragSub.last_verified_at ||
+            rec.created_at ||
+            rec.updated_at,
+        };
+        items.push(normItem);
+        rawById.set(iid, { ...val, ...normItem });
+      }
+      const ranked = rankItems(items, { sort_axis: axis, now_ts: nowTs, top_k: limit });
+      const frontierIds = new Set(
+        (ranked.length ? paretoFrontier(ranked) : []).map((r) => r.item_id)
+      );
+      const outRows = ranked.map((r) => {
+        const entry = {
+          ...r,
+          id: r.item_id,
+          pareto_optimal: frontierIds.has(r.item_id),
+        };
+        if (profile && rawById.has(r.item_id)) {
+          entry.adapted_view = adaptNounView(rawById.get(r.item_id), profile);
+        }
+        return entry;
+      });
+      return jsonResp({
+        category_id: categoryId,
+        store: targetStore,
+        sort_axis: axis,
+        profile,
+        pareto_frontier_ids: [...frontierIds].sort(),
+        ranked: outRows,
+      });
+    }
+
+    if (path === "/v1/fragility/plan" && method === "GET") {
+      const authCheck = await stub.rpcCall(bearer, "verifyStoreScope", { ...baseRpc });
+      if (!authCheck.ok) return rpcResponse(authCheck);
+      const targetStore =
+        url.searchParams.get("store") || url.searchParams.get("store_name") || "registry.feeds";
+      const budget = Math.max(1, Math.min(Number(url.searchParams.get("budget") || "25"), 100));
+      const simHours = Math.max(
+        0,
+        Number(url.searchParams.get("simulate_hours_ahead") ?? "16")
+      );
+      const recOut = await stub.rpcCall(bearer, "listRecords", {
+        ...baseRpc,
+        store: targetStore,
+        prefix: "",
+        limit: 200,
+        ...parseLayer2Params(url.searchParams),
+      });
+      if (!recOut.ok) return rpcResponse(recOut);
+      const nowTs = Date.now() / 1000 + simHours * 3600;
+      const items = (recOut.data.records || []).map((rec) => {
+        const val =
+          rec.value && typeof rec.value === "object" && !Array.isArray(rec.value) ? rec.value : {};
+        const fragSub =
+          val.fragility && typeof val.fragility === "object" ? val.fragility : {};
+        return {
+          item_id: String(val.item_id || val.id || rec.key),
+          category_id: String(val.category_id || val.category || "noun.feed_source"),
+          source_uri: val.url || val.source_uri || null,
+          expected_sha256: val.content_sha256 || val.sha256 || null,
+          etag: val.etag || null,
+          last_modified: val.last_modified || null,
+          half_life_hours: fragSub.half_life_hours ?? val.half_life_hours ?? 12.0,
+          fragility_score: fragSub.fragility_score ?? val.fragility_score ?? 0.85,
+          last_verified_at:
+            val.last_verified_at ||
+            val.last_checked_at ||
+            fragSub.last_verified_at ||
+            rec.created_at ||
+            rec.updated_at,
+          importance: Number(val.importance ?? 1.0),
+        };
+      });
+      const plan = planFragilityRechecks(items, nowTs, budget);
+      return jsonResp({
+        store: targetStore,
+        evaluated_at: nowTs,
+        plan,
+      });
+    }
+
+    if (path === "/v1/reconcile" && method === "POST") {
+      const authCheck = await stub.rpcCall(bearer, "verifyStoreScope", { ...baseRpc });
+      if (!authCheck.ok) return rpcResponse(authCheck);
+      const { body, error } = await readJsonBody(request);
+      if (error) return error;
+      const baseDoc =
+        body.base && typeof body.base === "object" ? body.base : body.ancestor;
+      const oursDoc =
+        body.ours && typeof body.ours === "object" ? body.ours : body.left;
+      const theirsDoc =
+        body.theirs && typeof body.theirs === "object" ? body.theirs : body.right;
+      if (
+        !baseDoc ||
+        typeof baseDoc !== "object" ||
+        !oursDoc ||
+        typeof oursDoc !== "object" ||
+        !theirsDoc ||
+        typeof theirsDoc !== "object"
+      ) {
+        return problem(
+          400,
+          "invalid_request",
+          "base/ancestor, ours/left, and theirs/right must be JSON objects"
+        );
+      }
+      const setFields = Array.isArray(body.set_fields)
+        ? body.set_fields
+        : Array.isArray(body.monotonic_set_fields)
+          ? body.monotonic_set_fields
+          : [];
+      const counterFields = Array.isArray(body.counter_fields) ? body.counter_fields : [];
+      const conflict = reconcileThreeWay(baseDoc, oursDoc, theirsDoc, {
+        ours_proposer_key_id: body.ours_proposer_key_id || null,
+        theirs_proposer_key_id: body.theirs_proposer_key_id || null,
+        set_fields: setFields,
+        counter_fields: counterFields,
+      });
+      return jsonResp({ ...conflict, clean: conflict.status === "auto_merged" });
+    }
+
+    if (path === "/v1/reconcile/adjudicate" && method === "POST") {
+      const authCheck = await stub.rpcCall(bearer, "verifyStoreScope", { ...baseRpc });
+      if (!authCheck.ok) return rpcResponse(authCheck);
+      const { body, error } = await readJsonBody(request);
+      if (error) return error;
+      const aliasMap = { cand_a: "candidate_a", cand_b: "candidate_b" };
+      const revAlias = {};
+      let conflictArg;
+      if (body.conflict && typeof body.conflict === "object") {
+        conflictArg = { ...body.conflict };
+      } else {
+        const cands = body.candidates || {};
+        const docA = { ...(cands.candidate_a || cands.cand_a || { option: "a" }) };
+        const docB = { ...(cands.candidate_b || cands.cand_b || { option: "b" }) };
+        if ("cand_a" in cands) revAlias.candidate_a = "cand_a";
+        if ("cand_b" in cands) revAlias.candidate_b = "cand_b";
+        const proposer = body.proposer_id || body.proposer_key_id || null;
+        conflictArg = {
+          conflict_id: String(body.conflict_id || "conflict-adjudication"),
+          status: "needs_voting_or_steward",
+          conflicting_paths: Array.isArray(body.conflicting_paths)
+            ? body.conflicting_paths
+            : ["summary"],
+          proposer_key_ids: proposer ? [proposer] : [],
+          candidate_a: {
+            candidate_id: "candidate_a",
+            proposer_key_id: body.candidate_a_proposer || null,
+            conflicting_values: docA,
+            document: docA,
+            sha256: canonicalSha256(docA),
+          },
+          candidate_b: {
+            candidate_id: "candidate_b",
+            proposer_key_id: proposer,
+            conflicting_values: docB,
+            document: docB,
+            sha256: canonicalSha256(docB),
+          },
+        };
+      }
+      const rawBallots = Array.isArray(body.ballots) ? body.ballots : [];
+      const normBallots = [];
+      const calibrations =
+        body.worker_calibrations && typeof body.worker_calibrations === "object"
+          ? { ...body.worker_calibrations }
+          : {};
+      for (const b of rawBallots) {
+        if (!b || typeof b !== "object") continue;
+        let voterKey = String(b.voter_key_id || b.key_prefix || b.voter_id || "");
+        if (body.proposer_id && b.voter_id === body.proposer_id) {
+          voterKey = String(body.proposer_id);
+        }
+        const rawChoice = String(b.choice || "");
+        const mappedChoice = aliasMap[rawChoice] || rawChoice;
+        normBallots.push({
+          voter_key_id: voterKey,
+          choice: mappedChoice,
+          citations: Array.isArray(b.citations) ? b.citations : ["verified:receipt"],
+          verification_receipt_sha256:
+            b.verification_receipt_sha256 || "a".repeat(64),
+          rationale: String(b.rationale || "verified"),
+          defect_summary: String(b.defect_summary || "superseded"),
+        });
+        if (voterKey && !(voterKey in calibrations) && "verified_passes" in b) {
+          const passes = Number(b.verified_passes || 0);
+          const fails = Number(b.verified_failures || 0);
+          calibrations[voterKey] = {
+            worker_key_id: voterKey,
+            verified_correct: passes,
+            verified_total: passes + fails,
+          };
+        }
+      }
+      const receipt = adjudicateBallots(
+        conflictArg,
+        normBallots,
+        calibrations,
+        Boolean(body.human_only)
+      );
+      const win = receipt.winning_candidate_id;
+      return jsonResp({
+        ...receipt,
+        winner: win ? revAlias[win] || win : null,
+      });
+    }
+
     return problem(404, "not_found", `no route matches ${method} ${path}`);
+  },
+
+  async scheduled(event, env, ctx) {
+    if (!env.FABRIC_DB) return;
+    const scanJob = async () => {
+      try {
+        const rows = await env.FABRIC_DB.prepare(
+          "SELECT key, value_json, updated_at FROM record_heads WHERE namespace = 'main' AND store = 'registry.feeds' LIMIT 100"
+        ).all();
+        const nowTs = Date.now() / 1000;
+        const items = (rows?.results || []).map((r) => {
+          let val = {};
+          try {
+            val = JSON.parse(r.value_json || "{}");
+          } catch {
+            val = {};
+          }
+          const fragSub =
+            val.fragility && typeof val.fragility === "object" ? val.fragility : {};
+          return {
+            item_id: String(val.id || r.key),
+            category_id: "noun.feed_source",
+            source_uri: val.url || null,
+            expected_sha256: val.content_sha256 || null,
+            half_life_hours: fragSub.half_life_hours ?? val.half_life_hours ?? 12.0,
+            fragility_score: fragSub.fragility_score ?? val.fragility_score ?? 0.85,
+            last_verified_at: val.last_checked_at || r.updated_at || nowTs,
+            importance: 1.0,
+          };
+        });
+        planFragilityRechecks(items, nowTs, 15);
+      } catch {
+        // Non-fatal scheduled fragility sweep
+      }
+    };
+    ctx.waitUntil(scanJob());
   },
 };

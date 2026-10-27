@@ -57,32 +57,34 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [briefs/done/L8.json](briefs/done/L8.json) | L8: Claim, heartbeat and submit endpoints with fencing tokens and idempotency keys |
 | [briefs/done/L9.json](briefs/done/L9.json) | L9: Reaper loop, backoff and dead letter in the running service |
 
-## conformance-draft/ (7)
+## conformance-draft/ (8)
 
 | File | What it is |
 |---|---|
 | [conformance-draft/SPEC.md](conformance-draft/SPEC.md) | Tessera specification, v0.2 (draft) |
 | [conformance-draft/conftest.py](conformance-draft/conftest.py) | Fixtures for the Tessera conformance suite (SPEC.md §10). |
+| [conformance-draft/receipt_vectors.json](conformance-draft/receipt_vectors.json) | JSON object: schema_version, spec_section, version, vectors |
 | [conformance-draft/test_model_jobs.py](conformance-draft/test_model_jobs.py) | T12: model jobs (Meta Model API background responses) are tied to the lease that started them. |
 | [conformance-draft/test_queue_semantics.py](conformance-draft/test_queue_semantics.py) | Queue semantics every backend must meet (SPEC §5). |
 | [conformance-draft/test_service_surface.py](conformance-draft/test_service_surface.py) | Service-only requirements (SPEC §7): keys, POST-only writes, health over HTTP, the MCP door and secret hygien… |
 | [conformance-draft/test_storage.py](conformance-draft/test_storage.py) | ST01 to ST04: atomic storage. |
 | [conformance-draft/test_task_graph.py](conformance-draft/test_task_graph.py) | Task graphs every backend must meet (SPEC §5.2 and §5.6): dependencies (fan-in), children that run in waves,… |
 
-## deploy/ (15)
+## deploy/ (16)
 
 | File | What it is |
 |---|---|
 | [deploy/README.md](deploy/README.md) | Deploy |
 | [deploy/bootstrap-hosting.sh](deploy/bootstrap-hosting.sh) | One-time hosting setup for one service on Fly.io behind a Cloudflare Worker: the Fly app and its |
 | [deploy/cloudflare/README.md](deploy/cloudflare/README.md) | Cloudflare: the Tessera cloud runtime and edge |
-| [deploy/cloudflare/cloud_buckets.js](deploy/cloudflare/cloud_buckets.js) | Persistent cloud blob & bucket storage engine for Tessera on Cloudflare. |
+| [deploy/cloudflare/cloud_buckets.js](deploy/cloudflare/cloud_buckets.js) | Persistent cloud blob & bucket storage engine + canonical JSON receipt hashing for Tessera Cloud. |
 | [deploy/cloudflare/cloud_intelligence.js](deploy/cloudflare/cloud_intelligence.js) | 0-call progressive L0 scent search, RFC 9110 HTTP 206 byte-range slicing, |
 | [deploy/cloudflare/cloud_mcp.js](deploy/cloudflare/cloud_mcp.js) | Native Streamable HTTP MCP Door (/mcp) for Tessera Cloud. |
-| [deploy/cloudflare/cloud_pages.js](deploy/cloudflare/cloud_pages.js) | Agent door & HTML pages for Tessera Cloud (/connect, /llms.txt, /.well-known/agent-card.json, |
+| [deploy/cloudflare/cloud_pages.js](deploy/cloudflare/cloud_pages.js) | Agent door & HTML pages for Tessera Cloud (/connect, /llms.txt, /llms-full.txt, |
 | [deploy/cloudflare/cloud_store.js](deploy/cloudflare/cloud_store.js) | TesseraCoordinator: single-writer SQLite Durable Object (newsqliteclasses) implementing |
-| [deploy/cloudflare/d1-buckets.sql](deploy/cloudflare/d1-buckets.sql) | Persistent Cloudflare D1 content-addressed blob & named-bucket store (ta-amps-buckets). |
-| [deploy/cloudflare/d1-fabric.sql](deploy/cloudflare/d1-fabric.sql) | Persistent Cloudflare D1 schema for Tessera cloud fabric (ta-amps-fabric). |
+| [deploy/cloudflare/d1-buckets.sql](deploy/cloudflare/d1-buckets.sql) | Persistent Cloudflare D1 content-addressed blob & named-bucket store (ta-amps-buckets), Schema v3. |
+| [deploy/cloudflare/d1-fabric.sql](deploy/cloudflare/d1-fabric.sql) | Persistent Cloudflare D1 schema for Tessera cloud fabric (ta-amps-fabric), Schema v3. |
+| [deploy/cloudflare/ontology_engine.js](deploy/cloudflare/ontology_engine.js) |  |
 | [deploy/cloudflare/worker.js](deploy/cloudflare/worker.js) | Tessera Cloud Worker: 24/7 native cloud execution on Cloudflare Durable Object SQLite + D1 |
 | [deploy/cloudflare/wrangler.jsonc](deploy/cloudflare/wrangler.jsonc) | Tessera Cloud Worker: 24/7 persistent atomic work queue, queryable CAS noun stores, |
 | [deploy/fly/Dockerfile](deploy/fly/Dockerfile) |  |
@@ -125,22 +127,22 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [scripts/dev_stack.sh](scripts/dev_stack.sh) | Run Tessera on this machine behind the real Cloudflare edge code (wrangler dev), with the origin |
 | [scripts/suite_http_local.py](scripts/suite_http_local.py) | Run the whole conformance suite over HTTP against a real tessera serve process on this machine. |
 
-## src/ (30)
+## src/ (36)
 
 | File | What it is |
 |---|---|
 | [src/tessera/__init__.py](src/tessera/__init__.py) | Tessera: atomic work queue and atomic storage for agent swarms. |
-| [src/tessera/_base.py](src/tessera/_base.py) | Plumbing shared by the store's operation mixins: one SQLite connection per thread, IMMEDIATE transactions, th… |
+| [src/tessera/_base.py](src/tessera/_base.py) | Plumbing shared by the store's operation mixins: one SQLite connection per thread, IMMEDIATE transactions, na… |
 | [src/tessera/_buckets.py](src/tessera/_buckets.py) | Queryable noun stores and persistent named file buckets (SPEC §6 extension). |
 | [src/tessera/_graph.py](src/tessera/_graph.py) | Task-graph plumbing shared by the verbs: releasing dependents when a task resolves, waking parked tasks, and… |
-| [src/tessera/_intelligence.py](src/tessera/_intelligence.py) | 0-call progressive L0 scent search, monotonic delta feeds, and dual-resolution reflex recall. |
+| [src/tessera/_intelligence.py](src/tessera/_intelligence.py) | 0-call progressive L0 scent search, monotonic per-(namespace, feed) delta feeds, and dual-resolution reflex r… |
 | [src/tessera/_jobs.py](src/tessera/_jobs.py) | Model jobs (SPEC §6): each Meta Model API background response is tied to the task and the fencing token that… |
 | [src/tessera/_keys.py](src/tessera/_keys.py) | Worker keys (SPEC §7): random bearer secrets stored only as SHA-256 hashes, scoped to queue patterns, task ki… |
 | [src/tessera/_mcp_storage.py](src/tessera/_mcp_storage.py) | Storage, bucket, 0-call L0 search, live feed, and reflex-recall MCP tools for tessera.mcpdoor. |
-| [src/tessera/_observe.py](src/tessera/_observe.py) | Read-only views: tasks, results, the counts record, health and the event log (SPEC §5.7 to §5.9). |
+| [src/tessera/_observe.py](src/tessera/_observe.py) | Read-only views: tasks, results, the counts record, health, the event log, and Board v2 snapshots (SPEC §5.7… |
 | [src/tessera/_service_buckets.py](src/tessera/_service_buckets.py) | HTTP routes for queryable noun stores, persistent named file buckets, and remote key management. |
 | [src/tessera/_service_intelligence.py](src/tessera/_service_intelligence.py) | HTTP routes for progressive L0 scent search, HTTP 206 byte-range slicing, live delta feeds, and 0-call dual-r… |
-| [src/tessera/_storage.py](src/tessera/_storage.py) | Atomic storage (SPEC §6): versioned records written by compare-and-set, with every version kept, and content-… |
+| [src/tessera/_storage.py](src/tessera/_storage.py) | Atomic storage (SPEC §6): versioned records written by single-statement SQL compare-and-set, with every versi… |
 | [src/tessera/_tasks.py](src/tessera/_tasks.py) | The five verbs (claim, heartbeat, split, submit, cancel), park and resume, plus enqueue with dependencies, qu… |
 | [src/tessera/_version.py](src/tessera/_version.py) |  |
 | [src/tessera/access.py](src/tessera/access.py) | What every door shares: the service settings, the claim rate limiter, reading the bearer key, and the Gate th… |
@@ -153,22 +155,32 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [src/tessera/grants.py](src/tessera/grants.py) | What a worker key may do: its queues, kinds, effect classes and scopes, and the rules that narrow a request t… |
 | [src/tessera/mcp_door.py](src/tessera/mcp_door.py) | The MCP door (SPEC §7): atomic verbs, progressive L0 noun search, CAS records, buckets, delta feeds, and refl… |
 | [src/tessera/models.py](src/tessera/models.py) | Records that cross Tessera's boundary: what callers send and what every backend returns. |
-| [src/tessera/pages.py](src/tessera/pages.py) | The agent door: /connect, /llms.txt, the agent card, robots rules, the read-only board, and keyed web forms f… |
+| [src/tessera/ontology/__init__.py](src/tessera/ontology/__init__.py) | Ontology, Ranking, Fragility, Conflict-Reconciliation, and Profile-Adaptive Engine. |
+| [src/tessera/ontology/categories.py](src/tessera/ontology/categories.py) | Categorized Noun and Verb taxonomy, typed dimensions, relations, and worker guidance. |
+| [src/tessera/ontology/fragility.py](src/tessera/ontology/fragility.py) | Fragility scoring, exponential staleness decay, recheck planning, and drift detection. |
+| [src/tessera/ontology/profiles.py](src/tessera/ontology/profiles.py) | Caller profile policies and adaptive rendering for Nouns and Verb task guidance. |
+| [src/tessera/ontology/rankings.py](src/tessera/ontology/rankings.py) | Empirical-Bayes shrunk rankings, Wilson bounds, composite scores, and Pareto frontiers. |
+| [src/tessera/ontology/reconcile.py](src/tessera/ontology/reconcile.py) | Deterministic 0-call 3-way CAS merge and Sybil-fenced calibration-weighted voting. |
+| [src/tessera/pages.py](src/tessera/pages.py) | The agent door: /connect, /llms.txt, /llms-full.txt, /favicon.svg, the agent card, robots rules, Console Boar… |
 | [src/tessera/receipts.py](src/tessera/receipts.py) | Canonical JSON and receipt hashes (SPEC §5.4). |
-| [src/tessera/schema.sql](src/tessera/schema.sql) | Tessera schema v2 (SPEC §3). |
+| [src/tessera/schema.sql](src/tessera/schema.sql) | Tessera schema v3 (SPEC §3). |
 | [src/tessera/service.py](src/tessera/service.py) | Tessera's HTTP service (SPEC §7). |
 | [src/tessera/store.py](src/tessera/store.py) | The in-process Tessera store: the reference implementation of SPEC.md. |
 | [src/tessera/testing.py](src/tessera/testing.py) | Factories the conformance suite loads by name (TESSERABACKENDFACTORY="module:function"). |
 
-## tests/ (8)
+## tests/ (12)
 
 | File | What it is |
 |---|---|
+| [tests/test_board.py](tests/test_board.py) | Console Board v2 (/board, L19), UI chrome, and agent discovery routes. |
 | [tests/test_buckets.py](tests/test_buckets.py) | Tests for queryable noun stores, persistent named file buckets, external blobdir, and MCP tools. |
 | [tests/test_check_public.py](tests/test_check_public.py) | checkpublic finds secrets and private names, masks them, and honours the allow marker. |
+| [tests/test_governance_and_isolation.py](tests/test_governance_and_isolation.py) | Universal 6-field governance envelope, namespace isolation (/ns/{namespace} & X-Namespace), Layer 1 surface o… |
 | [tests/test_guard_hook.py](tests/test_guard_hook.py) | The guard hook blocks protected paths and risky commands, and fails closed. |
 | [tests/test_handshake_and_bridge.py](tests/test_handshake_and_bridge.py) | Tests for Surface Handshake v1.0 (POST /v1/handshake + MCP handshake) and SurfaceBridge. |
 | [tests/test_intelligence.py](tests/test_intelligence.py) | Tests for progressive L0 scent search, HTTP 206 byte ranges, delta feeds, dead-end tombstones, and 0-call dua… |
+| [tests/test_ontology_and_reconcile.py](tests/test_ontology_and_reconcile.py) | Tests for Tessera Wave-2 Categorized Ontology, Empirical-Bayes Rankings, Fragility Decay, 3-Way CAS Reconcili… |
+| [tests/test_phase4_atomicity_and_vectors.py](tests/test_phase4_atomicity_and_vectors.py) | Phase 4 atomicity, migration, T22 gates, L26 receipt vectors, and Edge parity tests. |
 | [tests/test_service.py](tests/test_service.py) | The HTTP service: keys, scopes, POST-only writes, holders, rate limits, the edge lock, the agent door, the we… |
 | [tests/test_spec_events.py](tests/test_spec_events.py) | SPEC §5.5 lists every event type, and the code emits only listed types: a new event can't ship without a line… |
 | [tests/test_tools.py](tests/test_tools.py) | The Muse worker keeps its safety flags whatever the brief says, and briefs load in dependency order. |

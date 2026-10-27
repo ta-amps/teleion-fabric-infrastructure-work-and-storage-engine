@@ -32,12 +32,15 @@ WRITE_PATHS = [
     "/v1/tasks/heartbeat",
     "/v1/tasks/submit",
     "/v1/tasks/split",
+    "/v1/tasks/park",
+    "/v1/tasks/resume",
     "/v1/tasks/cancel",
     "/v1/queues/define",
     "/v1/admin/reap",
     "/v1/jobs/resp_x",
     "/v1/stores/batch",
     "/v1/blobs",
+    "/work/resume",
 ]
 
 
@@ -151,3 +154,191 @@ def test_T16_no_secret_leaks(http: httpx.Client) -> None:
         texts.append(Path(log_path).read_text(encoding="utf-8", errors="replace"))
     for key in KEYS.values():
         assert all(key not in text for text in texts)
+
+
+@needs_service
+def test_T22_resume_requires_the_tasks_effect_class(http: httpx.Client) -> None:
+    admin_hdr = auth(KEYS["admin"])
+    q_name = f"conformance-t22-{uuid.uuid4().hex[:8]}"
+    assert (
+        http.post("/v1/queues/define", json={"name": q_name}, headers=admin_hdr).status_code == 200
+    )
+
+    issued_ids: list[str] = []
+
+    def issue(label: str, effects: list[str]) -> str:
+        resp = http.post(
+            "/v1/admin/keys",
+            headers=admin_hdr,
+            json={"label": label, "queues": [q_name], "effect_classes": effects},
+        )
+        assert resp.status_code == 201, resp.text
+        data = resp.json()
+        issued_ids.append(str(data["key_id"]))
+        return str(data["key"])
+
+    def mcp_resume(secret: str, task_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        mcp_hdr = {**auth(secret), "accept": "application/json, text/event-stream"}
+        init_resp = http.post(
+            "/mcp",
+            headers=mcp_hdr,
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-06-18",
+                    "capabilities": {},
+                    "clientInfo": {"name": "t22", "version": "0"},
+                },
+            },
+        )
+        assert init_resp.status_code == 200, init_resp.text
+        ver = init_resp.json()["result"]["protocolVersion"]
+        call_resp = http.post(
+            "/mcp",
+            headers={**mcp_hdr, "mcp-protocol-version": ver},
+            json={
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {
+                    "name": "resume",
+                    "arguments": {"task_id": task_id, "input": payload},
+                },
+            },
+        )
+        assert call_resp.status_code == 200, call_resp.text
+        res: dict[str, Any] = call_resp.json()["result"]
+        return res
+
+    try:
+        parker_key = issue("t22-parker", ["read", "write-internal", "write-repo"])
+        read_only_key = issue("t22-read", ["read"])
+        worker_key = issue("t22-worker", ["read", "write-internal", "write-repo"])
+
+        # 1. A read-only key cannot resume a write-internal task across HTTP, MCP, or /work.
+        enq1 = http.post(
+            "/v1/tasks",
+            headers=admin_hdr,
+            json={
+                "queue": q_name,
+                "brief": {"case": "write-internal"},
+                "effect_class": "write-internal",
+            },
+        )
+        assert enq1.status_code == 201
+        t1 = enq1.json()["task_id"]
+        lease1 = http.post(
+            "/v1/tasks/claim",
+            headers=auth(parker_key),
+            json={"queue": q_name, "worker": "parker-1"},
+        ).json()
+        assert (
+            http.post(
+                "/v1/tasks/park",
+                headers=auth(parker_key),
+                json={
+                    "task_id": t1,
+                    "fencing_token": lease1["fencing_token"],
+                    "reason": "need review",
+                },
+            ).status_code
+            == 200
+        )
+
+        r_http1 = http.post(
+            "/v1/tasks/resume",
+            headers=auth(read_only_key),
+            json={"task_id": t1, "input": {"ok": True}},
+        )
+        assert r_http1.status_code == 403 and r_http1.json()["code"] == "scope_denied"
+
+        r_mcp1 = mcp_resume(read_only_key, t1, {"ok": True})
+        assert r_mcp1.get("isError") is True and "scope_denied" in r_mcp1["content"][0]["text"]
+
+        r_work1 = http.post(
+            "/work/resume",
+            data={"key": read_only_key, "task_id": t1, "input": '{"ok": true}'},
+        )
+        assert r_work1.status_code == 403 and "scope_denied" in r_work1.text
+        assert read_only_key not in r_work1.text
+
+        ok1 = http.post(
+            "/v1/tasks/resume",
+            headers=auth(worker_key),
+            json={"task_id": t1, "input": {"ok": True}},
+        )
+        assert ok1.status_code == 200 and ok1.json()["state"] == "ready"
+
+        # Drain t1 so queue is empty for case 2.
+        drain1 = http.post(
+            "/v1/tasks/claim",
+            headers=auth(worker_key),
+            json={"queue": q_name, "worker": "drain-1"},
+        ).json()
+        assert (
+            http.post(
+                "/v1/tasks/submit",
+                headers={**auth(worker_key), "idempotency-key": f"{t1}:{drain1['fencing_token']}"},
+                json={
+                    "task_id": t1,
+                    "fencing_token": drain1["fencing_token"],
+                    "output": {"done": True},
+                },
+            ).status_code
+            == 200
+        )
+
+        # 2. A non-admin key cannot resume a write-repo task across HTTP, MCP, or /work; admin can.
+        enq2 = http.post(
+            "/v1/tasks",
+            headers=admin_hdr,
+            json={"queue": q_name, "brief": {"case": "write-repo"}, "effect_class": "write-repo"},
+        )
+        assert enq2.status_code == 201
+        t2 = enq2.json()["task_id"]
+        lease2 = http.post(
+            "/v1/tasks/claim",
+            headers=auth(parker_key),
+            json={"queue": q_name, "worker": "parker-2"},
+        ).json()
+        assert (
+            http.post(
+                "/v1/tasks/park",
+                headers=auth(parker_key),
+                json={
+                    "task_id": t2,
+                    "fencing_token": lease2["fencing_token"],
+                    "reason": "need admin",
+                },
+            ).status_code
+            == 200
+        )
+
+        r_http2 = http.post(
+            "/v1/tasks/resume",
+            headers=auth(worker_key),
+            json={"task_id": t2, "input": {"approved": True}},
+        )
+        assert r_http2.status_code == 403 and r_http2.json()["code"] == "scope_denied"
+
+        r_mcp2 = mcp_resume(worker_key, t2, {"approved": True})
+        assert r_mcp2.get("isError") is True and "scope_denied" in r_mcp2["content"][0]["text"]
+
+        r_work2 = http.post(
+            "/work/resume",
+            data={"key": worker_key, "task_id": t2, "input": '{"approved": true}'},
+        )
+        assert r_work2.status_code == 403 and "scope_denied" in r_work2.text
+        assert worker_key not in r_work2.text
+
+        ok_work_admin = http.post(
+            "/work/resume",
+            data={"key": KEYS["admin"], "task_id": t2, "input": '{"approved": true}'},
+        )
+        assert ok_work_admin.status_code == 200 and "ready" in ok_work_admin.text
+        assert KEYS["admin"] not in ok_work_admin.text
+    finally:
+        for kid in issued_ids:
+            http.post(f"/v1/admin/keys/{kid}/revoke", headers=admin_hdr)

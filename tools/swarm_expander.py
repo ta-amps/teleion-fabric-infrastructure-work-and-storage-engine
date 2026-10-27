@@ -269,7 +269,7 @@ def _deterministic_synthesis(kind: str, prompt_data: dict[str, Any]) -> dict[str
     return {
         "role": role,
         "artifact_text": (
-            f"SYNTHETIC — generated offline test fixture for {seed_key} ({role}) at example.com.\n"
+            f"SYNTHETIC -- generated offline test fixture for {seed_key} ({role}) at example.com.\n"
             "Indicator check: documented consent and callback-verified beneficiary clear at T1; "
             "coerced secrecy or unverified redirection holds for human review."
         ),

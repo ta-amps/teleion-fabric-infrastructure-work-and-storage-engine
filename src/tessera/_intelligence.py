@@ -1,8 +1,9 @@
-"""0-call progressive L0 scent search, monotonic delta feeds, and dual-resolution reflex recall.
+"""0-call progressive L0 scent search, monotonic per-(namespace, feed) delta feeds, and dual-resolution reflex recall.
 
 Gives any connected agent (MCP coding harness, HTTPS chat assistant, or CLI worker) fast 0-model-call
 discovery over versioned nouns and buckets without loading megabytes into context, monotonic cursor
-feeds for live changes, and muscle-memory reflex recall paired with negative-knowledge tombstones.
+feeds for live changes, and muscle-memory reflex recall paired with negative-knowledge tombstones,
+enforcing namespace isolation, Layer 1 governance visibility, quarantine hiding, and Layer 2 filters.
 """
 
 from __future__ import annotations
@@ -10,11 +11,13 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import sqlite3
 from collections.abc import Sequence
 from fnmatch import fnmatchcase
 from typing import Any, Literal
 
-from tessera._buckets import BucketOps, _validate_bucket_name
+from tessera._buckets import BucketOps, _validate_bucket_name, matches_layer2_filters
+from tessera._storage import extract_payload_tags
 from tessera._version import __version__
 from tessera.errors import InvalidRequest
 from tessera.models import (
@@ -26,6 +29,12 @@ from tessera.models import (
     NounScent,
     ReflexHit,
     ReflexMatch,
+    VisibilityScope,
+    can_view_governed,
+    cohort_matches,
+    normalize_cohorts,
+    normalize_surface_list,
+    normalize_tags,
 )
 from tessera.receipts import canonical_json
 
@@ -45,6 +54,8 @@ HANDSHAKE_CAPABILITIES: tuple[str, ...] = (
     "reflex_recall",
     "mcp_streamable_http",
     "surface_handshake_v1",
+    "governance_envelope_v1",
+    "namespace_isolation",
 )
 REFLEX_STORE = "tessera.reflexes"
 DEAD_END_STORE = "negative.knowledge"
@@ -85,25 +96,6 @@ def _similarity(query: str, hay_title: str, hay_body: str, hay_tags: list[str]) 
     return round(min(1.0, 0.55 * tok_overlap + 0.25 * tri_jaccard + substr_bonus + title_bonus), 4)
 
 
-def _extract_tags(obj: Any) -> list[str]:
-    if not isinstance(obj, dict):
-        return []
-    out: list[str] = []
-    for k in ("domain", "surface", "stage", "kind", "category", "area", "track"):
-        v = obj.get(k)
-        if isinstance(v, str) and v.strip():
-            out.append(v.strip())
-    raw_tags = obj.get("tags")
-    if isinstance(raw_tags, list):
-        out.extend(str(t).strip() for t in raw_tags if str(t).strip())
-    elif isinstance(raw_tags, dict):
-        out.extend(f"{k}:{v}" for k, v in sorted(raw_tags.items()))
-    meta_tags = obj.get("metadata_tags")
-    if isinstance(meta_tags, dict):
-        out.extend(f"{k}:{v}" for k, v in sorted(meta_tags.items()))
-    return list(dict.fromkeys(out))[:12]
-
-
 def _extract_title_and_l0(key: str, val: Any) -> tuple[str, str]:
     if isinstance(val, dict):
         title = str(
@@ -121,7 +113,7 @@ def _extract_title_and_l0(key: str, val: Any) -> tuple[str, str]:
                 return title[:140], text[:MAX_L0_CHARS]
         keys_preview = ", ".join(sorted(str(k) for k in val)[:10])
         compact = canonical_json(val)
-        snippet = compact[:260] + ("…" if len(compact) > 260 else "")
+        snippet = compact[:260] + ("..." if len(compact) > 260 else "")
         return title[:140], f"fields=[{keys_preview}] {snippet}"[:MAX_L0_CHARS]
     compact_any = canonical_json(val)
     return key[:140], compact_any[:MAX_L0_CHARS]
@@ -135,6 +127,12 @@ class IntelligenceOps(BucketOps):
         store: str | None = None,
         bucket: str | None = None,
         limit: int = 20,
+        tag: str | None = None,
+        category: str | None = None,
+        cohort: str | None = None,
+        surface: str | None = None,
+        include_restricted: bool = False,
+        namespace: str | None = None,
     ) -> list[NounScent]:
         """0-call progressive L0 scent search across head CAS records and versioned bucket files."""
         cap = max(1, min(limit, 200))
@@ -143,28 +141,75 @@ class IntelligenceOps(BucketOps):
         if bucket is not None:
             _validate_bucket_name(bucket)
 
+        ns = self._resolve_ns(namespace)
+        ctx = self.current_scope()
         scents: list[NounScent] = []
         q_clean = query.strip()
+
         with self._read() as c:
             if bucket is None:
+                rec_where = "WHERE h.namespace = ?"
+                rec_params: list[Any] = [ns]
                 if store is not None:
-                    rec_rows = c.execute(
-                        "SELECT r.* FROM record_heads h"
-                        " JOIN records r ON r.store = h.store AND r.key = h.key AND r.version = h.version"
-                        " WHERE h.store = ? ORDER BY r.created_at DESC LIMIT 1000",
-                        (store,),
-                    ).fetchall()
-                else:
-                    rec_rows = c.execute(
-                        "SELECT r.* FROM record_heads h"
-                        " JOIN records r ON r.store = h.store AND r.key = h.key AND r.version = h.version"
-                        " ORDER BY r.created_at DESC LIMIT 1000"
-                    ).fetchall()
+                    rec_where += " AND h.store = ?"
+                    rec_params.append(store)
+                if tag and tag.strip():
+                    rec_where += (
+                        " AND EXISTS (SELECT 1 FROM noun_tags nt"
+                        " WHERE nt.namespace = h.namespace AND nt.noun_type = 'record'"
+                        " AND nt.container = h.store AND nt.record_id = h.key"
+                        " AND LOWER(nt.tag) = LOWER(?))"
+                    )
+                    rec_params.append(tag.strip())
+                rec_rows = c.execute(
+                    "SELECT r.* FROM record_heads h"  # noqa: S608
+                    " JOIN records r"
+                    "   ON r.namespace = h.namespace AND r.store = h.store"
+                    "  AND r.key = h.key AND r.version = h.version "
+                    f"{rec_where} ORDER BY r.created_at DESC LIMIT 1000",
+                    rec_params,
+                ).fetchall()
                 for row in rec_rows:
                     raw_val: str = row["value"]
                     parsed = json.loads(raw_val)
+                    env_tags: list[str] = json.loads(row["tags"])
+                    tags = normalize_tags([*env_tags, *extract_payload_tags(parsed)])
+                    # Quarantined records NEVER appear in /v1/search.
+                    if "status:quarantined" in tags:
+                        continue
+                    allowed = json.loads(row["allowed_surfaces"])
+                    cohorts = json.loads(row["target_cohorts"])
+                    prod = str(row["producer_surface"])
+                    vis: VisibilityScope = row["visibility_scope"]
+                    owner = row["owner_key_id"]
+                    if not can_view_governed(
+                        visibility_scope=vis,
+                        producer_surface=prod,
+                        allowed_surfaces=allowed,
+                        owner_key_id=owner,
+                        tags=tags,
+                        viewer_surface=ctx.surface,
+                        viewer_key_id=ctx.key_id,
+                        is_admin=ctx.is_admin,
+                        direct_get=False,
+                        include_restricted=False,
+                    ):
+                        continue
                     title, l0 = _extract_title_and_l0(row["key"], parsed)
-                    tags = _extract_tags(parsed)
+                    if not matches_layer2_filters(
+                        haystack=f"{row['store']} {row['key']} {title} {l0} {raw_val[:1200]}",
+                        tags=tags,
+                        producer_surface=prod,
+                        target_cohorts=cohorts,
+                        q="",
+                        tag=tag,
+                        category=category,
+                        cohort=cohort,
+                        surface=surface,
+                        is_admin=ctx.is_admin,
+                        include_restricted=include_restricted,
+                    ):
+                        continue
                     score = _similarity(
                         q_clean,
                         f"{row['store']} {row['key']} {title}",
@@ -175,13 +220,19 @@ class IntelligenceOps(BucketOps):
                         continue
                     scents.append(
                         NounScent(
+                            namespace=ns,
                             kind="record",
-                            namespace=row["store"],
+                            container=str(row["store"]),
                             key=row["key"],
                             version=int(row["version"]),
                             title=title,
                             l0_summary=l0,
+                            producer_surface=prod,
+                            visibility_scope=vis,
+                            allowed_surfaces=allowed,
+                            target_cohorts=cohorts,
                             tags=tags,
+                            owner_key_id=owner,
                             size_bytes=len(raw_val.encode("utf-8")),
                             score=score,
                             updated_at=float(row["created_at"]),
@@ -189,21 +240,67 @@ class IntelligenceOps(BucketOps):
                     )
 
             if store is None:
+                obj_where = "WHERE namespace = ?"
+                obj_params: list[Any] = [ns]
                 if bucket is not None:
-                    obj_rows = c.execute(
-                        "SELECT * FROM bucket_objects WHERE bucket = ? ORDER BY updated_at DESC LIMIT 1000",
-                        (bucket,),
-                    ).fetchall()
-                else:
-                    obj_rows = c.execute(
-                        "SELECT * FROM bucket_objects ORDER BY updated_at DESC LIMIT 1000"
-                    ).fetchall()
+                    obj_where += " AND bucket = ?"
+                    obj_params.append(bucket)
+                if tag and tag.strip():
+                    obj_where += (
+                        " AND EXISTS (SELECT 1 FROM noun_tags nt"
+                        " WHERE nt.namespace = bucket_objects.namespace"
+                        " AND nt.noun_type = 'object'"
+                        " AND nt.container = bucket_objects.bucket"
+                        " AND nt.record_id = bucket_objects.key"
+                        " AND LOWER(nt.tag) = LOWER(?))"
+                    )
+                    obj_params.append(tag.strip())
+                obj_rows = c.execute(
+                    f"SELECT * FROM bucket_objects {obj_where} ORDER BY updated_at DESC LIMIT 1000",  # noqa: S608
+                    obj_params,
+                ).fetchall()
                 for row in obj_rows:
                     meta = json.loads(row["metadata"])
+                    env_tags = json.loads(row["tags"])
+                    tags = normalize_tags([*env_tags, *extract_payload_tags(meta)])
+                    # Quarantined objects NEVER appear in /v1/search.
+                    if "status:quarantined" in tags:
+                        continue
+                    allowed = json.loads(row["allowed_surfaces"])
+                    cohorts = json.loads(row["target_cohorts"])
+                    prod = str(row["producer_surface"])
+                    vis = row["visibility_scope"]
+                    owner = row["owner_key_id"]
+                    if not can_view_governed(
+                        visibility_scope=vis,
+                        producer_surface=prod,
+                        allowed_surfaces=allowed,
+                        owner_key_id=owner,
+                        tags=tags,
+                        viewer_surface=ctx.surface,
+                        viewer_key_id=ctx.key_id,
+                        is_admin=ctx.is_admin,
+                        direct_get=False,
+                        include_restricted=False,
+                    ):
+                        continue
                     title, l0 = _extract_title_and_l0(row["key"], meta)
                     if l0.startswith("fields=[]"):
                         l0 = f"{row['content_type']} ({int(row['size'])} B) in bucket '{row['bucket']}'"
-                    tags = _extract_tags(meta)
+                    if not matches_layer2_filters(
+                        haystack=f"{row['bucket']} {row['key']} {title} {l0} {row['metadata']}",
+                        tags=tags,
+                        producer_surface=prod,
+                        target_cohorts=cohorts,
+                        q="",
+                        tag=tag,
+                        category=category,
+                        cohort=cohort,
+                        surface=surface,
+                        is_admin=ctx.is_admin,
+                        include_restricted=include_restricted,
+                    ):
+                        continue
                     score = _similarity(
                         q_clean,
                         f"{row['bucket']} {row['key']} {title}",
@@ -214,13 +311,19 @@ class IntelligenceOps(BucketOps):
                         continue
                     scents.append(
                         NounScent(
+                            namespace=ns,
                             kind="object",
-                            namespace=row["bucket"],
+                            container=str(row["bucket"]),
                             key=row["key"],
                             version=int(row["version"]),
                             title=title,
                             l0_summary=l0,
+                            producer_surface=prod,
+                            visibility_scope=vis,
+                            allowed_surfaces=allowed,
+                            target_cohorts=cohorts,
                             tags=tags,
+                            owner_key_id=owner,
                             size_bytes=int(row["size"]),
                             sha256=str(row["sha256"]),
                             score=score,
@@ -228,24 +331,49 @@ class IntelligenceOps(BucketOps):
                         )
                     )
 
-        scents.sort(key=lambda s: (-s.score, -s.updated_at, s.namespace, s.key))
+        scents.sort(key=lambda s: (-s.score, -s.updated_at, s.namespace, s.container, s.key))
         return scents[:cap]
 
-    def feeds(self) -> list[FeedSummary]:
-        """List monotonic cursor-sequenced live delta feeds."""
+    def feeds(self, *, namespace: str | None = None) -> list[FeedSummary]:
+        """List monotonic cursor-sequenced live delta feeds in `namespace`."""
+        ns = self._resolve_ns(namespace)
+        ctx = self.current_scope()
         with self._read() as c:
             rows = c.execute(
-                "SELECT feed, COUNT(*) AS entries, MAX(seq) AS latest_seq, MAX(created_at) AS updated_at"
-                " FROM feed_entries GROUP BY feed ORDER BY feed"
+                "SELECT feed, seq, created_at, visibility_scope, producer_surface,"
+                " allowed_surfaces, owner_key_id, tags, target_cohorts"
+                " FROM feed_entries WHERE namespace = ? ORDER BY feed, seq",
+                (ns,),
             ).fetchall()
+        grouped: dict[str, tuple[int, int, float]] = {}
+        for r in rows:
+            if not can_view_governed(
+                visibility_scope=r["visibility_scope"],
+                producer_surface=r["producer_surface"],
+                allowed_surfaces=json.loads(r["allowed_surfaces"]),
+                owner_key_id=r["owner_key_id"],
+                tags=json.loads(r["tags"]),
+                viewer_surface=ctx.surface,
+                viewer_key_id=ctx.key_id,
+                is_admin=ctx.is_admin,
+                direct_get=False,
+            ):
+                continue
+            if not cohort_matches(
+                json.loads(r["target_cohorts"]),
+                None,
+                is_admin=ctx.is_admin,
+                include_restricted=False,
+            ):
+                continue
+            fd = str(r["feed"])
+            sq = int(r["seq"])
+            ts = float(r["created_at"])
+            prev_n, prev_seq, prev_ts = grouped.get(fd, (0, 0, 0.0))
+            grouped[fd] = (prev_n + 1, max(prev_seq, sq), max(prev_ts, ts))
         return [
-            FeedSummary(
-                feed=r["feed"],
-                entries=int(r["entries"]),
-                latest_seq=int(r["latest_seq"]),
-                updated_at=float(r["updated_at"]),
-            )
-            for r in rows
+            FeedSummary(feed=fd, entries=n, latest_seq=latest, updated_at=ts)
+            for fd, (n, latest, ts) in sorted(grouped.items())
         ]
 
     def publish_feed(
@@ -255,8 +383,15 @@ class IntelligenceOps(BucketOps):
         *,
         kind: str = "delta",
         summary: str = "",
+        namespace: str | None = None,
+        producer_surface: str | None = None,
+        visibility_scope: VisibilityScope = "public_commons",
+        allowed_surfaces: Sequence[str] | None = None,
+        target_cohorts: Sequence[str] | None = None,
+        tags: Sequence[str] | None = None,
+        owner_key_id: str | None = None,
     ) -> FeedEntry:
-        """Append one monotonic cursor-sequenced delta entry to `feed`."""
+        """Append one monotonic per-(namespace, feed) cursor-sequenced delta entry to `feed`."""
         _validate_bucket_name(feed)
         clean_kind = (kind or "delta").strip()[:64]
         clean_summary = " ".join(summary.split())[:MAX_L0_CHARS]
@@ -269,72 +404,232 @@ class IntelligenceOps(BucketOps):
                 f"{feed}: feed payload exceeds 64 KiB; store large bytes in a bucket"
             )
 
+        ns = self._resolve_ns(namespace)
+        prod, owner = self._resolve_write_governance(
+            producer_surface=producer_surface, owner_key_id=owner_key_id
+        )
+        vis: VisibilityScope = visibility_scope
+        allowed = normalize_surface_list(list(allowed_surfaces) if allowed_surfaces else [])
+        cohorts = normalize_cohorts(list(target_cohorts) if target_cohorts else ["all"])
+        effective_tags = normalize_tags([*(tags or ()), *extract_payload_tags(payload)])
+
         now = self.clock.now()
-        with self._tx() as c:
-            cur = c.execute(
-                "INSERT INTO feed_entries (feed, kind, summary, payload, created_at)"
-                " VALUES (?, ?, ?, ?, ?)",
-                (feed, clean_kind, clean_summary, payload_json, now),
-            )
-            seq = int(cur.lastrowid or 0)
-            self._event(
-                c,
-                "feed_published",
-                now,
-                detail={"feed": feed, "seq": seq, "kind": clean_kind},
-            )
+        seq = 0
+        for attempt in range(8):
+            with self._tx() as c:
+                row = c.execute(
+                    "SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq"
+                    " FROM feed_entries WHERE namespace = ? AND feed = ?",
+                    (ns, feed),
+                ).fetchone()
+                seq = int(row["next_seq"])
+                try:
+                    c.execute(
+                        "INSERT INTO feed_entries"
+                        " (namespace, seq, feed, kind, summary, payload,"
+                        "  producer_surface, visibility_scope, allowed_surfaces,"
+                        "  target_cohorts, tags, owner_key_id, created_at)"
+                        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (
+                            ns,
+                            seq,
+                            feed,
+                            clean_kind,
+                            clean_summary,
+                            payload_json,
+                            prod,
+                            vis,
+                            canonical_json(allowed),
+                            canonical_json(cohorts),
+                            canonical_json(effective_tags),
+                            owner,
+                            now,
+                        ),
+                    )
+                    self._event(
+                        c,
+                        "feed_published",
+                        now,
+                        namespace=ns,
+                        detail={"feed": feed, "seq": seq, "kind": clean_kind},
+                    )
+                    break
+                except sqlite3.IntegrityError:
+                    if attempt == 7:
+                        raise
         return FeedEntry(
+            namespace=ns,
             seq=seq,
             feed=feed,
             kind=clean_kind,
             summary=clean_summary,
             payload=dict(payload),
+            producer_surface=prod,
+            visibility_scope=vis,
+            allowed_surfaces=allowed,
+            target_cohorts=cohorts,
+            tags=effective_tags,
+            owner_key_id=owner,
             created_at=now,
         )
 
-    def poll_feed(self, feed: str, *, after: int = 0, limit: int = 100) -> list[FeedEntry]:
-        """Read delta entries in `feed` with monotonic `seq > after`."""
+    def poll_feed(
+        self,
+        feed: str,
+        *,
+        after: int = 0,
+        limit: int = 100,
+        q: str = "",
+        tag: str | None = None,
+        category: str | None = None,
+        cohort: str | None = None,
+        surface: str | None = None,
+        include_restricted: bool = False,
+        namespace: str | None = None,
+    ) -> list[FeedEntry]:
+        """Read delta entries in `feed` with monotonic `seq > after`, applying Layer 1 & Layer 2."""
         _validate_bucket_name(feed)
         cap = max(1, min(limit, 1000))
+        ns = self._resolve_ns(namespace)
+        ctx = self.current_scope()
+        has_filters = bool(q.strip() or tag or category or cohort or surface or include_restricted)
+        scan_cap = max(cap, 1000) if has_filters else max(cap * 2, 200)
         with self._read() as c:
             rows = c.execute(
-                "SELECT * FROM feed_entries WHERE feed = ? AND seq > ? ORDER BY seq LIMIT ?",
-                (feed, max(0, after), cap),
+                "SELECT * FROM feed_entries"
+                " WHERE namespace = ? AND feed = ? AND seq > ? ORDER BY seq LIMIT ?",
+                (ns, feed, max(0, after), scan_cap),
             ).fetchall()
-        return [
-            FeedEntry(
-                seq=int(r["seq"]),
-                feed=r["feed"],
-                kind=str(r["kind"]),
-                summary=str(r["summary"]),
-                payload=json.loads(r["payload"]),
-                created_at=float(r["created_at"]),
-            )
-            for r in rows
-        ]
 
-    def match_reflex(self, query: str, *, limit: int = 5) -> ReflexMatch:
+        out: list[FeedEntry] = []
+        for r in rows:
+            tags_list: list[str] = json.loads(r["tags"])
+            allowed: list[str] = json.loads(r["allowed_surfaces"])
+            cohorts: list[str] = json.loads(r["target_cohorts"])
+            prod = str(r["producer_surface"])
+            vis: VisibilityScope = r["visibility_scope"]
+            owner = r["owner_key_id"]
+            if not can_view_governed(
+                visibility_scope=vis,
+                producer_surface=prod,
+                allowed_surfaces=allowed,
+                owner_key_id=owner,
+                tags=tags_list,
+                viewer_surface=ctx.surface,
+                viewer_key_id=ctx.key_id,
+                is_admin=ctx.is_admin,
+                direct_get=False,
+                include_restricted=include_restricted,
+            ):
+                continue
+            if not matches_layer2_filters(
+                haystack=f"{r['feed']} {r['kind']} {r['summary']} {r['payload']}",
+                tags=tags_list,
+                producer_surface=prod,
+                target_cohorts=cohorts,
+                q=q,
+                tag=tag,
+                category=category,
+                cohort=cohort,
+                surface=surface,
+                is_admin=ctx.is_admin,
+                include_restricted=include_restricted,
+            ):
+                continue
+            out.append(
+                FeedEntry(
+                    namespace=r["namespace"],
+                    seq=int(r["seq"]),
+                    feed=r["feed"],
+                    kind=str(r["kind"]),
+                    summary=str(r["summary"]),
+                    payload=json.loads(r["payload"]),
+                    producer_surface=prod,
+                    visibility_scope=vis,
+                    allowed_surfaces=allowed,
+                    target_cohorts=cohorts,
+                    tags=tags_list,
+                    owner_key_id=owner,
+                    created_at=float(r["created_at"]),
+                )
+            )
+            if len(out) >= cap:
+                break
+        return out
+
+    def match_reflex(
+        self,
+        query: str,
+        *,
+        limit: int = 5,
+        tag: str | None = None,
+        category: str | None = None,
+        cohort: str | None = None,
+        surface: str | None = None,
+        include_restricted: bool = False,
+        namespace: str | None = None,
+    ) -> ReflexMatch:
         """0-call dual-resolution muscle-memory + fuzzy step recall + dead-end tombstone lookup."""
         cap = max(1, min(limit, 50))
+        ns = self._resolve_ns(namespace)
+        ctx = self.current_scope()
         q_clean = query.strip()
         q_sig = _canonical_sig(q_clean)
         hits: list[ReflexHit] = []
         with self._read() as c:
             rows = c.execute(
                 "SELECT r.* FROM record_heads h"
-                " JOIN records r ON r.store = h.store AND r.key = h.key AND r.version = h.version"
-                " WHERE h.store = ? ORDER BY r.created_at DESC LIMIT 500",
-                (REFLEX_STORE,),
+                " JOIN records r"
+                "   ON r.namespace = h.namespace AND r.store = h.store"
+                "  AND r.key = h.key AND r.version = h.version"
+                " WHERE h.namespace = ? AND h.store = ? ORDER BY r.created_at DESC LIMIT 500",
+                (ns, REFLEX_STORE),
             ).fetchall()
         for row in rows:
             val = json.loads(row["value"])
             if not isinstance(val, dict):
                 continue
+            env_tags: list[str] = json.loads(row["tags"])
+            tags = normalize_tags([*env_tags, *extract_payload_tags(val)])
+            # Quarantined reflexes NEVER appear in /v1/reflexes/match.
+            if "status:quarantined" in tags:
+                continue
+            allowed: list[str] = json.loads(row["allowed_surfaces"])
+            cohorts: list[str] = json.loads(row["target_cohorts"])
+            prod = str(row["producer_surface"])
+            vis: VisibilityScope = row["visibility_scope"]
+            owner = row["owner_key_id"]
+            if not can_view_governed(
+                visibility_scope=vis,
+                producer_surface=prod,
+                allowed_surfaces=allowed,
+                owner_key_id=owner,
+                tags=tags,
+                viewer_surface=ctx.surface,
+                viewer_key_id=ctx.key_id,
+                is_admin=ctx.is_admin,
+                direct_get=False,
+                include_restricted=False,
+            ):
+                continue
             pattern = str(val.get("pattern") or val.get("title") or row["key"])
+            _, l0 = _extract_title_and_l0(row["key"], val)
+            if not matches_layer2_filters(
+                haystack=f"{pattern} {l0} {row['value']}",
+                tags=tags,
+                producer_surface=prod,
+                target_cohorts=cohorts,
+                q="",
+                tag=tag,
+                category=category,
+                cohort=cohort,
+                surface=surface,
+                is_admin=ctx.is_admin,
+                include_restricted=include_restricted,
+            ):
+                continue
             p_sig = _canonical_sig(pattern)
             exact = bool(q_sig and p_sig and q_sig == p_sig)
-            tags = _extract_tags(val)
-            _, l0 = _extract_title_and_l0(row["key"], val)
             raw_steps = val.get("steps")
             steps = (
                 [s for s in raw_steps if isinstance(s, dict)] if isinstance(raw_steps, list) else []
@@ -353,6 +648,7 @@ class IntelligenceOps(BucketOps):
             )
             hits.append(
                 ReflexHit(
+                    namespace=ns,
                     reflex_id=str(val.get("reflex_id") or row["key"]),
                     pattern=pattern,
                     tier=tier,
@@ -361,14 +657,33 @@ class IntelligenceOps(BucketOps):
                     score=score,
                     l0_summary=l0,
                     steps=steps,
+                    producer_surface=prod,
+                    visibility_scope=vis,
+                    allowed_surfaces=allowed,
+                    target_cohorts=cohorts,
                     tags=tags,
+                    owner_key_id=owner,
                     version=int(row["version"]),
                 )
             )
 
         hits.sort(key=lambda h: (-int(h.exact_hit), -h.score, -h.verified_hits, h.reflex_id))
         top_hits = hits[:cap]
-        dead_ends = self.search_nouns(q_clean, store=DEAD_END_STORE, limit=5) if q_clean else []
+        dead_ends = (
+            self.search_nouns(
+                q_clean,
+                store=DEAD_END_STORE,
+                limit=5,
+                tag=tag,
+                category=category,
+                cohort=cohort,
+                surface=surface,
+                include_restricted=include_restricted,
+                namespace=ns,
+            )
+            if q_clean
+            else []
+        )
 
         rec_tier: Literal["0_call_reflex", "hybrid_1_call", "agent_decompose"] = "agent_decompose"
         if top_hits:
@@ -393,6 +708,7 @@ class IntelligenceOps(BucketOps):
         *,
         grant_queues: Sequence[str] | None = None,
         store_scope: bool = True,
+        namespace: str | None = None,
     ) -> HandshakeResponse:
         """Negotiate Surface Handshake v1.0: validate surface_id, clamp limits, and narrow scopes."""
         proto = request.protocol_version.strip()
@@ -409,10 +725,12 @@ class IntelligenceOps(BucketOps):
         clamped_max_chars = max(
             MIN_CLAMPED_CHARS, min(MAX_CLAMPED_CHARS, int(request.requested_max_chars))
         )
+        ns = self._resolve_ns(namespace)
 
         with self._read() as c:
             q_rows = c.execute(
-                "SELECT name, heartbeat_seconds FROM queues ORDER BY name"
+                "SELECT name, heartbeat_seconds FROM queues WHERE namespace = ? ORDER BY name",
+                (ns,),
             ).fetchall()
         defined_queues = [str(r["name"]) for r in q_rows]
         hb_seconds = min(int(r["heartbeat_seconds"]) for r in q_rows) if q_rows else 60
@@ -433,7 +751,7 @@ class IntelligenceOps(BucketOps):
                 q for q in candidates if any(fnmatchcase(q, pat) for pat in grant_queues)
             ]
 
-        shared_stores = [s.store for s in self.stores()[:64]]
+        shared_stores = [s.store for s in self.stores(namespace=ns)[:64]]
         isolated_prefix = f"{surface_id}."
         capabilities = list(HANDSHAKE_CAPABILITIES)
         receipt_material = {

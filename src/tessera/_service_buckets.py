@@ -1,12 +1,13 @@
 """HTTP routes for queryable noun stores, persistent named file buckets, and remote key management.
 
 Mounted by `tessera.service.create_app` behind the same `Gate` (`store` scope for stores/buckets,
-`admin` scope for key management) and POST-only write rules.
+`admin` scope for key management), Layer 1/2 governance filters, and POST-only write rules.
 """
 
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from typing import Any
 
 from fastapi import Depends, FastAPI, Request, Response
@@ -14,10 +15,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from starlette.concurrency import run_in_threadpool
 
 from tessera._service_intelligence import slice_bytes_response
-from tessera.access import Gate, bearer_secret
+from tessera.access import Gate
 from tessera.errors import InvalidRequest
 from tessera.grants import EFFECTS, KeyGrant
-from tessera.models import BucketConfig
+from tessera.models import VISIBILITY_SCOPES, BucketConfig
 from tessera.store import Store
 
 
@@ -32,11 +33,59 @@ class IssueKeyBody(BaseModel):
     days: float = Field(default=14.0, gt=0.0, le=365.0)
 
 
-def mount_storage_and_admin_routes(app: FastAPI, store: Store, gate: Gate) -> None:
-    def require_key(request: Request) -> KeyGrant:
-        return gate.grant(bearer_secret(request))
+def parse_governance_header(request: Request) -> dict[str, Any]:
+    """Parse optional `x-tessera-governance` JSON header + query overrides for binary blob/object uploads."""
+    out: dict[str, Any] = {}
+    if raw_gov := request.headers.get("x-tessera-governance"):
+        try:
+            parsed = json.loads(raw_gov)
+        except json.JSONDecodeError as exc:
+            raise InvalidRequest(f"x-tessera-governance is not valid JSON: {exc.msg}") from exc
+        if not isinstance(parsed, dict):
+            raise InvalidRequest("x-tessera-governance must be a JSON object")
+        if "producer_surface" in parsed and parsed["producer_surface"] is not None:
+            out["producer_surface"] = str(parsed["producer_surface"])
+        if "visibility_scope" in parsed and parsed["visibility_scope"] is not None:
+            vs = str(parsed["visibility_scope"])
+            if vs not in VISIBILITY_SCOPES:
+                raise InvalidRequest(f"invalid visibility_scope '{vs}'")
+            out["visibility_scope"] = vs
+        if "allowed_surfaces" in parsed and parsed["allowed_surfaces"] is not None:
+            if not isinstance(parsed["allowed_surfaces"], list):
+                raise InvalidRequest("allowed_surfaces must be a list")
+            out["allowed_surfaces"] = [str(x) for x in parsed["allowed_surfaces"]]
+        if "target_cohorts" in parsed and parsed["target_cohorts"] is not None:
+            if not isinstance(parsed["target_cohorts"], list):
+                raise InvalidRequest("target_cohorts must be a list")
+            out["target_cohorts"] = [str(x) for x in parsed["target_cohorts"]]
+        if "tags" in parsed and parsed["tags"] is not None:
+            if not isinstance(parsed["tags"], list):
+                raise InvalidRequest("tags must be a list")
+            out["tags"] = [str(x) for x in parsed["tags"]]
 
-    key: Any = Depends(require_key)
+    qp = request.query_params
+    if q_vis := qp.get("visibility_scope"):
+        if q_vis not in VISIBILITY_SCOPES:
+            raise InvalidRequest(f"invalid visibility_scope '{q_vis}'")
+        out["visibility_scope"] = q_vis
+    if q_surf := qp.get("producer_surface"):
+        out["producer_surface"] = q_surf
+    if q_tags := qp.getlist("tag"):
+        existing = list(out.get("tags", []))
+        existing.extend(t for t in q_tags if t.strip())
+        out["tags"] = existing
+    if q_cohorts := qp.getlist("cohort"):
+        out["target_cohorts"] = [c for c in q_cohorts if c.strip()]
+    return out
+
+
+def mount_storage_and_admin_routes(
+    app: FastAPI,
+    store: Store,
+    gate: Gate,
+    require_key_dep: Callable[..., Any],
+) -> None:
+    key: Any = Depends(require_key_dep)
 
     @app.get("/v1/stores")
     def list_stores(grant: KeyGrant = key) -> dict[str, Any]:
@@ -48,10 +97,26 @@ def mount_storage_and_admin_routes(app: FastAPI, store: Store, gate: Gate) -> No
         store_name: str,
         prefix: str = "",
         limit: int = 100,
+        q: str = "",
+        tag: str | None = None,
+        category: str | None = None,
+        cohort: str | None = None,
+        surface: str | None = None,
+        include_restricted: bool = False,
         grant: KeyGrant = key,
     ) -> dict[str, Any]:
         gate.store_scope(grant)
-        records = store.list_records(store_name, prefix=prefix, limit=limit)
+        records = store.list_records(
+            store_name,
+            prefix=prefix,
+            limit=limit,
+            q=q,
+            tag=tag,
+            category=category,
+            cohort=cohort,
+            surface=surface,
+            include_restricted=include_restricted,
+        )
         return {"records": [r.model_dump(mode="json") for r in records]}
 
     @app.post("/v1/buckets/define")
@@ -69,10 +134,26 @@ def mount_storage_and_admin_routes(app: FastAPI, store: Store, gate: Gate) -> No
         bucket_name: str,
         prefix: str = "",
         limit: int = 100,
+        q: str = "",
+        tag: str | None = None,
+        category: str | None = None,
+        cohort: str | None = None,
+        surface: str | None = None,
+        include_restricted: bool = False,
         grant: KeyGrant = key,
     ) -> dict[str, Any]:
         gate.store_scope(grant)
-        objs = store.list_objects(bucket_name, prefix=prefix, limit=limit)
+        objs = store.list_objects(
+            bucket_name,
+            prefix=prefix,
+            limit=limit,
+            q=q,
+            tag=tag,
+            category=category,
+            cohort=cohort,
+            surface=surface,
+            include_restricted=include_restricted,
+        )
         return {"objects": [o.model_dump(mode="json") for o in objs]}
 
     @app.post("/v1/buckets/{bucket_name}/objects/{object_key:path}", status_code=201)
@@ -98,6 +179,7 @@ def mount_storage_and_admin_routes(app: FastAPI, store: Store, gate: Gate) -> No
             if not isinstance(parsed, dict):
                 raise InvalidRequest("x-tessera-metadata must be a JSON object")
             metadata = parsed
+        gov = parse_governance_header(request)
         content_type = request.headers.get("content-type") or "application/octet-stream"
         data = await request.body()
         saved = await run_in_threadpool(
@@ -108,6 +190,7 @@ def mount_storage_and_admin_routes(app: FastAPI, store: Store, gate: Gate) -> No
                 content_type=content_type,
                 metadata=metadata,
                 expected_version=expected_version,
+                **gov,
             )
         )
         return saved.model_dump(mode="json")

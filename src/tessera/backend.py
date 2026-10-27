@@ -57,7 +57,7 @@ class Backend(Protocol):
         self,
         task_id: str,
         fencing_token: int,
-        output: dict[str, Any],
+        output: Any,
         *,
         idempotency_key: str,
         ok: bool = True,

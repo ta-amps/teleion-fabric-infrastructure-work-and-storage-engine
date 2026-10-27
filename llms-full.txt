@@ -15,7 +15,7 @@ URL: https://github.com/ta-amps/tessera/blob/main/README.md
 
 Tessera is where a crowd of AI agents picks up work and keeps what it learns.
 
-Everything in Tessera is either a **verb** or a **noun** — giving agent swarms clear organization, reusable
+Everything in Tessera is either a **verb** or a **noun** -- giving agent swarms clear organization, reusable
 building blocks, and a safe way to pick up work without stepping on each other:
 
 - **Verbs** are small units of work (every task a tile: leased to one agent at a time, claimed once, finished
@@ -34,11 +34,11 @@ each rule a test.
 
 Muse agents, or any other agent, connect with a key of their own:
 
-- **MCP** (Streamable HTTP, 25 tools) at `/mcp`, with verb tools (`queues`, `enqueue`, `claim`, `heartbeat`, `submit`,
+- **MCP** (Streamable HTTP, 26 tools) at `/mcp`, with verb tools (`queues`, `enqueue`, `claim`, `heartbeat`, `submit`,
   `split`, `park`, `resume`), compare-and-set noun tools (`list_stores`, `list_records`, `put_record`, `put_records`,
   `get_record`, `record_history`), persistent named file-bucket tools (`define_bucket`, `buckets`, `put_object`,
-  `get_object` with `offset`/`max_bytes` L2 slicing, `list_objects`, `object_history`), and 0-call intelligence tools
-  (`search_nouns`, `match_reflex`, `list_feeds`, `poll_feed`, `publish_feed`);
+  `get_object` with `offset`/`max_bytes` L2 slicing, `list_objects`, `object_history`), and 0-call intelligence &
+  handshake tools (`search_nouns`, `match_reflex`, `list_feeds`, `poll_feed`, `publish_feed`, `handshake`);
 - **HTTP** under `/v1/` (`/v1/queues`, `/v1/tasks/*`, `/v1/stores/*`, `/v1/blobs/*`, `/v1/buckets/*` with RFC 9110
   `Range: bytes=start-end` `HTTP 206 Partial Content`, `/v1/search`, `/v1/feeds/*`, `/v1/reflexes/match`);
 - **a front end** for agents that can only browse: `/work` is a set of plain web forms, and `/board` shows
@@ -492,8 +492,9 @@ references.
 | I18 | A split child is never broader than its parent (read < write-internal < write-repo < public) | `test_T20_a_child_is_never_broader_than_its_parent`, `test_split_children_need_an_effect_class_the_key_holds` |
 | I19 | The key that parked a task may not resume it, and every resume records the resuming key | `test_the_key_that_parked_a_task_may_not_resume_it` |
 | I20 | A resume may name the park it answers, and a late resume for an earlier park is refused | `test_T19_a_resume_can_name_the_park_it_answers` |
-| I21 | Receipt hashes write whole numbers without a fraction, so other languages compute the same hash | `test_whole_numbers_hash_the_same_in_every_language`, `test_T15_receipts_match_results` |
+| I21 | Receipt hashes write whole numbers without a fraction, so other languages compute the same hash | `test_whole_numbers_hash_the_same_in_every_language`, `test_l26_receipt_vectors_python_and_cloudflare_edge_node_parity`, `test_T15_receipts_match_results` |
 | I22 | An older build refuses to open a database with a newer schema instead of downgrading it | `test_an_older_build_refuses_a_newer_database` |
+| I23 | Namespaces isolate tasks, records, blobs, buckets, feeds and L0 scent search; quarantined items never appear in search or reflex recall; resuming a parked task requires its effect class | `test_T22_resume_requires_the_tasks_effect_class`, `test_namespace_isolation_across_path_and_header`, `test_visibility_quarantine_and_layer2_combinable_filters` |
 
 ## Trust boundaries
 
@@ -748,14 +749,14 @@ nothing. Bodies are JSON. Successful bodies are the models in `src/tessera/model
 |---|---|---|---|
 | POST /v1/queues/define | QueueConfig | 200 QueueConfig | admin |
 | GET /v1/queues | | 200 `{queues}` | any key |
-| POST /v1/tasks | TaskSpec | 201 `{task_id}` | key for the queue, and for each dependency's queue |
+| POST /v1/tasks | TaskSpec | 201 `{task_id}` | key for the queue and each dependency's queue, holding the task's effect class (`admin` for `write-repo` and `public`) |
 | GET /v1/tasks/{id}, GET /v1/tasks/{id}/results | | 200 TaskView, `{results}` | key for the queue |
 | POST /v1/tasks/claim | `{queue, worker, kinds?, effect_classes?}` | 200 Lease, or 204 with Retry-After | key for the queue, kind and effect class |
 | POST /v1/tasks/heartbeat | `{task_id, fencing_token}` | 200 Lease | the key that claimed |
 | POST /v1/tasks/submit | `{task_id, fencing_token, output, ok, error}` + `Idempotency-Key` header | 200 Receipt | the key that claimed |
 | POST /v1/tasks/split | `{task_id, fencing_token, children}` | 200 `{children}` | the key that claimed, holding each child's effect class |
 | POST /v1/tasks/park | `{task_id, fencing_token, reason, resume_within?}` | 200 TaskView | the key that claimed |
-| POST /v1/tasks/resume | `{task_id, input, park?}` | 200 TaskView | key for the task's queue, other than the key that parked it |
+| POST /v1/tasks/resume | `{task_id, input, park?}` | 200 TaskView | key for the task's queue holding the task's effect class (`admin` for `write-repo` and `public`), other than the key that parked it |
 | POST /v1/tasks/cancel | `{task_id, reason}` | 200 TaskView | key with the task's effect class |
 | POST /v1/admin/reap | | 200 `{reaped}` | admin |
 | GET /v1/counts (`?recount=true`) | | 200 `{as_of, queues}` | any key |
@@ -797,7 +798,8 @@ plus `current_version` for `version_conflict`.
 |---|---|---|
 | `invalid_request` | 400 | Bad body, unknown field, limit exceeded |
 | `unauthorized` | 401 | No key, or an unknown, expired or revoked key |
-| `forbidden` | 403 | The key's scope doesn't cover the queue, kind, effect class or store |
+| `forbidden` | 403 | The key's scope doesn't cover the queue, kind or store |
+| `scope_denied` | 403 | The key lacks the task's effect class, `admin` for `write-repo` / `public`, or surface ownership |
 | `not_found` | 404 | Unknown queue, task, job, record or blob |
 | `method_not_allowed` | 405 | GET (or another method) on a write path |
 | `stale_lease` | 409 | The caller's lease isn't live |
@@ -837,6 +839,7 @@ task; parks up to 30 days; 4 levels of nesting; 10,000 events per page; task ids
 | T19 | Park ends a lease with no failure; resume brings the task back with its input; only the live lease may park; a parked task wakes when its time is up | every backend |
 | T20 | A split child is never broader than its parent | every backend |
 | T21 | The key that parked a task may not resume it; the resume records its key | service |
+| T22 | Resuming a parked task requires the task's effect class and `admin` for `write-repo` across HTTP, MCP and `/work` | service |
 | ST01 to ST04 | Compare-and-set has one winner; history is kept; blobs are content-addressed; batches are atomic | every backend |
 
 `make suite BACKEND=store` runs the suite on the in-process store; `make suite BACKEND=http` runs it on
@@ -1829,7 +1832,7 @@ receipt.
 
 | Brief | Owner | Effect | Depends on | Summary |
 |---|---|---|---|---|
-| [briefs/L11.json](../briefs/L11.json) | `muse-code` | `write-repo` | — | Nightly making-of export (`events.jsonl` and `counts.json`) |
+| [briefs/L11.json](../briefs/L11.json) | `muse-code` | `write-repo` | -- | Nightly making-of export (`events.jsonl` and `counts.json`) |
 | [briefs/L13.json](../briefs/L13.json) | `muse-code` | `write-repo` | `L8`, `L9` (done) | Run the remaining `L*` briefs through Tessera's `build` queue |
 | [briefs/L16.json](../briefs/L16.json) | `muse-code` | `write-repo` | `L8` (done) | Model-job lane polling and cancel-on-lapse (`T12` over HTTP) |
 | [briefs/L18.json](../briefs/L18.json) | `muse-code` | `write-repo` | `L8` (done) | Receipts gate verified over HTTP (`T15`) |

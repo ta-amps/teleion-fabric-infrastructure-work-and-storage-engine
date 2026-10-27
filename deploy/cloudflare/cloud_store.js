@@ -1,25 +1,37 @@
 // TesseraCoordinator: single-writer SQLite Durable Object (`new_sqlite_classes`) implementing
 // 100% of Tessera Spec v0.2 (queues, 5 verbs, dependencies, waves, park/resume, model jobs,
-// counts, events, scoped keys, queryable CAS records, and persistent named file buckets),
+// counts, events, scoped keys, queryable CAS records, persistent named file buckets,
+// 6-field governance envelope, namespace isolation, and Console Board v2 snapshots),
 // plus automatic lease/park reaping via Durable Object alarms and D1 cloud projection mirroring.
 
 import { DurableObject } from "cloudflare:workers";
 import { TESSERA_VERSION } from "./cloud_pages.js";
-import { sha256Hex } from "./cloud_buckets.js";
+import { canonicalJson, receiptHash, sha256Hex } from "./cloud_buckets.js";
 import {
+  PROTECTED_SURFACES,
+  canViewGoverned,
+  extractTags,
   listFeeds,
   matchReflex,
+  matchesLayer2Filters,
   negotiateHandshake,
+  normalizeGovernance,
+  normalizeNamespace,
+  normalizeSurface,
   pollFeed,
   publishFeed,
   recordDeadEndTombstone,
   searchNouns,
+  surfaceSlug,
 } from "./cloud_intelligence.js";
+
+export { canonicalJson, receiptHash };
 
 const NAME_RE = /^[a-z0-9][a-z0-9_.-]{0,63}$/;
 const TASK_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/;
 const RECORD_KEY_RE = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$/;
 const OBJECT_KEY_RE = /^[A-Za-z0-9][A-Za-z0-9_./:-]{0,511}$/;
+const SCOPE_SURFACE_RE = /^surface:[a-z0-9][a-z0-9_-]{0,47}$/;
 
 const EFFECTS = ["read", "write-internal", "write-repo"];
 const EFFECT_RANK = { read: 0, "write-internal": 1, "write-repo": 2, public: 3 };
@@ -55,37 +67,13 @@ class StoreErr extends Error {
 const badReq = (d) => new StoreErr(400, "invalid_request", d);
 const unauth = (d) => new StoreErr(401, "unauthorized", d);
 const forbid = (d) => new StoreErr(403, "forbidden", d);
+const scopeDenied = (d) => new StoreErr(403, "scope_denied", d);
 const notFound = (d) => new StoreErr(404, "not_found", d);
 const staleLease = (d) => new StoreErr(409, "stale_lease", d);
 const verConflict = (d, cv) => new StoreErr(409, "version_conflict", d, { current_version: cv ?? null });
 const idemConflict = (d) => new StoreErr(409, "idempotency_conflict", d);
 const badState = (d) => new StoreErr(409, "invalid_state", d);
 const rateLim = (d, ra) => new StoreErr(429, "rate_limited", d, { retry_after: ra });
-
-export function canonicalJson(val) {
-  if (val === null || typeof val === "boolean" || typeof val === "string") {
-    return JSON.stringify(val);
-  }
-  if (typeof val === "number") {
-    if (!Number.isFinite(val)) throw badReq("JSON value may not contain NaN or Infinity");
-    return Object.is(val, -0) ? "0" : JSON.stringify(val);
-  }
-  if (Array.isArray(val)) {
-    return "[" + val.map((v) => canonicalJson(v)).join(",") + "]";
-  }
-  if (typeof val === "object") {
-    const keys = Object.keys(val).sort();
-    return (
-      "{" +
-      keys
-        .filter((k) => val[k] !== undefined)
-        .map((k) => `${JSON.stringify(k)}:${canonicalJson(val[k])}`)
-        .join(",") +
-      "}"
-    );
-  }
-  throw badReq(`unsupported JSON value type: ${typeof val}`);
-}
 
 function globMatch(name, pattern) {
   if (pattern === "*") return true;
@@ -122,10 +110,23 @@ function validateObjectKey(key) {
   }
 }
 
-const SCHEMA_STATEMENTS = [
+function isValidScope(scope) {
+  return scope === "admin" || scope === "store" || SCOPE_SURFACE_RE.test(scope);
+}
+
+function parseJsonSafe(raw, fallback) {
+  try {
+    return raw == null ? fallback : JSON.parse(raw);
+  } catch {
+    return fallback;
+  }
+}
+
+const SCHEMA_V3_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS queues (
-    name TEXT PRIMARY KEY,
+    namespace TEXT NOT NULL DEFAULT 'main',
+    name TEXT NOT NULL,
     lease_seconds INTEGER NOT NULL,
     heartbeat_seconds INTEGER NOT NULL,
     miss_limit INTEGER NOT NULL,
@@ -134,12 +135,14 @@ const SCHEMA_STATEMENTS = [
     backoff_cap_seconds REAL NOT NULL,
     weight INTEGER NOT NULL DEFAULT 1,
     created_at REAL NOT NULL,
-    updated_at REAL NOT NULL
+    updated_at REAL NOT NULL,
+    PRIMARY KEY (namespace, name)
   )`,
   `CREATE TABLE IF NOT EXISTS tasks (
-    id TEXT PRIMARY KEY,
-    queue TEXT NOT NULL REFERENCES queues(name),
-    parent_id TEXT REFERENCES tasks(id),
+    namespace TEXT NOT NULL DEFAULT 'main',
+    id TEXT NOT NULL,
+    queue TEXT NOT NULL,
+    parent_id TEXT,
     state TEXT NOT NULL CHECK (state IN ('ready', 'leased', 'waiting', 'done', 'dead', 'cancelled')),
     kind TEXT NOT NULL,
     effect_class TEXT NOT NULL CHECK (effect_class IN ('read', 'write-internal', 'write-repo', 'public')),
@@ -156,47 +159,63 @@ const SCHEMA_STATEMENTS = [
     wait_reason TEXT,
     wake_at REAL,
     parked_by TEXT,
-    parks INTEGER NOT NULL DEFAULT 0
+    parks INTEGER NOT NULL DEFAULT 0,
+    idempotency_key TEXT,
+    producer_surface TEXT NOT NULL DEFAULT 'surface:tessera',
+    visibility_scope TEXT NOT NULL DEFAULT 'public_commons',
+    allowed_surfaces TEXT NOT NULL DEFAULT '[]',
+    target_cohorts TEXT NOT NULL DEFAULT '["all"]',
+    tags TEXT NOT NULL DEFAULT '[]',
+    owner_key_id TEXT,
+    PRIMARY KEY (namespace, id)
   )`,
-  `CREATE INDEX IF NOT EXISTS idx_tasks_claim ON tasks (queue, state, priority DESC, created_at, id)`,
-  `CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks (parent_id)`,
-  `CREATE INDEX IF NOT EXISTS idx_tasks_wake ON tasks (wake_at) WHERE wake_at IS NOT NULL`,
+  `CREATE INDEX IF NOT EXISTS idx_tasks_claim ON tasks (namespace, queue, state, priority DESC, created_at, id)`,
+  `CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks (namespace, parent_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_tasks_wake ON tasks (namespace, wake_at) WHERE wake_at IS NOT NULL`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_idempotency ON tasks (namespace, queue, idempotency_key) WHERE idempotency_key IS NOT NULL`,
   `CREATE TABLE IF NOT EXISTS task_deps (
-    task_id TEXT NOT NULL REFERENCES tasks(id),
-    depends_on TEXT NOT NULL REFERENCES tasks(id),
-    PRIMARY KEY (task_id, depends_on)
+    namespace TEXT NOT NULL DEFAULT 'main',
+    task_id TEXT NOT NULL,
+    depends_on TEXT NOT NULL,
+    PRIMARY KEY (namespace, task_id, depends_on)
   )`,
-  `CREATE INDEX IF NOT EXISTS idx_task_deps_on ON task_deps (depends_on)`,
+  `CREATE INDEX IF NOT EXISTS idx_task_deps_on ON task_deps (namespace, depends_on)`,
   `CREATE TABLE IF NOT EXISTS task_inputs (
-    task_id TEXT NOT NULL REFERENCES tasks(id),
+    namespace TEXT NOT NULL DEFAULT 'main',
+    task_id TEXT NOT NULL,
     seq INTEGER NOT NULL,
     input TEXT NOT NULL,
     created_at REAL NOT NULL,
-    PRIMARY KEY (task_id, seq)
+    PRIMARY KEY (namespace, task_id, seq)
   )`,
   `CREATE TABLE IF NOT EXISTS leases (
-    task_id TEXT PRIMARY KEY REFERENCES tasks(id),
+    namespace TEXT NOT NULL DEFAULT 'main',
+    task_id TEXT NOT NULL,
     fencing_token INTEGER NOT NULL,
     worker TEXT NOT NULL,
     key_id TEXT,
     claimed_at REAL NOT NULL,
     last_heartbeat_at REAL NOT NULL,
     expires_at REAL NOT NULL,
-    hard_expires_at REAL NOT NULL
+    hard_expires_at REAL NOT NULL,
+    PRIMARY KEY (namespace, task_id)
   )`,
-  `CREATE INDEX IF NOT EXISTS idx_leases_expiry ON leases (expires_at)`,
+  `CREATE INDEX IF NOT EXISTS idx_leases_expiry ON leases (namespace, expires_at)`,
   `CREATE TABLE IF NOT EXISTS results (
-    idempotency_key TEXT PRIMARY KEY,
-    task_id TEXT NOT NULL REFERENCES tasks(id),
+    namespace TEXT NOT NULL DEFAULT 'main',
+    idempotency_key TEXT NOT NULL,
+    task_id TEXT NOT NULL,
     fencing_token INTEGER NOT NULL,
     ok INTEGER NOT NULL,
     output TEXT NOT NULL,
     error TEXT,
     receipt_hash TEXT NOT NULL,
     state_after TEXT NOT NULL,
-    created_at REAL NOT NULL
+    completed_by_key TEXT,
+    created_at REAL NOT NULL,
+    PRIMARY KEY (namespace, idempotency_key)
   )`,
-  `CREATE INDEX IF NOT EXISTS idx_results_task ON results (task_id, created_at)`,
+  `CREATE INDEX IF NOT EXISTS idx_results_task ON results (namespace, task_id, created_at)`,
   `CREATE TABLE IF NOT EXISTS keys (
     key_id TEXT PRIMARY KEY,
     key_hash TEXT NOT NULL UNIQUE,
@@ -210,8 +229,9 @@ const SCHEMA_STATEMENTS = [
     revoked_at REAL
   )`,
   `CREATE TABLE IF NOT EXISTS jobs (
-    job_id TEXT PRIMARY KEY,
-    task_id TEXT NOT NULL REFERENCES tasks(id),
+    namespace TEXT NOT NULL DEFAULT 'main',
+    job_id TEXT NOT NULL,
+    task_id TEXT NOT NULL,
     fencing_token INTEGER NOT NULL,
     model TEXT NOT NULL,
     status TEXT NOT NULL,
@@ -220,11 +240,13 @@ const SCHEMA_STATEMENTS = [
     output_tokens INTEGER,
     cost_usd REAL,
     created_at REAL NOT NULL,
-    updated_at REAL NOT NULL
+    updated_at REAL NOT NULL,
+    PRIMARY KEY (namespace, job_id)
   )`,
-  `CREATE INDEX IF NOT EXISTS idx_jobs_task ON jobs (task_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_jobs_task ON jobs (namespace, task_id)`,
   `CREATE TABLE IF NOT EXISTS events (
     seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    namespace TEXT NOT NULL DEFAULT 'main',
     ts REAL NOT NULL,
     type TEXT NOT NULL,
     task_id TEXT,
@@ -233,54 +255,79 @@ const SCHEMA_STATEMENTS = [
     fencing_token INTEGER,
     detail TEXT NOT NULL DEFAULT '{}'
   )`,
+  `CREATE INDEX IF NOT EXISTS idx_events_ns_seq ON events (namespace, seq)`,
   `CREATE TABLE IF NOT EXISTS counts (
-    queue TEXT PRIMARY KEY REFERENCES queues(name),
+    namespace TEXT NOT NULL DEFAULT 'main',
+    queue TEXT NOT NULL,
     ready INTEGER NOT NULL DEFAULT 0,
     leased INTEGER NOT NULL DEFAULT 0,
     waiting INTEGER NOT NULL DEFAULT 0,
     done INTEGER NOT NULL DEFAULT 0,
     dead INTEGER NOT NULL DEFAULT 0,
-    cancelled INTEGER NOT NULL DEFAULT 0
+    cancelled INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (namespace, queue)
   )`,
   `CREATE TABLE IF NOT EXISTS records (
+    namespace TEXT NOT NULL DEFAULT 'main',
     store TEXT NOT NULL,
     key TEXT NOT NULL,
     version INTEGER NOT NULL,
     value TEXT NOT NULL,
     created_at REAL NOT NULL,
-    PRIMARY KEY (store, key, version)
+    producer_surface TEXT NOT NULL DEFAULT 'surface:tessera',
+    visibility_scope TEXT NOT NULL DEFAULT 'public_commons',
+    allowed_surfaces TEXT NOT NULL DEFAULT '[]',
+    target_cohorts TEXT NOT NULL DEFAULT '["all"]',
+    tags TEXT NOT NULL DEFAULT '[]',
+    owner_key_id TEXT,
+    PRIMARY KEY (namespace, store, key, version)
   )`,
   `CREATE TABLE IF NOT EXISTS record_heads (
+    namespace TEXT NOT NULL DEFAULT 'main',
     store TEXT NOT NULL,
     key TEXT NOT NULL,
     version INTEGER NOT NULL,
-    PRIMARY KEY (store, key)
+    producer_surface TEXT NOT NULL DEFAULT 'surface:tessera',
+    visibility_scope TEXT NOT NULL DEFAULT 'public_commons',
+    allowed_surfaces TEXT NOT NULL DEFAULT '[]',
+    target_cohorts TEXT NOT NULL DEFAULT '["all"]',
+    tags TEXT NOT NULL DEFAULT '[]',
+    owner_key_id TEXT,
+    PRIMARY KEY (namespace, store, key)
   )`,
   `CREATE TABLE IF NOT EXISTS blobs (
     sha256 TEXT PRIMARY KEY,
     size INTEGER NOT NULL,
     created_at REAL NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS blob_namespaces (
+    namespace TEXT NOT NULL DEFAULT 'main',
+    sha256 TEXT NOT NULL,
+    producer_surface TEXT NOT NULL DEFAULT 'surface:tessera',
+    visibility_scope TEXT NOT NULL DEFAULT 'public_commons',
+    allowed_surfaces TEXT NOT NULL DEFAULT '[]',
+    target_cohorts TEXT NOT NULL DEFAULT '["all"]',
+    tags TEXT NOT NULL DEFAULT '[]',
+    owner_key_id TEXT,
+    created_at REAL NOT NULL,
+    PRIMARY KEY (namespace, sha256)
+  )`,
   `CREATE TABLE IF NOT EXISTS buckets (
-    name TEXT PRIMARY KEY,
+    namespace TEXT NOT NULL DEFAULT 'main',
+    name TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     created_at REAL NOT NULL,
-    updated_at REAL NOT NULL
+    updated_at REAL NOT NULL,
+    producer_surface TEXT NOT NULL DEFAULT 'surface:tessera',
+    visibility_scope TEXT NOT NULL DEFAULT 'public_commons',
+    allowed_surfaces TEXT NOT NULL DEFAULT '[]',
+    target_cohorts TEXT NOT NULL DEFAULT '["all"]',
+    tags TEXT NOT NULL DEFAULT '[]',
+    owner_key_id TEXT,
+    PRIMARY KEY (namespace, name)
   )`,
   `CREATE TABLE IF NOT EXISTS bucket_objects (
-    bucket TEXT NOT NULL REFERENCES buckets(name),
-    key TEXT NOT NULL,
-    version INTEGER NOT NULL,
-    sha256 TEXT NOT NULL,
-    size INTEGER NOT NULL,
-    content_type TEXT NOT NULL,
-    metadata TEXT NOT NULL DEFAULT '{}',
-    created_at REAL NOT NULL,
-    updated_at REAL NOT NULL,
-    PRIMARY KEY (bucket, key)
-  )`,
-  `CREATE INDEX IF NOT EXISTS idx_bucket_objects_prefix ON bucket_objects (bucket, key)`,
-  `CREATE TABLE IF NOT EXISTS bucket_object_versions (
+    namespace TEXT NOT NULL DEFAULT 'main',
     bucket TEXT NOT NULL,
     key TEXT NOT NULL,
     version INTEGER NOT NULL,
@@ -289,17 +336,61 @@ const SCHEMA_STATEMENTS = [
     content_type TEXT NOT NULL,
     metadata TEXT NOT NULL DEFAULT '{}',
     created_at REAL NOT NULL,
-    PRIMARY KEY (bucket, key, version)
+    updated_at REAL NOT NULL,
+    producer_surface TEXT NOT NULL DEFAULT 'surface:tessera',
+    visibility_scope TEXT NOT NULL DEFAULT 'public_commons',
+    allowed_surfaces TEXT NOT NULL DEFAULT '[]',
+    target_cohorts TEXT NOT NULL DEFAULT '["all"]',
+    tags TEXT NOT NULL DEFAULT '[]',
+    owner_key_id TEXT,
+    PRIMARY KEY (namespace, bucket, key)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_bucket_objects_prefix ON bucket_objects (namespace, bucket, key)`,
+  `CREATE TABLE IF NOT EXISTS bucket_object_versions (
+    namespace TEXT NOT NULL DEFAULT 'main',
+    bucket TEXT NOT NULL,
+    key TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    sha256 TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    content_type TEXT NOT NULL,
+    metadata TEXT NOT NULL DEFAULT '{}',
+    created_at REAL NOT NULL,
+    producer_surface TEXT NOT NULL DEFAULT 'surface:tessera',
+    visibility_scope TEXT NOT NULL DEFAULT 'public_commons',
+    allowed_surfaces TEXT NOT NULL DEFAULT '[]',
+    target_cohorts TEXT NOT NULL DEFAULT '["all"]',
+    tags TEXT NOT NULL DEFAULT '[]',
+    owner_key_id TEXT,
+    PRIMARY KEY (namespace, bucket, key, version)
   )`,
   `CREATE TABLE IF NOT EXISTS feed_entries (
-    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    namespace TEXT NOT NULL DEFAULT 'main',
+    seq INTEGER NOT NULL,
     feed TEXT NOT NULL,
     kind TEXT NOT NULL DEFAULT 'delta',
     summary TEXT NOT NULL DEFAULT '',
     payload TEXT NOT NULL DEFAULT '{}',
-    created_at REAL NOT NULL
+    created_at REAL NOT NULL,
+    producer_surface TEXT NOT NULL DEFAULT 'surface:tessera',
+    visibility_scope TEXT NOT NULL DEFAULT 'public_commons',
+    allowed_surfaces TEXT NOT NULL DEFAULT '[]',
+    target_cohorts TEXT NOT NULL DEFAULT '["all"]',
+    tags TEXT NOT NULL DEFAULT '[]',
+    owner_key_id TEXT,
+    UNIQUE (namespace, feed, seq)
   )`,
-  `CREATE INDEX IF NOT EXISTS idx_feed_entries_feed_seq ON feed_entries (feed, seq)`,
+  `CREATE INDEX IF NOT EXISTS idx_feed_entries_ns_feed_seq ON feed_entries (namespace, feed, seq)`,
+  `CREATE TABLE IF NOT EXISTS noun_tags (
+    namespace TEXT NOT NULL DEFAULT 'main',
+    noun_kind TEXT NOT NULL,
+    container TEXT NOT NULL,
+    noun_id TEXT NOT NULL,
+    tag TEXT NOT NULL,
+    PRIMARY KEY (namespace, noun_kind, container, noun_id, tag)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_noun_tags_lookup ON noun_tags (namespace, tag, noun_kind, container)`,
 ];
 
 const DEFAULT_QUEUES = [
@@ -340,51 +431,12 @@ export class TesseraCoordinator extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
     this.claimHits = new Map();
+    this.namespace = "main";
     this.isPrimary = true;
+    this.seededNamespaces = new Set();
     ctx.blockConcurrencyWhile(async () => {
-      const sql = this.ctx.storage.sql;
-      for (const stmt of SCHEMA_STATEMENTS) {
-        sql.exec(stmt);
-      }
-      const seeded = this._one("SELECT value FROM meta WHERE key = 'cloud_seeded'");
-      const spineSeeded = this._one("SELECT value FROM meta WHERE key = 'value_spine_v2'");
-      if (!seeded || !spineSeeded) {
-        const now = Date.now() / 1000;
-        this.ctx.storage.transactionSync(() => {
-          for (const [name, leaseSec, beatSec] of DEFAULT_QUEUES) {
-            sql.exec(
-              "INSERT OR IGNORE INTO queues (name, lease_seconds, heartbeat_seconds, miss_limit, max_attempts, backoff_base_seconds, backoff_cap_seconds, weight, created_at, updated_at) VALUES (?, ?, ?, 3, 3, 30.0, 900.0, 1, ?, ?)",
-              name,
-              leaseSec,
-              beatSec,
-              now,
-              now
-            );
-            sql.exec("INSERT OR IGNORE INTO counts (queue) VALUES (?)", name);
-          }
-          for (const [bName, desc] of DEFAULT_BUCKETS) {
-            sql.exec(
-              "INSERT OR IGNORE INTO buckets (name, description, created_at, updated_at) VALUES (?, ?, ?, ?)",
-              bName,
-              desc,
-              now,
-              now
-            );
-          }
-          sql.exec(
-            "INSERT INTO meta (key, value) VALUES ('cloud_seeded', '1') ON CONFLICT (key) DO UPDATE SET value = '1'"
-          );
-          sql.exec(
-            "INSERT INTO meta (key, value) VALUES ('value_spine_v2', '1') ON CONFLICT (key) DO UPDATE SET value = '1'"
-          );
-          if (!seeded) {
-            sql.exec(
-              "INSERT INTO meta (key, value) VALUES ('reaper_last_run', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
-              String(now)
-            );
-          }
-        });
-      }
+      this._ensureSchemaV3();
+      this._ensureNamespaceSeeded("main", Date.now() / 1000);
     });
   }
 
@@ -402,9 +454,247 @@ export class TesseraCoordinator extends DurableObject {
     return r ? Number(r.n) : 0;
   }
 
+  _hasColumn(table, col) {
+    const row = this._one(
+      "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?",
+      table
+    );
+    if (!row || !row.sql) return false;
+    const re = new RegExp(`(?:^|[(,\\s])${col}\\s+`, "i");
+    return re.test(String(row.sql));
+  }
+
+  _tableExists(table) {
+    return Boolean(
+      this._one("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", table)
+    );
+  }
+
+  _ensureSchemaV3() {
+    const sql = this.ctx.storage.sql;
+    if (this._tableExists("meta") && this._tableExists("noun_tags")) {
+      const verRow = this._one("SELECT value FROM meta WHERE key = 'schema_version'");
+      if (Number(verRow?.value || 0) >= 3) return;
+    }
+
+    if (!this._tableExists("queues")) {
+      this.ctx.storage.transactionSync(() => {
+        for (const stmt of SCHEMA_V3_STATEMENTS) sql.exec(stmt);
+        sql.exec(
+          "INSERT INTO meta (key, value) VALUES ('schema_version', '3') ON CONFLICT (key) DO UPDATE SET value = '3'"
+        );
+      });
+      return;
+    }
+
+    // Live in-place v1/v2 -> v3 migration preserving existing primary rows under namespace='main'
+    // without using PRAGMA statements restricted by Cloudflare Durable Object SQLite authorizer.
+    this.ctx.storage.transactionSync(() => {
+      if (!this._hasColumn("events", "namespace")) {
+        sql.exec("ALTER TABLE events ADD COLUMN namespace TEXT NOT NULL DEFAULT 'main'");
+      }
+      sql.exec("CREATE INDEX IF NOT EXISTS idx_events_ns_seq ON events (namespace, seq)");
+
+      if (!this._hasColumn("queues", "namespace")) {
+        const legacyTablesOrderedDrop = [
+          "task_deps",
+          "task_inputs",
+          "leases",
+          "results",
+          "jobs",
+          "counts",
+          "tasks",
+          "queues",
+          "records",
+          "record_heads",
+          "bucket_object_versions",
+          "bucket_objects",
+          "buckets",
+          "feed_entries",
+        ];
+        for (const t of legacyTablesOrderedDrop) {
+          if (this._tableExists(t)) sql.exec(`ALTER TABLE ${t} RENAME TO _v2_${t}`);
+        }
+        for (const idx of [
+          "idx_tasks_claim",
+          "idx_tasks_parent",
+          "idx_tasks_wake",
+          "idx_task_deps_on",
+          "idx_leases_expiry",
+          "idx_results_task",
+          "idx_jobs_task",
+          "idx_bucket_objects_prefix",
+          "idx_feed_entries_feed_seq",
+        ]) {
+          sql.exec(`DROP INDEX IF EXISTS ${idx}`);
+        }
+        for (const stmt of SCHEMA_V3_STATEMENTS) sql.exec(stmt);
+
+        if (this._tableExists("_v2_queues")) {
+          sql.exec(
+            "INSERT INTO queues (namespace, name, lease_seconds, heartbeat_seconds, miss_limit, max_attempts, backoff_base_seconds, backoff_cap_seconds, weight, created_at, updated_at) SELECT 'main', name, lease_seconds, heartbeat_seconds, miss_limit, max_attempts, backoff_base_seconds, backoff_cap_seconds, weight, created_at, updated_at FROM _v2_queues"
+          );
+        }
+        if (this._tableExists("_v2_tasks")) {
+          sql.exec(
+            "INSERT INTO tasks (namespace, id, queue, parent_id, state, kind, effect_class, priority, brief, attempts, failures, fencing_token, not_before, pending_children, created_at, updated_at, pending_deps, wait_reason, wake_at, parked_by, parks) SELECT 'main', id, queue, parent_id, state, kind, effect_class, priority, brief, attempts, failures, fencing_token, not_before, pending_children, created_at, updated_at, COALESCE(pending_deps, 0), wait_reason, wake_at, parked_by, COALESCE(parks, 0) FROM _v2_tasks"
+          );
+        }
+        if (this._tableExists("_v2_task_deps")) {
+          sql.exec(
+            "INSERT INTO task_deps (namespace, task_id, depends_on) SELECT 'main', task_id, depends_on FROM _v2_task_deps"
+          );
+        }
+        if (this._tableExists("_v2_task_inputs")) {
+          sql.exec(
+            "INSERT INTO task_inputs (namespace, task_id, seq, input, created_at) SELECT 'main', task_id, seq, input, created_at FROM _v2_task_inputs"
+          );
+        }
+        if (this._tableExists("_v2_leases")) {
+          sql.exec(
+            "INSERT INTO leases (namespace, task_id, fencing_token, worker, key_id, claimed_at, last_heartbeat_at, expires_at, hard_expires_at) SELECT 'main', task_id, fencing_token, worker, key_id, claimed_at, last_heartbeat_at, expires_at, hard_expires_at FROM _v2_leases"
+          );
+        }
+        if (this._tableExists("_v2_results")) {
+          sql.exec(
+            "INSERT INTO results (namespace, idempotency_key, task_id, fencing_token, ok, output, error, receipt_hash, state_after, created_at) SELECT 'main', idempotency_key, task_id, fencing_token, ok, output, error, receipt_hash, state_after, created_at FROM _v2_results"
+          );
+        }
+        if (this._tableExists("_v2_jobs")) {
+          sql.exec(
+            "INSERT INTO jobs (namespace, job_id, task_id, fencing_token, model, status, input_tokens, cached_input_tokens, output_tokens, cost_usd, created_at, updated_at) SELECT 'main', job_id, task_id, fencing_token, model, status, input_tokens, cached_input_tokens, output_tokens, cost_usd, created_at, updated_at FROM _v2_jobs"
+          );
+        }
+        if (this._tableExists("_v2_counts")) {
+          sql.exec(
+            "INSERT INTO counts (namespace, queue, ready, leased, waiting, done, dead, cancelled) SELECT 'main', queue, ready, leased, waiting, done, dead, cancelled FROM _v2_counts"
+          );
+        }
+        if (this._tableExists("_v2_records")) {
+          sql.exec(
+            "INSERT INTO records (namespace, store, key, version, value, created_at) SELECT 'main', store, key, version, value, created_at FROM _v2_records"
+          );
+        }
+        if (this._tableExists("_v2_record_heads")) {
+          sql.exec(
+            "INSERT INTO record_heads (namespace, store, key, version) SELECT 'main', store, key, version FROM _v2_record_heads"
+          );
+        }
+        if (this._tableExists("_v2_buckets")) {
+          sql.exec(
+            "INSERT INTO buckets (namespace, name, description, created_at, updated_at) SELECT 'main', name, description, created_at, updated_at FROM _v2_buckets"
+          );
+        }
+        if (this._tableExists("_v2_bucket_objects")) {
+          sql.exec(
+            "INSERT INTO bucket_objects (namespace, bucket, key, version, sha256, size, content_type, metadata, created_at, updated_at) SELECT 'main', bucket, key, version, sha256, size, content_type, metadata, created_at, updated_at FROM _v2_bucket_objects"
+          );
+        }
+        if (this._tableExists("_v2_bucket_object_versions")) {
+          sql.exec(
+            "INSERT INTO bucket_object_versions (namespace, bucket, key, version, sha256, size, content_type, metadata, created_at) SELECT 'main', bucket, key, version, sha256, size, content_type, metadata, created_at FROM _v2_bucket_object_versions"
+          );
+        }
+        if (this._tableExists("_v2_feed_entries")) {
+          sql.exec(
+            "INSERT INTO feed_entries (namespace, seq, feed, kind, summary, payload, created_at) SELECT 'main', seq, feed, kind, summary, payload, created_at FROM _v2_feed_entries ORDER BY seq"
+          );
+        }
+        for (const t of legacyTablesOrderedDrop) {
+          if (this._tableExists(`_v2_${t}`)) {
+            if (t === "tasks") {
+              sql.exec("UPDATE _v2_tasks SET parent_id = NULL WHERE parent_id IS NOT NULL");
+            }
+            sql.exec(`DROP TABLE _v2_${t}`);
+          }
+        }
+      } else {
+        for (const stmt of SCHEMA_V3_STATEMENTS) sql.exec(stmt);
+      }
+
+      if (this._tableExists("blobs")) {
+        sql.exec(
+          "INSERT OR IGNORE INTO blob_namespaces (namespace, sha256, created_at) SELECT 'main', sha256, created_at FROM blobs"
+        );
+      }
+      sql.exec(
+        "INSERT INTO meta (key, value) VALUES ('schema_version', '3') ON CONFLICT (key) DO UPDATE SET value = '3'"
+      );
+    });
+  }
+
+  _ensureNamespaceSeeded(ns, now) {
+    if (this.seededNamespaces.has(ns)) return;
+    const metaKey = `seeded_v3:${ns}`;
+    const existing = this._one("SELECT value FROM meta WHERE key = ?", metaKey);
+    if (!existing) {
+      const sql = this.ctx.storage.sql;
+      this.ctx.storage.transactionSync(() => {
+        for (const [name, leaseSec, beatSec] of DEFAULT_QUEUES) {
+          sql.exec(
+            "INSERT OR IGNORE INTO queues (namespace, name, lease_seconds, heartbeat_seconds, miss_limit, max_attempts, backoff_base_seconds, backoff_cap_seconds, weight, created_at, updated_at) VALUES (?, ?, ?, ?, 3, 3, 30.0, 900.0, 1, ?, ?)",
+            ns,
+            name,
+            leaseSec,
+            beatSec,
+            now,
+            now
+          );
+          sql.exec("INSERT OR IGNORE INTO counts (namespace, queue) VALUES (?, ?)", ns, name);
+        }
+        for (const [bName, desc] of DEFAULT_BUCKETS) {
+          sql.exec(
+            "INSERT OR IGNORE INTO buckets (namespace, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+            ns,
+            bName,
+            desc,
+            now,
+            now
+          );
+        }
+        sql.exec(
+          "INSERT INTO meta (key, value) VALUES (?, '1') ON CONFLICT (key) DO UPDATE SET value = '1'",
+          metaKey
+        );
+        if (ns === "main") {
+          const rlr = this._one("SELECT value FROM meta WHERE key = 'reaper_last_run'");
+          if (!rlr) {
+            sql.exec("INSERT INTO meta (key, value) VALUES ('reaper_last_run', ?)", String(now));
+          }
+        }
+      });
+    }
+    this.seededNamespaces.add(ns);
+  }
+
+  _syncNounTags(nounKind, container, nounId, tags) {
+    const ns = this.namespace;
+    this.ctx.storage.sql.exec(
+      "DELETE FROM noun_tags WHERE namespace = ? AND noun_kind = ? AND container = ? AND noun_id = ?",
+      ns,
+      nounKind,
+      container,
+      nounId
+    );
+    for (const tag of tags || []) {
+      const clean = String(tag ?? "").trim();
+      if (clean) {
+        this.ctx.storage.sql.exec(
+          "INSERT OR IGNORE INTO noun_tags (namespace, noun_kind, container, noun_id, tag) VALUES (?, ?, ?, ?, ?)",
+          ns,
+          nounKind,
+          container,
+          nounId,
+          clean
+        );
+      }
+    }
+  }
+
   _event(type, now, { task_id = null, queue = null, worker = null, token = null, detail = {} } = {}) {
     this.ctx.storage.sql.exec(
-      "INSERT INTO events (ts, type, task_id, queue, worker, fencing_token, detail) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO events (namespace, ts, type, task_id, queue, worker, fencing_token, detail) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      this.namespace,
       now,
       type,
       task_id,
@@ -417,20 +707,29 @@ export class TesseraCoordinator extends DurableObject {
 
   _addCount(queue, state) {
     if (!COUNT_COLS.has(state)) throw new Error(`bad state ${state}`);
-    this.ctx.storage.sql.exec(`UPDATE counts SET ${state} = ${state} + 1 WHERE queue = ?`, queue);
+    this.ctx.storage.sql.exec(
+      `UPDATE counts SET ${state} = ${state} + 1 WHERE namespace = ? AND queue = ?`,
+      this.namespace,
+      queue
+    );
   }
 
   _moveCount(queue, oldState, newState) {
     if (oldState === newState) return;
     if (!COUNT_COLS.has(oldState) || !COUNT_COLS.has(newState)) throw new Error("bad count state");
     this.ctx.storage.sql.exec(
-      `UPDATE counts SET ${oldState} = ${oldState} - 1, ${newState} = ${newState} + 1 WHERE queue = ?`,
+      `UPDATE counts SET ${oldState} = ${oldState} - 1, ${newState} = ${newState} + 1 WHERE namespace = ? AND queue = ?`,
+      this.namespace,
       queue
     );
   }
 
   _queueConfig(name) {
-    const r = this._one("SELECT * FROM queues WHERE name = ?", name);
+    const r = this._one(
+      "SELECT * FROM queues WHERE namespace = ? AND name = ?",
+      this.namespace,
+      name
+    );
     if (!r) throw notFound(`queue '${name}' does not exist`);
     return {
       name: r.name,
@@ -445,7 +744,7 @@ export class TesseraCoordinator extends DurableObject {
   }
 
   _taskRow(taskId) {
-    const r = this._one("SELECT * FROM tasks WHERE id = ?", taskId);
+    const r = this._one("SELECT * FROM tasks WHERE namespace = ? AND id = ?", this.namespace, taskId);
     if (!r) throw notFound(`task '${taskId}' does not exist`);
     return r;
   }
@@ -453,10 +752,12 @@ export class TesseraCoordinator extends DurableObject {
   _taskView(taskId) {
     const r = this._taskRow(taskId);
     const deps = this._all(
-      "SELECT depends_on FROM task_deps WHERE task_id = ? ORDER BY rowid",
+      "SELECT depends_on FROM task_deps WHERE namespace = ? AND task_id = ? ORDER BY rowid",
+      this.namespace,
       taskId
     ).map((d) => d.depends_on);
     return {
+      namespace: r.namespace || this.namespace,
       task_id: r.id,
       queue: r.queue,
       parent_id: r.parent_id ?? null,
@@ -478,13 +779,21 @@ export class TesseraCoordinator extends DurableObject {
       wake_at: r.wake_at == null ? null : Number(r.wake_at),
       parked_by: r.parked_by ?? null,
       parks: Number(r.parks),
+      idempotency_key: r.idempotency_key ?? null,
+      producer_surface: r.producer_surface || "surface:tessera",
+      visibility_scope: r.visibility_scope || "public_commons",
+      allowed_surfaces: parseJsonSafe(r.allowed_surfaces, []),
+      target_cohorts: parseJsonSafe(r.target_cohorts, ["all"]),
+      tags: parseJsonSafe(r.tags, []),
+      owner_key_id: r.owner_key_id ?? null,
     };
   }
 
   _resultsOf(rows) {
     return rows.map((r) => {
       const res = this._one(
-        "SELECT output, receipt_hash FROM results WHERE task_id = ? AND ok = 1 ORDER BY created_at DESC LIMIT 1",
+        "SELECT output, receipt_hash FROM results WHERE namespace = ? AND task_id = ? AND ok = 1 ORDER BY created_at DESC LIMIT 1",
+        this.namespace,
         r.id
       );
       return {
@@ -498,29 +807,40 @@ export class TesseraCoordinator extends DurableObject {
   }
 
   _children(taskId) {
-    const rows = this._all("SELECT id, state FROM tasks WHERE parent_id = ? ORDER BY created_at, id", taskId);
+    const rows = this._all(
+      "SELECT id, state FROM tasks WHERE namespace = ? AND parent_id = ? ORDER BY created_at, id",
+      this.namespace,
+      taskId
+    );
     return this._resultsOf(rows);
   }
 
   _dependencies(taskId) {
     const rows = this._all(
-      "SELECT t.id, t.state FROM task_deps d JOIN tasks t ON t.id = d.depends_on WHERE d.task_id = ? ORDER BY d.rowid",
+      "SELECT t.id, t.state FROM task_deps d JOIN tasks t ON t.namespace = d.namespace AND t.id = d.depends_on WHERE d.namespace = ? AND d.task_id = ? ORDER BY d.rowid",
+      this.namespace,
       taskId
     );
     return this._resultsOf(rows);
   }
 
   _inputs(taskId) {
-    return this._all("SELECT input FROM task_inputs WHERE task_id = ? ORDER BY seq", taskId).map((r) =>
-      JSON.parse(r.input)
-    );
+    return this._all(
+      "SELECT input FROM task_inputs WHERE namespace = ? AND task_id = ? ORDER BY seq",
+      this.namespace,
+      taskId
+    ).map((r) => JSON.parse(r.input));
   }
 
   _depth(taskId) {
     let depth = 0;
     let cur = taskId;
     while (cur != null) {
-      const r = this._one("SELECT parent_id FROM tasks WHERE id = ?", cur);
+      const r = this._one(
+        "SELECT parent_id FROM tasks WHERE namespace = ? AND id = ?",
+        this.namespace,
+        cur
+      );
       cur = r ? r.parent_id : null;
       if (cur != null) depth += 1;
     }
@@ -528,60 +848,71 @@ export class TesseraCoordinator extends DurableObject {
   }
 
   _wake(task, value, now, event, by = null) {
+    this.ctx.storage.sql.exec(
+      "UPDATE tasks SET state = 'ready', wait_reason = NULL, wake_at = NULL, parked_by = NULL, not_before = ?, updated_at = ? WHERE namespace = ? AND id = ? AND state = 'waiting' AND wait_reason = 'input'",
+      now,
+      now,
+      this.namespace,
+      task.id
+    );
+    if (this._changes() !== 1) return false;
     const seqRow = this._one(
-      "SELECT COALESCE(MAX(seq), 0) + 1 AS n FROM task_inputs WHERE task_id = ?",
+      "SELECT COALESCE(MAX(seq), 0) + 1 AS n FROM task_inputs WHERE namespace = ? AND task_id = ?",
+      this.namespace,
       task.id
     );
     const seq = Number(seqRow.n);
     this.ctx.storage.sql.exec(
-      "INSERT INTO task_inputs (task_id, seq, input, created_at) VALUES (?, ?, ?, ?)",
+      "INSERT INTO task_inputs (namespace, task_id, seq, input, created_at) VALUES (?, ?, ?, ?, ?)",
+      this.namespace,
       task.id,
       seq,
       canonicalJson(value),
       now
     );
-    this.ctx.storage.sql.exec(
-      "UPDATE tasks SET state = 'ready', wait_reason = NULL, wake_at = NULL, parked_by = NULL, not_before = ?, updated_at = ? WHERE id = ?",
-      now,
-      now,
-      task.id
-    );
     this._moveCount(task.queue, "waiting", "ready");
     const detail = { input: seq };
     if (by != null) detail.by_key = by;
     this._event(event, now, { task_id: task.id, queue: task.queue, detail });
+    return true;
   }
 
   _dependencyResolved(taskId, now) {
     const dependents = this._all(
-      "SELECT t.* FROM task_deps d JOIN tasks t ON t.id = d.task_id WHERE d.depends_on = ? AND t.state = 'waiting' AND t.wait_reason = 'dependencies'",
+      "SELECT t.* FROM task_deps d JOIN tasks t ON t.namespace = d.namespace AND t.id = d.task_id WHERE d.namespace = ? AND d.depends_on = ? AND t.state = 'waiting' AND t.wait_reason = 'dependencies'",
+      this.namespace,
       taskId
     );
     for (const dep of dependents) {
       const remaining = Math.max(Number(dep.pending_deps) - 1, 0);
       if (remaining > 0) {
         this.ctx.storage.sql.exec(
-          "UPDATE tasks SET pending_deps = ?, updated_at = ? WHERE id = ?",
+          "UPDATE tasks SET pending_deps = ?, updated_at = ? WHERE namespace = ? AND id = ?",
           remaining,
           now,
+          this.namespace,
           dep.id
         );
       } else {
         this.ctx.storage.sql.exec(
-          "UPDATE tasks SET pending_deps = 0, state = 'ready', wait_reason = NULL, updated_at = ? WHERE id = ?",
+          "UPDATE tasks SET pending_deps = 0, state = 'ready', wait_reason = NULL, updated_at = ? WHERE namespace = ? AND id = ? AND state = 'waiting' AND wait_reason = 'dependencies'",
           now,
+          this.namespace,
           dep.id
         );
-        this._moveCount(dep.queue, "waiting", "ready");
-        this._event("dependencies_met", now, { task_id: dep.id, queue: dep.queue });
+        if (this._changes() === 1) {
+          this._moveCount(dep.queue, "waiting", "ready");
+          this._event("dependencies_met", now, { task_id: dep.id, queue: dep.queue });
+        }
       }
     }
   }
 
   _childResolved(parentId, now) {
     this.ctx.storage.sql.exec(
-      "UPDATE tasks SET pending_children = pending_children - 1, updated_at = ? WHERE id = ? AND pending_children > 0",
+      "UPDATE tasks SET pending_children = pending_children - 1, updated_at = ? WHERE namespace = ? AND id = ? AND pending_children > 0",
       now,
+      this.namespace,
       parentId
     );
     const parent = this._taskRow(parentId);
@@ -591,20 +922,24 @@ export class TesseraCoordinator extends DurableObject {
       Number(parent.pending_children) === 0
     ) {
       this.ctx.storage.sql.exec(
-        "UPDATE tasks SET state = 'ready', wait_reason = NULL, not_before = ?, updated_at = ? WHERE id = ?",
+        "UPDATE tasks SET state = 'ready', wait_reason = NULL, not_before = ?, updated_at = ? WHERE namespace = ? AND id = ? AND state = 'waiting' AND wait_reason = 'children'",
         now,
         now,
+        this.namespace,
         parentId
       );
-      this._moveCount(parent.queue, "waiting", "ready");
-      this._event("parent_ready", now, { task_id: parentId, queue: parent.queue });
+      if (this._changes() === 1) {
+        this._moveCount(parent.queue, "waiting", "ready");
+        this._event("parent_ready", now, { task_id: parentId, queue: parent.queue });
+      }
     }
   }
 
   _cancelJobs(taskId, now) {
     this.ctx.storage.sql.exec(
-      "UPDATE jobs SET status = 'cancel_requested', updated_at = ? WHERE task_id = ? AND status IN ('queued', 'in_progress')",
+      "UPDATE jobs SET status = 'cancel_requested', updated_at = ? WHERE namespace = ? AND task_id = ? AND status IN ('queued', 'in_progress')",
       now,
+      this.namespace,
       taskId
     );
     const n = this._changes();
@@ -617,11 +952,15 @@ export class TesseraCoordinator extends DurableObject {
     const failures = Number(task.failures) + 1;
     if (failures >= config.max_attempts) {
       this.ctx.storage.sql.exec(
-        "UPDATE tasks SET state = 'dead', failures = ?, updated_at = ? WHERE id = ?",
+        "UPDATE tasks SET state = 'dead', failures = ?, updated_at = ? WHERE namespace = ? AND id = ? AND state = 'leased'",
         failures,
         now,
+        this.namespace,
         task.id
       );
+      if (this._changes() !== 1) {
+        throw staleLease(`task ${task.id} is no longer leased`);
+      }
       this._moveCount(task.queue, "leased", "dead");
       recordDeadEndTombstone(this, task, failures, reason, now, canonicalJson);
       this._event("dead_lettered", now, {
@@ -640,12 +979,16 @@ export class TesseraCoordinator extends DurableObject {
     const jitter = 0.5 + (crypto.getRandomValues(new Uint32Array(1))[0] / 0xffffffff) * 0.5;
     const delay = ceiling * jitter;
     this.ctx.storage.sql.exec(
-      "UPDATE tasks SET state = 'ready', failures = ?, not_before = ?, updated_at = ? WHERE id = ?",
+      "UPDATE tasks SET state = 'ready', failures = ?, not_before = ?, updated_at = ? WHERE namespace = ? AND id = ? AND state = 'leased'",
       failures,
       now + delay,
       now,
+      this.namespace,
       task.id
     );
+    if (this._changes() !== 1) {
+      throw staleLease(`task ${task.id} is no longer leased`);
+    }
     this._moveCount(task.queue, "leased", "ready");
     this._event("retry_scheduled", now, {
       task_id: task.id,
@@ -656,11 +999,21 @@ export class TesseraCoordinator extends DurableObject {
   }
 
   _lapse(taskId, now) {
-    const lease = this._one("SELECT * FROM leases WHERE task_id = ?", taskId);
+    const lease = this._one(
+      "SELECT * FROM leases WHERE namespace = ? AND task_id = ?",
+      this.namespace,
+      taskId
+    );
     if (!lease) return;
     const task = this._taskRow(taskId);
     const config = this._queueConfig(task.queue);
-    this.ctx.storage.sql.exec("DELETE FROM leases WHERE task_id = ?", taskId);
+    this.ctx.storage.sql.exec(
+      "DELETE FROM leases WHERE namespace = ? AND task_id = ? AND fencing_token = ?",
+      this.namespace,
+      taskId,
+      lease.fencing_token
+    );
+    if (this._changes() !== 1) return;
     this._cancelJobs(taskId, now);
     this._event("lease_lapsed", now, {
       task_id: taskId,
@@ -673,33 +1026,47 @@ export class TesseraCoordinator extends DurableObject {
 
   _reap(now, queue = null) {
     let sql =
-      "SELECT l.task_id FROM leases l JOIN tasks t ON t.id = l.task_id WHERE (l.expires_at <= ? OR l.hard_expires_at <= ?)";
+      "SELECT l.namespace, l.task_id FROM leases l JOIN tasks t ON t.namespace = l.namespace AND t.id = l.task_id WHERE (l.expires_at <= ? OR l.hard_expires_at <= ?)";
     const params = [now, now];
     if (queue != null) {
-      sql += " AND t.queue = ?";
-      params.push(queue);
+      sql += " AND l.namespace = ? AND t.queue = ?";
+      params.push(this.namespace, queue);
     }
-    const lapsed = this._all(sql, ...params).map((r) => r.task_id);
-    for (const tid of lapsed) this._lapse(tid, now);
+    const prevNs = this.namespace;
+    const lapsed = this._all(sql, ...params);
+    for (const r of lapsed) {
+      this.namespace = r.namespace || "main";
+      this._lapse(r.task_id, now);
+    }
 
-    let wakeSql = "SELECT * FROM tasks WHERE wake_at IS NOT NULL AND wake_at <= ? AND state = 'waiting'";
+    let wakeSql =
+      "SELECT * FROM tasks WHERE wake_at IS NOT NULL AND wake_at <= ? AND state = 'waiting' AND wait_reason = 'input'";
     const wakeParams = [now];
     if (queue != null) {
-      wakeSql += " AND queue = ?";
-      wakeParams.push(queue);
+      wakeSql += " AND namespace = ? AND queue = ?";
+      wakeParams.push(prevNs, queue);
     }
     for (const t of this._all(wakeSql, ...wakeParams)) {
+      this.namespace = t.namespace || "main";
       this._wake(t, { timed_out: true }, now, "park_expired");
     }
+    this.namespace = prevNs;
     return lapsed.length;
   }
 
   _liveLease(taskId, fencingToken, now) {
     const task = this._taskRow(taskId);
-    const row = this._one("SELECT * FROM leases WHERE task_id = ?", taskId);
+    const row = this._one(
+      "SELECT * FROM leases WHERE namespace = ? AND task_id = ?",
+      this.namespace,
+      taskId
+    );
     if (!row) return [null, `task ${taskId} has no live lease (state ${task.state})`];
     if (Number(row.fencing_token) !== Number(fencingToken)) {
       return [null, `fencing token ${fencingToken} is stale`];
+    }
+    if (task.state !== "leased" || Number(task.fencing_token) !== Number(fencingToken)) {
+      return [null, `task ${taskId} is not leased under token ${fencingToken}`];
     }
     if (now >= Number(row.expires_at) || now >= Number(row.hard_expires_at)) {
       this._lapse(taskId, now);
@@ -708,20 +1075,41 @@ export class TesseraCoordinator extends DurableObject {
     return [row, null];
   }
 
-  _insertTask(taskId, queue, parentId, kind, effectClass, priority, brief, notBefore, now, dependsOn = []) {
+  _insertTask(
+    taskId,
+    queue,
+    parentId,
+    kind,
+    effectClass,
+    priority,
+    brief,
+    notBefore,
+    now,
+    dependsOn = [],
+    idempotencyKey = null,
+    gov = null
+  ) {
     const deps = [...new Set(dependsOn)];
     if (deps.length > MAX_DEPENDENCIES) {
       throw badReq(`at most ${MAX_DEPENDENCIES} dependencies per task`);
     }
     let unresolved = 0;
     for (const dep of deps) {
-      const r = this._one("SELECT state FROM tasks WHERE id = ?", dep);
+      const r = this._one(
+        "SELECT state FROM tasks WHERE namespace = ? AND id = ?",
+        this.namespace,
+        dep
+      );
       if (!r) throw notFound(`dependency '${dep}' does not exist`);
       if (!TERMINAL_STATES.has(r.state)) unresolved += 1;
     }
+    const g =
+      gov ||
+      normalizeGovernance({}, { defaultSurface: "surface:tessera", ownerKeyId: null }, badReq);
     const state = unresolved > 0 ? "waiting" : "ready";
     this.ctx.storage.sql.exec(
-      "INSERT INTO tasks (id, queue, parent_id, state, kind, effect_class, priority, brief, not_before, created_at, updated_at, pending_deps, wait_reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO tasks (namespace, id, queue, parent_id, state, kind, effect_class, priority, brief, not_before, created_at, updated_at, pending_deps, wait_reason, idempotency_key, producer_surface, visibility_scope, allowed_surfaces, target_cohorts, tags, owner_key_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      this.namespace,
       taskId,
       queue,
       parentId,
@@ -734,10 +1122,23 @@ export class TesseraCoordinator extends DurableObject {
       now,
       now,
       unresolved,
-      unresolved > 0 ? "dependencies" : null
+      unresolved > 0 ? "dependencies" : null,
+      idempotencyKey,
+      g.producer_surface,
+      g.visibility_scope,
+      JSON.stringify(g.allowed_surfaces),
+      JSON.stringify(g.target_cohorts),
+      JSON.stringify(g.tags),
+      g.owner_key_id
     );
+    this._syncNounTags("task", queue, taskId, g.tags);
     for (const dep of deps) {
-      this.ctx.storage.sql.exec("INSERT INTO task_deps (task_id, depends_on) VALUES (?, ?)", taskId, dep);
+      this.ctx.storage.sql.exec(
+        "INSERT INTO task_deps (namespace, task_id, depends_on) VALUES (?, ?, ?)",
+        this.namespace,
+        taskId,
+        dep
+      );
     }
     this._addCount(queue, state);
     const detail = { kind, effect_class: effectClass, parent_id: parentId };
@@ -752,21 +1153,33 @@ export class TesseraCoordinator extends DurableObject {
     const task = this._taskRow(taskId);
     if (TERMINAL_STATES.has(task.state)) return;
     const prev = task.state;
-    this.ctx.storage.sql.exec("DELETE FROM leases WHERE task_id = ?", taskId);
-    this._cancelJobs(taskId, now);
     this.ctx.storage.sql.exec(
-      "UPDATE tasks SET state = 'cancelled', updated_at = ? WHERE id = ?",
-      now,
+      "DELETE FROM leases WHERE namespace = ? AND task_id = ?",
+      this.namespace,
       taskId
     );
-    this._moveCount(task.queue, prev, "cancelled");
-    this._event("cancelled", now, {
-      task_id: taskId,
-      queue: task.queue,
-      detail: { reason, previous_state: prev },
-    });
-    this._dependencyResolved(taskId, now);
-    const kids = this._all("SELECT id FROM tasks WHERE parent_id = ?", taskId);
+    this._cancelJobs(taskId, now);
+    this.ctx.storage.sql.exec(
+      "UPDATE tasks SET state = 'cancelled', updated_at = ? WHERE namespace = ? AND id = ? AND state = ?",
+      now,
+      this.namespace,
+      taskId,
+      prev
+    );
+    if (this._changes() === 1) {
+      this._moveCount(task.queue, prev, "cancelled");
+      this._event("cancelled", now, {
+        task_id: taskId,
+        queue: task.queue,
+        detail: { reason, previous_state: prev },
+      });
+      this._dependencyResolved(taskId, now);
+    }
+    const kids = this._all(
+      "SELECT id FROM tasks WHERE namespace = ? AND parent_id = ?",
+      this.namespace,
+      taskId
+    );
     for (const k of kids) {
       this._cancelTree(k.id, `parent ${taskId} cancelled`, now, false);
     }
@@ -777,11 +1190,16 @@ export class TesseraCoordinator extends DurableObject {
 
   async _scheduleNextAlarm() {
     const leaseMin = this._one("SELECT MIN(MIN(expires_at, hard_expires_at)) AS t FROM leases");
-    const wakeMin = this._one("SELECT MIN(wake_at) AS t FROM tasks WHERE state = 'waiting' AND wake_at IS NOT NULL");
+    const wakeMin = this._one(
+      "SELECT MIN(wake_at) AS t FROM tasks WHERE state = 'waiting' AND wake_at IS NOT NULL"
+    );
     const candidates = [leaseMin?.t, wakeMin?.t].filter((v) => v != null).map(Number);
     if (candidates.length) {
       const reaperMs = Math.max(5000, Number(this.env.REAPER_SECONDS || 30) * 1000);
-      const nextMs = Math.max(Date.now() + reaperMs, Math.floor(Math.min(...candidates) * 1000) + reaperMs);
+      const nextMs = Math.max(
+        Date.now() + reaperMs,
+        Math.floor(Math.min(...candidates) * 1000) + reaperMs
+      );
       await this.ctx.storage.setAlarm(nextMs);
     }
   }
@@ -798,29 +1216,25 @@ export class TesseraCoordinator extends DurableObject {
     await this._scheduleNextAlarm();
   }
 
-  async _grantFromSecret(secret) {
-    if (!secret) throw unauth("a bearer key is required");
-    const keyHash = await sha256Hex(new TextEncoder().encode(secret));
-    const r = this._one("SELECT * FROM keys WHERE key_hash = ?", keyHash);
-    if (!r) throw unauth("the key is unknown, expired or revoked");
-    const now = Date.now() / 1000;
-    if (r.revoked_at != null || Number(r.expires_at) <= now) {
-      throw unauth("the key is unknown, expired or revoked");
-    }
-    const scopes = JSON.parse(r.scopes);
-    const queues = JSON.parse(r.queues);
-    const kinds = JSON.parse(r.kinds);
-    const effect_classes = JSON.parse(r.effect_classes);
+  _hydrateGrant(raw) {
+    const scopes = Array.isArray(raw.scopes) ? raw.scopes : JSON.parse(raw.scopes);
+    const queues = Array.isArray(raw.queues) ? raw.queues : JSON.parse(raw.queues);
+    const kinds = Array.isArray(raw.kinds) ? raw.kinds : JSON.parse(raw.kinds);
+    const effect_classes = Array.isArray(raw.effect_classes)
+      ? raw.effect_classes
+      : JSON.parse(raw.effect_classes);
+    const surfScope = scopes.find((s) => SCOPE_SURFACE_RE.test(s));
     return {
-      key_id: r.key_id,
-      label: r.label,
+      key_id: raw.key_id,
+      label: raw.label,
       queues,
       kinds,
       effect_classes,
       scopes,
-      created_at: Number(r.created_at),
-      expires_at: Number(r.expires_at),
-      revoked_at: null,
+      bound_surface: surfScope ? surfScope.slice("surface:".length) : null,
+      created_at: Number(raw.created_at),
+      expires_at: Number(raw.expires_at),
+      revoked_at: raw.revoked_at == null ? null : Number(raw.revoked_at),
       is_admin: scopes.includes("admin"),
       can_store: scopes.includes("store") || scopes.includes("admin"),
       allowsQueue: (q) => queues.some((p) => globMatch(q, p)),
@@ -837,15 +1251,104 @@ export class TesseraCoordinator extends DurableObject {
     };
   }
 
+  async resolveKeyGrant(secret) {
+    if (!secret) return null;
+    const keyHash = await sha256Hex(new TextEncoder().encode(secret));
+    const r = this._one("SELECT * FROM keys WHERE key_hash = ?", keyHash);
+    if (!r) return null;
+    const now = Date.now() / 1000;
+    if (r.revoked_at != null || Number(r.expires_at) <= now) return null;
+    return {
+      key_id: r.key_id,
+      label: r.label,
+      queues: JSON.parse(r.queues),
+      kinds: JSON.parse(r.kinds),
+      effect_classes: JSON.parse(r.effect_classes),
+      scopes: JSON.parse(r.scopes),
+      created_at: Number(r.created_at),
+      expires_at: Number(r.expires_at),
+      revoked_at: null,
+    };
+  }
+
+  async _grantFromSecret(secret) {
+    if (!secret) throw unauth("a bearer key is required");
+    const local = await this.resolveKeyGrant(secret);
+    if (local) return this._hydrateGrant(local);
+    if (!this.isPrimary && this.env && this.env.COORDINATOR) {
+      const primaryStub = this.env.COORDINATOR.get(this.env.COORDINATOR.idFromName("primary"));
+      const shared = await primaryStub.resolveKeyGrant(secret);
+      if (shared) return this._hydrateGrant(shared);
+    }
+    throw unauth("the key is unknown, expired or revoked");
+  }
+
+  _effectiveSurface(grant, surfaceHeader) {
+    const hdr =
+      surfaceHeader && String(surfaceHeader).trim() ? surfaceSlug(surfaceHeader) : null;
+    if (grant.is_admin) return hdr ? `surface:${hdr}` : null;
+    if (grant.bound_surface) return `surface:${grant.bound_surface}`;
+    return hdr ? `surface:${hdr}` : null;
+  }
+
+  _viewerCtx(grant, surfaceHeader) {
+    return {
+      surface: this._effectiveSurface(grant, surfaceHeader),
+      key_id: grant.key_id,
+      is_admin: grant.is_admin,
+    };
+  }
+
   _requireQueue(grant, queue) {
     if (!(grant.is_admin || grant.allowsQueue(queue))) {
       throw forbid(`this key may not use queue '${queue}'`);
     }
   }
 
+  _requireEffect(grant, effectClass) {
+    if (effectClass === "write-repo" || effectClass === "public") {
+      if (!grant.is_admin) {
+        throw scopeDenied(`effect class '${effectClass}' requires a key with the admin scope`);
+      }
+      return;
+    }
+    if (!grant.is_admin && !grant.effect_classes.includes(effectClass)) {
+      throw scopeDenied(`this key may not act on tasks with effect class '${effectClass}'`);
+    }
+  }
+
+  _requireSurfaceWrite(grant, storeName, surfaceHeader) {
+    if (grant.is_admin) return;
+    for (const surf of PROTECTED_SURFACES) {
+      if (storeName.startsWith(`${surf}.`)) {
+        const bound = grant.bound_surface;
+        const hdr =
+          surfaceHeader && String(surfaceHeader).trim() ? surfaceSlug(surfaceHeader) : null;
+        if (bound != null && hdr != null && bound !== hdr) {
+          throw scopeDenied(`key bound to surface '${bound}' cannot spoof X-Surface-Id '${hdr}'`);
+        }
+        const callerSurf = bound || hdr;
+        if (callerSurf !== surf) {
+          throw scopeDenied(`non-admin writers to '${storeName}' must match surface '${surf}'`);
+        }
+        if (
+          (storeName === "eranos.catalog" || storeName === "eranos.index") &&
+          !grant.queues.includes("eq03")
+        ) {
+          throw scopeDenied(`writing '${storeName}' requires an explicit 'eq03' queue grant`);
+        }
+        return;
+      }
+    }
+  }
+
   _requireHolder(grant, taskId) {
     this._taskRow(taskId);
-    const lease = this._one("SELECT * FROM leases WHERE task_id = ?", taskId);
+    const lease = this._one(
+      "SELECT * FROM leases WHERE namespace = ? AND task_id = ?",
+      this.namespace,
+      taskId
+    );
     if (!lease) return;
     if (lease.key_id !== grant.key_id && !(lease.key_id == null && grant.is_admin)) {
       throw forbid("only the key that claimed this task may change it");
@@ -882,7 +1385,8 @@ export class TesseraCoordinator extends DurableObject {
       }
       const label = String(body.label || "").trim();
       const queues = Array.isArray(body.queues) ? body.queues.map(String) : [];
-      const kinds = Array.isArray(body.kinds) && body.kinds.length ? body.kinds.map(String) : ["*"];
+      const kinds =
+        Array.isArray(body.kinds) && body.kinds.length ? body.kinds.map(String) : ["*"];
       const effect_classes =
         Array.isArray(body.effect_classes) && body.effect_classes.length
           ? body.effect_classes.map(String)
@@ -893,11 +1397,11 @@ export class TesseraCoordinator extends DurableObject {
       if (!queues.length) throw badReq("a key needs at least one queue pattern");
       if (effect_classes.includes("public")) throw badReq("no key may hold the public effect class");
       if (effect_classes.some((e) => !EFFECTS.includes(e))) throw badReq("unknown effect class");
-      if (scopes.some((s) => s !== "admin" && s !== "store")) throw badReq("unknown scope");
+      if (scopes.some((s) => !isValidScope(s))) throw badReq("unknown scope");
       if (!(days > 0 && days <= 365)) throw badReq("days must be between 0 and 365");
 
       const raw = crypto.getRandomValues(new Uint8Array(32));
-      let b64 = btoa(String.fromCharCode(...raw))
+      const b64 = btoa(String.fromCharCode(...raw))
         .replace(/\+/g, "-")
         .replace(/\//g, "_")
         .replace(/=+$/, "");
@@ -947,24 +1451,108 @@ export class TesseraCoordinator extends DurableObject {
   }
 
   _errOut(e) {
-    if (e instanceof StoreErr) {
-      return { ok: false, status: e.status, code: e.code, detail: e.detail, extra: e.extra };
+    if (e instanceof StoreErr || (e && typeof e.status === "number" && e.code)) {
+      return {
+        ok: false,
+        status: e.status,
+        code: e.code,
+        detail: e.detail || e.message,
+        extra: e.extra || {},
+      };
     }
     return { ok: false, status: 500, code: "internal", detail: String(e?.message || e), extra: {} };
   }
 
-  async publicHealthAndBoard(includeBoardMeta = false) {
+  _boardSnapshot(ns) {
+    const dagTasks = this._all(
+      "SELECT id, queue, state, parent_id, pending_deps, pending_children FROM tasks WHERE namespace = ? AND (parent_id IS NOT NULL OR pending_deps > 0 OR pending_children > 0 OR id IN (SELECT task_id FROM task_deps WHERE namespace = ?) OR id IN (SELECT depends_on FROM task_deps WHERE namespace = ?)) ORDER BY created_at DESC, id LIMIT 50",
+      ns,
+      ns,
+      ns
+    );
+    const dagNodes = dagTasks.map((t) => {
+      const deps = this._all(
+        "SELECT depends_on FROM task_deps WHERE namespace = ? AND task_id = ? ORDER BY rowid",
+        ns,
+        t.id
+      ).map((d) => d.depends_on);
+      return {
+        task_id: t.id,
+        queue: t.queue,
+        state: t.state,
+        parent_id: t.parent_id ?? null,
+        depends_on: deps,
+        pending_deps: Number(t.pending_deps || 0),
+        pending_children: Number(t.pending_children || 0),
+      };
+    });
+
+    const parkedTiles = this._all(
+      "SELECT id, queue, wait_reason, parked_by, wake_at, parks FROM tasks WHERE namespace = ? AND state = 'waiting' ORDER BY updated_at DESC, id LIMIT 50",
+      ns
+    ).map((p) => ({
+      task_id: p.id,
+      queue: p.queue,
+      wait_reason: p.wait_reason || "waiting",
+      parked_by: p.parked_by || "-",
+      wake_at: p.wake_at == null ? null : Number(p.wake_at),
+      parks: Number(p.parks || 0),
+    }));
+
+    const events = this._all(
+      "SELECT seq, ts, type, task_id, queue FROM events WHERE namespace = ? ORDER BY seq DESC LIMIT 25",
+      ns
+    ).map((ev) => ({
+      seq: Number(ev.seq),
+      ts: Number(ev.ts),
+      type: ev.type,
+      task_id: ev.task_id ?? null,
+      queue: ev.queue ?? null,
+    }));
+    const latestSeqRow = this._one(
+      "SELECT COALESCE(MAX(seq), 0) AS s FROM events WHERE namespace = ?",
+      ns
+    );
+    const feedEntries = this._all(
+      "SELECT seq, feed, kind, summary, created_at FROM feed_entries WHERE namespace = ? AND visibility_scope = 'public_commons' AND tags NOT LIKE '%status:quarantined%' ORDER BY id DESC LIMIT 15",
+      ns
+    ).map((fe) => ({
+      seq: Number(fe.seq),
+      feed: fe.feed,
+      kind: fe.kind,
+      summary: fe.summary,
+      created_at: Number(fe.created_at),
+    }));
+
+    return {
+      namespace: ns,
+      dag_nodes: dagNodes,
+      parked_tiles: parkedTiles,
+      events,
+      latest_event_seq: Number(latestSeqRow?.s || 0),
+      feed_entries: feedEntries,
+    };
+  }
+
+  async publicHealthAndBoard(includeBoardMeta = false, namespace = "main") {
+    const ns = normalizeNamespace(namespace);
     const now = Date.now() / 1000;
+    this.namespace = ns;
+    this.isPrimary = ns === "main";
+    this._ensureNamespaceSeeded(ns, now);
+
     const last = this._one("SELECT value FROM meta WHERE key = 'reaper_last_run'");
     const queues = [];
-    for (const r of this._all("SELECT * FROM counts ORDER BY queue")) {
+    for (const r of this._all("SELECT * FROM counts WHERE namespace = ? ORDER BY queue", ns)) {
       const oldest = this._one(
-        "SELECT MIN(updated_at) AS m FROM tasks WHERE queue = ? AND state = 'ready' AND not_before <= ?",
+        "SELECT MIN(updated_at) AS m FROM tasks WHERE namespace = ? AND queue = ? AND state = 'ready' AND not_before <= ?",
+        ns,
         r.queue,
         now
       );
       const expired = this._one(
-        "SELECT COUNT(*) AS n FROM leases l JOIN tasks t ON t.id = l.task_id WHERE t.queue = ? AND (l.expires_at <= ? OR l.hard_expires_at <= ?)",
+        "SELECT COUNT(*) AS n FROM leases l JOIN tasks t ON t.namespace = l.namespace AND t.id = l.task_id WHERE l.namespace = ? AND t.queue = ? AND (l.expires_at <= ? OR l.hard_expires_at <= ?)",
+        ns,
         r.queue,
         now,
         now
@@ -994,15 +1582,19 @@ export class TesseraCoordinator extends DurableObject {
     if (!includeBoardMeta) return health;
     return {
       health,
+      snapshot: this._boardSnapshot(ns),
       buckets: this._listBucketsInternal(),
       stores: this._listStoresInternal(),
     };
   }
 
   _listStoresInternal() {
+    const ns = this.namespace;
     return this._all(
-      "SELECT h.store AS store, COUNT(*) AS records, MAX(r.created_at) AS updated_at FROM record_heads h JOIN records r ON r.store = h.store AND r.key = h.key AND r.version = h.version GROUP BY h.store ORDER BY h.store"
+      "SELECT h.store AS store, COUNT(*) AS records, MAX(r.created_at) AS updated_at FROM record_heads h JOIN records r ON r.namespace = h.namespace AND r.store = h.store AND r.key = h.key AND r.version = h.version WHERE h.namespace = ? GROUP BY h.store ORDER BY h.store",
+      ns
     ).map((r) => ({
+      namespace: ns,
       store: r.store,
       records: Number(r.records),
       updated_at: Number(r.updated_at),
@@ -1010,44 +1602,109 @@ export class TesseraCoordinator extends DurableObject {
   }
 
   _listBucketsInternal() {
-    return this._all("SELECT * FROM buckets ORDER BY name").map((b) => {
+    const ns = this.namespace;
+    return this._all("SELECT * FROM buckets WHERE namespace = ? ORDER BY name", ns).map((b) => {
       const agg = this._one(
-        "SELECT COUNT(*) AS n, COALESCE(SUM(size), 0) AS total FROM bucket_objects WHERE bucket = ?",
+        "SELECT COUNT(*) AS n, COALESCE(SUM(size), 0) AS total FROM bucket_objects WHERE namespace = ? AND bucket = ?",
+        ns,
         b.name
       );
       return {
+        namespace: ns,
         name: b.name,
         description: b.description,
         objects: Number(agg?.n || 0),
         bytes: Number(agg?.total || 0),
         created_at: Number(b.created_at),
         updated_at: Number(b.updated_at),
+        producer_surface: b.producer_surface || "surface:tessera",
+        visibility_scope: b.visibility_scope || "public_commons",
+        allowed_surfaces: parseJsonSafe(b.allowed_surfaces, []),
+        target_cohorts: parseJsonSafe(b.target_cohorts, ["all"]),
+        tags: parseJsonSafe(b.tags, []),
+        owner_key_id: b.owner_key_id ?? null,
       };
     });
   }
 
-  async rpcCall(secret, action, args) {
+  _recordView(r) {
+    return {
+      namespace: r.namespace || this.namespace,
+      store: r.store,
+      key: r.key,
+      version: Number(r.version),
+      value: JSON.parse(r.value),
+      created_at: Number(r.created_at),
+      producer_surface: r.producer_surface || "surface:tessera",
+      visibility_scope: r.visibility_scope || "public_commons",
+      allowed_surfaces: parseJsonSafe(r.allowed_surfaces, []),
+      target_cohorts: parseJsonSafe(r.target_cohorts, ["all"]),
+      tags: parseJsonSafe(r.tags, []),
+      owner_key_id: r.owner_key_id ?? null,
+    };
+  }
+
+  _objectView(r, updatedAtOverride = null) {
+    return {
+      namespace: r.namespace || this.namespace,
+      bucket: r.bucket,
+      key: r.key,
+      version: Number(r.version),
+      sha256: r.sha256,
+      size: Number(r.size),
+      content_type: r.content_type,
+      metadata: JSON.parse(r.metadata),
+      created_at: Number(r.created_at),
+      updated_at: updatedAtOverride == null ? Number(r.updated_at) : Number(updatedAtOverride),
+      producer_surface: r.producer_surface || "surface:tessera",
+      visibility_scope: r.visibility_scope || "public_commons",
+      allowed_surfaces: parseJsonSafe(r.allowed_surfaces, []),
+      target_cohorts: parseJsonSafe(r.target_cohorts, ["all"]),
+      tags: parseJsonSafe(r.tags, []),
+      owner_key_id: r.owner_key_id ?? null,
+    };
+  }
+
+  async rpcCall(secret, action, args = {}) {
     try {
-      if (args && args.isPrimary === false) this.isPrimary = false;
-      const grant = await this._grantFromSecret(secret);
+      this.namespace = normalizeNamespace(args?.namespace || "main");
+      this.isPrimary = Boolean(args?.isPrimary ?? (this.namespace === "main"));
       const now = Date.now() / 1000;
+      this._ensureNamespaceSeeded(this.namespace, now);
+
+      const grant = await this._grantFromSecret(secret);
+      const surfaceHeader = args?.surfaceHeader || args?.header_surface_id || "";
+      const viewerCtx = this._viewerCtx(grant, surfaceHeader);
+      const defaultGovSurface = viewerCtx.surface || "surface:tessera";
 
       switch (action) {
         case "verifyKey":
           return { ok: true, status: 200, data: { key_id: grant.key_id } };
         case "verifyStoreScope":
           if (!grant.can_store) throw forbid("this needs a key with the store scope");
-          return { ok: true, status: 200, data: { key_id: grant.key_id } };
+          return {
+            ok: true,
+            status: 200,
+            data: {
+              key_id: grant.key_id,
+              surface: viewerCtx.surface,
+              is_admin: grant.is_admin,
+            },
+          };
 
         case "counts": {
           const recount = Boolean(args.recount);
           const map = {};
           if (recount) {
-            for (const q of this._all("SELECT name FROM queues ORDER BY name")) {
+            for (const q of this._all(
+              "SELECT name FROM queues WHERE namespace = ? ORDER BY name",
+              this.namespace
+            )) {
               map[q.name] = { ready: 0, leased: 0, waiting: 0, done: 0, dead: 0, cancelled: 0 };
             }
             for (const r of this._all(
-              "SELECT queue, state, COUNT(*) AS n FROM tasks GROUP BY queue, state"
+              "SELECT queue, state, COUNT(*) AS n FROM tasks WHERE namespace = ? GROUP BY queue, state",
+              this.namespace
             )) {
               if (!map[r.queue]) {
                 map[r.queue] = { ready: 0, leased: 0, waiting: 0, done: 0, dead: 0, cancelled: 0 };
@@ -1055,7 +1712,10 @@ export class TesseraCoordinator extends DurableObject {
               map[r.queue][r.state] = Number(r.n);
             }
           } else {
-            for (const r of this._all("SELECT * FROM counts ORDER BY queue")) {
+            for (const r of this._all(
+              "SELECT * FROM counts WHERE namespace = ? ORDER BY queue",
+              this.namespace
+            )) {
               map[r.queue] = {
                 ready: Number(r.ready),
                 leased: Number(r.leased),
@@ -1078,7 +1738,8 @@ export class TesseraCoordinator extends DurableObject {
           const after = Number(args.after || 0);
           const limit = Math.max(1, Math.min(Number(args.limit || 1000), 10000));
           const events = this._all(
-            "SELECT * FROM events WHERE seq > ? ORDER BY seq LIMIT ?",
+            "SELECT * FROM events WHERE namespace = ? AND seq > ? ORDER BY seq LIMIT ?",
+            this.namespace,
             after,
             limit
           ).map((r) => ({
@@ -1131,7 +1792,8 @@ export class TesseraCoordinator extends DurableObject {
           if (cfg.max_attempts < 1 || cfg.max_attempts > 20) throw badReq("invalid max_attempts");
           this.ctx.storage.transactionSync(() => {
             this.ctx.storage.sql.exec(
-              "INSERT INTO queues (name, lease_seconds, heartbeat_seconds, miss_limit, max_attempts, backoff_base_seconds, backoff_cap_seconds, weight, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (name) DO UPDATE SET lease_seconds = excluded.lease_seconds, heartbeat_seconds = excluded.heartbeat_seconds, miss_limit = excluded.miss_limit, max_attempts = excluded.max_attempts, backoff_base_seconds = excluded.backoff_base_seconds, backoff_cap_seconds = excluded.backoff_cap_seconds, weight = excluded.weight, updated_at = excluded.updated_at",
+              "INSERT INTO queues (namespace, name, lease_seconds, heartbeat_seconds, miss_limit, max_attempts, backoff_base_seconds, backoff_cap_seconds, weight, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (namespace, name) DO UPDATE SET lease_seconds = excluded.lease_seconds, heartbeat_seconds = excluded.heartbeat_seconds, miss_limit = excluded.miss_limit, max_attempts = excluded.max_attempts, backoff_base_seconds = excluded.backoff_base_seconds, backoff_cap_seconds = excluded.backoff_cap_seconds, weight = excluded.weight, updated_at = excluded.updated_at",
+              this.namespace,
               cfg.name,
               cfg.lease_seconds,
               cfg.heartbeat_seconds,
@@ -1143,14 +1805,19 @@ export class TesseraCoordinator extends DurableObject {
               now,
               now
             );
-            this.ctx.storage.sql.exec("INSERT OR IGNORE INTO counts (queue) VALUES (?)", cfg.name);
+            this.ctx.storage.sql.exec(
+              "INSERT OR IGNORE INTO counts (namespace, queue) VALUES (?, ?)",
+              this.namespace,
+              cfg.name
+            );
             this._event("queue_defined", now, { queue: cfg.name, detail: cfg });
           });
           if (this.env.FABRIC_DB) {
             this._mirrorToD1([
               this.env.FABRIC_DB.prepare(
-                "INSERT INTO queues (name, lease_seconds, heartbeat_seconds, miss_limit, max_attempts, backoff_base_seconds, backoff_cap_seconds, weight, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (name) DO UPDATE SET updated_at = excluded.updated_at"
+                "INSERT INTO queues (namespace, name, lease_seconds, heartbeat_seconds, miss_limit, max_attempts, backoff_base_seconds, backoff_cap_seconds, weight, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (namespace, name) DO UPDATE SET updated_at = excluded.updated_at"
               ).bind(
+                this.namespace,
                 cfg.name,
                 cfg.lease_seconds,
                 cfg.heartbeat_seconds,
@@ -1162,16 +1829,19 @@ export class TesseraCoordinator extends DurableObject {
                 now,
                 now
               ),
-              this.env.FABRIC_DB.prepare("INSERT OR IGNORE INTO counts (queue) VALUES (?)").bind(cfg.name),
+              this.env.FABRIC_DB.prepare(
+                "INSERT OR IGNORE INTO counts (namespace, queue) VALUES (?, ?)"
+              ).bind(this.namespace, cfg.name),
             ]);
           }
           return { ok: true, status: 200, data: cfg };
         }
 
         case "queues": {
-          const all = this._all("SELECT name FROM queues ORDER BY name").map((r) =>
-            this._queueConfig(r.name)
-          );
+          const all = this._all(
+            "SELECT name FROM queues WHERE namespace = ? ORDER BY name",
+            this.namespace
+          ).map((r) => this._queueConfig(r.name));
           return {
             ok: true,
             status: 200,
@@ -1197,41 +1867,83 @@ export class TesseraCoordinator extends DurableObject {
           if (args.task_id != null && !TASK_ID_RE.test(String(args.task_id))) {
             throw badReq("invalid task_id");
           }
+          const cleanIdem =
+            args.idempotency_key != null && String(args.idempotency_key).trim()
+              ? String(args.idempotency_key).trim()
+              : null;
 
           this._requireQueue(grant, queue);
-          if (effectClass === "public" && !grant.is_admin) {
-            throw forbid("only an admin key may queue a task with the public effect class");
-          }
-          if (args.fromMcp && !grant.is_admin && !grant.effect_classes.includes(effectClass)) {
-            throw forbid("this key may not queue tasks of that effect class");
-          }
+          this._requireEffect(grant, effectClass);
           for (const dep of dependsOn) {
             const depRow = this._taskRow(dep);
             this._requireQueue(grant, depRow.queue);
           }
+          const gov = normalizeGovernance(
+            args,
+            {
+              defaultSurface: defaultGovSurface,
+              ownerKeyId: grant.key_id,
+              extraTags: extractTags(args.brief),
+            },
+            badReq
+          );
 
           let outId = args.task_id ? String(args.task_id) : newId("t");
           this.ctx.storage.transactionSync(() => {
             this._queueConfig(queue);
-            const existing = this._one("SELECT queue FROM tasks WHERE id = ?", outId);
+            if (cleanIdem != null) {
+              const priorIdem = this._one(
+                "SELECT id FROM tasks WHERE namespace = ? AND queue = ? AND idempotency_key = ?",
+                this.namespace,
+                queue,
+                cleanIdem
+              );
+              if (priorIdem) {
+                outId = String(priorIdem.id);
+                return;
+              }
+            }
+            const existing = this._one(
+              "SELECT queue FROM tasks WHERE namespace = ? AND id = ?",
+              this.namespace,
+              outId
+            );
             if (existing) {
               if (existing.queue !== queue) {
                 throw badReq(`task '${outId}' already exists in another queue`);
               }
               return;
             }
-            this._insertTask(
-              outId,
-              queue,
-              null,
-              kind,
-              effectClass,
-              priority,
-              args.brief,
-              notBefore,
-              now,
-              dependsOn
-            );
+            try {
+              this._insertTask(
+                outId,
+                queue,
+                null,
+                kind,
+                effectClass,
+                priority,
+                args.brief,
+                notBefore,
+                now,
+                dependsOn,
+                cleanIdem,
+                gov
+              );
+            } catch (err) {
+              if (cleanIdem != null && String(err?.message || err).includes("UNIQUE")) {
+                const winner = this._one(
+                  "SELECT id FROM tasks WHERE namespace = ? AND queue = ? AND idempotency_key = ?",
+                  this.namespace,
+                  queue,
+                  cleanIdem
+                );
+                if (winner) {
+                  outId = String(winner.id);
+                  return;
+                }
+              }
+              throw err;
+            }
           });
           return { ok: true, status: 201, data: { task_id: outId } };
         }
@@ -1239,6 +1951,21 @@ export class TesseraCoordinator extends DurableObject {
         case "task": {
           const view = this._taskView(String(args.task_id));
           this._requireQueue(grant, view.queue);
+          if (
+            !canViewGoverned({
+              visibility_scope: view.visibility_scope,
+              producer_surface: view.producer_surface,
+              allowed_surfaces: view.allowed_surfaces,
+              owner_key_id: view.owner_key_id,
+              tags: view.tags,
+              viewer_surface: viewerCtx.surface,
+              viewer_key_id: viewerCtx.key_id,
+              is_admin: viewerCtx.is_admin,
+              direct_get: true,
+            })
+          ) {
+            throw notFound(`task '${view.task_id}' does not exist`);
+          }
           return { ok: true, status: 200, data: view };
         }
 
@@ -1246,7 +1973,8 @@ export class TesseraCoordinator extends DurableObject {
           const view = this._taskView(String(args.task_id));
           this._requireQueue(grant, view.queue);
           const results = this._all(
-            "SELECT * FROM results WHERE task_id = ? ORDER BY created_at",
+            "SELECT * FROM results WHERE namespace = ? AND task_id = ? ORDER BY created_at",
+            this.namespace,
             view.task_id
           ).map((r) => ({
             task_id: r.task_id,
@@ -1257,6 +1985,7 @@ export class TesseraCoordinator extends DurableObject {
             error: r.error ?? null,
             receipt_hash: r.receipt_hash,
             state_after: r.state_after,
+            completed_by_key: r.completed_by_key ?? null,
             created_at: Number(r.created_at),
           }));
           return { ok: true, status: 200, data: { results } };
@@ -1273,7 +2002,11 @@ export class TesseraCoordinator extends DurableObject {
               throw rateLim(`over ${CLAIMS_PER_MINUTE} claims a minute`, wait);
             }
           }
-          const qRow = this._one("SELECT heartbeat_seconds FROM queues WHERE name = ?", queue);
+          const qRow = this._one(
+            "SELECT heartbeat_seconds FROM queues WHERE namespace = ? AND name = ?",
+            this.namespace,
+            queue
+          );
           const beat = qRow ? String(qRow.heartbeat_seconds) : "60";
           const effects = grant.effectFilter(args.effect_classes || null);
           const kinds = grant.kindFilter(args.kinds || null);
@@ -1283,8 +2016,9 @@ export class TesseraCoordinator extends DurableObject {
             this.ctx.storage.transactionSync(() => {
               const config = this._queueConfig(queue);
               this._reap(now, queue);
-              let sql = "SELECT * FROM tasks WHERE queue = ? AND state = 'ready' AND not_before <= ?";
-              const params = [queue, now];
+              let sql =
+                "SELECT * FROM tasks WHERE namespace = ? AND queue = ? AND state = 'ready' AND not_before <= ?";
+              const params = [this.namespace, queue, now];
               if (kinds && kinds.length) {
                 sql += ` AND kind IN (${kinds.map(() => "?").join(", ")})`;
                 params.push(...kinds);
@@ -1301,14 +2035,17 @@ export class TesseraCoordinator extends DurableObject {
               const hard = now + config.lease_seconds;
               const expires = Math.min(now + config.heartbeat_seconds * config.miss_limit, hard);
               this.ctx.storage.sql.exec(
-                "UPDATE tasks SET state = 'leased', attempts = ?, fencing_token = ?, updated_at = ? WHERE id = ?",
+                "UPDATE tasks SET state = 'leased', attempts = ?, fencing_token = ?, updated_at = ? WHERE namespace = ? AND id = ? AND state = 'ready'",
                 attempt,
                 token,
                 now,
+                this.namespace,
                 row.id
               );
+              if (this._changes() !== 1) return;
               this.ctx.storage.sql.exec(
-                "INSERT INTO leases (task_id, fencing_token, worker, key_id, claimed_at, last_heartbeat_at, expires_at, hard_expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO leases (namespace, task_id, fencing_token, worker, key_id, claimed_at, last_heartbeat_at, expires_at, hard_expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                this.namespace,
                 row.id,
                 token,
                 worker,
@@ -1327,6 +2064,7 @@ export class TesseraCoordinator extends DurableObject {
                 detail: { attempt },
               });
               lease = {
+                namespace: this.namespace,
                 task_id: row.id,
                 queue,
                 fencing_token: token,
@@ -1366,11 +2104,28 @@ export class TesseraCoordinator extends DurableObject {
               Number(row.hard_expires_at)
             );
             this.ctx.storage.sql.exec(
-              "UPDATE leases SET last_heartbeat_at = ?, expires_at = ? WHERE task_id = ?",
+              "UPDATE leases SET last_heartbeat_at = ?, expires_at = ? WHERE namespace = ? AND task_id = ? AND fencing_token = ?",
               now,
               expires,
-              taskId
+              this.namespace,
+              taskId,
+              token
             );
+            if (this._changes() !== 1) {
+              staleMsg = `fencing token ${token} is stale`;
+              return;
+            }
+            this.ctx.storage.sql.exec(
+              "UPDATE tasks SET updated_at = ? WHERE namespace = ? AND id = ? AND state = 'leased' AND fencing_token = ?",
+              now,
+              this.namespace,
+              taskId,
+              token
+            );
+            if (this._changes() !== 1) {
+              staleMsg = `task ${taskId} is no longer leased under token ${token}`;
+              return;
+            }
             this._event("heartbeat", now, {
               task_id: taskId,
               queue: task.queue,
@@ -1378,6 +2133,7 @@ export class TesseraCoordinator extends DurableObject {
               token,
             });
             lease = {
+              namespace: this.namespace,
               task_id: taskId,
               queue: task.queue,
               fencing_token: token,
@@ -1407,28 +2163,23 @@ export class TesseraCoordinator extends DurableObject {
           const okFlag = args.ok === undefined ? true : Boolean(args.ok);
           const errorText = args.error == null ? null : String(args.error);
           if (!idem) throw badReq("the Idempotency-Key header is required");
-          if (typeof args.output !== "object" || args.output === null || Array.isArray(args.output)) {
-            throw badReq("output must be a JSON object");
-          }
-          const outputText = canonicalJson(args.output);
+          const outputVal = args.output === undefined ? null : args.output;
+          const outputText = canonicalJson(outputVal);
           if (new TextEncoder().encode(outputText).byteLength > MAX_OUTPUT_BYTES) {
             throw badReq("output is over 1 MiB: store it as a blob and submit its sha256");
           }
           this._requireHolder(grant, taskId);
 
-          const receiptBody = canonicalJson({
-            error: errorText,
-            fencing_token: token,
-            ok: okFlag,
-            output: args.output,
-            task_id: taskId,
-          });
-          const digest = await sha256Hex(new TextEncoder().encode(receiptBody));
+          const digest = await receiptHash(taskId, token, okFlag, outputVal, errorText);
 
           let receipt = null;
           let staleMsg = null;
           this.ctx.storage.transactionSync(() => {
-            const prior = this._one("SELECT * FROM results WHERE idempotency_key = ?", idem);
+            const prior = this._one(
+              "SELECT * FROM results WHERE namespace = ? AND idempotency_key = ?",
+              this.namespace,
+              idem
+            );
             if (prior) {
               if (prior.task_id !== taskId) {
                 throw idemConflict("idempotency key already used for another task");
@@ -1450,14 +2201,28 @@ export class TesseraCoordinator extends DurableObject {
             if (!row) return;
             const task = this._taskRow(taskId);
             const config = this._queueConfig(task.queue);
-            this.ctx.storage.sql.exec("DELETE FROM leases WHERE task_id = ?", taskId);
+            this.ctx.storage.sql.exec(
+              "DELETE FROM leases WHERE namespace = ? AND task_id = ? AND fencing_token = ?",
+              this.namespace,
+              taskId,
+              token
+            );
+            if (this._changes() !== 1) {
+              staleMsg = `fencing token ${token} is stale`;
+              return;
+            }
             let stateAfter;
             if (okFlag) {
               this.ctx.storage.sql.exec(
-                "UPDATE tasks SET state = 'done', updated_at = ? WHERE id = ?",
+                "UPDATE tasks SET state = 'done', updated_at = ? WHERE namespace = ? AND id = ? AND state = 'leased' AND fencing_token = ?",
                 now,
-                taskId
+                this.namespace,
+                taskId,
+                token
               );
+              if (this._changes() !== 1) {
+                throw staleLease(`task ${taskId} is no longer leased under token ${token}`);
+              }
               this._moveCount(task.queue, "leased", "done");
               if (task.parent_id) this._childResolved(task.parent_id, now);
               this._dependencyResolved(taskId, now);
@@ -1466,7 +2231,8 @@ export class TesseraCoordinator extends DurableObject {
               stateAfter = this._fail(task, config, now, errorText || "worker reported failure");
             }
             this.ctx.storage.sql.exec(
-              "INSERT INTO results (idempotency_key, task_id, fencing_token, ok, output, error, receipt_hash, state_after, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+              "INSERT INTO results (namespace, idempotency_key, task_id, fencing_token, ok, output, error, receipt_hash, state_after, completed_by_key, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+              this.namespace,
               idem,
               taskId,
               token,
@@ -1475,6 +2241,7 @@ export class TesseraCoordinator extends DurableObject {
               errorText,
               digest,
               stateAfter,
+              grant.key_id,
               now
             );
             this._event("submitted", now, {
@@ -1542,6 +2309,27 @@ export class TesseraCoordinator extends DurableObject {
             if (this._depth(taskId) >= MAX_DEPTH) {
               throw badReq(`tasks may nest at most ${MAX_DEPTH} levels deep`);
             }
+            this.ctx.storage.sql.exec(
+              "DELETE FROM leases WHERE namespace = ? AND task_id = ? AND fencing_token = ?",
+              this.namespace,
+              taskId,
+              token
+            );
+            if (this._changes() !== 1) {
+              staleMsg = `fencing token ${token} is stale`;
+              return;
+            }
+            this.ctx.storage.sql.exec(
+              "UPDATE tasks SET state = 'waiting', wait_reason = 'children', pending_children = ?, updated_at = ? WHERE namespace = ? AND id = ? AND state = 'leased' AND fencing_token = ?",
+              children.length,
+              now,
+              this.namespace,
+              taskId,
+              token
+            );
+            if (this._changes() !== 1) {
+              throw staleLease(`task ${taskId} is no longer leased under token ${token}`);
+            }
             ids = [];
             for (const child of children) {
               const q = child.queue || task.queue;
@@ -1549,6 +2337,15 @@ export class TesseraCoordinator extends DurableObject {
               const cid = newId("t");
               const prio = child.priority == null ? Number(task.priority) : Number(child.priority);
               const deps = (child.after || []).map((j) => ids[j]);
+              const childGov = normalizeGovernance(
+                child,
+                {
+                  defaultSurface: task.producer_surface || defaultGovSurface,
+                  ownerKeyId: grant.key_id,
+                  extraTags: extractTags(child.brief),
+                },
+                badReq
+              );
               this._insertTask(
                 cid,
                 q,
@@ -1559,17 +2356,12 @@ export class TesseraCoordinator extends DurableObject {
                 child.brief,
                 0.0,
                 now,
-                deps
+                deps,
+                null,
+                childGov
               );
               ids.push(cid);
             }
-            this.ctx.storage.sql.exec("DELETE FROM leases WHERE task_id = ?", taskId);
-            this.ctx.storage.sql.exec(
-              "UPDATE tasks SET state = 'waiting', wait_reason = 'children', pending_children = ?, updated_at = ? WHERE id = ?",
-              ids.length,
-              now,
-              taskId
-            );
             this._moveCount(task.queue, "leased", "waiting");
             this._event("split", now, {
               task_id: taskId,
@@ -1601,15 +2393,29 @@ export class TesseraCoordinator extends DurableObject {
             if (!row) return;
             const task = this._taskRow(taskId);
             const wake = resumeWithin == null ? null : now + resumeWithin;
-            this.ctx.storage.sql.exec("DELETE FROM leases WHERE task_id = ?", taskId);
+            this.ctx.storage.sql.exec(
+              "DELETE FROM leases WHERE namespace = ? AND task_id = ? AND fencing_token = ?",
+              this.namespace,
+              taskId,
+              token
+            );
+            if (this._changes() !== 1) {
+              staleMsg = `fencing token ${token} is stale`;
+              return;
+            }
             this._cancelJobs(taskId, now);
             this.ctx.storage.sql.exec(
-              "UPDATE tasks SET state = 'waiting', wait_reason = 'input', wake_at = ?, parked_by = ?, parks = parks + 1, updated_at = ? WHERE id = ?",
+              "UPDATE tasks SET state = 'waiting', wait_reason = 'input', wake_at = ?, parked_by = ?, parks = parks + 1, updated_at = ? WHERE namespace = ? AND id = ? AND state = 'leased' AND fencing_token = ?",
               wake,
               row.key_id,
               now,
-              taskId
+              this.namespace,
+              taskId,
+              token
             );
+            if (this._changes() !== 1) {
+              throw staleLease(`task ${taskId} is no longer leased under token ${token}`);
+            }
             this._moveCount(task.queue, "leased", "waiting");
             this._event("parked", now, {
               task_id: taskId,
@@ -1638,6 +2444,7 @@ export class TesseraCoordinator extends DurableObject {
           }
           const tRow = this._taskRow(taskId);
           this._requireQueue(grant, tRow.queue);
+          this._requireEffect(grant, tRow.effect_class);
           let view = null;
           this.ctx.storage.transactionSync(() => {
             const task = this._taskRow(taskId);
@@ -1652,7 +2459,9 @@ export class TesseraCoordinator extends DurableObject {
             if (grant.key_id === task.parked_by && !grant.is_admin) {
               throw forbid("the key that parked this task may not resume it");
             }
-            this._wake(task, input, now, "resumed", grant.key_id);
+            if (!this._wake(task, input, now, "resumed", grant.key_id)) {
+              throw badState(`task ${taskId} is no longer parked`);
+            }
             view = this._taskView(taskId);
           });
           return { ok: true, status: 200, data: view };
@@ -1663,9 +2472,7 @@ export class TesseraCoordinator extends DurableObject {
           const reason = String(args.reason || "");
           const tRow = this._taskRow(taskId);
           this._requireQueue(grant, tRow.queue);
-          if (!grant.is_admin && !grant.effect_classes.includes(tRow.effect_class)) {
-            throw forbid("this key may not cancel tasks of that effect class");
-          }
+          this._requireEffect(grant, tRow.effect_class);
           let view = null;
           this.ctx.storage.transactionSync(() => {
             this._cancelTree(taskId, reason, now, true);
@@ -1687,10 +2494,15 @@ export class TesseraCoordinator extends DurableObject {
             const [row, stale] = this._liveLease(taskId, token, now);
             staleMsg = stale;
             if (!row) return;
-            const existing = this._one("SELECT 1 FROM jobs WHERE job_id = ?", jobId);
+            const existing = this._one(
+              "SELECT 1 FROM jobs WHERE namespace = ? AND job_id = ?",
+              this.namespace,
+              jobId
+            );
             if (existing) throw badReq(`job '${jobId}' is already registered`);
             this.ctx.storage.sql.exec(
-              "INSERT INTO jobs (job_id, task_id, fencing_token, model, status, created_at, updated_at) VALUES (?, ?, ?, ?, 'queued', ?, ?)",
+              "INSERT INTO jobs (namespace, job_id, task_id, fencing_token, model, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'queued', ?, ?)",
+              this.namespace,
               jobId,
               taskId,
               token,
@@ -1714,20 +2526,29 @@ export class TesseraCoordinator extends DurableObject {
           const jobId = String(args.job_id || "");
           const status = String(args.status || "");
           if (!JOB_STATUSES.has(status)) throw badReq("invalid job status");
-          const existing = this._one("SELECT * FROM jobs WHERE job_id = ?", jobId);
+          const existing = this._one(
+            "SELECT * FROM jobs WHERE namespace = ? AND job_id = ?",
+            this.namespace,
+            jobId
+          );
           if (existing && !grant.is_admin) this._requireHolder(grant, existing.task_id);
           let updated = null;
           this.ctx.storage.transactionSync(() => {
-            const row = this._one("SELECT * FROM jobs WHERE job_id = ?", jobId);
+            const row = this._one(
+              "SELECT * FROM jobs WHERE namespace = ? AND job_id = ?",
+              this.namespace,
+              jobId
+            );
             if (!row) throw notFound(`job '${jobId}' is not registered`);
             this.ctx.storage.sql.exec(
-              "UPDATE jobs SET status = ?, input_tokens = COALESCE(?, input_tokens), cached_input_tokens = COALESCE(?, cached_input_tokens), output_tokens = COALESCE(?, output_tokens), cost_usd = COALESCE(?, cost_usd), updated_at = ? WHERE job_id = ?",
+              "UPDATE jobs SET status = ?, input_tokens = COALESCE(?, input_tokens), cached_input_tokens = COALESCE(?, cached_input_tokens), output_tokens = COALESCE(?, output_tokens), cost_usd = COALESCE(?, cost_usd), updated_at = ? WHERE namespace = ? AND job_id = ?",
               status,
               args.input_tokens ?? null,
               args.cached_input_tokens ?? null,
               args.output_tokens ?? null,
               args.cost_usd ?? null,
               now,
+              this.namespace,
               jobId
             );
             this._event("job_updated", now, {
@@ -1736,7 +2557,11 @@ export class TesseraCoordinator extends DurableObject {
               detail: { job_id: jobId, status, cost_usd: args.cost_usd ?? null },
             });
             if (status === "cancelled") {
-              const lease = this._one("SELECT fencing_token FROM leases WHERE task_id = ?", row.task_id);
+              const lease = this._one(
+                "SELECT fencing_token FROM leases WHERE namespace = ? AND task_id = ?",
+                this.namespace,
+                row.task_id
+              );
               if (lease && Number(lease.fencing_token) === Number(row.fencing_token)) {
                 this._lapse(row.task_id, now);
               }
@@ -1750,15 +2575,17 @@ export class TesseraCoordinator extends DurableObject {
           const taskId = args.task_id ? String(args.task_id) : null;
           if (taskId == null) {
             if (!grant.is_admin) throw forbid("this needs a key with the admin scope");
-            const list = this._all("SELECT job_id FROM jobs ORDER BY created_at").map((r) =>
-              this._jobView(r.job_id)
-            );
+            const list = this._all(
+              "SELECT job_id FROM jobs WHERE namespace = ? ORDER BY created_at",
+              this.namespace
+            ).map((r) => this._jobView(r.job_id));
             return { ok: true, status: 200, data: { jobs: list } };
           }
           const tRow = this._taskRow(taskId);
           this._requireQueue(grant, tRow.queue);
           const list = this._all(
-            "SELECT job_id FROM jobs WHERE task_id = ? ORDER BY created_at",
+            "SELECT job_id FROM jobs WHERE namespace = ? AND task_id = ? ORDER BY created_at",
+            this.namespace,
             taskId
           ).map((r) => this._jobView(r.job_id));
           return { ok: true, status: 200, data: { jobs: list } };
@@ -1769,57 +2596,157 @@ export class TesseraCoordinator extends DurableObject {
           const writes = Array.isArray(args.writes) ? args.writes : [];
           if (!writes.length) throw badReq("a batch needs at least one write");
           for (const w of writes) {
-            if (!NAME_RE.test(String(w.store || ""))) throw badReq("invalid store name");
-            if (!RECORD_KEY_RE.test(String(w.key || ""))) throw badReq("invalid record key");
+            const sName = String(w.store || "");
+            const rKey = String(w.key || "");
+            if (!NAME_RE.test(sName)) throw badReq("invalid store name");
+            if (!RECORD_KEY_RE.test(rKey)) throw badReq("invalid record key");
+            this._requireSurfaceWrite(grant, sName, surfaceHeader);
           }
           const written = [];
           const d1Stmts = [];
           this.ctx.storage.transactionSync(() => {
             for (const w of writes) {
-              const head = this._one(
-                "SELECT version FROM record_heads WHERE store = ? AND key = ?",
-                w.store,
-                w.key
-              );
-              const current = head == null ? null : Number(head.version);
               const expected = w.expected_version === undefined ? null : w.expected_version;
-              if (current !== expected) {
-                throw verConflict(
-                  `${w.store}/${w.key}: expected version ${expected}, head is ${current}`,
-                  current
-                );
+              if (expected != null && (!Number.isInteger(expected) || expected < 0)) {
+                throw verConflict(`${w.store}/${w.key}: invalid expected version ${expected}`, null);
               }
+              const gov = normalizeGovernance(
+                w,
+                {
+                  defaultSurface: defaultGovSurface,
+                  ownerKeyId: grant.key_id,
+                  extraTags: extractTags(w.value),
+                },
+                badReq
+              );
               const text = canonicalJson(w.value);
-              const version = (current || 0) + 1;
+              const allowedJson = JSON.stringify(gov.allowed_surfaces);
+              const cohortsJson = JSON.stringify(gov.target_cohorts);
+              const tagsJson = JSON.stringify(gov.tags);
+
+              let version;
+              if (expected === null || expected === 0) {
+                version = 1;
+                this.ctx.storage.sql.exec(
+                  "INSERT OR IGNORE INTO record_heads (namespace, store, key, version, producer_surface, visibility_scope, allowed_surfaces, target_cohorts, tags, owner_key_id) VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?)",
+                  this.namespace,
+                  w.store,
+                  w.key,
+                  gov.producer_surface,
+                  gov.visibility_scope,
+                  allowedJson,
+                  cohortsJson,
+                  tagsJson,
+                  gov.owner_key_id
+                );
+                if (this._changes() !== 1) {
+                  const head = this._one(
+                    "SELECT version FROM record_heads WHERE namespace = ? AND store = ? AND key = ?",
+                    this.namespace,
+                    w.store,
+                    w.key
+                  );
+                  const current = head == null ? null : Number(head.version);
+                  throw verConflict(
+                    `${w.store}/${w.key}: expected version ${expected}, head is ${current}`,
+                    current
+                  );
+                }
+              } else {
+                version = expected + 1;
+                this.ctx.storage.sql.exec(
+                  "UPDATE record_heads SET version = ?, producer_surface = ?, visibility_scope = ?, allowed_surfaces = ?, target_cohorts = ?, tags = ?, owner_key_id = ? WHERE namespace = ? AND store = ? AND key = ? AND version = ?",
+                  version,
+                  gov.producer_surface,
+                  gov.visibility_scope,
+                  allowedJson,
+                  cohortsJson,
+                  tagsJson,
+                  gov.owner_key_id,
+                  this.namespace,
+                  w.store,
+                  w.key,
+                  expected
+                );
+                if (this._changes() !== 1) {
+                  const head = this._one(
+                    "SELECT version FROM record_heads WHERE namespace = ? AND store = ? AND key = ?",
+                    this.namespace,
+                    w.store,
+                    w.key
+                  );
+                  const current = head == null ? null : Number(head.version);
+                  throw verConflict(
+                    `${w.store}/${w.key}: expected version ${expected}, head is ${current}`,
+                    current
+                  );
+                }
+              }
+
               this.ctx.storage.sql.exec(
-                "INSERT INTO records (store, key, version, value, created_at) VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO records (namespace, store, key, version, value, created_at, producer_surface, visibility_scope, allowed_surfaces, target_cohorts, tags, owner_key_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                this.namespace,
                 w.store,
                 w.key,
                 version,
                 text,
-                now
+                now,
+                gov.producer_surface,
+                gov.visibility_scope,
+                allowedJson,
+                cohortsJson,
+                tagsJson,
+                gov.owner_key_id
               );
-              this.ctx.storage.sql.exec(
-                "INSERT INTO record_heads (store, key, version) VALUES (?, ?, ?) ON CONFLICT (store, key) DO UPDATE SET version = excluded.version",
-                w.store,
-                w.key,
-                version
-              );
+              this._syncNounTags("record", w.store, w.key, gov.tags);
+
               written.push({
+                namespace: this.namespace,
                 store: w.store,
                 key: w.key,
                 version,
                 value: w.value,
                 created_at: now,
+                producer_surface: gov.producer_surface,
+                visibility_scope: gov.visibility_scope,
+                allowed_surfaces: gov.allowed_surfaces,
+                target_cohorts: gov.target_cohorts,
+                tags: gov.tags,
+                owner_key_id: gov.owner_key_id,
               });
+
               if (this.env.FABRIC_DB) {
                 d1Stmts.push(
                   this.env.FABRIC_DB.prepare(
-                    "INSERT OR IGNORE INTO records (store, key, version, value, created_at) VALUES (?, ?, ?, ?, ?)"
-                  ).bind(w.store, w.key, version, text, now),
+                    "INSERT OR IGNORE INTO records (namespace, store, key, version, value, created_at, producer_surface, visibility_scope, allowed_surfaces, target_cohorts, tags, owner_key_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                  ).bind(
+                    this.namespace,
+                    w.store,
+                    w.key,
+                    version,
+                    text,
+                    now,
+                    gov.producer_surface,
+                    gov.visibility_scope,
+                    allowedJson,
+                    cohortsJson,
+                    tagsJson,
+                    gov.owner_key_id
+                  ),
                   this.env.FABRIC_DB.prepare(
-                    "INSERT INTO record_heads (store, key, version) VALUES (?, ?, ?) ON CONFLICT (store, key) DO UPDATE SET version = excluded.version"
-                  ).bind(w.store, w.key, version)
+                    "INSERT INTO record_heads (namespace, store, key, version, producer_surface, visibility_scope, allowed_surfaces, target_cohorts, tags, owner_key_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (namespace, store, key) DO UPDATE SET version = excluded.version, producer_surface = excluded.producer_surface, visibility_scope = excluded.visibility_scope, allowed_surfaces = excluded.allowed_surfaces, target_cohorts = excluded.target_cohorts, tags = excluded.tags, owner_key_id = excluded.owner_key_id WHERE record_heads.version < excluded.version"
+                  ).bind(
+                    this.namespace,
+                    w.store,
+                    w.key,
+                    version,
+                    gov.producer_surface,
+                    gov.visibility_scope,
+                    allowedJson,
+                    cohortsJson,
+                    tagsJson,
+                    gov.owner_key_id
+                  )
                 );
               }
             }
@@ -1837,42 +2764,69 @@ export class TesseraCoordinator extends DurableObject {
           if (!grant.can_store) throw forbid("this needs a key with the store scope");
           const store = String(args.store || "");
           const key = String(args.key || "");
-          let version = args.version == null ? null : Number(args.version);
-          if (version == null) {
-            const head = this._one(
-              "SELECT version FROM record_heads WHERE store = ? AND key = ?",
-              store,
-              key
-            );
-            if (!head) throw notFound(`record ${store}/${key} does not exist`);
-            version = Number(head.version);
+          const head = this._one(
+            "SELECT * FROM record_heads WHERE namespace = ? AND store = ? AND key = ?",
+            this.namespace,
+            store,
+            key
+          );
+          if (!head) throw notFound(`record ${store}/${key} does not exist`);
+          if (
+            !canViewGoverned({
+              visibility_scope: head.visibility_scope || "public_commons",
+              producer_surface: head.producer_surface || "surface:tessera",
+              allowed_surfaces: parseJsonSafe(head.allowed_surfaces, []),
+              owner_key_id: head.owner_key_id ?? null,
+              tags: parseJsonSafe(head.tags, []),
+              viewer_surface: viewerCtx.surface,
+              viewer_key_id: viewerCtx.key_id,
+              is_admin: viewerCtx.is_admin,
+              direct_get: true,
+            })
+          ) {
+            throw notFound(`record ${store}/${key} does not exist`);
           }
+          const version = args.version == null ? Number(head.version) : Number(args.version);
           const r = this._one(
-            "SELECT * FROM records WHERE store = ? AND key = ? AND version = ?",
+            "SELECT * FROM records WHERE namespace = ? AND store = ? AND key = ? AND version = ?",
+            this.namespace,
             store,
             key,
             version
           );
           if (!r) throw notFound(`record ${store}/${key} has no version ${version}`);
-          return {
-            ok: true,
-            status: 200,
-            data: {
-              store: r.store,
-              key: r.key,
-              version: Number(r.version),
-              value: JSON.parse(r.value),
-              created_at: Number(r.created_at),
-            },
-          };
+          return { ok: true, status: 200, data: this._recordView(r) };
         }
 
         case "recordHistory": {
           if (!grant.can_store) throw forbid("this needs a key with the store scope");
           const store = String(args.store || "");
           const key = String(args.key || "");
+          const head = this._one(
+            "SELECT * FROM record_heads WHERE namespace = ? AND store = ? AND key = ?",
+            this.namespace,
+            store,
+            key
+          );
+          if (!head) throw notFound(`record ${store}/${key} does not exist`);
+          if (
+            !canViewGoverned({
+              visibility_scope: head.visibility_scope || "public_commons",
+              producer_surface: head.producer_surface || "surface:tessera",
+              allowed_surfaces: parseJsonSafe(head.allowed_surfaces, []),
+              owner_key_id: head.owner_key_id ?? null,
+              tags: parseJsonSafe(head.tags, []),
+              viewer_surface: viewerCtx.surface,
+              viewer_key_id: viewerCtx.key_id,
+              is_admin: viewerCtx.is_admin,
+              direct_get: true,
+            })
+          ) {
+            throw notFound(`record ${store}/${key} does not exist`);
+          }
           const rows = this._all(
-            "SELECT * FROM records WHERE store = ? AND key = ? ORDER BY version",
+            "SELECT * FROM records WHERE namespace = ? AND store = ? AND key = ? ORDER BY version",
+            this.namespace,
             store,
             key
           );
@@ -1880,15 +2834,7 @@ export class TesseraCoordinator extends DurableObject {
           return {
             ok: true,
             status: 200,
-            data: {
-              versions: rows.map((r) => ({
-                store: r.store,
-                key: r.key,
-                version: Number(r.version),
-                value: JSON.parse(r.value),
-                created_at: Number(r.created_at),
-              })),
-            },
+            data: { versions: rows.map((r) => this._recordView(r)) },
           };
         }
 
@@ -1903,37 +2849,76 @@ export class TesseraCoordinator extends DurableObject {
           if (!NAME_RE.test(store)) throw badReq("invalid store name");
           const prefix = String(args.prefix || "");
           const cap = Math.max(1, Math.min(Number(args.limit || 100), 1000));
+          const includeRestricted = Boolean(args.include_restricted);
+          const scanLimit = Math.min(cap * 4, 2000);
           const rows = prefix
             ? this._all(
-                "SELECT r.* FROM record_heads h JOIN records r ON r.store = h.store AND r.key = h.key AND r.version = h.version WHERE h.store = ? AND h.key >= ? AND h.key < ? ORDER BY h.key LIMIT ?",
+                "SELECT r.* FROM record_heads h JOIN records r ON r.namespace = h.namespace AND r.store = h.store AND r.key = h.key AND r.version = h.version WHERE h.namespace = ? AND h.store = ? AND h.key >= ? AND h.key < ? ORDER BY h.key LIMIT ?",
+                this.namespace,
                 store,
                 prefix,
                 prefixUpper(prefix),
-                cap
+                scanLimit
               )
             : this._all(
-                "SELECT r.* FROM record_heads h JOIN records r ON r.store = h.store AND r.key = h.key AND r.version = h.version WHERE h.store = ? ORDER BY h.key LIMIT ?",
+                "SELECT r.* FROM record_heads h JOIN records r ON r.namespace = h.namespace AND r.store = h.store AND r.key = h.key AND r.version = h.version WHERE h.namespace = ? AND h.store = ? ORDER BY h.key LIMIT ?",
+                this.namespace,
                 store,
-                cap
+                scanLimit
               );
-          return {
-            ok: true,
-            status: 200,
-            data: {
-              records: rows.map((r) => ({
-                store: r.store,
-                key: r.key,
-                version: Number(r.version),
-                value: JSON.parse(r.value),
-                created_at: Number(r.created_at),
-              })),
-            },
-          };
+          const out = [];
+          for (const r of rows) {
+            const view = this._recordView(r);
+            const mergedTags = [
+              ...new Set([...view.tags, ...extractTags(view.value)]),
+            ];
+            if (
+              !canViewGoverned({
+                visibility_scope: view.visibility_scope,
+                producer_surface: view.producer_surface,
+                allowed_surfaces: view.allowed_surfaces,
+                owner_key_id: view.owner_key_id,
+                tags: mergedTags,
+                viewer_surface: viewerCtx.surface,
+                viewer_key_id: viewerCtx.key_id,
+                is_admin: viewerCtx.is_admin,
+                direct_get: false,
+                include_restricted: includeRestricted,
+              })
+            ) {
+              continue;
+            }
+            if (
+              !matchesLayer2Filters({
+                haystack: `${r.store} ${r.key} ${r.value}`,
+                tags: mergedTags,
+                producer_surface: view.producer_surface,
+                target_cohorts: view.target_cohorts,
+                q: args.q || "",
+                tag: args.tag || null,
+                category: args.category || null,
+                cohort: args.cohort || null,
+                surface: args.surface || null,
+                is_admin: viewerCtx.is_admin,
+                include_restricted: includeRestricted,
+              })
+            ) {
+              continue;
+            }
+            out.push(view);
+            if (out.length >= cap) break;
+          }
+          return { ok: true, status: 200, data: { records: out } };
         }
 
         case "recordBlobStored": {
           if (!grant.can_store) throw forbid("this needs a key with the store scope");
           const { sha256, size } = args;
+          const gov = normalizeGovernance(
+            args,
+            { defaultSurface: defaultGovSurface, ownerKeyId: grant.key_id },
+            badReq
+          );
           this.ctx.storage.transactionSync(() => {
             this.ctx.storage.sql.exec(
               "INSERT OR IGNORE INTO blobs (sha256, size, created_at) VALUES (?, ?, ?)",
@@ -1941,11 +2926,52 @@ export class TesseraCoordinator extends DurableObject {
               size,
               now
             );
-            if (this._changes() > 0) {
+            const inserted = this._changes() > 0;
+            this.ctx.storage.sql.exec(
+              "INSERT INTO blob_namespaces (namespace, sha256, producer_surface, visibility_scope, allowed_surfaces, target_cohorts, tags, owner_key_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (namespace, sha256) DO UPDATE SET producer_surface = excluded.producer_surface, visibility_scope = excluded.visibility_scope, allowed_surfaces = excluded.allowed_surfaces, target_cohorts = excluded.target_cohorts, tags = excluded.tags, owner_key_id = excluded.owner_key_id",
+              this.namespace,
+              sha256,
+              gov.producer_surface,
+              gov.visibility_scope,
+              JSON.stringify(gov.allowed_surfaces),
+              JSON.stringify(gov.target_cohorts),
+              JSON.stringify(gov.tags),
+              gov.owner_key_id,
+              now
+            );
+            this._syncNounTags("blob", "blobs", sha256, gov.tags);
+            if (inserted) {
               this._event("blob_stored", now, { detail: { sha256, size } });
             }
           });
           return { ok: true, status: 201, data: { sha256, size } };
+        }
+
+        case "authorizeBlobRead": {
+          if (!grant.can_store) throw forbid("this needs a key with the store scope");
+          const sha256 = String(args.sha256 || "").toLowerCase();
+          const bns = this._one(
+            "SELECT * FROM blob_namespaces WHERE namespace = ? AND sha256 = ?",
+            this.namespace,
+            sha256
+          );
+          if (!bns) throw notFound(`blob ${sha256} does not exist`);
+          if (
+            !canViewGoverned({
+              visibility_scope: bns.visibility_scope || "public_commons",
+              producer_surface: bns.producer_surface || "surface:tessera",
+              allowed_surfaces: parseJsonSafe(bns.allowed_surfaces, []),
+              owner_key_id: bns.owner_key_id ?? null,
+              tags: parseJsonSafe(bns.tags, []),
+              viewer_surface: viewerCtx.surface,
+              viewer_key_id: viewerCtx.key_id,
+              is_admin: viewerCtx.is_admin,
+              direct_get: true,
+            })
+          ) {
+            throw notFound(`blob ${sha256} does not exist`);
+          }
+          return { ok: true, status: 200, data: { sha256 } };
         }
 
         case "defineBucket": {
@@ -1953,14 +2979,26 @@ export class TesseraCoordinator extends DurableObject {
           const name = String(args.name || "");
           const description = String(args.description || "").slice(0, 500);
           if (!NAME_RE.test(name)) throw badReq(`invalid bucket name '${name}'`);
+          const gov = normalizeGovernance(
+            args,
+            { defaultSurface: defaultGovSurface, ownerKeyId: grant.key_id },
+            badReq
+          );
           let info;
           this.ctx.storage.transactionSync(() => {
             this.ctx.storage.sql.exec(
-              "INSERT INTO buckets (name, description, created_at, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT (name) DO UPDATE SET description = excluded.description, updated_at = excluded.updated_at",
+              "INSERT INTO buckets (namespace, name, description, created_at, updated_at, producer_surface, visibility_scope, allowed_surfaces, target_cohorts, tags, owner_key_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (namespace, name) DO UPDATE SET description = excluded.description, updated_at = excluded.updated_at, producer_surface = excluded.producer_surface, visibility_scope = excluded.visibility_scope, allowed_surfaces = excluded.allowed_surfaces, target_cohorts = excluded.target_cohorts, tags = excluded.tags, owner_key_id = excluded.owner_key_id",
+              this.namespace,
               name,
               description,
               now,
-              now
+              now,
+              gov.producer_surface,
+              gov.visibility_scope,
+              JSON.stringify(gov.allowed_surfaces),
+              JSON.stringify(gov.target_cohorts),
+              JSON.stringify(gov.tags),
+              gov.owner_key_id
             );
             this._event("bucket_defined", now, { detail: { bucket: name, description } });
             info = this._listBucketsInternal().find((b) => b.name === name);
@@ -1968,9 +3006,9 @@ export class TesseraCoordinator extends DurableObject {
           if (this.isPrimary && this.env.BUCKETS_DB) {
             this.ctx.waitUntil(
               this.env.BUCKETS_DB.prepare(
-                "INSERT INTO buckets (name, description, created_at, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT (name) DO UPDATE SET description = excluded.description, updated_at = excluded.updated_at"
+                "INSERT INTO buckets (namespace, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT (namespace, name) DO UPDATE SET description = excluded.description, updated_at = excluded.updated_at"
               )
-                .bind(name, description, now, now)
+                .bind(this.namespace, name, description, now, now)
                 .run()
                 .catch(() => {})
             );
@@ -1989,44 +3027,146 @@ export class TesseraCoordinator extends DurableObject {
           const key = String(args.key || "");
           if (!NAME_RE.test(bucket)) throw badReq(`invalid bucket name '${bucket}'`);
           validateObjectKey(key);
-          const cleanType = String(args.content_type || "application/octet-stream").trim().slice(0, 255);
-          const metaJson = canonicalJson(args.metadata || {});
+          const cleanType = String(args.content_type || "application/octet-stream")
+            .trim()
+            .slice(0, 255);
+          const metaObj = args.metadata || {};
+          const metaJson = canonicalJson(metaObj);
           if (new TextEncoder().encode(metaJson).byteLength > 16384) {
             throw badReq(`${bucket}/${key}: metadata exceeds 16 KiB`);
           }
           const expected = args.expected_version === undefined ? null : args.expected_version;
+          if (expected != null && (!Number.isInteger(expected) || expected < 0)) {
+            throw verConflict(`${bucket}/${key}: invalid expected version ${expected}`, null);
+          }
           const sha256 = String(args.sha256);
           const size = Number(args.size);
+          const gov = normalizeGovernance(
+            args,
+            {
+              defaultSurface: defaultGovSurface,
+              ownerKeyId: grant.key_id,
+              extraTags: extractTags(metaObj),
+            },
+            badReq
+          );
+          const allowedJson = JSON.stringify(gov.allowed_surfaces);
+          const cohortsJson = JSON.stringify(gov.target_cohorts);
+          const tagsJson = JSON.stringify(gov.tags);
 
           let outMeta;
           this.ctx.storage.transactionSync(() => {
-            const bRow = this._one("SELECT created_at FROM buckets WHERE name = ?", bucket);
-            if (!bRow) throw notFound(`bucket '${bucket}' does not exist`);
-            const head = this._one(
-              "SELECT version, created_at FROM bucket_objects WHERE bucket = ? AND key = ?",
-              bucket,
-              key
+            const bRow = this._one(
+              "SELECT created_at FROM buckets WHERE namespace = ? AND name = ?",
+              this.namespace,
+              bucket
             );
-            const current = head == null ? null : Number(head.version);
-            if (current !== expected) {
-              throw verConflict(
-                `${bucket}/${key}: expected version ${expected}, head is ${current}`,
-                current
+            if (!bRow) throw notFound(`bucket '${bucket}' does not exist`);
+
+            let version;
+            let createdAt = now;
+            if (expected === null || expected === 0) {
+              version = 1;
+              this.ctx.storage.sql.exec(
+                "INSERT OR IGNORE INTO bucket_objects (namespace, bucket, key, version, sha256, size, content_type, metadata, created_at, updated_at, producer_surface, visibility_scope, allowed_surfaces, target_cohorts, tags, owner_key_id) VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                this.namespace,
+                bucket,
+                key,
+                sha256,
+                size,
+                cleanType,
+                metaJson,
+                now,
+                now,
+                gov.producer_surface,
+                gov.visibility_scope,
+                allowedJson,
+                cohortsJson,
+                tagsJson,
+                gov.owner_key_id
               );
+              if (this._changes() !== 1) {
+                const head = this._one(
+                  "SELECT version FROM bucket_objects WHERE namespace = ? AND bucket = ? AND key = ?",
+                  this.namespace,
+                  bucket,
+                  key
+                );
+                const current = head == null ? null : Number(head.version);
+                throw verConflict(
+                  `${bucket}/${key}: expected version ${expected}, head is ${current}`,
+                  current
+                );
+              }
+            } else {
+              version = expected + 1;
+              this.ctx.storage.sql.exec(
+                "UPDATE bucket_objects SET version = ?, sha256 = ?, size = ?, content_type = ?, metadata = ?, updated_at = ?, producer_surface = ?, visibility_scope = ?, allowed_surfaces = ?, target_cohorts = ?, tags = ?, owner_key_id = ? WHERE namespace = ? AND bucket = ? AND key = ? AND version = ?",
+                version,
+                sha256,
+                size,
+                cleanType,
+                metaJson,
+                now,
+                gov.producer_surface,
+                gov.visibility_scope,
+                allowedJson,
+                cohortsJson,
+                tagsJson,
+                gov.owner_key_id,
+                this.namespace,
+                bucket,
+                key,
+                expected
+              );
+              if (this._changes() !== 1) {
+                const head = this._one(
+                  "SELECT version FROM bucket_objects WHERE namespace = ? AND bucket = ? AND key = ?",
+                  this.namespace,
+                  bucket,
+                  key
+                );
+                const current = head == null ? null : Number(head.version);
+                throw verConflict(
+                  `${bucket}/${key}: expected version ${expected}, head is ${current}`,
+                  current
+                );
+              }
+              const cRow = this._one(
+                "SELECT created_at FROM bucket_objects WHERE namespace = ? AND bucket = ? AND key = ?",
+                this.namespace,
+                bucket,
+                key
+              );
+              createdAt = cRow ? Number(cRow.created_at) : now;
             }
+
             this.ctx.storage.sql.exec(
               "INSERT OR IGNORE INTO blobs (sha256, size, created_at) VALUES (?, ?, ?)",
               sha256,
               size,
               now
             );
-            if (this._changes() > 0) {
+            const blobIns = this._changes() > 0;
+            this.ctx.storage.sql.exec(
+              "INSERT INTO blob_namespaces (namespace, sha256, producer_surface, visibility_scope, allowed_surfaces, target_cohorts, tags, owner_key_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (namespace, sha256) DO UPDATE SET producer_surface = excluded.producer_surface, visibility_scope = excluded.visibility_scope, allowed_surfaces = excluded.allowed_surfaces, target_cohorts = excluded.target_cohorts, tags = excluded.tags, owner_key_id = excluded.owner_key_id",
+              this.namespace,
+              sha256,
+              gov.producer_surface,
+              gov.visibility_scope,
+              allowedJson,
+              cohortsJson,
+              tagsJson,
+              gov.owner_key_id,
+              now
+            );
+            if (blobIns) {
               this._event("blob_stored", now, { detail: { sha256, size } });
             }
-            const version = (current || 0) + 1;
-            const createdAt = head == null ? now : Number(head.created_at);
+
             this.ctx.storage.sql.exec(
-              "INSERT INTO bucket_object_versions (bucket, key, version, sha256, size, content_type, metadata, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+              "INSERT INTO bucket_object_versions (namespace, bucket, key, version, sha256, size, content_type, metadata, created_at, producer_surface, visibility_scope, allowed_surfaces, target_cohorts, tags, owner_key_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+              this.namespace,
               bucket,
               key,
               version,
@@ -2034,34 +3174,41 @@ export class TesseraCoordinator extends DurableObject {
               size,
               cleanType,
               metaJson,
-              now
+              now,
+              gov.producer_surface,
+              gov.visibility_scope,
+              allowedJson,
+              cohortsJson,
+              tagsJson,
+              gov.owner_key_id
             );
+            this._syncNounTags("object", bucket, key, gov.tags);
             this.ctx.storage.sql.exec(
-              "INSERT INTO bucket_objects (bucket, key, version, sha256, size, content_type, metadata, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (bucket, key) DO UPDATE SET version = excluded.version, sha256 = excluded.sha256, size = excluded.size, content_type = excluded.content_type, metadata = excluded.metadata, updated_at = excluded.updated_at",
-              bucket,
-              key,
-              version,
-              sha256,
-              size,
-              cleanType,
-              metaJson,
-              createdAt,
-              now
+              "UPDATE buckets SET updated_at = ? WHERE namespace = ? AND name = ?",
+              now,
+              this.namespace,
+              bucket
             );
-            this.ctx.storage.sql.exec("UPDATE buckets SET updated_at = ? WHERE name = ?", now, bucket);
             this._event("object_stored", now, {
               detail: { bucket, key, version, sha256, size },
             });
             outMeta = {
+              namespace: this.namespace,
               bucket,
               key,
               version,
               sha256,
               size,
               content_type: cleanType,
-              metadata: args.metadata || {},
+              metadata: metaObj,
               created_at: createdAt,
               updated_at: now,
+              producer_surface: gov.producer_surface,
+              visibility_scope: gov.visibility_scope,
+              allowed_surfaces: gov.allowed_surfaces,
+              target_cohorts: gov.target_cohorts,
+              tags: gov.tags,
+              owner_key_id: gov.owner_key_id,
             };
           });
           return { ok: true, status: 201, data: outMeta };
@@ -2073,93 +3220,118 @@ export class TesseraCoordinator extends DurableObject {
           const key = String(args.key || "");
           if (!NAME_RE.test(bucket)) throw badReq(`invalid bucket name '${bucket}'`);
           validateObjectKey(key);
+          const head = this._one(
+            "SELECT * FROM bucket_objects WHERE namespace = ? AND bucket = ? AND key = ?",
+            this.namespace,
+            bucket,
+            key
+          );
+          if (!head) throw notFound(`object ${bucket}/${key} does not exist`);
+          if (
+            !canViewGoverned({
+              visibility_scope: head.visibility_scope || "public_commons",
+              producer_surface: head.producer_surface || "surface:tessera",
+              allowed_surfaces: parseJsonSafe(head.allowed_surfaces, []),
+              owner_key_id: head.owner_key_id ?? null,
+              tags: parseJsonSafe(head.tags, []),
+              viewer_surface: viewerCtx.surface,
+              viewer_key_id: viewerCtx.key_id,
+              is_admin: viewerCtx.is_admin,
+              direct_get: true,
+            })
+          ) {
+            throw notFound(`object ${bucket}/${key} does not exist`);
+          }
           const version = args.version == null ? null : Number(args.version);
           if (version == null) {
-            const r = this._one(
-              "SELECT * FROM bucket_objects WHERE bucket = ? AND key = ?",
-              bucket,
-              key
-            );
-            if (!r) throw notFound(`object ${bucket}/${key} does not exist`);
-            return {
-              ok: true,
-              status: 200,
-              data: {
-                bucket: r.bucket,
-                key: r.key,
-                version: Number(r.version),
-                sha256: r.sha256,
-                size: Number(r.size),
-                content_type: r.content_type,
-                metadata: JSON.parse(r.metadata),
-                created_at: Number(r.created_at),
-                updated_at: Number(r.updated_at),
-              },
-            };
+            return { ok: true, status: 200, data: this._objectView(head) };
           }
           const vr = this._one(
-            "SELECT * FROM bucket_object_versions WHERE bucket = ? AND key = ? AND version = ?",
+            "SELECT * FROM bucket_object_versions WHERE namespace = ? AND bucket = ? AND key = ? AND version = ?",
+            this.namespace,
             bucket,
             key,
             version
           );
           if (!vr) throw notFound(`object ${bucket}/${key} has no version ${version}`);
-          return {
-            ok: true,
-            status: 200,
-            data: {
-              bucket: vr.bucket,
-              key: vr.key,
-              version: Number(vr.version),
-              sha256: vr.sha256,
-              size: Number(vr.size),
-              content_type: vr.content_type,
-              metadata: JSON.parse(vr.metadata),
-              created_at: Number(vr.created_at),
-              updated_at: Number(vr.created_at),
-            },
-          };
+          return { ok: true, status: 200, data: this._objectView(vr, vr.created_at) };
         }
 
         case "listObjects": {
           if (!grant.can_store) throw forbid("this needs a key with the store scope");
           const bucket = String(args.bucket || "");
           if (!NAME_RE.test(bucket)) throw badReq(`invalid bucket name '${bucket}'`);
-          if (!this._one("SELECT 1 FROM buckets WHERE name = ?", bucket)) {
+          if (
+            !this._one(
+              "SELECT 1 FROM buckets WHERE namespace = ? AND name = ?",
+              this.namespace,
+              bucket
+            )
+          ) {
             throw notFound(`bucket '${bucket}' does not exist`);
           }
           const prefix = String(args.prefix || "");
           const cap = Math.max(1, Math.min(Number(args.limit || 100), 1000));
+          const includeRestricted = Boolean(args.include_restricted);
+          const scanLimit = Math.min(cap * 4, 2000);
           const rows = prefix
             ? this._all(
-                "SELECT * FROM bucket_objects WHERE bucket = ? AND key >= ? AND key < ? ORDER BY key LIMIT ?",
+                "SELECT * FROM bucket_objects WHERE namespace = ? AND bucket = ? AND key >= ? AND key < ? ORDER BY key LIMIT ?",
+                this.namespace,
                 bucket,
                 prefix,
                 prefixUpper(prefix),
-                cap
+                scanLimit
               )
             : this._all(
-                "SELECT * FROM bucket_objects WHERE bucket = ? ORDER BY key LIMIT ?",
+                "SELECT * FROM bucket_objects WHERE namespace = ? AND bucket = ? ORDER BY key LIMIT ?",
+                this.namespace,
                 bucket,
-                cap
+                scanLimit
               );
-          return {
-            ok: true,
-            status: 200,
-            data: {
-              objects: rows.map((r) => ({
-                bucket: r.bucket,
-                key: r.key,
-                version: Number(r.version),
-                sha256: r.sha256,
-                size: Number(r.size),
-                content_type: r.content_type,
-                metadata: JSON.parse(r.metadata),
-                created_at: Number(r.created_at),
-                updated_at: Number(r.updated_at),
-              })),
-            },
-          };
+          const out = [];
+          for (const r of rows) {
+            const view = this._objectView(r);
+            const mergedTags = [
+              ...new Set([...view.tags, ...extractTags(view.metadata)]),
+            ];
+            if (
+              !canViewGoverned({
+                visibility_scope: view.visibility_scope,
+                producer_surface: view.producer_surface,
+                allowed_surfaces: view.allowed_surfaces,
+                owner_key_id: view.owner_key_id,
+                tags: mergedTags,
+                viewer_surface: viewerCtx.surface,
+                viewer_key_id: viewerCtx.key_id,
+                is_admin: viewerCtx.is_admin,
+                direct_get: false,
+                include_restricted: includeRestricted,
+              })
+            ) {
+              continue;
+            }
+            if (
+              !matchesLayer2Filters({
+                haystack: `${r.bucket} ${r.key} ${r.metadata}`,
+                tags: mergedTags,
+                producer_surface: view.producer_surface,
+                target_cohorts: view.target_cohorts,
+                q: args.q || "",
+                tag: args.tag || null,
+                category: args.category || null,
+                cohort: args.cohort || null,
+                surface: args.surface || null,
+                is_admin: viewerCtx.is_admin,
+                include_restricted: includeRestricted,
+              })
+            ) {
+              continue;
+            }
+            out.push(view);
+            if (out.length >= cap) break;
+          }
+          return { ok: true, status: 200, data: { objects: out } };
         }
 
         case "objectHistory": {
@@ -2168,8 +3340,31 @@ export class TesseraCoordinator extends DurableObject {
           const key = String(args.key || "");
           if (!NAME_RE.test(bucket)) throw badReq(`invalid bucket name '${bucket}'`);
           validateObjectKey(key);
+          const head = this._one(
+            "SELECT * FROM bucket_objects WHERE namespace = ? AND bucket = ? AND key = ?",
+            this.namespace,
+            bucket,
+            key
+          );
+          if (!head) throw notFound(`object ${bucket}/${key} does not exist`);
+          if (
+            !canViewGoverned({
+              visibility_scope: head.visibility_scope || "public_commons",
+              producer_surface: head.producer_surface || "surface:tessera",
+              allowed_surfaces: parseJsonSafe(head.allowed_surfaces, []),
+              owner_key_id: head.owner_key_id ?? null,
+              tags: parseJsonSafe(head.tags, []),
+              viewer_surface: viewerCtx.surface,
+              viewer_key_id: viewerCtx.key_id,
+              is_admin: viewerCtx.is_admin,
+              direct_get: true,
+            })
+          ) {
+            throw notFound(`object ${bucket}/${key} does not exist`);
+          }
           const rows = this._all(
-            "SELECT * FROM bucket_object_versions WHERE bucket = ? AND key = ? ORDER BY version",
+            "SELECT * FROM bucket_object_versions WHERE namespace = ? AND bucket = ? AND key = ? ORDER BY version",
+            this.namespace,
             bucket,
             key
           );
@@ -2177,25 +3372,13 @@ export class TesseraCoordinator extends DurableObject {
           return {
             ok: true,
             status: 200,
-            data: {
-              versions: rows.map((vr) => ({
-                bucket: vr.bucket,
-                key: vr.key,
-                version: Number(vr.version),
-                sha256: vr.sha256,
-                size: Number(vr.size),
-                content_type: vr.content_type,
-                metadata: JSON.parse(vr.metadata),
-                created_at: Number(vr.created_at),
-                updated_at: Number(vr.created_at),
-              })),
-            },
+            data: { versions: rows.map((vr) => this._objectView(vr, vr.created_at)) },
           };
         }
 
         case "searchNouns": {
           if (!grant.can_store) throw forbid("this needs a key with the store scope");
-          const scents = searchNouns(this, args, canonicalJson, badReq);
+          const scents = searchNouns(this, args, canonicalJson, badReq, viewerCtx);
           return { ok: true, status: 200, data: { scents } };
         }
 
@@ -2206,18 +3389,31 @@ export class TesseraCoordinator extends DurableObject {
 
         case "publishFeed": {
           if (!grant.can_store) throw forbid("this needs a key with the store scope");
-          const entry = publishFeed(this, args, now, canonicalJson, badReq);
+          const gov = normalizeGovernance(
+            args,
+            {
+              defaultSurface: defaultGovSurface,
+              ownerKeyId: grant.key_id,
+              extraTags: extractTags(args.payload),
+            },
+            badReq
+          );
+          const entry = publishFeed(this, args, now, canonicalJson, badReq, gov);
           return { ok: true, status: 201, data: entry };
         }
 
         case "pollFeed": {
           if (!grant.can_store) throw forbid("this needs a key with the store scope");
-          return { ok: true, status: 200, data: pollFeed(this, args, badReq) };
+          return { ok: true, status: 200, data: pollFeed(this, args, badReq, viewerCtx) };
         }
 
         case "matchReflex": {
           if (!grant.can_store) throw forbid("this needs a key with the store scope");
-          return { ok: true, status: 200, data: matchReflex(this, args, canonicalJson, badReq) };
+          return {
+            ok: true,
+            status: 200,
+            data: matchReflex(this, args, canonicalJson, badReq, viewerCtx),
+          };
         }
 
         case "handshake": {
@@ -2290,9 +3486,14 @@ export class TesseraCoordinator extends DurableObject {
   }
 
   _jobView(jobId) {
-    const r = this._one("SELECT * FROM jobs WHERE job_id = ?", jobId);
+    const r = this._one(
+      "SELECT * FROM jobs WHERE namespace = ? AND job_id = ?",
+      this.namespace,
+      jobId
+    );
     if (!r) throw notFound(`job '${jobId}' is not registered`);
     return {
+      namespace: r.namespace || this.namespace,
       job_id: r.job_id,
       task_id: r.task_id,
       fencing_token: Number(r.fencing_token),

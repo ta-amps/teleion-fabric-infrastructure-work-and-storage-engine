@@ -45,6 +45,9 @@
     "REPO_URL": "https://github.com/ta-amps/tessera",
     "ORIGIN": "https://tessera-fabric.fly.dev"
   },
+  "triggers": {
+    "crons": ["0 */6 * * *"]
+  },
   "observability": {
     "enabled": true,
     "traces": {

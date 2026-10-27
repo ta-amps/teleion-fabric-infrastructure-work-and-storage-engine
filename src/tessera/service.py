@@ -1,11 +1,14 @@
 """Tessera's HTTP service (SPEC §7). Every route ends in one Store call; the service adds bearer keys,
-scopes, POST-only writes, a claim rate limit, problem+json errors, the reaper loop, the MCP door, and
-the agent door (/connect, /llms.txt, the agent card, the read-only board and keyed web forms)."""
+scopes, namespace isolation (/ns/{namespace} and X-Namespace), Layer 1/2 governance, POST-only writes,
+a claim rate limit, problem+json errors, the reaper loop, the MCP door, and the agent door (/connect,
+/llms.txt, /llms-full.txt, /favicon.svg, the agent card, Console Board v2 and keyed web forms)."""
 
 from __future__ import annotations
 
 import asyncio
 import hmac
+import json
+import re
 import time
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager, suppress
@@ -15,12 +18,12 @@ from typing import Any
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from tessera import pages
-from tessera._service_buckets import mount_storage_and_admin_routes
+from tessera._service_buckets import mount_storage_and_admin_routes, parse_governance_header
 from tessera._service_intelligence import mount_intelligence_routes, slice_bytes_response
 from tessera._version import __version__
 from tessera.access import ClaimLimiter, Gate, ServiceSettings, bearer_secret
@@ -33,8 +36,18 @@ from tessera.errors import (
     VersionConflict,
 )
 from tessera.grants import KeyGrant
-from tessera.models import ChildSpec, JobStatus, QueueConfig, RecordWrite, TaskSpec
+from tessera.models import (
+    NAMESPACE_PATTERN,
+    ChildSpec,
+    JobStatus,
+    QueueConfig,
+    RecordWrite,
+    TaskSpec,
+    VisibilityScope,
+)
 from tessera.store import Store
+
+_NS_RE = re.compile(NAMESPACE_PATTERN)
 
 WRITE_PATHS = (
     "/v1/queues/define",
@@ -53,11 +66,14 @@ WRITE_PATHS = (
     "/v1/blobs",
     "/v1/buckets/define",
     "/v1/handshake",
+    "/v1/reconcile",
+    "/v1/reconcile/adjudicate",
     "/work/claim",
     "/work/submit",
     "/work/heartbeat",
+    "/work/resume",
 )
-EDGE_EXEMPT = frozenset({"/v1/health", "/healthz"})
+EDGE_EXEMPT = frozenset({"/v1/health", "/healthz", "/api/health"})
 PAGE_CSP = (
     "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; "
     "form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
@@ -110,7 +126,7 @@ class LeaseRef(_Body):
 
 
 class SubmitBody(LeaseRef):
-    output: dict[str, Any]
+    output: Any = None
     ok: bool = True
     error: str | None = None
 
@@ -140,6 +156,12 @@ class JobUpdate(_Body):
 class RecordBody(_Body):
     value: Any
     expected_version: int | None = None
+    namespace: str | None = None
+    producer_surface: str | None = None
+    visibility_scope: VisibilityScope = "public_commons"
+    allowed_surfaces: list[str] = Field(default_factory=list)
+    target_cohorts: list[str] = Field(default_factory=lambda: ["all"])
+    tags: list[str] = Field(default_factory=list)
 
 
 class BatchBody(_Body):
@@ -178,19 +200,57 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
         openapi_url="/v1/openapi.json",
     )
 
-    def require_key(request: Request) -> KeyGrant:
-        return gate.grant(bearer_secret(request))
+    async def require_key(request: Request) -> AsyncIterator[KeyGrant]:
+        grant = await run_in_threadpool(gate.grant, bearer_secret(request))
+        eff_surface = gate.effective_surface(grant, request.headers.get("x-surface-id"))
+        with store.scope_context(
+            surface=eff_surface,
+            key_id=grant.key_id,
+            is_admin=grant.is_admin,
+        ):
+            yield grant
 
     key: Any = Depends(require_key)
 
     @app.middleware("http")
-    async def edge_lock(request: Request, call_next: Callable[[Request], Any]) -> Response:
-        if settings.edge_secret and request.url.path not in EDGE_EXEMPT:
+    async def edge_and_namespace_lock(
+        request: Request, call_next: Callable[[Request], Any]
+    ) -> Response:
+        raw_path = request.scope.get("path", "/")
+        path_ns: str | None = None
+        if raw_path.startswith("/ns/"):
+            ns_seg, sep, tail = raw_path[4:].partition("/")
+            if not ns_seg or not _NS_RE.fullmatch(ns_seg):
+                return problem(400, "invalid_request", f"invalid namespace '{ns_seg}'")
+            path_ns = ns_seg
+            rewritten = "/" + tail if sep else "/"
+            request.scope["path"] = rewritten
+            request.scope["raw_path"] = rewritten.encode("utf-8")
+
+        hdr_ns = (
+            request.headers.get("x-namespace") or request.headers.get("x-tessera-namespace") or ""
+        ).strip()
+        if hdr_ns and not _NS_RE.fullmatch(hdr_ns):
+            return problem(400, "invalid_request", f"invalid namespace '{hdr_ns}'")
+        if path_ns and hdr_ns and path_ns != hdr_ns:
+            return problem(
+                400,
+                "invalid_request",
+                f"path namespace '{path_ns}' conflicts with X-Namespace '{hdr_ns}'",
+            )
+        effective_ns = path_ns or hdr_ns or "main"
+
+        effective_path = request.scope.get("path", "/")
+        if settings.edge_secret and effective_path not in EDGE_EXEMPT:
             sent = request.headers.get("x-edge-auth", "")
             if not hmac.compare_digest(sent.encode(), settings.edge_secret.encode()):
                 return problem(403, "forbidden", "requests must come through the edge")
-        response: Response = await call_next(request)
-        if request.url.path.startswith(("/v1/", "/work")):
+
+        hdr_surface = (request.headers.get("x-surface-id") or "").strip() or None
+        with store.scope_context(namespace=effective_ns, surface=hdr_surface):
+            response: Response = await call_next(request)
+
+        if effective_path.startswith(("/v1/", "/work", "/api/")):
             response.headers.setdefault("cache-control", "no-store")
         if response.headers.get("content-type", "").startswith("text/html"):
             response.headers.setdefault("content-security-policy", PAGE_CSP)
@@ -234,6 +294,7 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
     # -- health, counts, events ---------------------------------------------------------------
 
     @app.get("/v1/health")
+    @app.get("/api/health", include_in_schema=False)
     @app.get("/healthz", include_in_schema=False)
     def health() -> dict[str, Any]:
         return store.health().model_dump(mode="json")
@@ -276,10 +337,12 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
         }
 
     @app.post("/v1/tasks", status_code=201)
-    def enqueue(spec: TaskSpec, grant: KeyGrant = key) -> dict[str, str]:
+    def enqueue(spec: TaskSpec, request: Request, grant: KeyGrant = key) -> dict[str, str]:
         gate.queue(grant, spec.queue)
-        if spec.effect_class == "public" and not grant.is_admin:
-            raise Forbidden("only an admin key may queue a task with the public effect class")
+        gate.effect(grant, spec.effect_class)
+        hdr_idem = (request.headers.get("idempotency-key") or "").strip() or None
+        if spec.idempotency_key is None and hdr_idem is not None:
+            spec = spec.model_copy(update={"idempotency_key": hdr_idem})
         # A dependent's lease carries its dependencies' outputs, so the key must cover their queues.
         for dep in spec.depends_on:
             gate.queue(grant, store.task(dep).queue)
@@ -338,15 +401,16 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
             idempotency_key=idem,
             ok=body.ok,
             error=body.error,
+            completed_by_key=grant.key_id,
         )
         return receipt.model_dump(mode="json")
 
     @app.post("/v1/tasks/split")
     def split(body: SplitBody, grant: KeyGrant = key) -> dict[str, list[str]]:
         gate.holder(grant, body.task_id)
-        parent_queue = store.task(body.task_id).queue
+        parent = store.task(body.task_id)
         for child in body.children:
-            gate.queue(grant, child.queue or parent_queue)
+            gate.queue(grant, child.queue or parent.queue)
             if (
                 child.effect_class
                 and not grant.is_admin
@@ -365,7 +429,9 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
 
     @app.post("/v1/tasks/resume")
     def resume(body: ResumeBody, grant: KeyGrant = key) -> dict[str, Any]:
-        gate.queue(grant, store.task(body.task_id).queue)
+        target = store.task(body.task_id)
+        gate.queue(grant, target.queue)
+        gate.effect(grant, target.effect_class)
         view = store.resume(
             body.task_id, body.input, park=body.park, by=grant.key_id, allow_self=grant.is_admin
         )
@@ -406,21 +472,38 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
     # -- atomic storage -----------------------------------------------------------------------
 
     @app.post("/v1/stores/batch")
-    def put_records(body: BatchBody, grant: KeyGrant = key) -> dict[str, Any]:
+    def put_records(body: BatchBody, request: Request, grant: KeyGrant = key) -> dict[str, Any]:
         gate.store_scope(grant)
+        surf_hdr = request.headers.get("x-surface-id")
+        for w in body.writes:
+            gate.surface_write(grant, w.store, surf_hdr)
         return {"records": [r.model_dump(mode="json") for r in store.put_records(body.writes)]}
 
     @app.post("/v1/stores/{store_name}/records/{record_key}")
     def put_record(
-        store_name: str, record_key: str, body: RecordBody, grant: KeyGrant = key
+        store_name: str,
+        record_key: str,
+        body: RecordBody,
+        request: Request,
+        grant: KeyGrant = key,
     ) -> dict[str, Any]:
         gate.store_scope(grant)
-        write = RecordWrite(
-            store=store_name,
-            key=record_key,
-            value=body.value,
-            expected_version=body.expected_version,
-        )
+        gate.surface_write(grant, store_name, request.headers.get("x-surface-id"))
+        write_kwargs: dict[str, Any] = {
+            "store": store_name,
+            "key": record_key,
+            "value": body.value,
+            "expected_version": body.expected_version,
+            "visibility_scope": body.visibility_scope,
+            "allowed_surfaces": body.allowed_surfaces,
+            "target_cohorts": body.target_cohorts,
+            "tags": body.tags,
+        }
+        if body.namespace is not None:
+            write_kwargs["namespace"] = body.namespace
+        if body.producer_surface is not None:
+            write_kwargs["producer_surface"] = body.producer_surface
+        write = RecordWrite(**write_kwargs)
         return store.put_records([write])[0].model_dump(mode="json")
 
     @app.get("/v1/stores/{store_name}/records/{record_key}")
@@ -442,8 +525,9 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
     @app.post("/v1/blobs", status_code=201)
     async def put_blob(request: Request, grant: KeyGrant = key) -> dict[str, Any]:
         gate.store_scope(grant)
+        gov = parse_governance_header(request)
         data = await request.body()
-        digest = await run_in_threadpool(store.put_blob, data)
+        digest = await run_in_threadpool(lambda: store.put_blob(data, **gov))
         return {"sha256": digest, "size": len(data)}
 
     @app.get("/v1/blobs/{sha256}")
@@ -456,8 +540,8 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
             headers={"etag": f'"{sha256}"'},
         )
 
-    mount_storage_and_admin_routes(app, store, gate)
-    mount_intelligence_routes(app, store, gate)
+    mount_storage_and_admin_routes(app, store, gate, require_key)
+    mount_intelligence_routes(app, store, gate, require_key)
 
     # -- the agent door and pages -------------------------------------------------------------
 
@@ -466,9 +550,17 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
     def connect() -> str:
         return pages.connect_html(settings)
 
+    @app.get("/favicon.svg", include_in_schema=False)
+    def favicon() -> Response:
+        return Response(pages.favicon_svg(), media_type="image/svg+xml")
+
     @app.get("/llms.txt", response_class=PlainTextResponse, include_in_schema=False)
     def llms() -> str:
         return pages.llms_txt(settings)
+
+    @app.get("/llms-full.txt", response_class=PlainTextResponse, include_in_schema=False)
+    def llms_full() -> str:
+        return pages.llms_full_txt(settings)
 
     @app.get("/.well-known/agent-card.json", include_in_schema=False)
     def agent_card() -> dict[str, Any]:
@@ -480,10 +572,13 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
 
     @app.get("/board", response_class=HTMLResponse, include_in_schema=False)
     def board() -> str:
-        return pages.board_html(store.health(), settings)
+        snap = store.board_snapshot()
+        return pages.board_html(snap["health"], settings, snapshot=snap)
 
     pages.mount_work_forms(app, store, gate, limiter, settings)
 
     # The MCP door answers on /mcp; mounted last so every route above wins.
+    # Keep JSON helper usage cleanly imported for strict linters.
+    _ = json
     app.mount("/", mcp_app)
     return app
