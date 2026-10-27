@@ -9,7 +9,8 @@ from collections.abc import Sequence
 from typing import Any
 
 from tessera._base import StoreBase
-from tessera.errors import InvalidRequest, NotFound, TesseraError, VersionConflict
+from tessera._publication_guard import publication_proof
+from tessera.errors import Forbidden, InvalidRequest, NotFound, TesseraError, VersionConflict
 from tessera.models import (
     RecordVersion,
     RecordWrite,
@@ -95,12 +96,33 @@ class StorageOps(StoreBase):
         with self._tx() as c:
             batch_ns = self._resolve_ns(namespace)
             for w in writes:
+                ctx = self.current_scope()
+                if ctx.anonymous:
+                    if not w.store.startswith("demo."):
+                        raise Forbidden("anonymous writes require a demo store")
+                    w = w.model_copy(
+                        update={
+                            "visibility_scope": "private",
+                            "producer_surface": "surface:tessera",
+                            "owner_key_id": ctx.key_id,
+                            "allowed_surfaces": [],
+                            "target_cohorts": ["all"],
+                            "tags": ["origin:anonymous", "demo:true", "untrusted:true"],
+                        }
+                    )
                 if w.expected_version is not None and w.expected_version < 0:
                     raise InvalidRequest(
                         f"{w.store}/{w.key}: expected_version must be >= 0 or None"
                     )
                 ns = self._resolve_ns(namespace, model_ns=w.namespace)
                 batch_ns = ns
+                previous = c.execute(
+                    "SELECT * FROM record_heads WHERE namespace = ? AND store = ? AND key = ?",
+                    (ns, w.store, w.key),
+                ).fetchone()
+                self._authorize_mutation(previous)
+                if self.current_scope().key_id and not self.current_scope().is_admin:
+                    publication_proof(c, ns, w.store, w.value)
                 prod, owner = self._resolve_write_governance(
                     producer_surface=w.producer_surface,
                     owner_key_id=w.owner_key_id,
@@ -109,6 +131,7 @@ class StorageOps(StoreBase):
                 allowed = normalize_surface_list(w.allowed_surfaces)
                 cohorts = normalize_cohorts(w.target_cohorts)
                 effective_tags = normalize_tags([*w.tags, *extract_payload_tags(w.value)])
+                self._assert_publisher_tags(effective_tags)
 
                 try:
                     text = canonical_json(w.value)
@@ -336,6 +359,7 @@ class StorageOps(StoreBase):
         tags: Sequence[str] = (),
         owner_key_id: str | None = None,
     ) -> str:
+        self._assert_publisher_tags(list(tags or ()))
         if len(data) > MAX_BLOB_BYTES:
             raise InvalidRequest(f"blob is over {MAX_BLOB_BYTES} bytes")
         digest = blob_hash(data)
@@ -358,14 +382,7 @@ class StorageOps(StoreBase):
             " (namespace, sha256, producer_surface, visibility_scope, allowed_surfaces,"
             "  target_cohorts, tags, owner_key_id, created_at, updated_at)"
             " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-            " ON CONFLICT (namespace, sha256) DO UPDATE SET"
-            " producer_surface = excluded.producer_surface,"
-            " visibility_scope = excluded.visibility_scope,"
-            " allowed_surfaces = excluded.allowed_surfaces,"
-            " target_cohorts = excluded.target_cohorts,"
-            " tags = excluded.tags,"
-            " owner_key_id = excluded.owner_key_id,"
-            " updated_at = excluded.updated_at",
+            " ON CONFLICT (namespace, sha256) DO NOTHING",
             (
                 namespace,
                 digest,

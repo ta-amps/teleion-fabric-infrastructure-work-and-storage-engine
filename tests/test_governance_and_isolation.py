@@ -216,7 +216,7 @@ def test_layer1_protected_surface_ownership_and_eq03_gate(tmp_path: Path) -> Non
             mcp_denied.get("isError") is True and "scope_denied" in mcp_denied["content"][0]["text"]
         )
 
-        # Generic store key without X-Surface-Id cannot write kothar.packs; with matching X-Surface-Id: kothar can.
+        # A generic store key cannot gain surface authority by presenting a header.
         assert (
             client.post(
                 "/v1/stores/kothar.packs/records/K-1",
@@ -231,7 +231,7 @@ def test_layer1_protected_surface_ownership_and_eq03_gate(tmp_path: Path) -> Non
                 headers=_auth(generic_store_key, surface="kothar"),
                 json={"value": {"pack": 1}},
             ).status_code
-            == 200
+            == 403
         )
 
         # 2. eranos.catalog and eranos.index require BOTH surface:eranos AND explicit 'eq03' queue grant.
@@ -256,7 +256,7 @@ def test_layer1_protected_surface_ownership_and_eq03_gate(tmp_path: Path) -> Non
                 headers=_auth(eranos_eq03),
                 json={"value": {"kit": "published"}},
             )
-            assert ok_cat.status_code == 200
+            assert ok_cat.status_code == 403  # A queue grant alone is not a completed review proof.
 
         # Admin can always write any surface store.
         assert (
@@ -362,7 +362,7 @@ def test_visibility_quarantine_and_layer2_combinable_filters(tmp_path: Path) -> 
                     "verified_hits": 4,
                     "steps": [{"op": "verify"}],
                 },
-                "tags": ["wash"],
+                "tags": ["wash", "status:verified"],
             },
         )
         client.post(

@@ -305,27 +305,32 @@ def mount_intelligence_routes(
         records = store.list_records(target_store, limit=max(1, min(limit, 200)))
         items: list[dict[str, Any]] = []
         raw_by_id: dict[str, dict[str, Any]] = {}
+        unranked: list[dict[str, Any]] = []
         now_ts = time.time()
         for rec in records:
             val: dict[str, Any] = rec.value if isinstance(rec.value, dict) else {"value": rec.value}
             iid = str(val.get("item_id") or val.get("id") or rec.key)
             raw_frag = val.get("fragility")
             frag_sub: dict[str, Any] = raw_frag if isinstance(raw_frag, dict) else {}
-            raw_live = val.get("live_probe")
-            live_sub: dict[str, Any] = raw_live if isinstance(raw_live, dict) else {}
-            trials = int(
-                val.get("trials")
-                or val.get("verified_hits")
-                or (12 if live_sub.get("http_status") == 200 else 6)
-            )
-            raw_succ = val.get("successes")
-            successes = (
-                float(raw_succ)
-                if raw_succ is not None
-                else float(
-                    trials if live_sub.get("http_status", 200) == 200 else max(0, trials - 2)
+            trials, successes = val.get("trials"), val.get("successes")
+            if (
+                not isinstance(trials, int)
+                or isinstance(trials, bool)
+                or trials < 0
+                or not isinstance(successes, (int, float))
+                or isinstance(successes, bool)
+                or not 0 <= successes <= trials
+            ):
+                unranked.append(
+                    {
+                        "id": iid,
+                        "trials": None,
+                        "successes": None,
+                        "score": None,
+                        "reason": "Reproducible trial and success counts are unavailable or invalid",
+                    }
                 )
-            )
+                continue
             norm_item: dict[str, Any] = {
                 "item_id": iid,
                 "id": iid,
@@ -368,6 +373,7 @@ def mount_intelligence_routes(
             "profile": profile,
             "pareto_frontier_ids": sorted(frontier_ids),
             "ranked": out_rows,
+            "unranked": unranked,
         }
 
     @app.get("/v1/fragility/plan")
@@ -524,11 +530,10 @@ def mount_intelligence_routes(
                 {
                     "voter_key_id": voter_key,
                     "choice": mapped_choice,
-                    "citations": list(b.get("citations") or ["verified:receipt"]),
-                    "verification_receipt_sha256": b.get("verification_receipt_sha256")
-                    or ("a" * 64),
-                    "rationale": str(b.get("rationale") or "verified"),
-                    "defect_summary": str(b.get("defect_summary") or "superseded"),
+                    "citations": list(b.get("citations") or []),
+                    "verification_receipt_sha256": b.get("verification_receipt_sha256") or None,
+                    "rationale": str(b.get("rationale") or ""),
+                    "defect_summary": str(b.get("defect_summary") or ""),
                 }
             )
             if voter_key and voter_key not in calibrations and "verified_passes" in b:
@@ -549,4 +554,11 @@ def mount_intelligence_routes(
         out = receipt.model_dump(mode="json")
         win = receipt.winning_candidate_id
         out["winner"] = rev_alias.get(win, win) if win else None
+        out.update(
+            simulated_status=out["status"],
+            status="simulation_result",
+            persisted=False,
+            verified=False,
+            reason="Caller-supplied ballots are a local calculation, not authenticated independent votes",
+        )
         return out

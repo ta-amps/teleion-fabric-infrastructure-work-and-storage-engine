@@ -10,16 +10,23 @@ from fnmatch import fnmatchcase
 
 from pydantic import Field
 
-from tessera.models import SURFACE_ID_PATTERN, _Model
+from tessera.models import NAMESPACE_PATTERN, SURFACE_ID_PATTERN, _Model
 
 EFFECTS = ("read", "write-internal", "write-repo")
-SCOPES = frozenset({"admin", "store"})
+SCOPES = frozenset(
+    {"admin", "store", "nouns:read", "verbs:claim", "verbs:submit", "cas:write", "admin:keys"}
+)
 PROTECTED_SURFACES: tuple[str, ...] = ("shamash", "eranos", "herma", "kothar", "kinema")
 _SURFACE_SCOPE_RE = re.compile(rf"^surface:({SURFACE_ID_PATTERN[1:-1]})$")
 
 
 def is_valid_scope(scope: str) -> bool:
-    return scope in SCOPES or bool(_SURFACE_SCOPE_RE.fullmatch(scope))
+    return (
+        scope in SCOPES
+        or bool(_SURFACE_SCOPE_RE.fullmatch(scope))
+        or scope == "namespace:*"
+        or (scope.startswith("namespace:") and bool(re.fullmatch(NAMESPACE_PATTERN, scope[10:])))
+    )
 
 
 class KeyGrant(_Model):
@@ -34,6 +41,28 @@ class KeyGrant(_Model):
     created_at: float
     expires_at: float
     revoked_at: float | None = None
+    principal_kind: str = "keyed"
+    principal_id: str | None = None
+    session_id: str | None = None
+    account_id: str | None = None
+    namespace: str = "main"
+    key_prefix: str | None = None
+    labels: dict[str, object] = Field(default_factory=dict)
+    quota_tier: str = "standard"
+    last_used_at: float | None = None
+    purge_at: float | None = None
+
+    @property
+    def anonymous(self) -> bool:
+        return self.principal_kind == "anonymous"
+
+    def allows_namespace(self, namespace: str) -> bool:
+        scopes = [s for s in self.scopes if s.startswith("namespace:")]
+        return self.is_admin or (
+            f"namespace:{namespace}" in scopes or "namespace:*" in scopes
+            if scopes
+            else namespace == "main"
+        )
 
     @property
     def is_admin(self) -> bool:
@@ -41,10 +70,12 @@ class KeyGrant(_Model):
 
     @property
     def can_store(self) -> bool:
-        return "store" in self.scopes or self.is_admin
+        return bool({"store", "nouns:read", "cas:write"}.intersection(self.scopes)) or self.is_admin
 
     def bound_surface(self) -> str | None:
         """Surface slug bound to this key via `surface:<slug>` scope or surface-prefixed label."""
+        if self.anonymous:
+            return None
         for s in self.scopes:
             m = _SURFACE_SCOPE_RE.fullmatch(s)
             if m:

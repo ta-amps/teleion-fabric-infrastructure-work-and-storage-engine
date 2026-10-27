@@ -155,8 +155,8 @@ def test_ui_chrome_and_discovery_endpoints_parity(tmp_path: Path) -> None:
             assert '<svg class="brand-mark"' in resp.text
 
         connect_text = client.get("/connect").text
-        assert "26 tools" in connect_text
-        assert "25 tools" not in connect_text
+        count = len(client.get("/.well-known/agent-card.json").json()["tools"])
+        assert f"{count} tools" in connect_text
 
         fav = client.get("/favicon.svg")
         assert fav.status_code == 200
@@ -165,7 +165,7 @@ def test_ui_chrome_and_discovery_endpoints_parity(tmp_path: Path) -> None:
 
         llms = client.get("/llms.txt")
         assert llms.status_code == 200
-        assert "26 tools" in llms.text
+        assert f"{count} tools" in llms.text
 
         llms_full = client.get("/llms-full.txt")
         assert llms_full.status_code == 200

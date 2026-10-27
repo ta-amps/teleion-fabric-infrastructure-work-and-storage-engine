@@ -106,7 +106,7 @@ export function normalizeGovernance(
     if (clean && !baseTags.includes(clean)) baseTags.push(clean);
   }
   const resolvedOwner =
-    src.owner_key_id !== undefined
+    ownerKeyId == null && src.owner_key_id !== undefined
       ? src.owner_key_id == null
         ? null
         : String(src.owner_key_id)
@@ -931,7 +931,8 @@ export function matchReflex(coord, args, canonicalJson, badReq, viewerCtx = {}) 
     if (!val || typeof val !== "object" || Array.isArray(val)) continue;
     const gov = rowGovernance(row, extractTags(val));
     // Quarantined reflexes NEVER appear in /v1/reflexes/match.
-    if (gov.tags.includes("status:quarantined")) continue;
+    if (gov.tags.includes("status:quarantined") || !gov.tags.includes("status:verified")) continue;
+    if (!Number.isInteger(val.verified_hits) || val.verified_hits < 1) continue;
     if (
       !canViewGoverned({
         ...gov,
@@ -972,7 +973,7 @@ export function matchReflex(coord, args, canonicalJson, badReq, viewerCtx = {}) 
       ? 1.0
       : similarity(qClean, pattern, `${l0} ${canonicalJson(steps)}`, gov.tags);
     if (qClean && score < 0.15 && !exact) continue;
-    const verifiedHits = Number(val.verified_hits ?? 1);
+    const verifiedHits = Number(val.verified_hits);
     const tier = String(val.tier || (verifiedHits >= 3 ? "deterministic_0_call" : "hybrid_1_call"));
     hits.push({
       namespace: ns,

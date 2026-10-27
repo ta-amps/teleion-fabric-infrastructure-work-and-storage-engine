@@ -189,7 +189,7 @@ export async function storeCloudBlob(env, rawBytes, nowSec, namespace = "main", 
   try {
     await db
       .prepare(
-        "INSERT INTO blob_namespaces (namespace, sha256, producer_surface, visibility_scope, allowed_surfaces, target_cohorts, tags, owner_key_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (namespace, sha256) DO UPDATE SET producer_surface = excluded.producer_surface, visibility_scope = excluded.visibility_scope, allowed_surfaces = excluded.allowed_surfaces, target_cohorts = excluded.target_cohorts, tags = excluded.tags, owner_key_id = excluded.owner_key_id"
+        "INSERT INTO blob_namespaces (namespace, sha256, producer_surface, visibility_scope, allowed_surfaces, target_cohorts, tags, owner_key_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (namespace, sha256) DO NOTHING"
       )
       .bind(
         namespace || "main",
@@ -350,5 +350,17 @@ export async function mirrorBucketObjectToD1(env, objMeta) {
         objMeta.updated_at
       ),
     ]).catch(() => {});
+  }
+}
+
+
+// Validate integer wire tokens before JSON.parse can round an unsafe integer.
+export function validateWireNumbers(text) {
+  const outsideStrings = text.replace(/"(?:[^"\\]|\\.)*"/g, '""');
+  for (const match of outsideStrings.matchAll(/-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g)) {
+    const token = match[0];
+    const value = Number(token);
+    if (!Number.isFinite(value)) throw makeBadReq("JSON numbers must be finite");
+    if (!/[.eE]/.test(token) && BigInt(token) !== BigInt(value)) throw makeBadReq("JSON integers must round-trip exactly through IEEE-754");
   }
 }

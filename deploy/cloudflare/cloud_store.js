@@ -1,9 +1,12 @@
+import { initAccess, principalMetadata, requestIdentity, mintAnonymous, seedDemo, enforceAccess, audit, ownAudit, publicActivity, publicPrincipal } from "./cloud_access.js";
 // TesseraCoordinator: single-writer SQLite Durable Object (`new_sqlite_classes`) implementing
 // 100% of Tessera Spec v0.2 (queues, 5 verbs, dependencies, waves, park/resume, model jobs,
 // counts, events, scoped keys, queryable CAS records, persistent named file buckets,
 // 6-field governance envelope, namespace isolation, and Console Board v2 snapshots),
 // plus automatic lease/park reaping via Durable Object alarms and D1 cloud projection mirroring.
 
+import { canonicalSha256, planFragilityRechecks } from "./ontology_engine.js";
+import { reviewProof, publicationProof } from "./cloud_publication.js";
 import { DurableObject } from "cloudflare:workers";
 import { TESSERA_VERSION } from "./cloud_pages.js";
 import { canonicalJson, receiptHash, sha256Hex } from "./cloud_buckets.js";
@@ -111,7 +114,7 @@ function validateObjectKey(key) {
 }
 
 function isValidScope(scope) {
-  return scope === "admin" || scope === "store" || SCOPE_SURFACE_RE.test(scope);
+  return scope === "admin" || scope === "store" || SCOPE_SURFACE_RE.test(scope) || /^(nouns:read|verbs:claim|verbs:submit|cas:write|admin:keys|namespace:[a-z0-9*][a-z0-9_.*-]{0,63})$/.test(scope);
 }
 
 function parseJsonSafe(raw, fallback) {
@@ -436,7 +439,7 @@ export class TesseraCoordinator extends DurableObject {
     this.seededNamespaces = new Set();
     ctx.blockConcurrencyWhile(async () => {
       this._ensureSchemaV3();
-      this._ensureNamespaceSeeded("main", Date.now() / 1000);
+      initAccess(this);
     });
   }
 
@@ -792,7 +795,7 @@ export class TesseraCoordinator extends DurableObject {
   _resultsOf(rows) {
     return rows.map((r) => {
       const res = this._one(
-        "SELECT output, receipt_hash FROM results WHERE namespace = ? AND task_id = ? AND ok = 1 ORDER BY created_at DESC LIMIT 1",
+        "SELECT output, receipt_hash, completed_by_key FROM results WHERE namespace = ? AND task_id = ? AND ok = 1 ORDER BY created_at DESC LIMIT 1",
         this.namespace,
         r.id
       );
@@ -802,6 +805,7 @@ export class TesseraCoordinator extends DurableObject {
         ok: res ? true : null,
         output: res ? JSON.parse(res.output) : null,
         receipt_hash: res ? res.receipt_hash : null,
+        completed_by_key: res ? res.completed_by_key : null,
       };
     });
   }
@@ -1193,7 +1197,8 @@ export class TesseraCoordinator extends DurableObject {
     const wakeMin = this._one(
       "SELECT MIN(wake_at) AS t FROM tasks WHERE state = 'waiting' AND wake_at IS NOT NULL"
     );
-    const candidates = [leaseMin?.t, wakeMin?.t].filter((v) => v != null).map(Number);
+    const purge = this._one("SELECT value FROM meta WHERE key='demo_purge_at'");
+    const candidates = [leaseMin?.t, wakeMin?.t, purge ? Number(purge.value) : null].filter((v) => v != null).map(Number);
     if (candidates.length) {
       const reaperMs = Math.max(5000, Number(this.env.REAPER_SECONDS || 30) * 1000);
       const nextMs = Math.max(
@@ -1205,6 +1210,14 @@ export class TesseraCoordinator extends DurableObject {
   }
 
   async alarm() {
+    const purge = this._one("SELECT value FROM meta WHERE key='demo_purge_at'");
+    if (purge && Number(purge.value) <= Date.now()/1000) {
+      await this.ctx.storage.deleteAll();
+      this.seededNamespaces.clear();
+      this._ensureSchemaV3();
+      initAccess(this);
+      return;
+    }
     const now = Date.now() / 1000;
     this.ctx.storage.transactionSync(() => {
       this._reap(now);
@@ -1225,6 +1238,8 @@ export class TesseraCoordinator extends DurableObject {
       : JSON.parse(raw.effect_classes);
     const surfScope = scopes.find((s) => SCOPE_SURFACE_RE.test(s));
     return {
+      ...principalMetadata(this, raw),
+      ...raw,
       key_id: raw.key_id,
       label: raw.label,
       queues,
@@ -1236,7 +1251,7 @@ export class TesseraCoordinator extends DurableObject {
       expires_at: Number(raw.expires_at),
       revoked_at: raw.revoked_at == null ? null : Number(raw.revoked_at),
       is_admin: scopes.includes("admin"),
-      can_store: scopes.includes("store") || scopes.includes("admin"),
+      can_store: scopes.includes("store") || scopes.includes("nouns:read") || scopes.includes("cas:write") || scopes.includes("admin"),
       allowsQueue: (q) => queues.some((p) => globMatch(q, p)),
       kindFilter: (req) => {
         if (kinds.includes("*")) return req && req.length ? [...req] : null;
@@ -1258,7 +1273,9 @@ export class TesseraCoordinator extends DurableObject {
     if (!r) return null;
     const now = Date.now() / 1000;
     if (r.revoked_at != null || Number(r.expires_at) <= now) return null;
+    this.ctx.storage.sql.exec("UPDATE access_principals SET last_used_at=? WHERE key_id=?", now, r.key_id);
     return {
+      ...principalMetadata(this, r),
       key_id: r.key_id,
       label: r.label,
       queues: JSON.parse(r.queues),
@@ -1288,7 +1305,7 @@ export class TesseraCoordinator extends DurableObject {
       surfaceHeader && String(surfaceHeader).trim() ? surfaceSlug(surfaceHeader) : null;
     if (grant.is_admin) return hdr ? `surface:${hdr}` : null;
     if (grant.bound_surface) return `surface:${grant.bound_surface}`;
-    return hdr ? `surface:${hdr}` : null;
+    return null;
   }
 
   _viewerCtx(grant, surfaceHeader) {
@@ -1327,7 +1344,7 @@ export class TesseraCoordinator extends DurableObject {
         if (bound != null && hdr != null && bound !== hdr) {
           throw scopeDenied(`key bound to surface '${bound}' cannot spoof X-Surface-Id '${hdr}'`);
         }
-        const callerSurf = bound || hdr;
+        const callerSurf = bound;
         if (callerSurf !== surf) {
           throw scopeDenied(`non-admin writers to '${storeName}' must match surface '${surf}'`);
         }
@@ -1340,6 +1357,22 @@ export class TesseraCoordinator extends DurableObject {
         return;
       }
     }
+  }
+
+  _authorizeMutation(row, grant, viewerCtx) {
+    if (!row || grant.is_admin || row.owner_key_id === grant.key_id) return;
+    if (viewerCtx.surface && row.visibility_scope !== "private" && row.producer_surface === viewerCtx.surface) return;
+    throw forbid("only the owner or its authorized surface may mutate this resource");
+  }
+
+  _taskVisible(row, grant, viewerCtx) {
+    if (grant.is_admin) return true;
+    const tags = parseJsonSafe(row.tags, []);
+    if (tags.includes("status:quarantined") && viewerCtx.surface !== row.producer_surface) return false;
+    if (row.visibility_scope === "private") return row.owner_key_id === grant.key_id;
+    if (row.visibility_scope === "surface_only") return Boolean(viewerCtx.surface && viewerCtx.surface === row.producer_surface);
+    if (row.visibility_scope === "allowlist_surfaces") return Boolean(viewerCtx.surface && [row.producer_surface, ...parseJsonSafe(row.allowed_surfaces, [])].includes(viewerCtx.surface));
+    return parseJsonSafe(row.target_cohorts, ["all"]).includes("all") || row.owner_key_id === grant.key_id;
   }
 
   _requireHolder(grant, taskId) {
@@ -1379,9 +1412,12 @@ export class TesseraCoordinator extends DurableObject {
 
   async bootstrapOrIssueKey(secret, bootstrapValid, body) {
     try {
+      let issuer = null;
       if (!bootstrapValid) {
-        const grant = await this._grantFromSecret(secret);
-        if (!grant.is_admin) throw forbid("this needs a key with the admin scope");
+        issuer = await this._grantFromSecret(secret);
+        if (!issuer.is_admin && !issuer.scopes.includes("admin:keys")) throw forbid("this needs an admin:keys scope");
+        if (!issuer.is_admin && (body.scopes || []).some(s => !issuer.scopes.includes(s))) throw forbid("keys cannot delegate scopes the issuer does not hold");
+        if (!issuer.is_admin && (body.queues || []).some(q => !issuer.queues.includes(q))) throw forbid("keys cannot expand the issuer queue grants");
       }
       const label = String(body.label || "").trim();
       const queues = Array.isArray(body.queues) ? body.queues.map(String) : [];
@@ -1410,6 +1446,16 @@ export class TesseraCoordinator extends DurableObject {
       const keyId = newId("k").slice(0, 14);
       const now = Date.now() / 1000;
       const expiresAt = now + days * 86400;
+      if (issuer && !issuer.is_admin) {
+        const fine = list => list.some(s => s.includes(":") && !s.startsWith("surface:") && !s.startsWith("namespace:"));
+        if (fine(issuer.scopes) && !fine(scopes)) throw forbid("delegation cannot enable legacy unrestricted scopes");
+        const parentNamespaces = issuer.scopes.filter(s=>s.startsWith("namespace:"));
+        const childNamespaces = scopes.filter(s=>s.startsWith("namespace:"));
+        if (!childNamespaces.length && parentNamespaces.length && !parentNamespaces.includes("namespace:main") && !parentNamespaces.includes("namespace:*")) throw forbid("delegation cannot imply main namespace access");
+        if (kinds.some(k => !issuer.kinds.includes(k) && !issuer.kinds.includes("*")) || effect_classes.some(e => !issuer.effect_classes.includes(e))) throw forbid("delegation cannot expand task kinds or effects");
+        if (issuer.expires_at != null && expiresAt > issuer.expires_at) throw forbid("delegated keys may not outlive their issuer");
+        if (body.account_id && body.account_id !== issuer.account_id) throw forbid("delegated keys must remain in the issuer account");
+      }
 
       this.ctx.storage.transactionSync(() => {
         this.ctx.storage.sql.exec(
@@ -1427,6 +1473,8 @@ export class TesseraCoordinator extends DurableObject {
         this._event("key_issued", now, {
           detail: { key_id: keyId, label, queues, scopes },
         });
+        this.ctx.storage.sql.exec("INSERT INTO access_principals(key_id,principal_kind,principal_id,account_id,namespace,key_prefix,labels,quota_tier,last_used_at,purge_at) VALUES (?,?,?,?,?,?,?,?,NULL,NULL)", keyId, scopes.some(s => s.startsWith("surface:")) ? "service_binding" : "keyed", keyId, String(body.account_id || issuer?.account_id || `operator:${keyId}`).slice(0,128), "main", keySecret.slice(0,8), "{}", "standard");
+        audit(this, issuer || { principal_kind: "service_binding", principal_id: "bootstrap" }, "mint_key", { key: keyId }, { ok: true, status: 201, data: {} }, body.access_meta || {});
       });
 
       return {
@@ -1434,6 +1482,7 @@ export class TesseraCoordinator extends DurableObject {
         status: 201,
         data: {
           key: keySecret,
+          ...principalMetadata(this, { key_id: keyId, scopes }),
           key_id: keyId,
           label,
           queues,
@@ -1460,19 +1509,25 @@ export class TesseraCoordinator extends DurableObject {
         extra: e.extra || {},
       };
     }
-    return { ok: false, status: 500, code: "internal", detail: String(e?.message || e), extra: {} };
+    return { ok: false, status: 500, code: "internal", detail: "internal storage error", extra: {} };
   }
 
+  _publicRow(row) {
+    return row.visibility_scope === "public_commons" && !parseJsonSafe(row.tags, []).includes("status:quarantined") && parseJsonSafe(row.target_cohorts, ["all"]).includes("all");
+  }
+  _visibleNoun(row, viewerCtx = {}) {
+    return canViewGoverned({ ...row, allowed_surfaces: parseJsonSafe(row.allowed_surfaces, []), tags: parseJsonSafe(row.tags, []), viewer_surface: viewerCtx.surface, viewer_key_id: viewerCtx.key_id, is_admin: viewerCtx.is_admin, direct_get: true }) && (viewerCtx.is_admin || row.owner_key_id === viewerCtx.key_id || parseJsonSafe(row.target_cohorts, ["all"]).includes("all"));
+  }
   _boardSnapshot(ns) {
     const dagTasks = this._all(
-      "SELECT id, queue, state, parent_id, pending_deps, pending_children FROM tasks WHERE namespace = ? AND (parent_id IS NOT NULL OR pending_deps > 0 OR pending_children > 0 OR id IN (SELECT task_id FROM task_deps WHERE namespace = ?) OR id IN (SELECT depends_on FROM task_deps WHERE namespace = ?)) ORDER BY created_at DESC, id LIMIT 50",
+      "SELECT id, queue, state, parent_id, pending_deps, pending_children FROM tasks WHERE namespace = ? AND visibility_scope='public_commons' AND tags NOT LIKE '%status:quarantined%' AND target_cohorts LIKE '%\"all\"%' AND (parent_id IS NOT NULL OR pending_deps > 0 OR pending_children > 0 OR id IN (SELECT task_id FROM task_deps WHERE namespace = ?) OR id IN (SELECT depends_on FROM task_deps WHERE namespace = ?)) ORDER BY created_at DESC, id LIMIT 50",
       ns,
       ns,
       ns
     );
     const dagNodes = dagTasks.map((t) => {
       const deps = this._all(
-        "SELECT depends_on FROM task_deps WHERE namespace = ? AND task_id = ? ORDER BY rowid",
+      "SELECT d.depends_on FROM task_deps d JOIN tasks t ON t.namespace=d.namespace AND t.id=d.depends_on WHERE d.namespace = ? AND d.task_id = ? AND t.visibility_scope='public_commons' AND t.tags NOT LIKE '%status:quarantined%' AND t.target_cohorts LIKE '%\"all\"%' ORDER BY d.rowid",
         ns,
         t.id
       ).map((d) => d.depends_on);
@@ -1480,7 +1535,7 @@ export class TesseraCoordinator extends DurableObject {
         task_id: t.id,
         queue: t.queue,
         state: t.state,
-        parent_id: t.parent_id ?? null,
+        parent_id: t.parent_id && this._publicRow(this._taskRow(t.parent_id)) ? t.parent_id : null,
         depends_on: deps,
         pending_deps: Number(t.pending_deps || 0),
         pending_children: Number(t.pending_children || 0),
@@ -1488,7 +1543,7 @@ export class TesseraCoordinator extends DurableObject {
     });
 
     const parkedTiles = this._all(
-      "SELECT id, queue, wait_reason, parked_by, wake_at, parks FROM tasks WHERE namespace = ? AND state = 'waiting' ORDER BY updated_at DESC, id LIMIT 50",
+      "SELECT id, queue, wait_reason, parked_by, wake_at, parks FROM tasks WHERE namespace = ? AND visibility_scope='public_commons' AND tags NOT LIKE '%status:quarantined%' AND target_cohorts LIKE '%\"all\"%' AND state = 'waiting' ORDER BY updated_at DESC, id LIMIT 50",
       ns
     ).map((p) => ({
       task_id: p.id,
@@ -1500,7 +1555,7 @@ export class TesseraCoordinator extends DurableObject {
     }));
 
     const events = this._all(
-      "SELECT seq, ts, type, task_id, queue FROM events WHERE namespace = ? ORDER BY seq DESC LIMIT 25",
+      "SELECT e.seq, e.ts, e.type, e.task_id, e.queue FROM events e JOIN tasks t ON t.namespace=e.namespace AND t.id=e.task_id WHERE e.namespace = ? AND t.visibility_scope='public_commons' AND t.tags NOT LIKE '%status:quarantined%' AND t.target_cohorts LIKE '%\"all\"%' ORDER BY e.seq DESC LIMIT 25",
       ns
     ).map((ev) => ({
       seq: Number(ev.seq),
@@ -1514,7 +1569,7 @@ export class TesseraCoordinator extends DurableObject {
       ns
     );
     const feedEntries = this._all(
-      "SELECT seq, feed, kind, summary, created_at FROM feed_entries WHERE namespace = ? AND visibility_scope = 'public_commons' AND tags NOT LIKE '%status:quarantined%' ORDER BY id DESC LIMIT 15",
+      "SELECT seq, feed, kind, summary, created_at FROM feed_entries WHERE namespace = ? AND visibility_scope = 'public_commons' AND tags NOT LIKE '%status:quarantined%' AND target_cohorts LIKE '%\"all\"%' ORDER BY id DESC LIMIT 15",
       ns
     ).map((fe) => ({
       seq: Number(fe.seq),
@@ -1534,42 +1589,35 @@ export class TesseraCoordinator extends DurableObject {
     };
   }
 
+  async planMaintenance() {
+    this.namespace = "main";
+    const now = Date.now()/1000;
+    const records = this._all("SELECT r.* FROM record_heads h JOIN records r ON r.namespace=h.namespace AND r.store=h.store AND r.key=h.key AND r.version=h.version WHERE h.namespace='main' AND h.store='registry.feeds' ORDER BY h.key LIMIT 100");
+    const items = records.map(r => { const v=JSON.parse(r.value); return { item_id:r.key, category_id:"noun.feed_source", source_uri:v.url || v.source_uri || null, expected_sha256:v.content_sha256 || null, last_verified_at:v.last_verified_at || v.last_checked_at || null, half_life_hours:v.fragility?.half_life_hours || v.half_life_hours, fragility_score:v.fragility?.fragility_score ?? v.fragility_score, importance:v.importance ?? 1 }; }).filter(v => v.last_verified_at && Number.isFinite(v.fragility_score));
+    const plan = planFragilityRechecks(items, now, 15);
+    const record = { evaluated_at: now, source_count: records.length, supported_observations: items.length, plan, execution_mode: "planning_only", reason: "Plans are persisted for operator review; no unverified probe result is promoted" };
+    this.ctx.storage.transactionSync(() => {
+      this.ctx.storage.sql.exec("INSERT INTO meta(key,value) VALUES ('fragility_plan',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", canonicalJson(record));
+      this._event("fragility_plan_saved", now, { detail: { planned: plan.length, sha256: canonicalSha256(record) } });
+    });
+    return record;
+  }
+
   async publicHealthAndBoard(includeBoardMeta = false, namespace = "main") {
     const ns = normalizeNamespace(namespace);
     const now = Date.now() / 1000;
     this.namespace = ns;
     this.isPrimary = ns === "main";
-    this._ensureNamespaceSeeded(ns, now);
 
     const last = this._one("SELECT value FROM meta WHERE key = 'reaper_last_run'");
     const queues = [];
-    for (const r of this._all("SELECT * FROM counts WHERE namespace = ? ORDER BY queue", ns)) {
-      const oldest = this._one(
-        "SELECT MIN(updated_at) AS m FROM tasks WHERE namespace = ? AND queue = ? AND state = 'ready' AND not_before <= ?",
-        ns,
-        r.queue,
-        now
-      );
-      const expired = this._one(
-        "SELECT COUNT(*) AS n FROM leases l JOIN tasks t ON t.namespace = l.namespace AND t.id = l.task_id WHERE l.namespace = ? AND t.queue = ? AND (l.expires_at <= ? OR l.hard_expires_at <= ?)",
-        ns,
-        r.queue,
-        now,
-        now
-      );
-      queues.push({
-        name: r.queue,
-        counts: {
-          ready: Number(r.ready),
-          leased: Number(r.leased),
-          waiting: Number(r.waiting),
-          done: Number(r.done),
-          dead: Number(r.dead),
-          cancelled: Number(r.cancelled),
-        },
-        oldest_ready_age_seconds: oldest?.m == null ? null : Math.max(0.0, now - Number(oldest.m)),
-        expired_leases: Number(expired?.n || 0),
-      });
+    const publicTasks = this._all("SELECT * FROM tasks WHERE namespace=? ORDER BY queue", ns).filter(r => this._publicRow(r));
+    for (const name of [...new Set(publicTasks.map(t => t.queue))].sort()) {
+      const tasks = publicTasks.filter(t => t.queue === name);
+      const counts = Object.fromEntries(["ready","leased","waiting","done","dead","cancelled"].map(state => [state,tasks.filter(t => t.state===state).length]));
+      const ready = tasks.filter(t => t.state==="ready" && t.not_before<=now).map(t => t.updated_at);
+      const expired = tasks.filter(t => t.state==="leased" && this._one("SELECT task_id FROM leases WHERE namespace=? AND task_id=? AND (expires_at<=? OR hard_expires_at<=?)",ns,t.id,now,now)).length;
+      queues.push({ name, counts, oldest_ready_age_seconds: ready.length ? Math.max(0,now-Math.min(...ready)):null, expired_leases:expired });
     }
     const health = {
       ok: true,
@@ -1588,42 +1636,19 @@ export class TesseraCoordinator extends DurableObject {
     };
   }
 
-  _listStoresInternal() {
-    const ns = this.namespace;
-    return this._all(
-      "SELECT h.store AS store, COUNT(*) AS records, MAX(r.created_at) AS updated_at FROM record_heads h JOIN records r ON r.namespace = h.namespace AND r.store = h.store AND r.key = h.key AND r.version = h.version WHERE h.namespace = ? GROUP BY h.store ORDER BY h.store",
-      ns
-    ).map((r) => ({
-      namespace: ns,
-      store: r.store,
-      records: Number(r.records),
-      updated_at: Number(r.updated_at),
-    }));
+  _listStoresInternal(viewerCtx = {}) {
+    const ns=this.namespace, groups=new Map();
+    for (const row of this._all("SELECT r.* FROM record_heads h JOIN records r ON r.namespace=h.namespace AND r.store=h.store AND r.key=h.key AND r.version=h.version WHERE h.namespace=? ORDER BY h.store", ns)) {
+      if (!this._visibleNoun(row,viewerCtx)) continue;
+      const g=groups.get(row.store)||{ namespace:ns, store:row.store, records:0, updated_at:0 }; g.records++; g.updated_at=Math.max(g.updated_at,Number(row.created_at));groups.set(row.store,g);
+    }
+    return [...groups.values()];
   }
-
-  _listBucketsInternal() {
-    const ns = this.namespace;
-    return this._all("SELECT * FROM buckets WHERE namespace = ? ORDER BY name", ns).map((b) => {
-      const agg = this._one(
-        "SELECT COUNT(*) AS n, COALESCE(SUM(size), 0) AS total FROM bucket_objects WHERE namespace = ? AND bucket = ?",
-        ns,
-        b.name
-      );
-      return {
-        namespace: ns,
-        name: b.name,
-        description: b.description,
-        objects: Number(agg?.n || 0),
-        bytes: Number(agg?.total || 0),
-        created_at: Number(b.created_at),
-        updated_at: Number(b.updated_at),
-        producer_surface: b.producer_surface || "surface:tessera",
-        visibility_scope: b.visibility_scope || "public_commons",
-        allowed_surfaces: parseJsonSafe(b.allowed_surfaces, []),
-        target_cohorts: parseJsonSafe(b.target_cohorts, ["all"]),
-        tags: parseJsonSafe(b.tags, []),
-        owner_key_id: b.owner_key_id ?? null,
-      };
+  _listBucketsInternal(viewerCtx = {}) {
+    const ns=this.namespace;
+    return this._all("SELECT * FROM buckets WHERE namespace=? ORDER BY name",ns).filter(b=>this._visibleNoun(b,viewerCtx)).map(b=>{
+      const objects=this._all("SELECT * FROM bucket_objects WHERE namespace=? AND bucket=?",ns,b.name).filter(o=>this._visibleNoun(o,viewerCtx));
+      return { namespace:ns, name:b.name, description:b.description, objects:objects.length, bytes:objects.reduce((n,o)=>n+Number(o.size),0), created_at:Number(b.created_at),updated_at:Number(b.updated_at),producer_surface:b.producer_surface,visibility_scope:b.visibility_scope,allowed_surfaces:parseJsonSafe(b.allowed_surfaces,[]),target_cohorts:parseJsonSafe(b.target_cohorts,["all"]),tags:parseJsonSafe(b.tags,[]),owner_key_id:b.owner_key_id??null };
     });
   }
 
@@ -1665,12 +1690,84 @@ export class TesseraCoordinator extends DurableObject {
     };
   }
 
+  async myKeys(secret) {
+    try {
+      const grant = await this._grantFromSecret(secret);
+      if (grant.principal_kind === "anonymous") throw forbid("anonymous sessions cannot list keys");
+      const rows = this._all("SELECT k.* FROM keys k LEFT JOIN access_principals p ON p.key_id=k.key_id WHERE k.key_id=? OR (p.account_id=? AND p.principal_kind != 'anonymous') ORDER BY k.created_at", grant.key_id, grant.account_id || `legacy:${grant.key_id}`);
+      return { ok: true, status: 200, data: { keys: rows.map(r => { const { key_hash, ...meta } = r; return { ...meta, ...principalMetadata(this,r), scopes: JSON.parse(r.scopes), queues: JSON.parse(r.queues) }; }) } };
+    } catch (e) { return this._errOut(e); }
+  }
+  async revokeOwnKey(secret, keyId, meta) {
+    try {
+      const grant = await this._grantFromSecret(secret);
+      const row = this._one("SELECT * FROM keys WHERE key_id=?", keyId);
+      const target = row ? principalMetadata(this, row) : null;
+      if (!row || grant.principal_kind === "anonymous" || (!grant.is_admin && grant.key_id !== keyId && (!grant.account_id || grant.account_id !== target.account_id))) throw forbid("key owner or admin required");
+      const now = Date.now()/1000;
+      this.ctx.storage.sql.exec("UPDATE keys SET revoked_at=? WHERE key_id=? AND revoked_at IS NULL", now, keyId);
+      const out = { ok: true, status: 200, data: { key_id: keyId, revoked_at: now } };
+      audit(this, grant, "revoke_key", { key:keyId }, out, meta);
+      return out;
+    } catch (e) { return this._errOut(e); }
+  }
+  async requestIdentity(ip, ua) { return requestIdentity(this, ip, ua); }
+  async openAnonymousSession(body, meta) {
+    try { return { ok: true, status: 201, data: await mintAnonymous(this, body, meta) }; }
+    catch (e) { return this._errOut(e); }
+  }
+  async seedDemo(grant, purgeAt) { return seedDemo(this, grant, purgeAt); }
+  publicActivity() { return publicActivity(this); }
+  recordAccessEvent(grant, action, args, out, meta) { audit(this, grant, action, args, out, meta); }
+  async auditForToken(secret, args = {}) {
+    try {
+      const grant = await this._grantFromSecret(secret);
+      if (args.admin && !grant.is_admin) throw forbid("admin scope required");
+      return { ok: true, status: 200, data: ownAudit(this, grant, args) };
+    } catch (e) { return this._errOut(e); }
+  }
   async rpcCall(secret, action, args = {}) {
+    let grant = null, out;
+    const ns = normalizeNamespace(args.namespace || "main");
+    this.namespace = ns;
+    this.isPrimary = ns === "main";
+    try {
+      grant = await this._grantFromSecret(secret);
+      args = enforceAccess(this, grant, action, { ...args, namespace: ns });
+      if (action === "me") out = { ok: true, status: 200, data: publicPrincipal(grant) };
+      else if (action === "listVerbs") {
+        const rows=this._all("SELECT * FROM tasks WHERE namespace=? AND (?='' OR queue=?) AND (?='' OR state=?) ORDER BY created_at,id LIMIT 1000",ns,args.queue||"",args.queue||"",args.status||"ready",args.status||"ready");
+        const view=this._viewerCtx(grant,args.surfaceHeader);
+        out={ok:true,status:200,data:{verbs:rows.filter(r=>this._taskVisible(r,grant,view)&&grant.queues.some(q=>globMatch(r.queue,q))).slice(0,Math.max(1,Math.min(Number(args.limit)||50,100))).map(r=>this._taskView(r.id))}};
+      }
+      else if (action === "claimEvents") {
+        const row = this._taskRow(String(args.task_id));
+        this._requireQueue(grant, row.queue);
+        if (!this._taskVisible(row, grant, this._viewerCtx(grant, args.surfaceHeader))) throw notFound("task does not exist");
+        out = { ok: true, status: 200, data: { events: this._all("SELECT seq,ts,type,task_id,fencing_token FROM events WHERE namespace=? AND task_id=? AND seq>? ORDER BY seq LIMIT 100", ns, args.task_id, Number(args.after) || 0) } };
+      } else out = await this._rpcCall(secret, action, args);
+      if (out.ok && grant.principal_kind === "anonymous" && out.data && typeof out.data === "object") {
+        out.data = { ...out.data, labels: grant.labels, namespace: ns, expires_at: grant.expires_at };
+        if (out.data.lease) out.data.lease = { ...out.data.lease, labels: grant.labels, principal_id: grant.principal_id };
+      }
+      if (out.ok && action === "claim" && out.data.lease) {
+        out.data.lease.claim_receipt = await sha256Hex(new TextEncoder().encode(canonicalJson({ namespace: ns, task_id: out.data.lease.task_id, fencing_token: out.data.lease.fencing_token, claimed_at: out.data.lease.claimed_at })));
+      }
+    } catch (e) { out = this._errOut(e); }
+    audit(this, grant, action, args, out, args.access_meta || {});
+    if (ns !== "main" && this.env.COORDINATOR) {
+      const primary = this.env.COORDINATOR.get(this.env.COORDINATOR.idFromName("primary"));
+      await primary.recordAccessEvent(grant ? publicPrincipal(grant) : null, action, args, out, args.access_meta || {});
+    }
+    return out;
+  }
+
+  async _rpcCall(secret, action, args = {}) {
     try {
       this.namespace = normalizeNamespace(args?.namespace || "main");
       this.isPrimary = Boolean(args?.isPrimary ?? (this.namespace === "main"));
       const now = Date.now() / 1000;
-      this._ensureNamespaceSeeded(this.namespace, now);
+      if (!this.namespace.startsWith("demo.")) this._ensureNamespaceSeeded(this.namespace, now);
 
       const grant = await this._grantFromSecret(secret);
       const surfaceHeader = args?.surfaceHeader || args?.header_surface_id || "";
@@ -1877,6 +1974,7 @@ export class TesseraCoordinator extends DurableObject {
           for (const dep of dependsOn) {
             const depRow = this._taskRow(dep);
             this._requireQueue(grant, depRow.queue);
+            if (!this._taskVisible(depRow, grant, viewerCtx)) throw notFound("dependency does not exist");
           }
           const gov = normalizeGovernance(
             args,
@@ -1972,6 +2070,7 @@ export class TesseraCoordinator extends DurableObject {
         case "results": {
           const view = this._taskView(String(args.task_id));
           this._requireQueue(grant, view.queue);
+          if (!this._taskVisible(this._taskRow(String(args.task_id)), grant, viewerCtx)) throw notFound("task does not exist");
           const results = this._all(
             "SELECT * FROM results WHERE namespace = ? AND task_id = ? ORDER BY created_at",
             this.namespace,
@@ -1986,6 +2085,7 @@ export class TesseraCoordinator extends DurableObject {
             receipt_hash: r.receipt_hash,
             state_after: r.state_after,
             completed_by_key: r.completed_by_key ?? null,
+            labels: JSON.parse(r.labels || "{}"),
             created_at: Number(r.created_at),
           }));
           return { ok: true, status: 200, data: { results } };
@@ -2016,6 +2116,7 @@ export class TesseraCoordinator extends DurableObject {
             this.ctx.storage.transactionSync(() => {
               const config = this._queueConfig(queue);
               this._reap(now, queue);
+              if (grant.principal_kind === "anonymous" && this._one("SELECT COUNT(*) n FROM leases WHERE namespace=? AND key_id=? AND expires_at>? AND hard_expires_at>?", this.namespace, grant.key_id, now, now).n >= 1) throw rateLim("one concurrent demo claim allowed", 30);
               let sql =
                 "SELECT * FROM tasks WHERE namespace = ? AND queue = ? AND state = 'ready' AND not_before <= ?";
               const params = [this.namespace, queue, now];
@@ -2027,8 +2128,8 @@ export class TesseraCoordinator extends DurableObject {
                 sql += ` AND effect_class IN (${effects.map(() => "?").join(", ")})`;
                 params.push(...effects);
               }
-              sql += " ORDER BY priority DESC, created_at, id LIMIT 1";
-              const row = this._one(sql, ...params);
+              sql += " ORDER BY priority DESC, created_at, id";
+              const row = this._all(sql, ...params).find((r) => this._taskVisible(r, grant, viewerCtx));
               if (!row) return;
               const token = Number(row.fencing_token) + 1;
               const attempt = Number(row.attempts) + 1;
@@ -2181,8 +2282,8 @@ export class TesseraCoordinator extends DurableObject {
               idem
             );
             if (prior) {
-              if (prior.task_id !== taskId) {
-                throw idemConflict("idempotency key already used for another task");
+              if (prior.task_id !== taskId || prior.receipt_hash !== digest || prior.completed_by_key !== grant.key_id) {
+                throw idemConflict("idempotency key is bound to the original task, actor and result");
               }
               receipt = {
                 task_id: prior.task_id,
@@ -2193,6 +2294,7 @@ export class TesseraCoordinator extends DurableObject {
                 state_after: prior.state_after,
                 created_at: Number(prior.created_at),
                 replayed: true,
+                labels: JSON.parse(prior.labels || "{}"),
               };
               return;
             }
@@ -2201,6 +2303,7 @@ export class TesseraCoordinator extends DurableObject {
             if (!row) return;
             const task = this._taskRow(taskId);
             const config = this._queueConfig(task.queue);
+            if (task.queue === "eq03" && okFlag) reviewProof(this, taskId, grant.key_id, outputVal, forbid);
             this.ctx.storage.sql.exec(
               "DELETE FROM leases WHERE namespace = ? AND task_id = ? AND fencing_token = ?",
               this.namespace,
@@ -2231,7 +2334,7 @@ export class TesseraCoordinator extends DurableObject {
               stateAfter = this._fail(task, config, now, errorText || "worker reported failure");
             }
             this.ctx.storage.sql.exec(
-              "INSERT INTO results (namespace, idempotency_key, task_id, fencing_token, ok, output, error, receipt_hash, state_after, completed_by_key, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+              "INSERT INTO results (namespace, idempotency_key, task_id, fencing_token, ok, output, error, receipt_hash, state_after, completed_by_key, created_at, labels) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
               this.namespace,
               idem,
               taskId,
@@ -2242,7 +2345,8 @@ export class TesseraCoordinator extends DurableObject {
               digest,
               stateAfter,
               grant.key_id,
-              now
+              now,
+              JSON.stringify(grant.labels || {})
             );
             this._event("submitted", now, {
               task_id: taskId,
@@ -2260,6 +2364,7 @@ export class TesseraCoordinator extends DurableObject {
               state_after: stateAfter,
               created_at: now,
               replayed: false,
+              labels: grant.labels || {},
             };
           });
           if (!receipt) throw staleLease(staleMsg || "lease is not live");
@@ -2445,6 +2550,7 @@ export class TesseraCoordinator extends DurableObject {
           const tRow = this._taskRow(taskId);
           this._requireQueue(grant, tRow.queue);
           this._requireEffect(grant, tRow.effect_class);
+          if (!this._taskVisible(tRow, grant, viewerCtx)) throw notFound("task does not exist");
           let view = null;
           this.ctx.storage.transactionSync(() => {
             const task = this._taskRow(taskId);
@@ -2473,8 +2579,11 @@ export class TesseraCoordinator extends DurableObject {
           const tRow = this._taskRow(taskId);
           this._requireQueue(grant, tRow.queue);
           this._requireEffect(grant, tRow.effect_class);
+          if (!this._taskVisible(tRow, grant, viewerCtx)) throw notFound("task does not exist");
           let view = null;
           this.ctx.storage.transactionSync(() => {
+            const holder = this._one("SELECT key_id FROM leases WHERE namespace=? AND task_id=?",this.namespace,taskId);
+            if (holder?.key_id !== grant.key_id) this._authorizeMutation(this._taskRow(taskId),grant,viewerCtx);
             this._cancelTree(taskId, reason, now, true);
             view = this._taskView(taskId);
           });
@@ -2606,6 +2715,8 @@ export class TesseraCoordinator extends DurableObject {
           const d1Stmts = [];
           this.ctx.storage.transactionSync(() => {
             for (const w of writes) {
+              if (!grant.is_admin) publicationProof(this, w.store, w.value, forbid);
+              this._authorizeMutation(this._one("SELECT * FROM record_heads WHERE namespace = ? AND store = ? AND key = ?", this.namespace, w.store, w.key), grant, viewerCtx);
               const expected = w.expected_version === undefined ? null : w.expected_version;
               if (expected != null && (!Number.isInteger(expected) || expected < 0)) {
                 throw verConflict(`${w.store}/${w.key}: invalid expected version ${expected}`, null);
@@ -2840,7 +2951,7 @@ export class TesseraCoordinator extends DurableObject {
 
         case "stores": {
           if (!grant.can_store) throw forbid("this needs a key with the store scope");
-          return { ok: true, status: 200, data: { stores: this._listStoresInternal() } };
+          return { ok: true, status: 200, data: { stores: this._listStoresInternal(viewerCtx) } };
         }
 
         case "listRecords": {
@@ -2911,6 +3022,23 @@ export class TesseraCoordinator extends DurableObject {
           return { ok: true, status: 200, data: { records: out } };
         }
 
+        case "authorizeBlobWrite":
+        case "authorizeObjectWrite": {
+          if (!grant.can_store) throw forbid("this needs a storage scope");
+          const gov=normalizeGovernance(args,{defaultSurface:defaultGovSurface,ownerKeyId:grant.key_id,extraTags:extractTags(args.metadata || {})},badReq);
+          if (action === "authorizeObjectWrite") {
+            const bucket=String(args.bucket||""), key=String(args.key||"");
+            if (!NAME_RE.test(bucket) || !OBJECT_KEY_RE.test(key)) throw badReq("invalid bucket or object key");
+            this._requireSurfaceWrite(grant,bucket,surfaceHeader);
+            const container=this._one("SELECT * FROM buckets WHERE namespace=? AND name=?",this.namespace,bucket);
+            if (container && (container.owner_key_id || container.visibility_scope !== "public_commons")) this._authorizeMutation(container,grant,viewerCtx);
+            const old=this._one("SELECT * FROM bucket_objects WHERE namespace=? AND bucket=? AND key=?",this.namespace,bucket,key);
+            this._authorizeMutation(old,grant,viewerCtx);
+            const expected=args.expected_version;
+            if (expected != null && (!Number.isInteger(expected) || expected<0 || (old ? old.version : 0)!==expected)) throw verConflict("object version changed",old?.version);
+          }
+          return {ok:true,status:200,data:{governance:gov}};
+        }
         case "recordBlobStored": {
           if (!grant.can_store) throw forbid("this needs a key with the store scope");
           const { sha256, size } = args;
@@ -2928,7 +3056,7 @@ export class TesseraCoordinator extends DurableObject {
             );
             const inserted = this._changes() > 0;
             this.ctx.storage.sql.exec(
-              "INSERT INTO blob_namespaces (namespace, sha256, producer_surface, visibility_scope, allowed_surfaces, target_cohorts, tags, owner_key_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (namespace, sha256) DO UPDATE SET producer_surface = excluded.producer_surface, visibility_scope = excluded.visibility_scope, allowed_surfaces = excluded.allowed_surfaces, target_cohorts = excluded.target_cohorts, tags = excluded.tags, owner_key_id = excluded.owner_key_id",
+              "INSERT INTO blob_namespaces (namespace, sha256, producer_surface, visibility_scope, allowed_surfaces, target_cohorts, tags, owner_key_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (namespace, sha256) DO NOTHING",
               this.namespace,
               sha256,
               gov.producer_surface,
@@ -2986,6 +3114,7 @@ export class TesseraCoordinator extends DurableObject {
           );
           let info;
           this.ctx.storage.transactionSync(() => {
+            this._authorizeMutation(this._one("SELECT * FROM buckets WHERE namespace=? AND name=?",this.namespace,name),grant,viewerCtx);
             this.ctx.storage.sql.exec(
               "INSERT INTO buckets (namespace, name, description, created_at, updated_at, producer_surface, visibility_scope, allowed_surfaces, target_cohorts, tags, owner_key_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (namespace, name) DO UPDATE SET description = excluded.description, updated_at = excluded.updated_at, producer_surface = excluded.producer_surface, visibility_scope = excluded.visibility_scope, allowed_surfaces = excluded.allowed_surfaces, target_cohorts = excluded.target_cohorts, tags = excluded.tags, owner_key_id = excluded.owner_key_id",
               this.namespace,
@@ -3001,7 +3130,7 @@ export class TesseraCoordinator extends DurableObject {
               gov.owner_key_id
             );
             this._event("bucket_defined", now, { detail: { bucket: name, description } });
-            info = this._listBucketsInternal().find((b) => b.name === name);
+            info = this._listBucketsInternal(viewerCtx).find((b) => b.name === name);
           });
           if (this.isPrimary && this.env.BUCKETS_DB) {
             this.ctx.waitUntil(
@@ -3018,7 +3147,7 @@ export class TesseraCoordinator extends DurableObject {
 
         case "buckets": {
           if (!grant.can_store) throw forbid("this needs a key with the store scope");
-          return { ok: true, status: 200, data: { buckets: this._listBucketsInternal() } };
+          return { ok: true, status: 200, data: { buckets: this._listBucketsInternal(viewerCtx) } };
         }
 
         case "putObjectMeta": {
@@ -3056,6 +3185,8 @@ export class TesseraCoordinator extends DurableObject {
 
           let outMeta;
           this.ctx.storage.transactionSync(() => {
+            const container=this._one("SELECT * FROM buckets WHERE namespace=? AND name=?",this.namespace,bucket);
+            if (container && (container.owner_key_id || container.visibility_scope !== "public_commons")) this._authorizeMutation(container,grant,viewerCtx);
             const bRow = this._one(
               "SELECT created_at FROM buckets WHERE namespace = ? AND name = ?",
               this.namespace,
@@ -3099,6 +3230,7 @@ export class TesseraCoordinator extends DurableObject {
                 );
               }
             } else {
+              this._authorizeMutation(this._one("SELECT * FROM bucket_objects WHERE namespace = ? AND bucket = ? AND key = ?", this.namespace, bucket, key), grant, viewerCtx);
               version = expected + 1;
               this.ctx.storage.sql.exec(
                 "UPDATE bucket_objects SET version = ?, sha256 = ?, size = ?, content_type = ?, metadata = ?, updated_at = ?, producer_surface = ?, visibility_scope = ?, allowed_surfaces = ?, target_cohorts = ?, tags = ?, owner_key_id = ? WHERE namespace = ? AND bucket = ? AND key = ? AND version = ?",
@@ -3149,7 +3281,7 @@ export class TesseraCoordinator extends DurableObject {
             );
             const blobIns = this._changes() > 0;
             this.ctx.storage.sql.exec(
-              "INSERT INTO blob_namespaces (namespace, sha256, producer_surface, visibility_scope, allowed_surfaces, target_cohorts, tags, owner_key_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (namespace, sha256) DO UPDATE SET producer_surface = excluded.producer_surface, visibility_scope = excluded.visibility_scope, allowed_surfaces = excluded.allowed_surfaces, target_cohorts = excluded.target_cohorts, tags = excluded.tags, owner_key_id = excluded.owner_key_id",
+              "INSERT INTO blob_namespaces (namespace, sha256, producer_surface, visibility_scope, allowed_surfaces, target_cohorts, tags, owner_key_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (namespace, sha256) DO NOTHING",
               this.namespace,
               sha256,
               gov.producer_surface,

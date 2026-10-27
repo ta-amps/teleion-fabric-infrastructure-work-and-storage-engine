@@ -183,7 +183,7 @@ def test_the_agent_door(service: tuple[TestClient, Store, Keys]) -> None:
     assert llms.startswith("# Tessera") and "## Rules" in llms
     assert client.get("/.well-known/agent-card.json").json()["name"] == "Tessera"
     assert "Disallow: /v1/" in client.get("/robots.txt").text
-    assert "q-a" in client.get("/board").text
+    assert "Read-only live console" in client.get("/board").text
 
 
 def test_web_forms_never_echo_the_key(service: tuple[TestClient, Store, Keys]) -> None:
@@ -235,7 +235,7 @@ def test_the_mcp_door(service: tuple[TestClient, Store, Keys]) -> None:
         "capabilities": {},
         "clientInfo": {"name": "conformance", "version": "0"},
     }
-    assert _rpc(client, None, "initialize", init).status_code == 401
+    assert _rpc(client, None, "initialize", init).status_code == 200
     resp = _rpc(client, keys["a"], "initialize", init)
     assert resp.status_code == 200, resp.text
     version = resp.json()["result"]["protocolVersion"]

@@ -219,13 +219,13 @@ def run_bilateral_suite(
             "opencode-agent-a",
             queues=["seed", "expand", "research", "draft", "review"],
             effect_classes=["read", "write-internal"],
-            scopes=["store"],
+            scopes=["store", "surface:tessera"],
         )
         k_agent_b, _ = store.issue_key(
             "ollama-peer-b",
             queues=["seed", "expand", "research", "draft", "review"],
             effect_classes=["read", "write-internal"],
-            scopes=["store"],
+            scopes=["store", "surface:tessera"],
         )
 
         # Seed initial tasks & nouns for Protocol 1 (Park/Resume Q&A) and Protocol 2 (Seed->Canonical)

@@ -114,7 +114,7 @@ class GraphOps(StoreBase):
         out: list[ChildResult] = []
         for r in rows:
             res = c.execute(
-                "SELECT output, receipt_hash FROM results"
+                "SELECT output, receipt_hash, completed_by_key FROM results"
                 " WHERE namespace = ? AND task_id = ? AND ok = 1"
                 " ORDER BY created_at DESC LIMIT 1",
                 (ns, r["id"]),
@@ -126,6 +126,7 @@ class GraphOps(StoreBase):
                     ok=None if res is None else True,
                     output=None if res is None else json.loads(res["output"]),
                     receipt_hash=None if res is None else res["receipt_hash"],
+                    completed_by_key=None if res is None else res["completed_by_key"],
                 )
             )
         return out

@@ -13,7 +13,8 @@ import time
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager, suppress
 from http import HTTPStatus
-from typing import Any
+from typing import Any, cast
+from urllib.parse import urlsplit
 
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
@@ -23,6 +24,9 @@ from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from tessera import pages
+from tessera._access_boundary import access_dispatch
+from tessera._access_contract import connect_html
+from tessera._access_routes import mount_access_routes
 from tessera._service_buckets import mount_storage_and_admin_routes, parse_governance_header
 from tessera._service_intelligence import mount_intelligence_routes, slice_bytes_response
 from tessera._version import __version__
@@ -40,7 +44,10 @@ from tessera.models import (
     NAMESPACE_PATTERN,
     ChildSpec,
     JobStatus,
+    Lease,
     QueueConfig,
+    Receipt,
+    RecordVersion,
     RecordWrite,
     TaskSpec,
     VisibilityScope,
@@ -76,7 +83,7 @@ WRITE_PATHS = (
 EDGE_EXEMPT = frozenset({"/v1/health", "/healthz", "/api/health"})
 PAGE_CSP = (
     "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; "
-    "form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+    "script-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
 )
 
 
@@ -183,6 +190,7 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
             await asyncio.sleep(settings.reaper_seconds)
             with suppress(Exception):
                 await run_in_threadpool(store.reap)
+                await run_in_threadpool(store.purge_expired_principals)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -201,12 +209,18 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
     )
 
     async def require_key(request: Request) -> AsyncIterator[KeyGrant]:
-        grant = await run_in_threadpool(gate.grant, bearer_secret(request))
+        grant = cast(
+            KeyGrant,
+            getattr(request.state, "access_grant", None)
+            or await run_in_threadpool(gate.grant, bearer_secret(request)),
+        )
         eff_surface = gate.effective_surface(grant, request.headers.get("x-surface-id"))
         with store.scope_context(
-            surface=eff_surface,
+            surface=eff_surface or "",
             key_id=grant.key_id,
             is_admin=grant.is_admin,
+            anonymous=grant.anonymous,
+            labels=grant.labels,
         ):
             yield grant
 
@@ -239,6 +253,7 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
                 f"path namespace '{path_ns}' conflicts with X-Namespace '{hdr_ns}'",
             )
         effective_ns = path_ns or hdr_ns or "main"
+        request.state.explicit_namespace = bool(path_ns or hdr_ns)
 
         effective_path = request.scope.get("path", "/")
         if settings.edge_secret and effective_path not in EDGE_EXEMPT:
@@ -246,15 +261,58 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
             if not hmac.compare_digest(sent.encode(), settings.edge_secret.encode()):
                 return problem(403, "forbidden", "requests must come through the edge")
 
-        hdr_surface = (request.headers.get("x-surface-id") or "").strip() or None
-        with store.scope_context(namespace=effective_ns, surface=hdr_surface):
-            response: Response = await call_next(request)
+        with store.scope_context(namespace=effective_ns, surface=""):
+            # Surface identity is established only by the authenticated dependency.
+            response: Response = await access_dispatch(request, call_next, store, gate, settings)
 
         if effective_path.startswith(("/v1/", "/work", "/api/")):
             response.headers.setdefault("cache-control", "no-store")
         if response.headers.get("content-type", "").startswith("text/html"):
             response.headers.setdefault("content-security-policy", PAGE_CSP)
         response.headers.setdefault("x-content-type-options", "nosniff")
+        return response
+
+    @app.middleware("http")
+    async def agent_cors(request: Request, call_next: Callable[[Request], Any]) -> Response:
+        is_agent = (
+            request.url.path.startswith(("/v1/", "/mcp", "/ns/"))
+            or request.url.path == "/connect.json"
+        )
+        origin = request.headers.get("origin")
+        if origin and is_agent:
+            try:
+                parsed = urlsplit(origin)
+                valid = (
+                    parsed.scheme in {"http", "https"}
+                    and bool(parsed.netloc)
+                    and not parsed.username
+                    and not parsed.password
+                    and parsed.path in {"", "/"}
+                    and not parsed.query
+                    and not parsed.fragment
+                )
+            except ValueError:
+                valid = False
+            if not valid:
+                return problem(403, "forbidden", "invalid agent Origin")
+        if request.url.path.endswith("/mcp") and settings.allowed_hosts:
+            host = request.headers.get("host", "")
+            if not any(
+                host == allowed or (allowed.endswith(":*") and host.startswith(allowed[:-1]))
+                for allowed in settings.allowed_hosts
+            ):
+                return problem(421, "invalid_request", "invalid agent Host")
+        if is_agent and request.method == "OPTIONS":
+            response = Response(status_code=204)
+        else:
+            response = await call_next(request)
+        if is_agent:
+            response.headers["access-control-allow-origin"] = "*"
+            response.headers["access-control-allow-methods"] = "GET, POST, OPTIONS"
+            response.headers["access-control-allow-headers"] = (
+                "Authorization, Content-Type, If-Match, X-Request-Id, X-Agent-Label, Idempotency-Key, MCP-Protocol-Version, X-Namespace"
+            )
+            response.headers["access-control-expose-headers"] = "ETag, Retry-After, X-Request-Id"
         return response
 
     @app.exception_handler(TesseraError)
@@ -297,7 +355,7 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
     @app.get("/api/health", include_in_schema=False)
     @app.get("/healthz", include_in_schema=False)
     def health() -> dict[str, Any]:
-        return store.health().model_dump(mode="json")
+        return store.health(public_only=True).model_dump(mode="json")
 
     @app.get("/v1/counts")
     def counts(recount: bool = False, grant: KeyGrant = key) -> dict[str, Any]:
@@ -359,7 +417,13 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
         gate.queue(grant, store.task(task_id).queue)
         return {"results": [r.model_dump(mode="json") for r in store.results(task_id)]}
 
-    @app.post("/v1/tasks/claim", response_model=None)
+    @app.post(
+        "/v1/tasks/claim",
+        response_model=Lease,
+        responses={
+            204: {"description": "No eligible task is ready; Retry-After gives the retry interval."}
+        },
+    )
     def claim(body: ClaimBody, grant: KeyGrant = key) -> Response:
         gate.queue(grant, body.queue)
         if not grant.is_admin:
@@ -383,12 +447,12 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
             )
         return JSONResponse(lease.model_dump(mode="json"), headers={"x-heartbeat-seconds": beat})
 
-    @app.post("/v1/tasks/heartbeat")
+    @app.post("/v1/tasks/heartbeat", response_model=Lease)
     def heartbeat(body: LeaseRef, grant: KeyGrant = key) -> dict[str, Any]:
         gate.holder(grant, body.task_id)
         return store.heartbeat(body.task_id, body.fencing_token).model_dump(mode="json")
 
-    @app.post("/v1/tasks/submit")
+    @app.post("/v1/tasks/submit", response_model=Receipt)
     def submit(body: SubmitBody, request: Request, grant: KeyGrant = key) -> dict[str, Any]:
         idem = request.headers.get("idempotency-key")
         if not idem:
@@ -439,10 +503,7 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
 
     @app.post("/v1/tasks/cancel")
     def cancel(body: CancelBody, grant: KeyGrant = key) -> dict[str, Any]:
-        view = store.task(body.task_id)
-        gate.queue(grant, view.queue)
-        if not grant.is_admin and view.effect_class not in grant.effect_classes:
-            raise Forbidden("this key may not cancel tasks of that effect class")
+        gate.cancel_task(grant, body.task_id)
         return store.cancel(body.task_id, body.reason).model_dump(mode="json")
 
     # -- model jobs ---------------------------------------------------------------------------
@@ -479,7 +540,7 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
             gate.surface_write(grant, w.store, surf_hdr)
         return {"records": [r.model_dump(mode="json") for r in store.put_records(body.writes)]}
 
-    @app.post("/v1/stores/{store_name}/records/{record_key}")
+    @app.post("/v1/stores/{store_name}/records/{record_key}", response_model=RecordVersion)
     def put_record(
         store_name: str,
         record_key: str,
@@ -503,10 +564,15 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
             write_kwargs["namespace"] = body.namespace
         if body.producer_surface is not None:
             write_kwargs["producer_surface"] = body.producer_surface
+        if body.expected_version is None and (match := request.headers.get("if-match")):
+            try:
+                write_kwargs["expected_version"] = int(match.strip('"'))
+            except ValueError as exc:
+                raise InvalidRequest("If-Match must contain a record version integer") from exc
         write = RecordWrite(**write_kwargs)
         return store.put_records([write])[0].model_dump(mode="json")
 
-    @app.get("/v1/stores/{store_name}/records/{record_key}")
+    @app.get("/v1/stores/{store_name}/records/{record_key}", response_model=RecordVersion)
     def get_record(
         store_name: str, record_key: str, version: int | None = None, grant: KeyGrant = key
     ) -> dict[str, Any]:
@@ -540,6 +606,7 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
             headers={"etag": f'"{sha256}"'},
         )
 
+    mount_access_routes(app, store, gate, settings, require_key)
     mount_storage_and_admin_routes(app, store, gate, require_key)
     mount_intelligence_routes(app, store, gate, require_key)
 
@@ -547,24 +614,48 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
 
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
     @app.get("/connect", response_class=HTMLResponse, include_in_schema=False)
-    def connect() -> str:
-        return pages.connect_html(settings)
+    async def connect() -> str:
+        return connect_html(
+            settings.public_url,
+            settings.anonymous_access_enabled,
+            len(await mcp_server.list_tools()),
+        )
 
     @app.get("/favicon.svg", include_in_schema=False)
     def favicon() -> Response:
         return Response(pages.favicon_svg(), media_type="image/svg+xml")
 
     @app.get("/llms.txt", response_class=PlainTextResponse, include_in_schema=False)
-    def llms() -> str:
-        return pages.llms_txt(settings)
+    async def llms() -> str:
+        tools = await mcp_server.list_tools()
+        intro = pages.llms_txt(settings).replace(
+            "You need a key from the operator. One key per agent; keys are scoped to queues and expire.",
+            "Discovery is public. Personal assistants and coding agents can mint a tracked demo session at /v1/session/anonymous when enabled. Private or privileged work needs an operator-issued scoped key.",
+        )
+        intro = intro.replace("26 tools", f"{len(tools)} tools")
+        return (
+            intro
+            + "\n## Access modes\nMachine-readable contract: /connect.json. Tools: "
+            + ", ".join(t.name for t in tools)
+            + "\nAnonymous sessions last one hour; private demo artifacts and access audit expire after 24 hours. Bearer tokens never belong in URLs.\n"
+        )
 
     @app.get("/llms-full.txt", response_class=PlainTextResponse, include_in_schema=False)
     def llms_full() -> str:
         return pages.llms_full_txt(settings)
 
     @app.get("/.well-known/agent-card.json", include_in_schema=False)
-    def agent_card() -> dict[str, Any]:
-        return pages.agent_card(settings)
+    async def agent_card() -> dict[str, Any]:
+        card = pages.agent_card(settings)
+        tools = await mcp_server.list_tools()
+        card["tools"] = [t.model_dump(mode="json", exclude_none=True) for t in tools]
+        card["skills"] = [
+            {"id": t.name, "name": t.name, "description": t.description or ""} for t in tools
+        ]
+        card["capabilities"] = {"streaming": "long-poll", "pushNotifications": False}
+        card["security"] = [{}, {"bearer": []}]
+        card["accessModesUrl"] = f"{settings.public_url}/connect.json"
+        return card
 
     @app.get("/robots.txt", response_class=PlainTextResponse, include_in_schema=False)
     def robots() -> str:
@@ -581,4 +672,21 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
     # Keep JSON helper usage cleanly imported for strict linters.
     _ = json
     app.mount("/", mcp_app)
+    original_openapi = app.openapi
+
+    def openapi_with_access() -> dict[str, Any]:
+        schema = original_openapi()
+        schema.setdefault("components", {}).setdefault("securitySchemes", {})["bearer"] = {
+            "type": "http",
+            "scheme": "bearer",
+            "description": "A tracked tan_ session token or scoped tsk_ API key.",
+        }
+        public = {"/v1/health", "/v1/public/activity", "/v1/session/anonymous", "/connect.json"}
+        for path, operations in schema["paths"].items():
+            for operation in operations.values():
+                if isinstance(operation, dict):
+                    operation["security"] = [] if path in public else [{"bearer": []}]
+        return schema
+
+    app.openapi = openapi_with_access  # type: ignore[method-assign]
     return app

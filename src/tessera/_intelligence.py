@@ -412,6 +412,7 @@ class IntelligenceOps(BucketOps):
         allowed = normalize_surface_list(list(allowed_surfaces) if allowed_surfaces else [])
         cohorts = normalize_cohorts(list(target_cohorts) if target_cohorts else ["all"])
         effective_tags = normalize_tags([*(tags or ()), *extract_payload_tags(payload)])
+        self._assert_publisher_tags(effective_tags)
 
         now = self.clock.now()
         seq = 0
@@ -592,7 +593,9 @@ class IntelligenceOps(BucketOps):
             env_tags: list[str] = json.loads(row["tags"])
             tags = normalize_tags([*env_tags, *extract_payload_tags(val)])
             # Quarantined reflexes NEVER appear in /v1/reflexes/match.
-            if "status:quarantined" in tags:
+            if "status:quarantined" in tags or "status:verified" not in tags:
+                continue
+            if not isinstance(val.get("verified_hits"), int) or val["verified_hits"] < 1:
                 continue
             allowed: list[str] = json.loads(row["allowed_surfaces"])
             cohorts: list[str] = json.loads(row["target_cohorts"])
@@ -641,7 +644,7 @@ class IntelligenceOps(BucketOps):
             )
             if q_clean and score < 0.15 and not exact:
                 continue
-            verified_hits = int(val.get("verified_hits", 1))
+            verified_hits = int(val["verified_hits"])
             tier = str(
                 val.get("tier")
                 or ("deterministic_0_call" if verified_hits >= 3 else "hybrid_1_call")

@@ -4,9 +4,9 @@
   "name": "tessera",
   "summary": "Tessera: a single-node atomic work queue and atomic store for AI agent swarms where everything is either a verb (a small unit of work: every task a tile, claimed once, finished once, receipted) or a noun (versioned records with compare-and-set and content-addressed blobs), giving swarms clear organization, reusability, and a safe way to pick up shared work. Many agents share one backlog safely: leases with heartbeats and a hard cap, fencing tokens, idempotent submits with receipts, retries then dead letters, split and merge, one counts record, and an append-only event log. Agents connect over HTTP, MCP, web forms or a CLI. It knows nothing about any domain and never calls a model itself.",
   "status": {
-    "as_of": "2026-10-26",
+    "as_of": "2026-10-27",
     "stage": "prototype",
-    "notes": "Store, CLI, client, HTTP service, keys, MCP door and agent pages built and passing the suite over HTTP; hosting configured, not deployed; spec still a draft."
+    "notes": "Tracked anonymous demo sessions and account-bound keys share scoped HTTP/MCP routes, durable audit records, read-only public observer and generated access schemas. The spec remains a draft."
   },
   "docs": {
     "summary": "docs/summary.md",
@@ -22,7 +22,8 @@
     "expansion": "docs/expansion.md",
     "opencode_ollama": "docs/opencode-and-ollama.md",
     "making_of": "docs/making-of.md",
-    "handoff": "docs/handoff.md"
+    "handoff": "docs/handoff.md",
+    "access_modes": "docs/access-modes.md"
   },
   "read_order": [
     "README.md",
@@ -30,6 +31,7 @@
     "docs/architecture.md",
     "conformance-draft/SPEC.md",
     "docs/setup.md",
+    "docs/access-modes.md",
     "docs/expansion.md",
     "docs/opencode-and-ollama.md",
     "docs/comparison.md",
@@ -55,7 +57,9 @@
     "expand_demo": "make expand-demo",
     "bilateral_demo": "make bilateral-demo",
     "architecture": "make architecture",
-    "index": "make index"
+    "index": "make index",
+    "access_schema": "python3 scripts/build_access_openapi.py --check",
+    "ontology_catalog": "python3 scripts/build_ontology_catalog.py --check"
   },
   "components": [
     {
@@ -120,7 +124,9 @@
         "src/tessera/_storage.py",
         "src/tessera/_buckets.py",
         "src/tessera/_intelligence.py",
-        "src/tessera/schema.sql"
+        "src/tessera/schema.sql",
+        "src/tessera/_principals.py",
+        "src/tessera/_publication_guard.py"
       ],
       "role": "The reference backend and the only place state changes: queues, the five verbs, park and resume, dependencies, retries, automatic dead-end tombstones, split, model jobs, keys, counts, events, health, queryable CAS records, content-addressed blobs, versioned named file buckets, 0-call progressive L0 scent search, monotonic delta feeds and dual-resolution reflex recall, each operation one IMMEDIATE transaction",
       "depends_on": [
@@ -202,7 +208,7 @@
       ],
       "kind": "library",
       "domain": "neutral",
-      "role": "14 canonical Noun categories, 12 canonical Verb categories, Empirical-Bayes/Dirichlet/Wilson/Pareto rankings, exponential fragility decay and recheck planning, 0-call 3-way CAS merge, Sybil-fenced calibration-weighted voting, and 6 CallerProfile adaptive lenses",
+      "role": "20 canonical Noun categories, 18 canonical Verb categories, Empirical-Bayes/Dirichlet/Wilson/Pareto rankings, exponential fragility decay and recheck planning, 0-call 3-way CAS merge, explicit nonpersistent ballot simulations, and 8 CallerProfile adaptive lenses",
       "tests": [
         "tests/test_ontology_and_reconcile.py"
       ]
@@ -214,7 +220,11 @@
         "src/tessera/service.py",
         "src/tessera/_service_buckets.py",
         "src/tessera/_service_intelligence.py",
-        "src/tessera/access.py"
+        "src/tessera/access.py",
+        "src/tessera/_access_boundary.py",
+        "src/tessera/_access_models.py",
+        "src/tessera/_access_routes.py",
+        "src/tessera/_access_schema.py"
       ],
       "kind": "service",
       "domain": "neutral",
@@ -244,7 +254,8 @@
       "title": "MCP door",
       "path": [
         "src/tessera/mcp_door.py",
-        "src/tessera/_mcp_storage.py"
+        "src/tessera/_mcp_storage.py",
+        "src/tessera/_mcp_access.py"
       ],
       "kind": "service",
       "domain": "neutral",
@@ -268,7 +279,10 @@
     {
       "id": "pages",
       "title": "Agent pages",
-      "path": "src/tessera/pages.py",
+      "path": [
+        "src/tessera/pages.py",
+        "src/tessera/_access_contract.py"
+      ],
       "kind": "web",
       "domain": "neutral",
       "role": "/connect, /llms.txt, /llms-full.txt, /favicon.svg, agent card, robots, the read-only Console Board v2 and keyed /work forms",
@@ -333,7 +347,12 @@
         "deploy/cloudflare/ontology_engine.js",
         "deploy/cloudflare/d1-fabric.sql",
         "deploy/cloudflare/d1-buckets.sql",
-        "deploy/cloudflare/wrangler.jsonc"
+        "deploy/cloudflare/wrangler.jsonc",
+        "deploy/cloudflare/cloud_access.js",
+        "deploy/cloudflare/cloud_access_routes.js",
+        "deploy/cloudflare/cloud_publication.js",
+        "deploy/cloudflare/access_openapi.json",
+        "deploy/cloudflare/ontology_catalog.js"
       ],
       "kind": "edge",
       "domain": "neutral",
@@ -1312,11 +1331,12 @@
     ]
   },
   "limitations": [
-    "One machine, one SQLite file, one writer at a time; no replication or failover",
     "The claim rate limiter lives in process memory and resets on restart",
     "Load beyond the suite's scale has not been measured",
     "The spec is a draft until it is locked; the tests can still change",
-    "No D1 or Postgres backend exists yet"
+    "Local SQLite and Worker Durable Object persistence are separate backends; D1 mirrors are best-effort projections.",
+    "Key signup is operator-assisted; OAuth and email signup are not implemented.",
+    "Public previews on sister surfaces return nonpersistent artifacts; callers save artifacts using their own fabric principal."
   ],
   "open_questions": [
     "Should the hosted service refuse to start without TESSERA_EDGE_SECRET?",

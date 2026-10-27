@@ -3,9 +3,9 @@
 // and Cloudflare D1 (`ta-amps-fabric` + `ta-amps-buckets`), with optional `STORAGE_MODE=origin`
 // reverse-proxy fallback for Fly.io deployments.
 // Deploy:
-//   npx wrangler@4.149.0 deploy --config deploy/cloudflare/wrangler.jsonc
+//   npx wrangler@4.154.0 deploy --config deploy/cloudflare/wrangler.jsonc
 // Secrets:
-//   npx wrangler@4.149.0 secret put BOOTSTRAP_SECRET --config deploy/cloudflare/wrangler.jsonc
+//   npx wrangler@4.154.0 secret put BOOTSTRAP_SECRET --config deploy/cloudflare/wrangler.jsonc
 {
   "name": "tessera",
   "main": "worker.js",
@@ -41,6 +41,8 @@
   // "routes": [{ "pattern": "tessera.<your-domain>", "custom_domain": true }],
   "vars": {
     "STORAGE_MODE": "cloud",
+    "ANONYMOUS_ACCESS_ENABLED": "true",
+    "FRAGILITY_PLANNER_ENABLED": "false",
     "PUBLIC_URL": "https://tessera.ta-amps.workers.dev",
     "REPO_URL": "https://github.com/ta-amps/tessera",
     "ORIGIN": "https://tessera-fabric.fly.dev"

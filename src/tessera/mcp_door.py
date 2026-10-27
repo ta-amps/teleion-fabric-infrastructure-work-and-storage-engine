@@ -11,12 +11,13 @@ from typing import TYPE_CHECKING, Any, TypeVar
 import anyio
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.auth.provider import AccessToken
-from mcp.server.auth.settings import AuthSettings
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
 
+from tessera._access_boundary import REQUEST_ACCESS
+from tessera._mcp_access import register_access_tools
 from tessera._mcp_storage import register_storage_and_intelligence_tools
 from tessera._version import __version__
 from tessera.errors import Forbidden, RateLimited, TesseraError
@@ -70,13 +71,6 @@ def build_mcp(
         instructions=INSTRUCTIONS,
         version=__version__,
         website_url=f"{settings.public_url}/connect",
-        token_verifier=KeyVerifier(store),
-        auth=AuthSettings(
-            issuer_url=settings.public_url,
-            resource_server_url=f"{settings.public_url}/mcp",
-            # Keys are Tessera's own, not OAuth tokens for other resources.
-            validate_token_resource=False,
-        ),
     )
 
     async def run(fn: Callable[[], T], grant: KeyGrant | None = None) -> T:
@@ -93,6 +87,8 @@ def build_mcp(
                 surface=eff_surface,
                 key_id=grant.key_id if grant is not None else req_scope.key_id,
                 is_admin=grant.is_admin if grant is not None else req_scope.is_admin,
+                anonymous=grant.anonymous if grant is not None else req_scope.anonymous,
+                labels=grant.labels if grant is not None else req_scope.labels,
             ):
                 return fn()
 
@@ -102,6 +98,9 @@ def build_mcp(
             raise ToolError(f"{exc.code}: {exc.detail}") from exc
 
     async def current_grant() -> KeyGrant:
+        context = REQUEST_ACCESS.get()
+        if context is not None and context.grant is not None:
+            return context.grant
         token = get_access_token()
         if token is None:
             raise ToolError("unauthorized: a bearer key is required")
@@ -281,9 +280,11 @@ def build_mcp(
         return {"task_id": queued_id}
 
     register_storage_and_intelligence_tools(server, store, gate, run, current_grant)
+    register_access_tools(server, store, gate, settings, run, current_grant)
 
     security = TransportSecuritySettings(
-        enable_dns_rebinding_protection=bool(settings.allowed_hosts),
+        # Host validation and the bearer-only cross-origin policy run in the HTTP boundary.
+        enable_dns_rebinding_protection=False,
         allowed_hosts=list(settings.allowed_hosts),
         allowed_origins=[settings.public_url],
     )
