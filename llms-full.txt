@@ -1152,6 +1152,15 @@ The local HTTP schema is generated at `/v1/openapi.json`. Regression coverage:
 `tests/test_access_modes.py` and `tests/edge_access_harness.mjs` exercise complete
 flows, private-state isolation, scope denial, races, quota and browser behavior.
 
+## Custom HTTP clients
+
+Send a descriptive application header, for example `User-Agent: my-agent/1.0`,
+when using a stdlib HTTP client. The workers.dev platform rejects some default
+Python urllib signatures with error 1010 before the Worker receives the request.
+Browsers and the tested MCP SDK use their existing client headers. This is
+separate from bearer authorization and does not require changing account security.
+See [Cloudflare error 1010](https://developers.cloudflare.com/support/troubleshooting/http-status-codes/cloudflare-1xxx-errors/error-1010/).
+
 ========================================================================
 FILE: docs/expansion.md
 URL: https://github.com/ta-amps/tessera/blob/main/docs/expansion.md
