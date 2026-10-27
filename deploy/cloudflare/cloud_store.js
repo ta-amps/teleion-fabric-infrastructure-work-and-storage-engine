@@ -9,6 +9,7 @@ import { sha256Hex } from "./cloud_buckets.js";
 import {
   listFeeds,
   matchReflex,
+  negotiateHandshake,
   pollFeed,
   publishFeed,
   recordDeadEndTombstone,
@@ -2217,6 +2218,21 @@ export class TesseraCoordinator extends DurableObject {
         case "matchReflex": {
           if (!grant.can_store) throw forbid("this needs a key with the store scope");
           return { ok: true, status: 200, data: matchReflex(this, args, canonicalJson, badReq) };
+        }
+
+        case "handshake": {
+          const negotiated = await negotiateHandshake(
+            this,
+            args,
+            grant,
+            TESSERA_VERSION,
+            MAX_OUTPUT_BYTES,
+            globMatch,
+            canonicalJson,
+            sha256Hex,
+            badReq
+          );
+          return { ok: true, status: 200, data: negotiated };
         }
 
         case "listKeys": {

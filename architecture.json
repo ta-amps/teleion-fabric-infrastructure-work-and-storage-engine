@@ -166,6 +166,25 @@
       ]
     },
     {
+      "id": "bridge",
+      "title": "Surface bridge wrapper",
+      "path": "src/tessera/bridge.py",
+      "kind": "library",
+      "domain": "neutral",
+      "role": "Reusable Surface Handshake v1.0 wrapper for stateless product frontends: negotiates clamped limits, isolates <surface_id>.* CAS writes, polls/publishes live delta feeds, and optionally shims outbound LLM requests via middleware while keeping transactional DBs exempt",
+      "depends_on": [
+        "backend",
+        "errors",
+        "models"
+      ],
+      "interfaces": [
+        "library"
+      ],
+      "tests": [
+        "tests/test_handshake_and_bridge.py"
+      ]
+    },
+    {
       "id": "service",
       "title": "HTTP service",
       "path": [
@@ -280,6 +299,7 @@
         "deploy/cloudflare/worker.js",
         "deploy/cloudflare/cloud_store.js",
         "deploy/cloudflare/cloud_buckets.js",
+        "deploy/cloudflare/cloud_intelligence.js",
         "deploy/cloudflare/cloud_mcp.js",
         "deploy/cloudflare/cloud_pages.js",
         "deploy/cloudflare/d1-fabric.sql",
@@ -359,6 +379,7 @@
         "GET /v1/feeds/{feed}",
         "POST /v1/feeds/{feed}",
         "GET /v1/reflexes/match",
+        "POST /v1/handshake",
         "POST /v1/blobs",
         "GET /v1/blobs/{sha256}"
       ]
@@ -370,7 +391,7 @@
       "spec": "conformance-draft/SPEC.md",
       "auth": "Bearer key",
       "entry_points": [
-        "POST /mcp (Streamable HTTP): tools queues, enqueue, claim, heartbeat, submit, split, park, resume, search_nouns, match_reflex, list_feeds, poll_feed, publish_feed, list_stores, list_records, put_record, put_records, get_record, record_history, define_bucket, buckets, put_object, get_object, list_objects, object_history"
+        "POST /mcp (Streamable HTTP): tools queues, enqueue, claim, heartbeat, submit, split, park, resume, search_nouns, match_reflex, handshake, list_feeds, poll_feed, publish_feed, list_stores, list_records, put_record, put_records, get_record, record_history, define_bucket, buckets, put_object, get_object, list_objects, object_history"
       ]
     },
     {
@@ -404,6 +425,7 @@
       "entry_points": [
         "tessera.Store",
         "tessera.client.Client",
+        "tessera.bridge.SurfaceBridge",
         "tessera.backend.Backend"
       ]
     }

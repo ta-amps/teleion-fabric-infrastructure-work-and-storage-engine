@@ -310,6 +310,23 @@ const TOOLS = [
       },
     },
   },
+  {
+    name: "handshake",
+    description:
+      "Negotiate Surface Handshake v1.0: validate surface_id, clamp max_chars, and return isolated store namespace, allowed queues, capabilities, and handshake_id.",
+    inputSchema: {
+      type: "object",
+      required: ["surface_id"],
+      properties: {
+        surface_id: { type: "string" },
+        protocol_version: { type: "string", default: "1.0" },
+        surface_version: { type: "string", default: "0.1.0" },
+        requested_max_chars: { type: "integer", default: 4000 },
+        requested_queues: { type: "array", items: { type: "string" } },
+        requested_stores: { type: "array", items: { type: "string" } },
+      },
+    },
+  },
 ];
 
 function b64ToBytes(b64) {
@@ -550,6 +567,15 @@ async function callTool(stub, env, ctx, secret, name, args, isPrimary = true) {
       return await stub.rpcCall(secret, "matchReflex", {
         query: args.query,
         limit: args.limit ?? 5,
+      });
+    case "handshake":
+      return await stub.rpcCall(secret, "handshake", {
+        surface_id: args.surface_id,
+        protocol_version: args.protocol_version ?? "1.0",
+        surface_version: args.surface_version ?? "0.1.0",
+        requested_max_chars: args.requested_max_chars ?? 4000,
+        requested_queues: args.requested_queues ?? [],
+        requested_stores: args.requested_stores ?? [],
       });
     default:
       return { ok: false, code: "not_found", detail: `unknown tool ${name}` };

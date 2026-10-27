@@ -52,6 +52,7 @@ WRITE_PATHS = (
     "/v1/stores/batch",
     "/v1/blobs",
     "/v1/buckets/define",
+    "/v1/handshake",
     "/work/claim",
     "/work/submit",
     "/work/heartbeat",

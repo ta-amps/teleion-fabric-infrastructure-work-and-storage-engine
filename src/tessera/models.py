@@ -20,6 +20,7 @@ MAX_DEPENDENCIES = 100
 MAX_PARK_SECONDS = 2_592_000  # 30 days
 
 NAME_PATTERN = r"^[a-z0-9][a-z0-9_.-]{0,63}$"
+SURFACE_ID_PATTERN = r"^[a-z0-9][a-z0-9_-]{0,47}$"
 BUCKET_KEY_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9_./:-]{0,511}$"
 
 
@@ -305,3 +306,33 @@ class ReflexMatch(_Model):
     recommended_tier: Literal["0_call_reflex", "hybrid_1_call", "agent_decompose"]
     hits: list[ReflexHit] = Field(default_factory=list)
     dead_ends: list[NounScent] = Field(default_factory=list)
+
+
+class HandshakeRequest(_Model):
+    """Surface Handshake v1.0 negotiation request sent by frontends, services, or harnesses."""
+
+    protocol_version: str = Field(default="1.0", max_length=16)
+    surface_id: str | None = Field(default=None, pattern=SURFACE_ID_PATTERN)
+    surface_version: str = Field(default="0.1.0", max_length=64)
+    requested_max_chars: int = Field(default=4000, ge=0, le=10_000_000)
+    requested_queues: list[str] = Field(default_factory=list, max_length=128)
+    requested_stores: list[str] = Field(default_factory=list, max_length=128)
+
+
+class HandshakeResponse(_Model):
+    """Negotiated Surface Handshake v1.0 receipt with clamped limits and isolated namespace."""
+
+    protocol_version: str = "1.0"
+    backend: str = "tessera"
+    backend_version: str
+    surface_id: str
+    isolated_store_prefix: str
+    shared_read_stores: list[str] = Field(default_factory=list)
+    clamped_max_chars: int
+    max_output_bytes: int
+    heartbeat_seconds: int
+    allowed_queues: list[str] = Field(default_factory=list)
+    store_scope: bool
+    transactional_db_exempt_from_middleware: bool = True
+    capabilities: list[str] = Field(default_factory=list)
+    handshake_id: str

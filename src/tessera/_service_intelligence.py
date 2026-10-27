@@ -10,10 +10,13 @@ import re
 from typing import Any
 
 from fastapi import Depends, FastAPI, Request, Response
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from tessera.access import Gate, bearer_secret
+from tessera.errors import InvalidRequest
 from tessera.grants import KeyGrant
+from tessera.models import HandshakeRequest
 from tessera.store import Store
 
 _RANGE_RE = re.compile(r"^bytes=(\d*)-(\d*)$", re.IGNORECASE)
@@ -145,3 +148,33 @@ def mount_intelligence_routes(app: FastAPI, store: Store, gate: Gate) -> None:
     ) -> dict[str, Any]:
         gate.store_scope(grant)
         return store.match_reflex(q, limit=limit).model_dump(mode="json")
+
+    @app.post("/v1/handshake")
+    def negotiate_handshake(
+        body: HandshakeRequest,
+        request: Request,
+        grant: KeyGrant = key,
+    ) -> JSONResponse:
+        hdr_surface = (request.headers.get("x-surface-id") or "").strip()
+        if hdr_surface and body.surface_id and hdr_surface != body.surface_id:
+            raise InvalidRequest(
+                f"X-Surface-Id header '{hdr_surface}' does not match body surface_id '{body.surface_id}'"
+            )
+        effective_surface = body.surface_id or hdr_surface or None
+        req_obj = (
+            body
+            if effective_surface == body.surface_id
+            else body.model_copy(update={"surface_id": effective_surface})
+        )
+        negotiated = store.handshake(
+            req_obj,
+            grant_queues=grant.queues,
+            store_scope=grant.can_store,
+        )
+        return JSONResponse(
+            negotiated.model_dump(mode="json"),
+            headers={
+                "x-surface-id": negotiated.surface_id,
+                "x-handshake-id": negotiated.handshake_id,
+            },
+        )

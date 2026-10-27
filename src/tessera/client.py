@@ -26,6 +26,8 @@ from tessera.models import (
     Event,
     FeedEntry,
     FeedSummary,
+    HandshakeRequest,
+    HandshakeResponse,
     Health,
     Job,
     JobStatus,
@@ -95,6 +97,7 @@ class Client:
         base_url: str,
         key: str | None = None,
         *,
+        surface_id: str | None = None,
         timeout: float = 30.0,
         max_retries: int = 3,
         transport: httpx.BaseTransport | None = None,
@@ -102,11 +105,14 @@ class Client:
         headers = {"user-agent": f"tessera-client/{__version__}"}
         if key:
             headers["authorization"] = f"Bearer {key}"
+        if surface_id:
+            headers["x-surface-id"] = surface_id
         self._http = httpx.Client(
             base_url=base_url.rstrip("/"), headers=headers, timeout=timeout, transport=transport
         )
         self._max_retries = max_retries
         self.base_url = base_url.rstrip("/")
+        self.surface_id = surface_id
 
     def __repr__(self) -> str:
         return f"Client(base_url={self.base_url!r})"
@@ -476,3 +482,16 @@ class Client:
     def match_reflex(self, query: str, *, limit: int = 5) -> ReflexMatch:
         resp = self._call("GET", "/v1/reflexes/match", params={"q": query, "limit": limit})
         return ReflexMatch.model_validate(resp.json())
+
+    def handshake(self, request: HandshakeRequest) -> HandshakeResponse:
+        headers: dict[str, str] = {}
+        chosen_surface = request.surface_id or self.surface_id
+        if chosen_surface:
+            headers["x-surface-id"] = chosen_surface
+        resp = self._call(
+            "POST",
+            "/v1/handshake",
+            body=request.model_dump(mode="json"),
+            headers=headers or None,
+        )
+        return HandshakeResponse.model_validate(resp.json())

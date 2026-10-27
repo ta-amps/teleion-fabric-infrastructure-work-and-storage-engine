@@ -125,7 +125,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [scripts/dev_stack.sh](scripts/dev_stack.sh) | Run Tessera on this machine behind the real Cloudflare edge code (wrangler dev), with the origin |
 | [scripts/suite_http_local.py](scripts/suite_http_local.py) | Run the whole conformance suite over HTTP against a real tessera serve process on this machine. |
 
-## src/ (29)
+## src/ (30)
 
 | File | What it is |
 |---|---|
@@ -145,6 +145,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [src/tessera/_version.py](src/tessera/_version.py) |  |
 | [src/tessera/access.py](src/tessera/access.py) | What every door shares: the service settings, the claim rate limiter, reading the bearer key, and the Gate th… |
 | [src/tessera/backend.py](src/tessera/backend.py) | The contract every Tessera backend meets: the in-process Store, the HTTP Client, and any adapter an app puts… |
+| [src/tessera/bridge.py](src/tessera/bridge.py) | Reusable Surface Bridge wrapper for stateless product frontends and services. |
 | [src/tessera/cli.py](src/tessera/cli.py) | tessera: drive the in-process store on a SQLite file from a shell. |
 | [src/tessera/client.py](src/tessera/client.py) | HTTP client for a Tessera service (SPEC §7). |
 | [src/tessera/clock.py](src/tessera/clock.py) | Time source for leases and backoff. |
@@ -159,13 +160,14 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [src/tessera/store.py](src/tessera/store.py) | The in-process Tessera store: the reference implementation of SPEC.md. |
 | [src/tessera/testing.py](src/tessera/testing.py) | Factories the conformance suite loads by name (TESSERABACKENDFACTORY="module:function"). |
 
-## tests/ (7)
+## tests/ (8)
 
 | File | What it is |
 |---|---|
 | [tests/test_buckets.py](tests/test_buckets.py) | Tests for queryable noun stores, persistent named file buckets, external blobdir, and MCP tools. |
 | [tests/test_check_public.py](tests/test_check_public.py) | checkpublic finds secrets and private names, masks them, and honours the allow marker. |
 | [tests/test_guard_hook.py](tests/test_guard_hook.py) | The guard hook blocks protected paths and risky commands, and fails closed. |
+| [tests/test_handshake_and_bridge.py](tests/test_handshake_and_bridge.py) | Tests for Surface Handshake v1.0 (POST /v1/handshake + MCP handshake) and SurfaceBridge. |
 | [tests/test_intelligence.py](tests/test_intelligence.py) | Tests for progressive L0 scent search, HTTP 206 byte ranges, delta feeds, dead-end tombstones, and 0-call dua… |
 | [tests/test_service.py](tests/test_service.py) | The HTTP service: keys, scopes, POST-only writes, holders, rate limits, the edge lock, the agent door, the we… |
 | [tests/test_spec_events.py](tests/test_spec_events.py) | SPEC §5.5 lists every event type, and the code emits only listed types: a new event can't ship without a line… |

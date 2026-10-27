@@ -7,17 +7,45 @@ feeds for live changes, and muscle-memory reflex recall paired with negative-kno
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
+from collections.abc import Sequence
+from fnmatch import fnmatchcase
 from typing import Any, Literal
 
 from tessera._buckets import BucketOps, _validate_bucket_name
+from tessera._version import __version__
 from tessera.errors import InvalidRequest
-from tessera.models import FeedEntry, FeedSummary, NounScent, ReflexHit, ReflexMatch
+from tessera.models import (
+    SURFACE_ID_PATTERN,
+    FeedEntry,
+    FeedSummary,
+    HandshakeRequest,
+    HandshakeResponse,
+    NounScent,
+    ReflexHit,
+    ReflexMatch,
+)
 from tessera.receipts import canonical_json
 
 _TOKEN_RE = re.compile(r"[a-z0-9]{2,}")
+_SURFACE_RE = re.compile(SURFACE_ID_PATTERN)
 MAX_L0_CHARS = 520
+MIN_CLAMPED_CHARS = 120
+MAX_CLAMPED_CHARS = 16_000
+MAX_OUTPUT_BYTES_LIMIT = 1_048_576
+HANDSHAKE_CAPABILITIES: tuple[str, ...] = (
+    "atomic_queues",
+    "cas_stores",
+    "named_buckets",
+    "http_206_range",
+    "l0_scent_search",
+    "delta_feeds",
+    "reflex_recall",
+    "mcp_streamable_http",
+    "surface_handshake_v1",
+)
 REFLEX_STORE = "tessera.reflexes"
 DEAD_END_STORE = "negative.knowledge"
 
@@ -357,4 +385,81 @@ class IntelligenceOps(BucketOps):
             recommended_tier=rec_tier,
             hits=top_hits,
             dead_ends=dead_ends,
+        )
+
+    def handshake(
+        self,
+        request: HandshakeRequest,
+        *,
+        grant_queues: Sequence[str] | None = None,
+        store_scope: bool = True,
+    ) -> HandshakeResponse:
+        """Negotiate Surface Handshake v1.0: validate surface_id, clamp limits, and narrow scopes."""
+        proto = request.protocol_version.strip()
+        if not proto.startswith("1."):
+            raise InvalidRequest(
+                f"unsupported handshake protocol_version '{proto}'; expected '1.0'"
+            )
+        surface_id = (request.surface_id or "").strip()
+        if not surface_id or not _SURFACE_RE.fullmatch(surface_id):
+            raise InvalidRequest(
+                "surface_id is required in handshake body or X-Surface-Id header"
+                " and must match ^[a-z0-9][a-z0-9_-]{0,47}$"
+            )
+        clamped_max_chars = max(
+            MIN_CLAMPED_CHARS, min(MAX_CLAMPED_CHARS, int(request.requested_max_chars))
+        )
+
+        with self._read() as c:
+            q_rows = c.execute(
+                "SELECT name, heartbeat_seconds FROM queues ORDER BY name"
+            ).fetchall()
+        defined_queues = [str(r["name"]) for r in q_rows]
+        hb_seconds = min(int(r["heartbeat_seconds"]) for r in q_rows) if q_rows else 60
+
+        if grant_queues is None:
+            allowed_queues = (
+                list(dict.fromkeys(request.requested_queues))
+                if request.requested_queues
+                else defined_queues
+            )
+        else:
+            candidates = (
+                list(dict.fromkeys(request.requested_queues))
+                if request.requested_queues
+                else (defined_queues if defined_queues else list(grant_queues))
+            )
+            allowed_queues = [
+                q for q in candidates if any(fnmatchcase(q, pat) for pat in grant_queues)
+            ]
+
+        shared_stores = [s.store for s in self.stores()[:64]]
+        isolated_prefix = f"{surface_id}."
+        capabilities = list(HANDSHAKE_CAPABILITIES)
+        receipt_material = {
+            "backend": "tessera",
+            "backend_version": __version__,
+            "protocol_version": "1.0",
+            "surface_id": surface_id,
+            "isolated_store_prefix": isolated_prefix,
+            "clamped_max_chars": clamped_max_chars,
+            "allowed_queues": allowed_queues,
+            "store_scope": bool(store_scope),
+        }
+        handshake_id = hashlib.sha256(canonical_json(receipt_material).encode("utf-8")).hexdigest()
+        return HandshakeResponse(
+            protocol_version="1.0",
+            backend="tessera",
+            backend_version=__version__,
+            surface_id=surface_id,
+            isolated_store_prefix=isolated_prefix,
+            shared_read_stores=shared_stores,
+            clamped_max_chars=clamped_max_chars,
+            max_output_bytes=MAX_OUTPUT_BYTES_LIMIT,
+            heartbeat_seconds=hb_seconds,
+            allowed_queues=allowed_queues,
+            store_scope=bool(store_scope),
+            transactional_db_exempt_from_middleware=True,
+            capabilities=capabilities,
+            handshake_id=handshake_id,
         )

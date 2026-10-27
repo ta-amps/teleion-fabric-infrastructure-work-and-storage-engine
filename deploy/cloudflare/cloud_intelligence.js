@@ -439,3 +439,104 @@ export function matchReflex(coord, args, canonicalJson, badReq) {
     dead_ends: deadEnds,
   };
 }
+
+const SURFACE_RE = /^[a-z0-9][a-z0-9_-]{0,47}$/;
+const HANDSHAKE_CAPABILITIES = [
+  "atomic_queues",
+  "cas_stores",
+  "named_buckets",
+  "http_206_range",
+  "l0_scent_search",
+  "delta_feeds",
+  "reflex_recall",
+  "mcp_streamable_http",
+  "surface_handshake_v1",
+];
+
+export async function negotiateHandshake(
+  coord,
+  args,
+  grant,
+  backendVersion,
+  maxOutputBytes,
+  globMatchFn,
+  canonicalJson,
+  sha256HexFn,
+  badReq
+) {
+  const proto = String(args.protocol_version ?? "1.0").trim();
+  if (!proto.startsWith("1.")) {
+    throw badReq(`unsupported handshake protocol_version '${proto}'; expected '1.0'`);
+  }
+  const hdrSurface = String(args.header_surface_id || "").trim();
+  const bodySurface = args.surface_id == null ? "" : String(args.surface_id).trim();
+  if (hdrSurface && bodySurface && hdrSurface !== bodySurface) {
+    throw badReq(
+      `X-Surface-Id header '${hdrSurface}' does not match body surface_id '${bodySurface}'`
+    );
+  }
+  const surfaceId = bodySurface || hdrSurface;
+  if (!surfaceId || !SURFACE_RE.test(surfaceId)) {
+    throw badReq(
+      "surface_id is required in handshake body or X-Surface-Id header and must match ^[a-z0-9][a-z0-9_-]{0,47}$"
+    );
+  }
+  const reqCharsRaw = args.requested_max_chars == null ? 4000 : Number(args.requested_max_chars);
+  if (!Number.isFinite(reqCharsRaw) || reqCharsRaw < 0) {
+    throw badReq("requested_max_chars must be a non-negative integer");
+  }
+  const clampedMaxChars = Math.max(120, Math.min(16000, Math.trunc(reqCharsRaw)));
+
+  const qRows = coord._all("SELECT name, heartbeat_seconds FROM queues ORDER BY name");
+  const definedQueues = qRows.map((r) => String(r.name));
+  const hbSeconds = qRows.length
+    ? Math.min(...qRows.map((r) => Number(r.heartbeat_seconds)))
+    : 60;
+
+  const reqQueues = Array.isArray(args.requested_queues)
+    ? [...new Set(args.requested_queues.map((q) => String(q)))]
+    : [];
+  const grantQueues = Array.isArray(grant?.queues) ? grant.queues : [];
+  const candidates = reqQueues.length
+    ? reqQueues
+    : definedQueues.length
+      ? definedQueues
+      : grantQueues;
+  const allowedQueues = candidates.filter((q) =>
+    grantQueues.some((pat) => globMatchFn(q, pat))
+  );
+
+  const sharedStores = coord._listStoresInternal().slice(0, 64).map((s) => s.store);
+  const isolatedPrefix = `${surfaceId}.`;
+  const storeScope = Boolean(grant?.can_store);
+  const receiptMaterial = {
+    backend: "tessera",
+    backend_version: backendVersion,
+    protocol_version: "1.0",
+    surface_id: surfaceId,
+    isolated_store_prefix: isolatedPrefix,
+    clamped_max_chars: clampedMaxChars,
+    allowed_queues: allowedQueues,
+    store_scope: storeScope,
+  };
+  const handshakeId = await sha256HexFn(
+    new TextEncoder().encode(canonicalJson(receiptMaterial))
+  );
+
+  return {
+    protocol_version: "1.0",
+    backend: "tessera",
+    backend_version: backendVersion,
+    surface_id: surfaceId,
+    isolated_store_prefix: isolatedPrefix,
+    shared_read_stores: sharedStores,
+    clamped_max_chars: clampedMaxChars,
+    max_output_bytes: maxOutputBytes,
+    heartbeat_seconds: hbSeconds,
+    allowed_queues: allowedQueues,
+    store_scope: storeScope,
+    transactional_db_exempt_from_middleware: true,
+    capabilities: HANDSHAKE_CAPABILITIES,
+    handshake_id: handshakeId,
+  };
+}

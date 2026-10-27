@@ -10,7 +10,13 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
 from tessera.grants import KeyGrant
-from tessera.models import BucketConfig, RecordWrite, ReflexMatch
+from tessera.models import (
+    BucketConfig,
+    HandshakeRequest,
+    HandshakeResponse,
+    RecordWrite,
+    ReflexMatch,
+)
 
 if TYPE_CHECKING:
     from tessera.access import Gate
@@ -245,3 +251,33 @@ def register_storage_and_intelligence_tools(
         await run(lambda: gate.store_scope(grant))
         matched: ReflexMatch = await run(lambda: store.match_reflex(query, limit=limit))
         return matched.model_dump(mode="json")
+
+    @server.tool(
+        description="Negotiate Surface Handshake v1.0: validate surface_id, clamp max_chars, "
+        "and return isolated store namespace, allowed queues, capabilities, and handshake_id."
+    )
+    async def handshake(
+        surface_id: str,
+        protocol_version: str = "1.0",
+        surface_version: str = "0.1.0",
+        requested_max_chars: int = 4000,
+        requested_queues: list[str] | None = None,
+        requested_stores: list[str] | None = None,
+    ) -> dict[str, Any]:
+        grant = await current_grant()
+        req = HandshakeRequest(
+            protocol_version=protocol_version,
+            surface_id=surface_id,
+            surface_version=surface_version,
+            requested_max_chars=requested_max_chars,
+            requested_queues=requested_queues or [],
+            requested_stores=requested_stores or [],
+        )
+        negotiated: HandshakeResponse = await run(
+            lambda: store.handshake(
+                req,
+                grant_queues=grant.queues,
+                store_scope=grant.can_store,
+            )
+        )
+        return negotiated.model_dump(mode="json")

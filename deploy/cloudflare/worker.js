@@ -84,6 +84,7 @@ const POST_ONLY_EXACT = new Set([
   "/v1/stores/batch",
   "/v1/blobs",
   "/v1/buckets/define",
+  "/v1/handshake",
   "/work/claim",
   "/work/submit",
   "/work/heartbeat",
@@ -794,6 +795,21 @@ export default {
       const q = url.searchParams.get("q") || "";
       const limit = Number(url.searchParams.get("limit") || "5");
       return rpcResponse(await stub.rpcCall(bearer, "matchReflex", { query: q, limit, isPrimary }));
+    }
+    if (path === "/v1/handshake" && method === "POST") {
+      const { body, error } = await readJsonBody(request);
+      if (error) return error;
+      const hdrSurface = (request.headers.get("x-surface-id") || "").trim();
+      const out = await stub.rpcCall(bearer, "handshake", {
+        ...body,
+        header_surface_id: hdrSurface,
+        isPrimary,
+      });
+      if (!out.ok) return rpcResponse(out);
+      return jsonResp(out.data, 200, {
+        "x-surface-id": out.data.surface_id,
+        "x-handshake-id": out.data.handshake_id,
+      });
     }
 
     return problem(404, "not_found", `no route matches ${method} ${path}`);
