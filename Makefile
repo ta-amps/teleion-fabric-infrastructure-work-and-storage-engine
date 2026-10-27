@@ -9,7 +9,7 @@ FACTORY_store := tessera.testing:create_store_backend
 FACTORY_http := tessera.testing:create_http_backend
 FACTORY_empty := tessera.testing:create_empty_backend
 
-.PHONY: help setup check lint types test suite suite-stub suite-http-local public lock-suite clean serve dev seed expand-demo index index-check architecture
+.PHONY: help setup check lint types test suite suite-stub suite-http-local public lock-suite clean serve dev seed expand-demo bilateral-demo index index-check architecture
 
 help: ## List the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-12s %s\n", $$1, $$2}'
@@ -51,6 +51,9 @@ seed: ## Queues, one key per agent (private file, mode 600) and the first tasks
 
 expand-demo: ## Run an end-to-end seed -> expand -> enrich -> review -> canonical noun+verb pass
 	uv run python tools/swarm_expander.py --demo --dry-model
+
+bilateral-demo: ## Run the two-agent bilateral park/resume + seed->canonical MCP/HTTP pass
+	uv run python tools/opencode_bilateral.py --dry-model
 
 index: ## Rebuild INDEX.md, KEYWORDS.md, llms.txt and llms-full.txt from the files
 	python3 scripts/build_index.py

@@ -309,3 +309,44 @@ def test_swarm_expander_tracks_meta_responses_api_job_on_lease(
         assert len(calls) == 2
     finally:
         store.close()
+
+
+def test_meta_open_bridge_translates_responses_and_refuses_contributor() -> None:
+    from fastapi.testclient import TestClient
+
+    bridge_mod = load("meta_open_bridge")
+    app = bridge_mod.create_bridge_app(dry_upstream=True, upstream_model="muse-spark-open")
+    with TestClient(app) as client:
+        models = client.get("/v1/models").json()["data"]
+        assert any(m["id"] == "muse-spark-open" for m in models)
+        bad = client.post(
+            "/v1/responses", json={"model": "muse-spark-1.3-contributor", "input": "hi"}
+        )
+        assert bad.status_code == 400
+        ok = client.post(
+            "/v1/responses",
+            json={
+                "model": "muse-spark-1.3",
+                "input": "SYNTHETIC smoke",
+                "text": {"format": {"type": "json_object"}},
+            },
+        )
+        assert ok.status_code == 200
+        resp_id = ok.json()["id"]
+        fetched = client.get(f"/v1/responses/{resp_id}").json()
+        assert fetched["status"] == "completed"
+        cancelled = client.post(f"/v1/responses/{resp_id}/cancel").json()
+        assert cancelled["status"] == "cancelled"
+
+
+def test_opencode_bilateral_dry_suite_verifies_park_resume_and_canonical() -> None:
+    bilateral = load("opencode_bilateral")
+    cfg = bilateral.build_opencode_config("http://127.0.0.1:7700/mcp")
+    assert cfg["mcp"]["tessera"]["headers"]["Authorization"] == "Bearer {env:TESSERA_KEY}"
+    assert cfg["provider"]["ollama-cloud"]["models"]["muse-spark-open"]["tool_call"] is True
+
+    summary = bilateral.run_bilateral_suite(dry_model=True)
+    assert summary["ok"] is True
+    assert summary["park_resume_handshake"]["self_resume_blocked"] is True
+    assert summary["bilateral_expansion"]["proposal_versions"] == 4
+    assert summary["bilateral_expansion"]["canonical_version"] == 1

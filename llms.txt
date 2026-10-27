@@ -20,6 +20,7 @@
 - [docs/glossary.md](https://github.com/ta-amps/tessera/blob/main/docs/glossary.md): Tessera: glossary
 - [docs/handoff.md](https://github.com/ta-amps/tessera/blob/main/docs/handoff.md): Tessera: handoff
 - [docs/making-of.md](https://github.com/ta-amps/tessera/blob/main/docs/making-of.md): The making-of
+- [docs/opencode-and-ollama.md](https://github.com/ta-amps/tessera/blob/main/docs/opencode-and-ollama.md): Bilateral swarm testing with OpenCode & Ollama Cloud (muse-spark-open)
 - [docs/operations.md](https://github.com/ta-amps/tessera/blob/main/docs/operations.md): Operations
 - [docs/review.md](https://github.com/ta-amps/tessera/blob/main/docs/review.md): Tessera: review guide
 - [docs/setup.md](https://github.com/ta-amps/tessera/blob/main/docs/setup.md): Tessera: setup

@@ -82,7 +82,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [deploy/fly/README.md](deploy/fly/README.md) | Fly.io: the Tessera service |
 | [deploy/fly/fly.toml](deploy/fly/fly.toml) | Tessera service on one Fly.io machine with a volume (brief L20), reached through the Cloudflare edge |
 
-## docs/ (12)
+## docs/ (13)
 
 | File | What it is |
 |---|---|
@@ -94,6 +94,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [docs/glossary.md](docs/glossary.md) | Tessera: glossary |
 | [docs/handoff.md](docs/handoff.md) | Tessera: handoff |
 | [docs/making-of.md](docs/making-of.md) | The making-of |
+| [docs/opencode-and-ollama.md](docs/opencode-and-ollama.md) | Bilateral swarm testing with OpenCode & Ollama Cloud (muse-spark-open) |
 | [docs/operations.md](docs/operations.md) | Operations |
 | [docs/review.md](docs/review.md) | Tessera: review guide |
 | [docs/setup.md](docs/setup.md) | Tessera: setup |
@@ -156,11 +157,13 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [tests/test_spec_events.py](tests/test_spec_events.py) | SPEC §5.5 lists every event type, and the code emits only listed types: a new event can't ship without a line… |
 | [tests/test_tools.py](tests/test_tools.py) | The Muse worker keeps its safety flags whatever the brief says, and briefs load in dependency order. |
 
-## tools/ (4)
+## tools/ (6)
 
 | File | What it is |
 |---|---|
 | [tools/load_briefs.py](tools/load_briefs.py) | Put briefs on the build queue once their dependencies are done. |
+| [tools/meta_open_bridge.py](tools/meta_open_bridge.py) | Local Meta Model API /v1/responses bridge backed by Meta open-weight models (muse-spark-open) on any OpenAI/O… |
 | [tools/muse_worker.py](tools/muse_worker.py) | Run one Muse Code worker on one Tessera brief. |
+| [tools/opencode_bilateral.py](tools/opencode_bilateral.py) | Bilateral multi-agent test harness for Tessera over MCP (/mcp) + HTTP (/v1/), pairing OpenCode (opencode v2.x… |
 | [tools/seed.py](tools/seed.py) | Seed a Tessera database for Muse agents: the standard queues, one key per agent, and first tasks. |
 | [tools/swarm_expander.py](tools/swarm_expander.py) | Run a Muse / Meta Model API swarm worker that seeds, expands, processes, and promotes atomic nouns and verbs… |

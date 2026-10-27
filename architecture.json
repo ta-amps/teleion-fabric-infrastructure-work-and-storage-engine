@@ -20,6 +20,7 @@
     "spec": "conformance-draft/SPEC.md",
     "operations": "docs/operations.md",
     "expansion": "docs/expansion.md",
+    "opencode_ollama": "docs/opencode-and-ollama.md",
     "making_of": "docs/making-of.md",
     "handoff": "docs/handoff.md"
   },
@@ -30,6 +31,7 @@
     "conformance-draft/SPEC.md",
     "docs/setup.md",
     "docs/expansion.md",
+    "docs/opencode-and-ollama.md",
     "docs/comparison.md",
     "docs/generalizing.md",
     "docs/decisions.md",
@@ -51,6 +53,7 @@
     "run_public": "make dev TUNNEL=1",
     "seed": "make seed",
     "expand_demo": "make expand-demo",
+    "bilateral_demo": "make bilateral-demo",
     "architecture": "make architecture",
     "index": "make index"
   },
@@ -281,7 +284,9 @@
         "tools/seed.py",
         "tools/load_briefs.py",
         "tools/muse_worker.py",
-        "tools/swarm_expander.py"
+        "tools/swarm_expander.py",
+        "tools/meta_open_bridge.py",
+        "tools/opencode_bilateral.py"
       ],
       "kind": "worker",
       "domain": "specific",
