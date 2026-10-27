@@ -24,16 +24,20 @@ from tessera.models import (
     BucketInfo,
     ChildSpec,
     Event,
+    FeedEntry,
+    FeedSummary,
     Health,
     Job,
     JobStatus,
     Lease,
+    NounScent,
     ObjectMeta,
     QueueConfig,
     QueueCounts,
     Receipt,
     RecordVersion,
     RecordWrite,
+    ReflexMatch,
     ResultView,
     StoreSummary,
     TaskSpec,
@@ -417,3 +421,58 @@ class Client:
     def object_history(self, bucket: str, key: str) -> list[ObjectMeta]:
         resp = self._call("GET", f"/v1/buckets/{bucket}/objects/{key}", params={"history": "true"})
         return [ObjectMeta.model_validate(o) for o in resp.json()["versions"]]
+
+    def get_object_slice(
+        self, bucket: str, key: str, *, start: int, end: int | None = None
+    ) -> bytes:
+        range_val = f"bytes={start}-" if end is None else f"bytes={start}-{end}"
+        return self._call(
+            "GET", f"/v1/buckets/{bucket}/objects/{key}", headers={"range": range_val}
+        ).content
+
+    def get_blob_slice(self, sha256: str, *, start: int, end: int | None = None) -> bytes:
+        range_val = f"bytes={start}-" if end is None else f"bytes={start}-{end}"
+        return self._call("GET", f"/v1/blobs/{sha256}", headers={"range": range_val}).content
+
+    def search_nouns(
+        self,
+        query: str = "",
+        *,
+        store: str | None = None,
+        bucket: str | None = None,
+        limit: int = 20,
+    ) -> list[NounScent]:
+        params: dict[str, Any] = {"q": query, "limit": limit}
+        if store is not None:
+            params["store"] = store
+        if bucket is not None:
+            params["bucket"] = bucket
+        resp = self._call("GET", "/v1/search", params=params)
+        return [NounScent.model_validate(s) for s in resp.json()["scents"]]
+
+    def feeds(self) -> list[FeedSummary]:
+        resp = self._call("GET", "/v1/feeds")
+        return [FeedSummary.model_validate(f) for f in resp.json()["feeds"]]
+
+    def publish_feed(
+        self,
+        feed: str,
+        payload: dict[str, Any],
+        *,
+        kind: str = "delta",
+        summary: str = "",
+    ) -> FeedEntry:
+        resp = self._call(
+            "POST",
+            f"/v1/feeds/{feed}",
+            body={"payload": payload, "kind": kind, "summary": summary},
+        )
+        return FeedEntry.model_validate(resp.json())
+
+    def poll_feed(self, feed: str, *, after: int = 0, limit: int = 100) -> list[FeedEntry]:
+        resp = self._call("GET", f"/v1/feeds/{feed}", params={"after": after, "limit": limit})
+        return [FeedEntry.model_validate(e) for e in resp.json()["entries"]]
+
+    def match_reflex(self, query: str, *, limit: int = 5) -> ReflexMatch:
+        resp = self._call("GET", "/v1/reflexes/match", params={"q": query, "limit": limit})
+        return ReflexMatch.model_validate(resp.json())

@@ -116,9 +116,10 @@
         "src/tessera/_observe.py",
         "src/tessera/_storage.py",
         "src/tessera/_buckets.py",
+        "src/tessera/_intelligence.py",
         "src/tessera/schema.sql"
       ],
-      "role": "The reference backend and the only place state changes: queues, the five verbs, park and resume, dependencies, retries, split, model jobs, keys, counts, events, health, queryable CAS records, content-addressed blobs and versioned named file buckets, each operation one IMMEDIATE transaction",
+      "role": "The reference backend and the only place state changes: queues, the five verbs, park and resume, dependencies, retries, automatic dead-end tombstones, split, model jobs, keys, counts, events, health, queryable CAS records, content-addressed blobs, versioned named file buckets, 0-call progressive L0 scent search, monotonic delta feeds and dual-resolution reflex recall, each operation one IMMEDIATE transaction",
       "depends_on": [
         "clock",
         "errors",
@@ -134,7 +135,8 @@
         "conformance-draft/test_storage.py",
         "conformance-draft/test_model_jobs.py",
         "conformance-draft/test_task_graph.py",
-        "tests/test_buckets.py"
+        "tests/test_buckets.py",
+        "tests/test_intelligence.py"
       ]
     },
     {
@@ -169,6 +171,7 @@
       "path": [
         "src/tessera/service.py",
         "src/tessera/_service_buckets.py",
+        "src/tessera/_service_intelligence.py",
         "src/tessera/access.py"
       ],
       "kind": "service",
@@ -193,10 +196,13 @@
     {
       "id": "mcp-door",
       "title": "MCP door",
-      "path": "src/tessera/mcp_door.py",
+      "path": [
+        "src/tessera/mcp_door.py",
+        "src/tessera/_mcp_storage.py"
+      ],
       "kind": "service",
       "domain": "neutral",
-      "role": "MCP server over Streamable HTTP at /mcp: verb tools (queues, enqueue, claim, heartbeat, submit, split, park, resume), queryable CAS noun tools (list_stores, list_records, put_record, put_records, get_record, record_history) and persistent named bucket tools (define_bucket, buckets, put_object, get_object, list_objects, object_history), behind the same keys and Gate",
+      "role": "MCP server over Streamable HTTP at /mcp: verb tools (queues, enqueue, claim, heartbeat, submit, split, park, resume), 0-call progressive L0 discovery & reflex tools (search_nouns, match_reflex, list_feeds, poll_feed, publish_feed), queryable CAS noun tools (list_stores, list_records, put_record, put_records, get_record, record_history) and persistent named bucket tools (define_bucket, buckets, put_object, get_object, list_objects, object_history), behind the same keys and Gate",
       "depends_on": [
         "errors",
         "grants",
@@ -348,6 +354,11 @@
         "GET /v1/buckets/{bucket}/objects",
         "POST /v1/buckets/{bucket}/objects/{key}",
         "GET /v1/buckets/{bucket}/objects/{key}",
+        "GET /v1/search",
+        "GET /v1/feeds",
+        "GET /v1/feeds/{feed}",
+        "POST /v1/feeds/{feed}",
+        "GET /v1/reflexes/match",
         "POST /v1/blobs",
         "GET /v1/blobs/{sha256}"
       ]
@@ -359,7 +370,7 @@
       "spec": "conformance-draft/SPEC.md",
       "auth": "Bearer key",
       "entry_points": [
-        "POST /mcp (Streamable HTTP): tools queues, enqueue, claim, heartbeat, submit, split, park, resume, list_stores, list_records, put_record, put_records, get_record, record_history, define_bucket, buckets, put_object, get_object, list_objects, object_history"
+        "POST /mcp (Streamable HTTP): tools queues, enqueue, claim, heartbeat, submit, split, park, resume, search_nouns, match_reflex, list_feeds, poll_feed, publish_feed, list_stores, list_records, put_record, put_records, get_record, record_history, define_bucket, buckets, put_object, get_object, list_objects, object_history"
       ]
     },
     {
@@ -795,6 +806,7 @@
         "src/tessera/_observe.py",
         "src/tessera/_storage.py",
         "src/tessera/_buckets.py",
+        "src/tessera/_intelligence.py",
         "src/tessera/client.py"
       ],
       "must_not_import": [
@@ -841,7 +853,9 @@
       "files": [
         "src/tessera/service.py",
         "src/tessera/_service_buckets.py",
+        "src/tessera/_service_intelligence.py",
         "src/tessera/mcp_door.py",
+        "src/tessera/_mcp_storage.py",
         "src/tessera/pages.py",
         "src/tessera/cli.py",
         "src/tessera/access.py"
@@ -856,6 +870,7 @@
         "tessera._observe",
         "tessera._storage",
         "tessera._buckets",
+        "tessera._intelligence",
         "tessera.client",
         "tessera.testing"
       ],

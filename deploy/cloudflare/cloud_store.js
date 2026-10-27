@@ -6,6 +6,14 @@
 import { DurableObject } from "cloudflare:workers";
 import { TESSERA_VERSION } from "./cloud_pages.js";
 import { sha256Hex } from "./cloud_buckets.js";
+import {
+  listFeeds,
+  matchReflex,
+  pollFeed,
+  publishFeed,
+  recordDeadEndTombstone,
+  searchNouns,
+} from "./cloud_intelligence.js";
 
 const NAME_RE = /^[a-z0-9][a-z0-9_.-]{0,63}$/;
 const TASK_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/;
@@ -282,9 +290,26 @@ const SCHEMA_STATEMENTS = [
     created_at REAL NOT NULL,
     PRIMARY KEY (bucket, key, version)
   )`,
+  `CREATE TABLE IF NOT EXISTS feed_entries (
+    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    feed TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'delta',
+    summary TEXT NOT NULL DEFAULT '',
+    payload TEXT NOT NULL DEFAULT '{}',
+    created_at REAL NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_feed_entries_feed_seq ON feed_entries (feed, seq)`,
 ];
 
 const DEFAULT_QUEUES = [
+  ["multiply", 600, 60],
+  ["fetch", 600, 60],
+  ["situate", 900, 60],
+  ["problemize", 900, 60],
+  ["solve", 1800, 60],
+  ["verify", 900, 60],
+  ["distill", 900, 60],
+  ["catchall", 1800, 60],
   ["seed", 1800, 60],
   ["expand", 1800, 60],
   ["research", 3600, 120],
@@ -321,7 +346,8 @@ export class TesseraCoordinator extends DurableObject {
         sql.exec(stmt);
       }
       const seeded = this._one("SELECT value FROM meta WHERE key = 'cloud_seeded'");
-      if (!seeded) {
+      const spineSeeded = this._one("SELECT value FROM meta WHERE key = 'value_spine_v2'");
+      if (!seeded || !spineSeeded) {
         const now = Date.now() / 1000;
         this.ctx.storage.transactionSync(() => {
           for (const [name, leaseSec, beatSec] of DEFAULT_QUEUES) {
@@ -348,9 +374,14 @@ export class TesseraCoordinator extends DurableObject {
             "INSERT INTO meta (key, value) VALUES ('cloud_seeded', '1') ON CONFLICT (key) DO UPDATE SET value = '1'"
           );
           sql.exec(
-            "INSERT INTO meta (key, value) VALUES ('reaper_last_run', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
-            String(now)
+            "INSERT INTO meta (key, value) VALUES ('value_spine_v2', '1') ON CONFLICT (key) DO UPDATE SET value = '1'"
           );
+          if (!seeded) {
+            sql.exec(
+              "INSERT INTO meta (key, value) VALUES ('reaper_last_run', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+              String(now)
+            );
+          }
         });
       }
     });
@@ -591,6 +622,7 @@ export class TesseraCoordinator extends DurableObject {
         task.id
       );
       this._moveCount(task.queue, "leased", "dead");
+      recordDeadEndTombstone(this, task, failures, reason, now, canonicalJson);
       this._event("dead_lettered", now, {
         task_id: task.id,
         queue: task.queue,
@@ -2158,6 +2190,33 @@ export class TesseraCoordinator extends DurableObject {
               })),
             },
           };
+        }
+
+        case "searchNouns": {
+          if (!grant.can_store) throw forbid("this needs a key with the store scope");
+          const scents = searchNouns(this, args, canonicalJson, badReq);
+          return { ok: true, status: 200, data: { scents } };
+        }
+
+        case "feeds": {
+          if (!grant.can_store) throw forbid("this needs a key with the store scope");
+          return { ok: true, status: 200, data: { feeds: listFeeds(this) } };
+        }
+
+        case "publishFeed": {
+          if (!grant.can_store) throw forbid("this needs a key with the store scope");
+          const entry = publishFeed(this, args, now, canonicalJson, badReq);
+          return { ok: true, status: 201, data: entry };
+        }
+
+        case "pollFeed": {
+          if (!grant.can_store) throw forbid("this needs a key with the store scope");
+          return { ok: true, status: 200, data: pollFeed(this, args, badReq) };
+        }
+
+        case "matchReflex": {
+          if (!grant.can_store) throw forbid("this needs a key with the store scope");
+          return { ok: true, status: 200, data: matchReflex(this, args, canonicalJson, badReq) };
         }
 
         case "listKeys": {

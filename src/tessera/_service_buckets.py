@@ -13,6 +13,7 @@ from fastapi import Depends, FastAPI, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.concurrency import run_in_threadpool
 
+from tessera._service_intelligence import slice_bytes_response
 from tessera.access import Gate, bearer_secret
 from tessera.errors import InvalidRequest
 from tessera.grants import EFFECTS, KeyGrant
@@ -115,6 +116,7 @@ def mount_storage_and_admin_routes(app: FastAPI, store: Store, gate: Gate) -> No
     def get_object(
         bucket_name: str,
         object_key: str,
+        request: Request,
         version: int | None = None,
         meta: bool = False,
         history: bool = False,
@@ -128,8 +130,9 @@ def mount_storage_and_admin_routes(app: FastAPI, store: Store, gate: Gate) -> No
             return store.get_object_meta(bucket_name, object_key, version).model_dump(mode="json")
         obj_meta, data = store.get_object(bucket_name, object_key, version)
         meta_json = json.dumps(obj_meta.model_dump(mode="json"), separators=(",", ":"))
-        return Response(
+        return slice_bytes_response(
             data,
+            request.headers.get("range"),
             media_type=obj_meta.content_type,
             headers={
                 "etag": f'"{obj_meta.sha256}"',

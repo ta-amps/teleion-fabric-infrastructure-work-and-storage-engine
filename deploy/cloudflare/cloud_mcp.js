@@ -214,7 +214,8 @@ const TOOLS = [
   },
   {
     name: "get_object",
-    description: "Read a versioned file from a named cloud bucket, verifying its SHA-256.",
+    description:
+      "Read a versioned file (or L2 byte slice via offset/max_bytes) from a named cloud bucket, verifying its SHA-256.",
     inputSchema: {
       type: "object",
       required: ["bucket", "key"],
@@ -223,6 +224,8 @@ const TOOLS = [
         key: { type: "string" },
         version: { type: ["integer", "null"] },
         encoding: { type: "string", enum: ["auto", "utf-8", "base64"], default: "auto" },
+        offset: { type: "integer", default: 0 },
+        max_bytes: { type: ["integer", "null"], default: null },
       },
     },
   },
@@ -246,6 +249,65 @@ const TOOLS = [
       type: "object",
       required: ["bucket", "key"],
       properties: { bucket: { type: "string" }, key: { type: "string" } },
+    },
+  },
+  {
+    name: "search_nouns",
+    description:
+      "0-call progressive L0 scent search across head CAS records and versioned bucket files. Returns compact <=150-token summaries so agents discover reusable nouns before loading full payloads.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", default: "" },
+        store_name: { type: ["string", "null"], default: null },
+        bucket: { type: ["string", "null"], default: null },
+        limit: { type: "integer", default: 20 },
+      },
+    },
+  },
+  {
+    name: "list_feeds",
+    description: "List monotonic cursor-sequenced live delta feeds.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "poll_feed",
+    description: "Read delta entries from a live feed with monotonic seq > after.",
+    inputSchema: {
+      type: "object",
+      required: ["feed"],
+      properties: {
+        feed: { type: "string" },
+        after: { type: "integer", default: 0 },
+        limit: { type: "integer", default: 100 },
+      },
+    },
+  },
+  {
+    name: "publish_feed",
+    description: "Publish one monotonic delta entry to a live swarm feed.",
+    inputSchema: {
+      type: "object",
+      required: ["feed", "payload"],
+      properties: {
+        feed: { type: "string" },
+        payload: { type: "object" },
+        kind: { type: "string", default: "delta" },
+        summary: { type: "string", default: "" },
+      },
+    },
+  },
+  {
+    name: "match_reflex",
+    description:
+      "0-call dual-resolution muscle-memory + fuzzy step recall + dead-end tombstone lookup. Call before solving to reuse verified 0-call recipes and avoid known dead ends.",
+    inputSchema: {
+      type: "object",
+      required: ["query"],
+      properties: {
+        query: { type: "string" },
+        limit: { type: "integer", default: 5 },
+      },
     },
   },
 ];
@@ -413,25 +475,41 @@ async function callTool(stub, env, ctx, secret, name, args, isPrimary = true) {
       if (!r.ok) return r;
       const blob = await loadCloudBlob(env, r.data.sha256);
       if (blob.error) return { ok: false, code: blob.error, detail: blob.detail };
+      const totalBytes = blob.bytes.byteLength;
+      const start = Math.max(0, Number(args.offset ?? 0));
+      const sliceBytes =
+        args.max_bytes == null
+          ? blob.bytes.subarray(start)
+          : blob.bytes.subarray(start, start + Math.max(0, Number(args.max_bytes)));
       const enc = args.encoding ?? "auto";
       let content;
       let usedEnc;
       if (enc === "base64") {
-        content = bytesToB64(blob.bytes);
+        content = bytesToB64(sliceBytes);
         usedEnc = "base64";
       } else {
         try {
-          content = new TextDecoder("utf-8", { fatal: true }).decode(blob.bytes);
+          content = new TextDecoder("utf-8", { fatal: true }).decode(sliceBytes);
           usedEnc = "utf-8";
         } catch {
           if (enc === "utf-8") {
             return { ok: false, code: "invalid_request", detail: "object is binary; use encoding='base64'" };
           }
-          content = bytesToB64(blob.bytes);
+          content = bytesToB64(sliceBytes);
           usedEnc = "base64";
         }
       }
-      return { ok: true, data: { object: r.data, content, encoding: usedEnc } };
+      return {
+        ok: true,
+        data: {
+          object: r.data,
+          content,
+          encoding: usedEnc,
+          slice_offset: start,
+          slice_bytes: sliceBytes.byteLength,
+          total_bytes: totalBytes,
+        },
+      };
     }
     case "list_objects":
       return await stub.rpcCall(secret, "listObjects", {
@@ -443,6 +521,35 @@ async function callTool(stub, env, ctx, secret, name, args, isPrimary = true) {
       return await stub.rpcCall(secret, "objectHistory", {
         bucket: args.bucket,
         key: args.key,
+      });
+    case "search_nouns":
+      return await stub.rpcCall(secret, "searchNouns", {
+        query: args.query ?? "",
+        store: args.store_name ?? null,
+        bucket: args.bucket ?? null,
+        limit: args.limit ?? 20,
+      });
+    case "list_feeds":
+      return await stub.rpcCall(secret, "feeds", {});
+    case "poll_feed":
+      return await stub.rpcCall(secret, "pollFeed", {
+        feed: args.feed,
+        after: args.after ?? 0,
+        limit: args.limit ?? 100,
+      });
+    case "publish_feed": {
+      const r = await stub.rpcCall(secret, "publishFeed", {
+        feed: args.feed,
+        payload: args.payload,
+        kind: args.kind ?? "delta",
+        summary: args.summary ?? "",
+      });
+      return { ok: r.ok, status: r.status, code: r.code, detail: r.detail, data: r.ok ? { entry: r.data } : null };
+    }
+    case "match_reflex":
+      return await stub.rpcCall(secret, "matchReflex", {
+        query: args.query,
+        limit: args.limit ?? 5,
       });
     default:
       return { ok: false, code: "not_found", detail: `unknown tool ${name}` };

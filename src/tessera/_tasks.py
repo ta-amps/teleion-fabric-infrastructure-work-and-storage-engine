@@ -633,6 +633,7 @@ class TaskOps(GraphOps):
                 (failures, now, task["id"]),
             )
             self._move(c, task["queue"], "leased", "dead")
+            self._record_dead_end(c, task, failures=failures, reason=reason, now=now)
             self._event(
                 c,
                 "dead_lettered",
@@ -739,6 +740,49 @@ class TaskOps(GraphOps):
             self._event(
                 c, "jobs_cancel_requested", now, task_id=task_id, detail={"count": cur.rowcount}
             )
+
+    @staticmethod
+    def _record_dead_end(
+        c: sqlite3.Connection,
+        task: sqlite3.Row,
+        *,
+        failures: int,
+        reason: str,
+        now: float,
+    ) -> None:
+        """Persist a queryable dead-end tombstone in `negative.knowledge` when a verb dead-letters."""
+        brief = json.loads(task["brief"])
+        title = str(brief.get("title") or brief.get("goal") or task["id"])[:140]
+        tombstone = {
+            "task_id": task["id"],
+            "queue": task["queue"],
+            "kind": task["kind"],
+            "title": f"Dead-end tombstone: {title}",
+            "l0_summary": (
+                f"Task {task['id']} in queue '{task['queue']}' ({task['kind']}) dead-lettered "
+                f"after {failures} attempts: {reason}"
+            )[:520],
+            "failures": failures,
+            "reason": reason,
+            "brief_keys": sorted(str(k) for k in brief)[:16] if isinstance(brief, dict) else [],
+            "tags": ["dead-letter", str(task["queue"]), str(task["kind"])],
+            "dead_lettered_at": now,
+        }
+        head = c.execute(
+            "SELECT version FROM record_heads WHERE store = 'negative.knowledge' AND key = ?",
+            (task["id"],),
+        ).fetchone()
+        ver = (0 if head is None else int(head["version"])) + 1
+        c.execute(
+            "INSERT INTO records (store, key, version, value, created_at)"
+            " VALUES ('negative.knowledge', ?, ?, ?, ?)",
+            (task["id"], ver, canonical_json(tombstone), now),
+        )
+        c.execute(
+            "INSERT INTO record_heads (store, key, version) VALUES ('negative.knowledge', ?, ?)"
+            " ON CONFLICT (store, key) DO UPDATE SET version = excluded.version",
+            (task["id"], ver),
+        )
 
     @staticmethod
     def _receipt(row: sqlite3.Row, *, replayed: bool) -> Receipt:

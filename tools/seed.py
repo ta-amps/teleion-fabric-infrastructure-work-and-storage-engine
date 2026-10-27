@@ -46,11 +46,20 @@ BUCKETS = [
     ),
 ]
 
-# Work queues for agents (including dedicated seed & expand intake queues), plus Shamash's five
-# run-loop queues and Eranos's three workbench queues.
+# Work queues for agents (including dedicated seed & expand intake queues, the canonical
+# scenario-first value-spine queues, zero-drop catchall, Shamash's five run-loop queues, and
+# Eranos's three workbench queues).
 QUEUES = [
     QueueConfig(name="seed", lease_seconds=1800, heartbeat_seconds=60, miss_limit=3),
     QueueConfig(name="expand", lease_seconds=1800, heartbeat_seconds=60, miss_limit=3),
+    QueueConfig(name="multiply", lease_seconds=1200, heartbeat_seconds=60, miss_limit=3),
+    QueueConfig(name="fetch", lease_seconds=1200, heartbeat_seconds=60, miss_limit=3),
+    QueueConfig(name="situate", lease_seconds=1800, heartbeat_seconds=60, miss_limit=3),
+    QueueConfig(name="problemize", lease_seconds=1800, heartbeat_seconds=60, miss_limit=3),
+    QueueConfig(name="solve", lease_seconds=2400, heartbeat_seconds=60, miss_limit=3),
+    QueueConfig(name="verify", lease_seconds=1800, heartbeat_seconds=60, miss_limit=3),
+    QueueConfig(name="distill", lease_seconds=1800, heartbeat_seconds=60, miss_limit=3),
+    QueueConfig(name="catchall", lease_seconds=1800, heartbeat_seconds=60, miss_limit=3),
     QueueConfig(name="research", lease_seconds=3600, heartbeat_seconds=120, miss_limit=3),
     QueueConfig(name="draft", lease_seconds=3600, heartbeat_seconds=120, miss_limit=3),
     QueueConfig(name="review", lease_seconds=1800, heartbeat_seconds=120, miss_limit=3),
@@ -58,6 +67,42 @@ QUEUES = [
     *(QueueConfig(name=q) for q in ("aq02", "aq85", "aq04", "aq05", "aq86")),
     *(QueueConfig(name=q) for q in ("eq01", "eq02", "eq03")),
 ]
+
+STARTER_REFLEXES: dict[str, dict[str, Any]] = {
+    "reflex-bilateral-seed-expand": {
+        "reflex_id": "reflex-bilateral-seed-expand",
+        "pattern": "expand seed noun into reviewed canonical pack with independent reviewer",
+        "tier": "deterministic_0_call",
+        "verified_hits": 4,
+        "l0_summary": "Situate scenarios before framing problems, write proposal v1 via CAS, split bounded research/draft child verbs, and enforce proposer != reviewer before canonical promotion.",
+        "tags": ["tessera", "canonical", "bilateral", "review"],
+        "steps": [
+            {"op": "search_nouns", "note": "Check L0 scents and existing canonical packs"},
+            {
+                "op": "put_record",
+                "store": "proposals",
+                "note": "Write v1 with expected_version=null",
+            },
+            {"op": "enqueue", "queue": "review", "note": "Require independent reviewer key"},
+        ],
+    },
+    "reflex-harm-bundle-triage": {
+        "reflex_id": "reflex-harm-bundle-triage",
+        "pattern": "quantify multi-currency fees rates payees and check legitimate twin before routing",
+        "tier": "deterministic_0_call",
+        "verified_hits": 5,
+        "l0_summary": "Run deterministic Ring-1 fee/rate/payee checks against dated statute cards and verify legitimate look-alike twin clearance before assigning T1-T4.",
+        "tags": ["shamash", "triage", "twins", "deterministic"],
+        "steps": [
+            {
+                "op": "search_nouns",
+                "store": "shamash.cases",
+                "note": "Inspect L0 case & twin scents",
+            },
+            {"op": "verify_checks", "note": "Run pure multi-currency cap & payee checks"},
+        ],
+    },
+}
 
 SEED_NOUNS: dict[str, dict[str, Any]] = {
     "seed-shamash-social-harm": {
@@ -214,6 +259,21 @@ def seed_nouns(store: Store) -> int:
                 [RecordWrite(store="seeds", key=key, value=value, expected_version=None)]
             )
             written += 1
+    for rkey, rval in STARTER_REFLEXES.items():
+        try:
+            store.get_record("tessera.reflexes", rkey)
+        except NotFound:
+            store.put_records(
+                [RecordWrite(store="tessera.reflexes", key=rkey, value=rval, expected_version=None)]
+            )
+            written += 1
+    if not store.poll_feed("noun.promotions", after=0, limit=1):
+        store.publish_feed(
+            "noun.promotions",
+            {"seeded_nouns": sorted(SEED_NOUNS), "seeded_reflexes": sorted(STARTER_REFLEXES)},
+            kind="seed_ready",
+            summary="Initial SYNTHETIC seed nouns and 0-call muscle-memory reflexes ready for swarm pickup.",
+        )
     return written
 
 

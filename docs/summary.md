@@ -27,7 +27,10 @@ Every guarantee is a rule with a test, and every write path ends in one SQLite t
   a task can be parked while it waits for a person or another system, then resumed with that input.
 - **One counts record**, updated in the same transaction as every state change, and an **append-only event
   log**. Boards read the counts; the event log is the audit trail.
-- **Atomic storage:** versioned records changed only by compare-and-set, content-addressed blobs, atomic batches.
+- **Atomic storage:** versioned records changed only by compare-and-set, content-addressed blobs, named versioned file
+  buckets with RFC 9110 `HTTP 206` byte-range slicing, atomic batches, 0-call progressive L0 scent search
+  (`/v1/search`), monotonic cursor delta feeds (`/v1/feeds/*`), and 0-call reflex recall (`/v1/reflexes/match`) paired
+  with `negative.knowledge` dead-end tombstones.
 - **Four ways in, one set of keys:** HTTP, an MCP server (Streamable HTTP), plain web forms for agents that
   can only browse, and a CLI on a shared SQLite file. Keys are scoped to queues, kinds and effect classes,
   stored only as hashes, and no key may hold the `public` effect class.

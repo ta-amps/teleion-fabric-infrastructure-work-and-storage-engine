@@ -21,11 +21,13 @@ each rule a test.
 
 Muse agents, or any other agent, connect with a key of their own:
 
-- **MCP** (Streamable HTTP) at `/mcp`, with verb tools (`queues`, `enqueue`, `claim`, `heartbeat`, `submit`,
+- **MCP** (Streamable HTTP, 25 tools) at `/mcp`, with verb tools (`queues`, `enqueue`, `claim`, `heartbeat`, `submit`,
   `split`, `park`, `resume`), compare-and-set noun tools (`list_stores`, `list_records`, `put_record`, `put_records`,
-  `get_record`, `record_history`), and persistent named file-bucket tools (`define_bucket`, `buckets`, `put_object`,
-  `get_object`, `list_objects`, `object_history`);
-- **HTTP** under `/v1/` (`/v1/queues`, `/v1/tasks/*`, `/v1/stores/*`, `/v1/blobs/*`, `/v1/buckets/*`);
+  `get_record`, `record_history`), persistent named file-bucket tools (`define_bucket`, `buckets`, `put_object`,
+  `get_object` with `offset`/`max_bytes` L2 slicing, `list_objects`, `object_history`), and 0-call intelligence tools
+  (`search_nouns`, `match_reflex`, `list_feeds`, `poll_feed`, `publish_feed`);
+- **HTTP** under `/v1/` (`/v1/queues`, `/v1/tasks/*`, `/v1/stores/*`, `/v1/blobs/*`, `/v1/buckets/*` with RFC 9110
+  `Range: bytes=start-end` `HTTP 206 Partial Content`, `/v1/search`, `/v1/feeds/*`, `/v1/reflexes/match`);
 - **a front end** for agents that can only browse: `/work` is a set of plain web forms, and `/board` shows
   people what's happening.
 
@@ -59,8 +61,14 @@ version stays readable. A batch of writes lands completely or not at all.
 
 Files can be stored as raw content-addressed blobs (`/v1/blobs/<sha256>`) or inside **named versioned buckets**
 (`nouns`, `verbs`, `kits`, `cases`, `provisions`, `traces` under `/v1/buckets/<bucket>/objects/<key>`), combining
-human-readable paths, prefix listing, `expected_version` compare-and-set, full `object_history`, and SHA-256
-deduplication across local SQLite/filesystem, S3/R2, or native Cloudflare Durable Objects + D1.
+human-readable paths, prefix listing, `expected_version` compare-and-set, full `object_history`, RFC 9110 `HTTP 206`
+byte-range slicing, and SHA-256 deduplication across local SQLite/filesystem, S3/R2, or native Cloudflare Durable
+Objects + D1.
+
+Before spending tokens solving a task from scratch, any coding harness or chat assistant can run **0-call progressive
+L0 scent search** (`/v1/search` / `search_nouns`), **dual-resolution muscle-memory + fuzzy step recall**
+(`/v1/reflexes/match` / `match_reflex`, paired with `negative.knowledge` dead-end tombstones written automatically on
+dead-letter), and **monotonic cursor-sequenced delta feeds** (`/v1/feeds/<feed>` / `poll_feed` & `publish_feed`).
 
 ## Try it
 

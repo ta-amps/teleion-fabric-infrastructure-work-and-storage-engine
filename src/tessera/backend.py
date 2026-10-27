@@ -11,16 +11,20 @@ from tessera.models import (
     BucketInfo,
     ChildSpec,
     Event,
+    FeedEntry,
+    FeedSummary,
     Health,
     Job,
     JobStatus,
     Lease,
+    NounScent,
     ObjectMeta,
     QueueConfig,
     QueueCounts,
     Receipt,
     RecordVersion,
     RecordWrite,
+    ReflexMatch,
     ResultView,
     StoreSummary,
     TaskSpec,
@@ -123,5 +127,24 @@ class Backend(Protocol):
         self, bucket: str, *, prefix: str = "", limit: int = 100
     ) -> list[ObjectMeta]: ...
     def object_history(self, bucket: str, key: str) -> list[ObjectMeta]: ...
+    def search_nouns(
+        self,
+        query: str = "",
+        *,
+        store: str | None = None,
+        bucket: str | None = None,
+        limit: int = 20,
+    ) -> list[NounScent]: ...
+    def feeds(self) -> list[FeedSummary]: ...
+    def publish_feed(
+        self,
+        feed: str,
+        payload: dict[str, Any],
+        *,
+        kind: str = "delta",
+        summary: str = "",
+    ) -> FeedEntry: ...
+    def poll_feed(self, feed: str, *, after: int = 0, limit: int = 100) -> list[FeedEntry]: ...
+    def match_reflex(self, query: str, *, limit: int = 5) -> ReflexMatch: ...
 
     def close(self) -> None: ...

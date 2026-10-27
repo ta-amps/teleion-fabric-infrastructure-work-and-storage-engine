@@ -69,7 +69,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [conformance-draft/test_storage.py](conformance-draft/test_storage.py) | ST01 to ST04: atomic storage. |
 | [conformance-draft/test_task_graph.py](conformance-draft/test_task_graph.py) | Task graphs every backend must meet (SPEC §5.2 and §5.6): dependencies (fan-in), children that run in waves,… |
 
-## deploy/ (14)
+## deploy/ (15)
 
 | File | What it is |
 |---|---|
@@ -77,6 +77,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [deploy/bootstrap-hosting.sh](deploy/bootstrap-hosting.sh) | One-time hosting setup for one service on Fly.io behind a Cloudflare Worker: the Fly app and its |
 | [deploy/cloudflare/README.md](deploy/cloudflare/README.md) | Cloudflare: the Tessera cloud runtime and edge |
 | [deploy/cloudflare/cloud_buckets.js](deploy/cloudflare/cloud_buckets.js) | Persistent cloud blob & bucket storage engine for Tessera on Cloudflare. |
+| [deploy/cloudflare/cloud_intelligence.js](deploy/cloudflare/cloud_intelligence.js) | 0-call progressive L0 scent search, RFC 9110 HTTP 206 byte-range slicing, |
 | [deploy/cloudflare/cloud_mcp.js](deploy/cloudflare/cloud_mcp.js) | Native Streamable HTTP MCP Door (/mcp) for Tessera Cloud. |
 | [deploy/cloudflare/cloud_pages.js](deploy/cloudflare/cloud_pages.js) | Agent door & HTML pages for Tessera Cloud (/connect, /llms.txt, /.well-known/agent-card.json, |
 | [deploy/cloudflare/cloud_store.js](deploy/cloudflare/cloud_store.js) | TesseraCoordinator: single-writer SQLite Durable Object (newsqliteclasses) implementing |
@@ -124,7 +125,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [scripts/dev_stack.sh](scripts/dev_stack.sh) | Run Tessera on this machine behind the real Cloudflare edge code (wrangler dev), with the origin |
 | [scripts/suite_http_local.py](scripts/suite_http_local.py) | Run the whole conformance suite over HTTP against a real tessera serve process on this machine. |
 
-## src/ (26)
+## src/ (29)
 
 | File | What it is |
 |---|---|
@@ -132,10 +133,13 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [src/tessera/_base.py](src/tessera/_base.py) | Plumbing shared by the store's operation mixins: one SQLite connection per thread, IMMEDIATE transactions, th… |
 | [src/tessera/_buckets.py](src/tessera/_buckets.py) | Queryable noun stores and persistent named file buckets (SPEC §6 extension). |
 | [src/tessera/_graph.py](src/tessera/_graph.py) | Task-graph plumbing shared by the verbs: releasing dependents when a task resolves, waking parked tasks, and… |
+| [src/tessera/_intelligence.py](src/tessera/_intelligence.py) | 0-call progressive L0 scent search, monotonic delta feeds, and dual-resolution reflex recall. |
 | [src/tessera/_jobs.py](src/tessera/_jobs.py) | Model jobs (SPEC §6): each Meta Model API background response is tied to the task and the fencing token that… |
 | [src/tessera/_keys.py](src/tessera/_keys.py) | Worker keys (SPEC §7): random bearer secrets stored only as SHA-256 hashes, scoped to queue patterns, task ki… |
+| [src/tessera/_mcp_storage.py](src/tessera/_mcp_storage.py) | Storage, bucket, 0-call L0 search, live feed, and reflex-recall MCP tools for tessera.mcpdoor. |
 | [src/tessera/_observe.py](src/tessera/_observe.py) | Read-only views: tasks, results, the counts record, health and the event log (SPEC §5.7 to §5.9). |
 | [src/tessera/_service_buckets.py](src/tessera/_service_buckets.py) | HTTP routes for queryable noun stores, persistent named file buckets, and remote key management. |
+| [src/tessera/_service_intelligence.py](src/tessera/_service_intelligence.py) | HTTP routes for progressive L0 scent search, HTTP 206 byte-range slicing, live delta feeds, and 0-call dual-r… |
 | [src/tessera/_storage.py](src/tessera/_storage.py) | Atomic storage (SPEC §6): versioned records written by compare-and-set, with every version kept, and content-… |
 | [src/tessera/_tasks.py](src/tessera/_tasks.py) | The five verbs (claim, heartbeat, split, submit, cancel), park and resume, plus enqueue with dependencies, qu… |
 | [src/tessera/_version.py](src/tessera/_version.py) |  |
@@ -146,7 +150,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [src/tessera/clock.py](src/tessera/clock.py) | Time source for leases and backoff. |
 | [src/tessera/errors.py](src/tessera/errors.py) | Errors every Tessera backend raises. |
 | [src/tessera/grants.py](src/tessera/grants.py) | What a worker key may do: its queues, kinds, effect classes and scopes, and the rules that narrow a request t… |
-| [src/tessera/mcp_door.py](src/tessera/mcp_door.py) | The MCP door (SPEC §7): claim, heartbeat, submit and split as MCP tools over Streamable HTTP, behind the same… |
+| [src/tessera/mcp_door.py](src/tessera/mcp_door.py) | The MCP door (SPEC §7): atomic verbs, progressive L0 noun search, CAS records, buckets, delta feeds, and refl… |
 | [src/tessera/models.py](src/tessera/models.py) | Records that cross Tessera's boundary: what callers send and what every backend returns. |
 | [src/tessera/pages.py](src/tessera/pages.py) | The agent door: /connect, /llms.txt, the agent card, robots rules, the read-only board, and keyed web forms f… |
 | [src/tessera/receipts.py](src/tessera/receipts.py) | Canonical JSON and receipt hashes (SPEC §5.4). |
@@ -155,13 +159,14 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [src/tessera/store.py](src/tessera/store.py) | The in-process Tessera store: the reference implementation of SPEC.md. |
 | [src/tessera/testing.py](src/tessera/testing.py) | Factories the conformance suite loads by name (TESSERABACKENDFACTORY="module:function"). |
 
-## tests/ (6)
+## tests/ (7)
 
 | File | What it is |
 |---|---|
 | [tests/test_buckets.py](tests/test_buckets.py) | Tests for queryable noun stores, persistent named file buckets, external blobdir, and MCP tools. |
 | [tests/test_check_public.py](tests/test_check_public.py) | checkpublic finds secrets and private names, masks them, and honours the allow marker. |
 | [tests/test_guard_hook.py](tests/test_guard_hook.py) | The guard hook blocks protected paths and risky commands, and fails closed. |
+| [tests/test_intelligence.py](tests/test_intelligence.py) | Tests for progressive L0 scent search, HTTP 206 byte ranges, delta feeds, dead-end tombstones, and 0-call dua… |
 | [tests/test_service.py](tests/test_service.py) | The HTTP service: keys, scopes, POST-only writes, holders, rate limits, the edge lock, the agent door, the we… |
 | [tests/test_spec_events.py](tests/test_spec_events.py) | SPEC §5.5 lists every event type, and the code emits only listed types: a new event can't ship without a line… |
 | [tests/test_tools.py](tests/test_tools.py) | The Muse worker keeps its safety flags whatever the brief says, and briefs load in dependency order. |

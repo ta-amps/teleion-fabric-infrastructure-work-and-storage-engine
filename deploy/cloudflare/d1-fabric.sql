@@ -184,3 +184,13 @@ CREATE TABLE IF NOT EXISTS bucket_object_versions (
   created_at   REAL    NOT NULL,
   PRIMARY KEY (bucket, key, version)
 );
+
+CREATE TABLE IF NOT EXISTS feed_entries (
+  seq        INTEGER PRIMARY KEY AUTOINCREMENT,
+  feed       TEXT    NOT NULL,
+  kind       TEXT    NOT NULL DEFAULT 'delta',
+  summary    TEXT    NOT NULL DEFAULT '',
+  payload    TEXT    NOT NULL DEFAULT '{}',
+  created_at REAL    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_feed_entries_feed_seq ON feed_entries (feed, seq);

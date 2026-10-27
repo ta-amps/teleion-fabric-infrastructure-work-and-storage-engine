@@ -5,6 +5,7 @@
 // `/llms.txt`, `/.well-known/agent-card.json`, `/robots.txt`, `/board`, `/work`).
 
 import { loadCloudBlob, mirrorBucketObjectToD1, storeCloudBlob } from "./cloud_buckets.js";
+import { sliceBytesResponse } from "./cloud_intelligence.js";
 import { handleMcpRequest } from "./cloud_mcp.js";
 import {
   ROBOTS_TXT,
@@ -62,6 +63,7 @@ const STATUS_TITLES = {
   404: "Not Found",
   405: "Method Not Allowed",
   409: "Conflict",
+  416: "Range Not Satisfiable",
   429: "Too Many Requests",
   500: "Internal Server Error",
   502: "Bad Gateway",
@@ -624,12 +626,8 @@ export default {
       const loaded = await loadCloudBlob(env, sha256);
       if (loaded.error) return problem(loaded.status || 404, loaded.error, loaded.detail);
       return withSecurity(
-        new Response(loaded.bytes, {
-          status: 200,
-          headers: {
-            "content-type": "application/octet-stream",
-            etag: `"${sha256}"`,
-          },
+        sliceBytesResponse(loaded.bytes, request.headers.get("range"), "application/octet-stream", {
+          etag: `"${sha256}"`,
         }),
         { noStore: true }
       );
@@ -735,20 +733,67 @@ export default {
         const loaded = await loadCloudBlob(env, metaOut.data.sha256);
         if (loaded.error) return problem(loaded.status || 404, loaded.error, loaded.detail);
         return withSecurity(
-          new Response(loaded.bytes, {
-            status: 200,
-            headers: {
-              "content-type": metaOut.data.content_type || "application/octet-stream",
+          sliceBytesResponse(
+            loaded.bytes,
+            request.headers.get("range"),
+            metaOut.data.content_type || "application/octet-stream",
+            {
               etag: `"${metaOut.data.sha256}"`,
               "x-tessera-version": String(metaOut.data.version),
               "x-tessera-sha256": metaOut.data.sha256,
               "x-tessera-object-meta": JSON.stringify(metaOut.data),
-            },
-          }),
+            }
+          ),
           { noStore: true }
         );
       }
       return problem(405, "method_not_allowed", "method not allowed");
+    }
+
+    // 11. 0-Call L0 Scent Search, Live Delta Feeds & Reflex Recall
+    if (path === "/v1/search" && method === "GET") {
+      const q = url.searchParams.get("q") || "";
+      const store =
+        url.searchParams.get("store") ||
+        url.searchParams.get("store_name") ||
+        url.searchParams.get("store_filter") ||
+        null;
+      const bucket = url.searchParams.get("bucket") || null;
+      const limit = Number(url.searchParams.get("limit") || "20");
+      return rpcResponse(await stub.rpcCall(bearer, "searchNouns", { query: q, store, bucket, limit, isPrimary }));
+    }
+    if (path === "/v1/feeds" && method === "GET") {
+      return rpcResponse(await stub.rpcCall(bearer, "feeds", { isPrimary }));
+    }
+    const feedMatch = /^\/v1\/feeds\/([^/]+)$/.exec(path);
+    if (feedMatch) {
+      const feedName = decodeURIComponent(feedMatch[1]);
+      if (method === "GET") {
+        const after = Number(url.searchParams.get("after") || "0");
+        const limit = Number(url.searchParams.get("limit") || "100");
+        return rpcResponse(
+          await stub.rpcCall(bearer, "pollFeed", { feed: feedName, after, limit, isPrimary })
+        );
+      }
+      if (method === "POST") {
+        const { body, error } = await readJsonBody(request);
+        if (error) return error;
+        return rpcResponse(
+          await stub.rpcCall(bearer, "publishFeed", {
+            feed: feedName,
+            payload: body.payload,
+            kind: body.kind ?? "delta",
+            summary: body.summary ?? "",
+            isPrimary,
+          })
+        );
+      }
+      return problem(405, "method_not_allowed", "method not allowed");
+    }
+    if (path === "/v1/reflexes/match" && method === "GET") {
+      const q = url.searchParams.get("q") || "";
+      const limit = Number(url.searchParams.get("limit") || "5");
+      return rpcResponse(await stub.rpcCall(bearer, "matchReflex", { query: q, limit, isPrimary }));
     }
 
     return problem(404, "not_found", `no route matches ${method} ${path}`);

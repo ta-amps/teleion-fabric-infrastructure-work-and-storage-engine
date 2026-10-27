@@ -247,3 +247,61 @@ class ObjectMeta(_Model):
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: float
     updated_at: float
+
+
+class NounScent(_Model):
+    """Progressive L0 scent summary (<=150 tokens) returned by 0-call search before L1/L2 reads."""
+
+    kind: Literal["record", "object"]
+    namespace: str
+    key: str
+    version: int
+    title: str
+    l0_summary: str
+    tags: list[str] = Field(default_factory=list)
+    size_bytes: int
+    sha256: str | None = None
+    score: float
+    updated_at: float
+
+
+class FeedEntry(_Model):
+    """Monotonic cursor-sequenced delta entry in a live feed stream."""
+
+    seq: int
+    feed: str
+    kind: str = "delta"
+    summary: str = ""
+    payload: dict[str, Any] = Field(default_factory=dict)
+    created_at: float
+
+
+class FeedSummary(_Model):
+    feed: str
+    entries: int = 0
+    latest_seq: int = 0
+    updated_at: float
+
+
+class ReflexHit(_Model):
+    """Matched muscle-memory reflex or fuzzy prior step recipe."""
+
+    reflex_id: str
+    pattern: str
+    tier: str
+    verified_hits: int
+    exact_hit: bool
+    score: float
+    l0_summary: str
+    steps: list[dict[str, Any]] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+    version: int
+
+
+class ReflexMatch(_Model):
+    """Dual-resolution reflex recall paired with negative-knowledge dead-end warnings."""
+
+    query: str
+    recommended_tier: Literal["0_call_reflex", "hybrid_1_call", "agent_decompose"]
+    hits: list[ReflexHit] = Field(default_factory=list)
+    dead_ends: list[NounScent] = Field(default_factory=list)

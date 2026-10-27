@@ -160,7 +160,7 @@ Outputs above 1 MiB are refused: store the bytes as a blob and submit its hash.
   `heartbeat`, `submitted`, `retry_scheduled`, `dead_lettered`, `lease_lapsed`, `split`,
   `parent_ready`, `dependencies_met`, `parked`, `resumed`, `park_expired`, `cancelled`,
   `jobs_cancel_requested`, `job_registered`, `job_updated`, `records_written`, `blob_stored`,
-  `bucket_defined`, `object_stored`, `key_issued`, `key_revoked`. Read in pages of up to 10,000 after a given `seq`. An event never
+  `bucket_defined`, `object_stored`, `feed_published`, `key_issued`, `key_revoked`. Read in pages of up to 10,000 after a given `seq`. An event never
   holds a key, a resume input or an output; it names the task, the worker and the token.
 - **Health**: `db_ok`, version, time, the reaper's last run, and per queue the counts, the age of the
   oldest claimable ready task and the number of expired leases not yet reaped.
@@ -183,6 +183,14 @@ Outputs above 1 MiB are refused: store the bytes as a blob and submit its hash.
   `buckets` organize content-addressed files into named buckets (`nouns`, `verbs`, `kits`, `cases`,
   `provisions`, `traces`), and `put_object(bucket, key, bytes, expected_version)` / `get_object` /
   `list_objects` / `object_history` maintain compare-and-set versioned files with SHA-256 verification.
+  HTTP `GET /v1/blobs/{sha256}` and `GET /v1/buckets/{bucket}/objects/{key}` honour RFC 9110 single
+  `Range: bytes=start-end` headers (`206 Partial Content` / `416 Range Not Satisfiable`) for targeted L2
+  byte slicing without loading full artifacts into agent context.
+- **Progressive L0 scent search, live delta feeds & reflex recall**: `search_nouns(query, store, bucket)`
+  returns compact `<=150`-token L0 `NounScent` summaries in 0 model calls; `feeds()`, `publish_feed(feed,
+  payload)` and `poll_feed(feed, after)` provide monotonic cursor-sequenced delta streams; dead-lettered
+  tasks automatically persist a tombstone record in `negative.knowledge`; and `match_reflex(query)`
+  combines exact/fuzzy step recall in `tessera.reflexes` with `negative.knowledge` dead-end warnings.
 
 ## 7. HTTP service
 

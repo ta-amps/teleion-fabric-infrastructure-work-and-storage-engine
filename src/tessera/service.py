@@ -21,6 +21,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from tessera import pages
 from tessera._service_buckets import mount_storage_and_admin_routes
+from tessera._service_intelligence import mount_intelligence_routes, slice_bytes_response
 from tessera._version import __version__
 from tessera.access import ClaimLimiter, Gate, ServiceSettings, bearer_secret
 from tessera.errors import (
@@ -445,11 +446,17 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
         return {"sha256": digest, "size": len(data)}
 
     @app.get("/v1/blobs/{sha256}")
-    def get_blob(sha256: str, grant: KeyGrant = key) -> Response:
+    def get_blob(sha256: str, request: Request, grant: KeyGrant = key) -> Response:
         gate.store_scope(grant)
-        return Response(store.get_blob(sha256), media_type="application/octet-stream")
+        return slice_bytes_response(
+            store.get_blob(sha256),
+            request.headers.get("range"),
+            media_type="application/octet-stream",
+            headers={"etag": f'"{sha256}"'},
+        )
 
     mount_storage_and_admin_routes(app, store, gate)
+    mount_intelligence_routes(app, store, gate)
 
     # -- the agent door and pages -------------------------------------------------------------
 
