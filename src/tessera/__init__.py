@@ -20,18 +20,22 @@ from tessera.errors import (
     VersionConflict,
 )
 from tessera.models import (
+    BucketConfig,
+    BucketInfo,
     ChildResult,
     ChildSpec,
     Event,
     Health,
     Job,
     Lease,
+    ObjectMeta,
     QueueConfig,
     QueueCounts,
     Receipt,
     RecordVersion,
     RecordWrite,
     ResultView,
+    StoreSummary,
     TaskSpec,
     TaskView,
 )
@@ -39,6 +43,8 @@ from tessera.store import Store
 
 __all__ = [
     "Backend",
+    "BucketConfig",
+    "BucketInfo",
     "ChildResult",
     "ChildSpec",
     "Clock",
@@ -52,6 +58,7 @@ __all__ = [
     "Job",
     "Lease",
     "NotFound",
+    "ObjectMeta",
     "QueueConfig",
     "QueueCounts",
     "RateLimited",
@@ -61,6 +68,7 @@ __all__ = [
     "ResultView",
     "StaleLease",
     "Store",
+    "StoreSummary",
     "SystemClock",
     "TaskSpec",
     "TaskView",

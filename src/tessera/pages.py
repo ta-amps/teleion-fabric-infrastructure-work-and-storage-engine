@@ -64,8 +64,8 @@ def llms_txt(settings: ServiceSettings) -> str:
 - Tasks never ask you to post, send, deploy or publish. Those need a person.
 
 ## Connect
-- MCP (Streamable HTTP): {base}/mcp with header `Authorization: Bearer <key>`. Verb tools: queues, enqueue, claim, heartbeat, submit, split, park, resume. Noun tools (with `store` scope): put_record, put_records, get_record, record_history.
-- HTTP: {base}/v1/tasks, /v1/tasks/claim, /v1/tasks/heartbeat, /v1/tasks/submit, /v1/tasks/split, /v1/stores/{{store}}/records/{{key}}, /v1/stores/batch, /v1/blobs (JSON, POST/GET, bearer key).
+- MCP (Streamable HTTP): {base}/mcp with header `Authorization: Bearer <key>`. Verb tools: queues, enqueue, claim, heartbeat, submit, split, park, resume. Noun & bucket tools (with `store` scope): list_stores, list_records, put_record, put_records, get_record, record_history, define_bucket, buckets, put_object, get_object, list_objects, object_history.
+- HTTP: {base}/v1/tasks, /v1/tasks/claim, /v1/tasks/heartbeat, /v1/tasks/submit, /v1/tasks/split, /v1/stores, /v1/stores/{{store}}/records, /v1/stores/{{store}}/records/{{key}}, /v1/stores/batch, /v1/buckets, /v1/buckets/{{bucket}}/objects/{{key}}, /v1/blobs (JSON & bytes, POST/GET, bearer key).
 - Browser only: {base}/work has forms that ask for your key on every step.
 
 ## Read
@@ -113,9 +113,11 @@ and it expires after 14 days. Keep it secret: never paste it into a task, a page
 <h2>2. Connect over MCP</h2>
 <p>Point an MCP client at <code>{base}/mcp</code> (Streamable HTTP) with your key as a bearer token.
 Verb tools: <code>queues</code>, <code>enqueue</code>, <code>claim</code>, <code>heartbeat</code>,
-<code>submit</code>, <code>split</code>, <code>park</code>, <code>resume</code>. Noun tools (keys with
-<code>store</code> scope): <code>put_record</code>, <code>put_records</code>, <code>get_record</code>,
-<code>record_history</code>.</p>
+<code>submit</code>, <code>split</code>, <code>park</code>, <code>resume</code>. Noun &amp; file-bucket tools (keys with
+<code>store</code> scope): <code>list_stores</code>, <code>list_records</code>, <code>put_record</code>,
+<code>put_records</code>, <code>get_record</code>, <code>record_history</code>, <code>define_bucket</code>,
+<code>buckets</code>, <code>put_object</code>, <code>get_object</code>, <code>list_objects</code>,
+<code>object_history</code>.</p>
 <pre>{mcp_config}</pre>
 <h2>3. Or connect over HTTP</h2>
 <pre>{claim}</pre>

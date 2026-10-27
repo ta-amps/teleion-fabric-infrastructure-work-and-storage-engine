@@ -99,30 +99,54 @@ class StorageOps(StoreBase):
             raise NotFound(f"record {store}/{key} does not exist")
         return [self._record(r) for r in rows]
 
+    def _store_blob_in_tx(self, c: sqlite3.Connection, data: bytes, now: float) -> str:
+        if len(data) > MAX_BLOB_BYTES:
+            raise InvalidRequest(f"blob is over {MAX_BLOB_BYTES} bytes")
+        digest = blob_hash(data)
+        inline_bytes: bytes = data
+        if self._blob_dir is not None:
+            subdir = self._blob_dir / digest[:2]
+            subdir.mkdir(parents=True, exist_ok=True)
+            target = subdir / digest
+            if not target.exists():
+                tmp = subdir / f".{digest}.tmp"
+                tmp.write_bytes(data)
+                tmp.replace(target)
+            inline_bytes = b""
+        cur = c.execute(
+            "INSERT OR IGNORE INTO blobs (sha256, data, size, created_at) VALUES (?, ?, ?, ?)",
+            (digest, sqlite3.Binary(inline_bytes), len(data), now),
+        )
+        if cur.rowcount:
+            self._event(c, "blob_stored", now, detail={"sha256": digest, "size": len(data)})
+        return digest
+
+    def _load_blob_data(self, row: sqlite3.Row, sha256: str) -> bytes:
+        data = bytes(row["data"])
+        expected_size = int(row["size"])
+        if not data and expected_size > 0 and self._blob_dir is not None:
+            target = self._blob_dir / sha256[:2] / sha256
+            if not target.is_file():
+                raise NotFound(f"blob {sha256} file is missing from blob_dir")
+            data = target.read_bytes()
+        if blob_hash(data) != sha256:
+            raise TesseraError(f"blob {sha256} failed its hash check")
+        return data
+
     def put_blob(self, data: bytes) -> str:
         """Store bytes under their SHA-256 and return it. Storing the same bytes twice is a no-op."""
         if len(data) > MAX_BLOB_BYTES:
             raise InvalidRequest(f"blob is over {MAX_BLOB_BYTES} bytes")
-        digest = blob_hash(data)
         now = self.clock.now()
         with self._tx() as c:
-            cur = c.execute(
-                "INSERT OR IGNORE INTO blobs (sha256, data, size, created_at) VALUES (?, ?, ?, ?)",
-                (digest, sqlite3.Binary(data), len(data), now),
-            )
-            if cur.rowcount:
-                self._event(c, "blob_stored", now, detail={"sha256": digest, "size": len(data)})
-        return digest
+            return self._store_blob_in_tx(c, data, now)
 
     def get_blob(self, sha256: str) -> bytes:
         with self._read() as c:
-            row = c.execute("SELECT data FROM blobs WHERE sha256 = ?", (sha256,)).fetchone()
+            row = c.execute("SELECT data, size FROM blobs WHERE sha256 = ?", (sha256,)).fetchone()
         if row is None:
             raise NotFound(f"blob {sha256} does not exist")
-        data = bytes(row["data"])
-        if blob_hash(data) != sha256:
-            raise TesseraError(f"blob {sha256} failed its hash check")
-        return data
+        return self._load_blob_data(row, sha256)
 
     @staticmethod
     def _record(row: sqlite3.Row) -> RecordVersion:

@@ -4,6 +4,7 @@ the same keys and rules as the HTTP API. Agents that speak MCP connect to {publi
 
 from __future__ import annotations
 
+import base64
 import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, TypeVar
@@ -20,7 +21,7 @@ from starlette.applications import Starlette
 from tessera._version import __version__
 from tessera.errors import RateLimited, TesseraError
 from tessera.grants import KeyGrant
-from tessera.models import ChildSpec, EffectClass, RecordWrite, TaskSpec
+from tessera.models import BucketConfig, ChildSpec, EffectClass, RecordWrite, TaskSpec
 
 if TYPE_CHECKING:
     from tessera.access import ClaimLimiter, Gate, ServiceSettings
@@ -279,6 +280,110 @@ def build_mcp(
         grant = await current_grant()
         await run(lambda: gate.store_scope(grant))
         versions = await run(lambda: store.record_history(store_name, key))
+        return {"versions": [v.model_dump(mode="json") for v in versions]}
+
+    @server.tool(
+        description="List every atomic noun store with its key count and last update time."
+    )
+    async def list_stores() -> dict[str, Any]:
+        grant = await current_grant()
+        await run(lambda: gate.store_scope(grant))
+        items = await run(store.stores)
+        return {"stores": [s.model_dump(mode="json") for s in items]}
+
+    @server.tool(
+        description="Query current head records in a noun store, optionally filtered by key prefix."
+    )
+    async def list_records(store_name: str, prefix: str = "", limit: int = 100) -> dict[str, Any]:
+        grant = await current_grant()
+        await run(lambda: gate.store_scope(grant))
+        recs = await run(lambda: store.list_records(store_name, prefix=prefix, limit=limit))
+        return {"records": [r.model_dump(mode="json") for r in recs]}
+
+    @server.tool(
+        description="Create or update a named persistent file bucket (e.g. nouns, verbs, kits, cases, provisions, traces)."
+    )
+    async def define_bucket(name: str, description: str = "") -> dict[str, Any]:
+        grant = await current_grant()
+        await run(lambda: gate.store_scope(grant))
+        cfg = BucketConfig(name=name, description=description)
+        info = await run(lambda: store.define_bucket(cfg))
+        return {"bucket": info.model_dump(mode="json")}
+
+    @server.tool(description="List persistent file buckets with object counts and byte totals.")
+    async def buckets() -> dict[str, Any]:
+        grant = await current_grant()
+        await run(lambda: gate.store_scope(grant))
+        items = await run(store.buckets)
+        return {"buckets": [b.model_dump(mode="json") for b in items]}
+
+    @server.tool(
+        description="Store a file in a named bucket using compare-and-set (expected_version=null for new, "
+        "or current version to update). Pass encoding='utf-8' for text/JSON/Markdown or 'base64' for binary."
+    )
+    async def put_object(
+        bucket: str,
+        key: str,
+        content: str,
+        encoding: str = "utf-8",
+        content_type: str = "text/plain; charset=utf-8",
+        metadata: dict[str, Any] | None = None,
+        expected_version: int | None = None,
+    ) -> dict[str, Any]:
+        grant = await current_grant()
+        await run(lambda: gate.store_scope(grant))
+        if encoding == "base64":
+            data = base64.b64decode(content.encode("ascii"))
+        elif encoding == "utf-8":
+            data = content.encode("utf-8")
+        else:
+            raise ToolError("invalid_request: encoding must be 'utf-8' or 'base64'")
+        saved = await run(
+            lambda: store.put_object(
+                bucket,
+                key,
+                data,
+                content_type=content_type,
+                metadata=metadata,
+                expected_version=expected_version,
+            )
+        )
+        return {"object": saved.model_dump(mode="json")}
+
+    @server.tool(
+        description="Read a versioned file from a named bucket (latest or specific version), verifying its SHA-256."
+    )
+    async def get_object(
+        bucket: str, key: str, version: int | None = None, encoding: str = "auto"
+    ) -> dict[str, Any]:
+        grant = await current_grant()
+        await run(lambda: gate.store_scope(grant))
+        meta, data = await run(lambda: store.get_object(bucket, key, version))
+        if encoding == "base64":
+            body, used_enc = base64.b64encode(data).decode("ascii"), "base64"
+        else:
+            try:
+                body, used_enc = data.decode("utf-8"), "utf-8"
+            except UnicodeDecodeError as exc:
+                if encoding == "utf-8":
+                    raise ToolError(
+                        "invalid_request: object is binary; use encoding='base64'"
+                    ) from exc
+                body, used_enc = base64.b64encode(data).decode("ascii"), "base64"
+        return {"object": meta.model_dump(mode="json"), "content": body, "encoding": used_enc}
+
+    @server.tool(description="List head files in a bucket, optionally filtered by key prefix.")
+    async def list_objects(bucket: str, prefix: str = "", limit: int = 100) -> dict[str, Any]:
+        grant = await current_grant()
+        await run(lambda: gate.store_scope(grant))
+        objs = await run(lambda: store.list_objects(bucket, prefix=prefix, limit=limit))
+        return {"objects": [o.model_dump(mode="json") for o in objs]}
+
+    @server.tool(description="List every saved version of a file in a bucket in order.")
+    async def object_history(bucket: str, key: str) -> dict[str, Any]:
+        grant = await current_grant()
+        await run(lambda: gate.store_scope(grant))
+        versions = await run(lambda: store.object_history(bucket, key))
         return {"versions": [v.model_dump(mode="json") for v in versions]}
 
     security = TransportSecuritySettings(

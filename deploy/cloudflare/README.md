@@ -1,8 +1,22 @@
-# Cloudflare: the Tessera edge
+# Cloudflare: the Tessera cloud runtime and edge
 
-One Worker named `tessera` is the reverse proxy in front of the Tessera service on Fly.io. It forwards
-every path (`/v1/*`, `/mcp`, `/board`, `/work`, `/connect`, `/llms.txt`, `/.well-known/agent-card.json`,
-`/healthz`) to `ORIGIN` (default `https://tessera-fabric.fly.dev`):
+The `tessera` Worker (`deploy/cloudflare/wrangler.jsonc`) supports two modes controlled by `STORAGE_MODE`:
+
+1. **`STORAGE_MODE = "cloud"` (default in production at `https://tessera.ta-amps.workers.dev`)**:
+   - Executes Tessera natively 24/7 in Cloudflare's cloud with zero dependency on any external VM or tunnel.
+   - **`TesseraCoordinator` (SQLite-backed Durable Object)** serializes single-writer ACID verb transitions
+     (`enqueue`, `claim`, `heartbeat`, `submit`, `split`, `park`, `resume`, `cancel`), fencing tokens, `alarm()`
+     lease reaping, compare-and-set noun records (`stores`, `list_records`, `put_record`, `put_records`,
+     `get_record`, `record_history`), and named bucket object versions (`nouns`, `verbs`, `kits`, `cases`,
+     `provisions`, `traces`).
+   - **`FABRIC_DB` (`ta-amps-fabric` D1)** mirrors head noun records and queue counts for cross-surface reads via
+     Cloudflare Service Bindings.
+   - **`BUCKETS_DB` (`ta-amps-buckets` D1)** stores content-addressed SHA-256 blobs in 256 KiB chunks (up to 16 MiB
+     per object) with optional `BLOBS_BUCKET` R2 write-through.
+   - Serves the full HTTP `/v1/*` contract, Streamable HTTP `/mcp` (20 verb + noun + bucket tools), `/board`,
+     `/work`, `/connect`, `/llms.txt`, and isolated `/ns/<namespace>` test coordinators.
+2. **`STORAGE_MODE = "proxy"` (local `make dev` / Fly.io origin mode)**:
+   - Acts as the locked-down reverse proxy in front of `ORIGIN` (`http://127.0.0.1:7700` or Fly.io):
 
 - `Authorization` passes through untouched, so worker keys work exactly as against the origin;
 - `x-edge-auth`, `x-forwarded-host` and `x-forwarded-proto` are added; hop-by-hop headers and cookies

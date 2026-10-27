@@ -1,19 +1,54 @@
-// Tessera edge on Cloudflare Workers: a reverse proxy in front of the Tessera service on Fly.io.
-// Deploy only with Taylor's approval, through the GitHub `deploy` workflow (part `edge`) or by hand:
+// Tessera Cloud Worker: 24/7 persistent atomic work queue, queryable CAS noun stores,
+// and versioned named file buckets backed by SQLite Durable Objects (`TesseraCoordinator`)
+// and Cloudflare D1 (`ta-amps-fabric` + `ta-amps-buckets`), with optional `STORAGE_MODE=origin`
+// reverse-proxy fallback for Fly.io deployments.
+// Deploy:
 //   npx wrangler@4.149.0 deploy --config deploy/cloudflare/wrangler.jsonc
-// EDGE_SECRET is a secret, never a var: `npx wrangler@4.149.0 secret put EDGE_SECRET --config deploy/cloudflare/wrangler.jsonc`
-// (deploy/bootstrap-hosting.sh sets it to the same value as TESSERA_EDGE_SECRET on Fly).
+// Secrets:
+//   npx wrangler@4.149.0 secret put BOOTSTRAP_SECRET --config deploy/cloudflare/wrangler.jsonc
 {
   "name": "tessera",
   "main": "worker.js",
   "compatibility_date": "2026-10-01",
+  "workers_dev": true,
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "COORDINATOR",
+        "class_name": "TesseraCoordinator"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["TesseraCoordinator"]
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "FABRIC_DB",
+      "database_name": "ta-amps-fabric",
+      "database_id": "bc3deb8e-1841-4df3-8fd5-e70f800835d1"
+    },
+    {
+      "binding": "BUCKETS_DB",
+      "database_name": "ta-amps-buckets",
+      "database_id": "3fee6f31-2bd3-4bd8-9a74-95f5069a0a5b"
+    }
+  ],
   // Uncomment to attach a subdomain under your shared single domain in Cloudflare:
   // "routes": [{ "pattern": "tessera.<your-domain>", "custom_domain": true }],
   "vars": {
-    // Change this if the Fly app name in deploy/fly/fly.toml changes.
+    "STORAGE_MODE": "cloud",
+    "PUBLIC_URL": "https://tessera.ta-amps.workers.dev",
+    "REPO_URL": "https://github.com/ta-amps/tessera",
     "ORIGIN": "https://tessera-fabric.fly.dev"
   },
   "observability": {
-    "enabled": true
+    "enabled": true,
+    "traces": {
+      "enabled": true
+    }
   }
 }

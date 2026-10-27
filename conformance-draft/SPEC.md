@@ -160,7 +160,7 @@ Outputs above 1 MiB are refused: store the bytes as a blob and submit its hash.
   `heartbeat`, `submitted`, `retry_scheduled`, `dead_lettered`, `lease_lapsed`, `split`,
   `parent_ready`, `dependencies_met`, `parked`, `resumed`, `park_expired`, `cancelled`,
   `jobs_cancel_requested`, `job_registered`, `job_updated`, `records_written`, `blob_stored`,
-  `key_issued`, `key_revoked`. Read in pages of up to 10,000 after a given `seq`. An event never
+  `bucket_defined`, `object_stored`, `key_issued`, `key_revoked`. Read in pages of up to 10,000 after a given `seq`. An event never
   holds a key, a resume input or an output; it names the task, the worker and the token.
 - **Health**: `db_ok`, version, time, the reaper's last run, and per queue the counts, the age of the
   oldest claimable ready task and the number of expired leases not yet reaped.
@@ -176,9 +176,13 @@ Outputs above 1 MiB are refused: store the bytes as a blob and submit its hash.
 - **Records**: `put_record(store, key, value, expected_version)` writes version `head + 1` only if the
   head is still `expected_version` (`None` means the key must not exist); otherwise `version_conflict`
   with the current version. Every version is kept (`record_history`); `get_record` reads the head or a
-  given version. `put_records` applies a batch in one transaction: all writes or none.
-- **Blobs**: `put_blob(bytes)` stores up to 16 MiB under its SHA-256 and returns it; storing the same
-  bytes again is a no-op. `get_blob` verifies the hash before returning.
+  given version; `stores` and `list_records(store, prefix, limit)` query existing stores and head keys.
+  `put_records` applies a batch in one transaction: all writes or none.
+- **Blobs & buckets**: `put_blob(bytes)` stores up to 16 MiB under its SHA-256 and returns it; storing
+  the same bytes again is a no-op. `get_blob` verifies the hash before returning. `define_bucket` and
+  `buckets` organize content-addressed files into named buckets (`nouns`, `verbs`, `kits`, `cases`,
+  `provisions`, `traces`), and `put_object(bucket, key, bytes, expected_version)` / `get_object` /
+  `list_objects` / `object_history` maintain compare-and-set versioned files with SHA-256 verification.
 
 ## 7. HTTP service
 
@@ -203,11 +207,16 @@ nothing. Bodies are JSON. Successful bodies are the models in `src/tessera/model
 | GET /v1/health | | 200 Health | none |
 | GET /v1/events (`?after=&limit=`) | | 200 `{events}` | admin |
 | POST /v1/jobs, POST /v1/jobs/{id}, GET /v1/jobs (`?task_id=`) | | 201 Job, 200 Job, 200 `{jobs}` | the key that claimed |
+| GET /v1/stores, GET /v1/stores/{store}/records (`?prefix=&limit=`) | | 200 `{stores}`, `{records}` | key with store scope |
 | POST /v1/stores/{store}/records/{key} | `{value, expected_version}` | 200 RecordVersion | key with store scope |
 | POST /v1/stores/batch | `{writes}` | 200 `{records}` | key with store scope |
 | GET /v1/stores/{store}/records/{key} (`?version=`), `/history` | | 200 RecordVersion, `{versions}` | key with store scope |
+| POST /v1/buckets/define, GET /v1/buckets | BucketConfig | 200 BucketInfo, `{buckets}` | key with store scope |
+| POST /v1/buckets/{bucket}/objects/{key} (raw bytes) | `?expected_version=` | 201 ObjectMeta | key with store scope |
+| GET /v1/buckets/{bucket}/objects (`?prefix=`), `/objects/{key}` (`?version=&meta=&history=`) | | 200 `{objects}`, bytes / ObjectMeta / `{versions}` | key with store scope |
 | POST /v1/blobs (raw bytes) | | 201 `{sha256, size}` | key with store scope |
 | GET /v1/blobs/{sha256} | | 200 bytes | key with store scope |
+| POST /v1/admin/keys, GET /v1/admin/keys, POST /v1/admin/keys/{id}/revoke | IssueKeyBody | 201 key+KeyGrant, 200 `{keys}`, KeyGrant | admin |
 | POST /mcp | MCP over Streamable HTTP | | any key |
 | GET /board | | 200 HTML, read-only, reads `/v1/counts` | none |
 

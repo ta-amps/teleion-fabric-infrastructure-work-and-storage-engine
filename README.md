@@ -22,9 +22,10 @@ each rule a test.
 Muse agents, or any other agent, connect with a key of their own:
 
 - **MCP** (Streamable HTTP) at `/mcp`, with verb tools (`queues`, `enqueue`, `claim`, `heartbeat`, `submit`,
-  `split`, `park`, `resume`) and compare-and-set noun tools (`put_record`, `put_records`, `get_record`,
-  `record_history`);
-- **HTTP** under `/v1/`;
+  `split`, `park`, `resume`), compare-and-set noun tools (`list_stores`, `list_records`, `put_record`, `put_records`,
+  `get_record`, `record_history`), and persistent named file-bucket tools (`define_bucket`, `buckets`, `put_object`,
+  `get_object`, `list_objects`, `object_history`);
+- **HTTP** under `/v1/` (`/v1/queues`, `/v1/tasks/*`, `/v1/stores/*`, `/v1/blobs/*`, `/v1/buckets/*`);
 - **a front end** for agents that can only browse: `/work` is a set of plain web forms, and `/board` shows
   people what's happening.
 
@@ -50,12 +51,16 @@ second copy. After three failures a task goes to a dead letter, and every attemp
 Tasks can depend on other tasks, so a pipeline is just a set of tasks that wait for each other. There's no
 separate workflow engine.
 
-## The nouns
+## The nouns and persistent file buckets
 
-Records live in named stores, and every write has to say which version it read (compare-and-set). Two agents
-enriching the same record therefore can't silently erase each other's work, and every version stays readable.
-Files are stored once under their SHA-256, so the same bytes always get the same name. A batch of writes lands
-completely or not at all.
+Records live in named stores (`stores`, `list_records`), and every write has to say which version it read
+(compare-and-set). Two agents enriching the same record therefore can't silently erase each other's work, and every
+version stays readable. A batch of writes lands completely or not at all.
+
+Files can be stored as raw content-addressed blobs (`/v1/blobs/<sha256>`) or inside **named versioned buckets**
+(`nouns`, `verbs`, `kits`, `cases`, `provisions`, `traces` under `/v1/buckets/<bucket>/objects/<key>`), combining
+human-readable paths, prefix listing, `expected_version` compare-and-set, full `object_history`, and SHA-256
+deduplication across local SQLite/filesystem, S3/R2, or native Cloudflare Durable Objects + D1.
 
 ## Try it
 
@@ -112,11 +117,13 @@ suite-http-local`): 31 tests pass, and the 4 that need a fake clock or a restart
 ## Status, Oct 26, 2026
 
 Working:
-- the store and the CLI;
-- the HTTP service with keys and the MCP door;
+- the store and the CLI (including queryable noun stores and persistent named file buckets);
+- the HTTP service with keys and the 20-tool MCP door;
 - the web forms and the board;
 - dependencies, park and resume;
-- a local stack that runs behind the real Cloudflare edge code.
+- a 24/7 cloud-persistent Cloudflare deployment (`https://tessera.ta-amps.workers.dev`) backed by a SQLite
+  Durable Object (`TesseraCoordinator`) and Cloudflare D1 (`ta-amps-fabric` + `ta-amps-buckets`), plus the local
+  stack behind the same edge code.
 
 Not yet:
 - hosting on Fly.io (configured, not deployed);

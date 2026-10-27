@@ -20,7 +20,7 @@ from pydantic import BaseModel
 
 from tessera._version import __version__
 from tessera.errors import TesseraError
-from tessera.models import ChildSpec, QueueConfig, TaskSpec
+from tessera.models import BucketConfig, ChildSpec, QueueConfig, TaskSpec
 from tessera.store import Store
 
 EXIT_CODES = {409: 3, 404: 4}
@@ -125,8 +125,33 @@ def _parser() -> argparse.ArgumentParser:
         ("counts", "print the counts record"),
         ("health", "print health"),
         ("queues", "list queue definitions"),
+        ("stores", "list CAS noun stores"),
     ):
         sub.add_parser(name, help=text)
+    bk = sub.add_parser("buckets", help="manage persistent file buckets").add_subparsers(
+        dest="buckets_command", required=True
+    )
+    bk.add_parser("list", help="list buckets")
+    bkd = bk.add_parser("define", help="create or update a bucket")
+    bkd.add_argument("name")
+    bkd.add_argument("--description", default="")
+    bko = bk.add_parser("objects", help="list objects in a bucket")
+    bko.add_argument("bucket")
+    bko.add_argument("--prefix", default="")
+    bkp = bk.add_parser("put", help="store a file in a bucket")
+    bkp.add_argument("bucket")
+    bkp.add_argument("key")
+    bkp.add_argument("--file", required=True, help="local file path")
+    bkp.add_argument("--content-type", default="application/octet-stream")
+    bkp.add_argument("--expected-version", type=int)
+    bkg = bk.add_parser("get", help="read a file from a bucket")
+    bkg.add_argument("bucket")
+    bkg.add_argument("key")
+    bkg.add_argument("--version", type=int)
+    bkg.add_argument("--out", help="optional destination file path")
+    bkh = bk.add_parser("history", help="list every version of a bucket object")
+    bkh.add_argument("bucket")
+    bkh.add_argument("key")
     ev = sub.add_parser("events", help="print the event log")
     ev.add_argument("--after", type=int, default=0)
     ev.add_argument("--limit", type=int, default=1000)
@@ -227,6 +252,10 @@ def _run(store: Store, args: argparse.Namespace) -> Any:
         return store.health()
     if cmd == "queues":
         return store.queues()
+    if cmd == "stores":
+        return store.stores()
+    if cmd == "buckets":
+        return _buckets(store, args)
     if cmd == "events":
         return store.events(after=args.after, limit=args.limit)
     if cmd == "task":
@@ -236,6 +265,35 @@ def _run(store: Store, args: argparse.Namespace) -> Any:
     if cmd == "keys":
         return _keys(store, args)
     raise SystemExit(f"unknown command {cmd}")
+
+
+def _buckets(store: Store, args: argparse.Namespace) -> Any:
+    sub = args.buckets_command
+    if sub == "list":
+        return store.buckets()
+    if sub == "define":
+        return store.define_bucket(BucketConfig(name=args.name, description=args.description))
+    if sub == "objects":
+        return store.list_objects(args.bucket, prefix=args.prefix)
+    if sub == "put":
+        data = Path(args.file).read_bytes()
+        return store.put_object(
+            args.bucket,
+            args.key,
+            data,
+            content_type=args.content_type,
+            expected_version=args.expected_version,
+        )
+    if sub == "get":
+        meta, data = store.get_object(args.bucket, args.key, version=args.version)
+        if args.out:
+            Path(args.out).write_bytes(data)
+            return meta
+        return {
+            "meta": meta.model_dump(mode="json"),
+            "utf8": data.decode("utf-8", errors="replace"),
+        }
+    return store.object_history(args.bucket, args.key)
 
 
 def _keys(store: Store, args: argparse.Namespace) -> Any:

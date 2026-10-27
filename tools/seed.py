@@ -17,7 +17,34 @@ import os
 from pathlib import Path
 from typing import Any
 
-from tessera import NotFound, QueueConfig, RecordWrite, Store, TaskSpec
+from tessera import BucketConfig, NotFound, QueueConfig, RecordWrite, Store, TaskSpec
+
+BUCKETS = [
+    BucketConfig(
+        name="nouns",
+        description="Canonical and proposed atomic noun schemas, packs, and structured artifacts",
+    ),
+    BucketConfig(
+        name="verbs",
+        description="Atomic verb briefs, worker recipes, and multi-stage workflow templates",
+    ),
+    BucketConfig(
+        name="kits",
+        description="Eranos off-the-shelf NGO skills, tools, files, and verified process bundles",
+    ),
+    BucketConfig(
+        name="cases",
+        description="Shamash synthetic multi-document harm bundles and deterministic verdicts",
+    ),
+    BucketConfig(
+        name="provisions",
+        description="Herma coding-harness rule packs, prompt fragments, and URI documents",
+    ),
+    BucketConfig(
+        name="traces",
+        description="Bilateral agent execution traces, audit logs, and SHA-256 receipts",
+    ),
+]
 
 # Work queues for agents (including dedicated seed & expand intake queues), plus Shamash's five
 # run-loop queues and Eranos's three workbench queues.
@@ -221,6 +248,8 @@ def main() -> int:
     try:
         for config in QUEUES:
             store.define_queue(config)
+        for bucket in BUCKETS:
+            store.define_bucket(bucket)
         seed_nouns(store)
         for spec in seed_tasks():
             store.enqueue(spec)

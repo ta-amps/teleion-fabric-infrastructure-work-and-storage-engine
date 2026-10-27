@@ -20,6 +20,7 @@ MAX_DEPENDENCIES = 100
 MAX_PARK_SECONDS = 2_592_000  # 30 days
 
 NAME_PATTERN = r"^[a-z0-9][a-z0-9_.-]{0,63}$"
+BUCKET_KEY_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9_./:-]{0,511}$"
 
 
 class _Model(BaseModel):
@@ -214,3 +215,35 @@ class RecordWrite(_Model):
     expected_version: int | None = Field(
         default=None, description="Head version the caller read; None means the key must not exist."
     )
+
+
+class StoreSummary(_Model):
+    store: str
+    records: int = 0
+    updated_at: float
+
+
+class BucketConfig(_Model):
+    name: str = Field(pattern=NAME_PATTERN)
+    description: str = Field(default="", max_length=500)
+
+
+class BucketInfo(_Model):
+    name: str
+    description: str = ""
+    objects: int = 0
+    bytes: int = 0
+    created_at: float
+    updated_at: float
+
+
+class ObjectMeta(_Model):
+    bucket: str
+    key: str
+    version: int
+    sha256: str
+    size: int
+    content_type: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: float
+    updated_at: float

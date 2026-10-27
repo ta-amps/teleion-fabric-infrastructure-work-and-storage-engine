@@ -4,6 +4,7 @@ transactions, the counts record and the event log."""
 from __future__ import annotations
 
 import json
+import os
 import random
 import sqlite3
 import threading
@@ -38,13 +39,21 @@ def new_id(prefix: str) -> str:
 
 class StoreBase:
     def __init__(
-        self, path: str | Path, *, clock: Clock | None = None, rng: random.Random | None = None
+        self,
+        path: str | Path,
+        *,
+        clock: Clock | None = None,
+        rng: random.Random | None = None,
+        blob_dir: str | Path | None = None,
     ) -> None:
         if str(path) == ":memory:":
             raise InvalidRequest(
                 "use a file path: an in-memory database can't be shared by threads"
             )
         self.path = str(path)
+        env_blob_dir = os.environ.get("TESSERA_BLOB_DIR") or None
+        chosen_blob_dir = blob_dir if blob_dir is not None else env_blob_dir
+        self._blob_dir: Path | None = Path(chosen_blob_dir) if chosen_blob_dir else None
         self.clock: Clock = clock or SystemClock()
         self._rng = rng or random.Random()
         self._rng_lock = threading.Lock()
@@ -52,6 +61,8 @@ class StoreBase:
         self._connections: list[sqlite3.Connection] = []
         self._connections_lock = threading.Lock()
         Path(self.path).parent.mkdir(parents=True, exist_ok=True)
+        if self._blob_dir is not None:
+            self._blob_dir.mkdir(parents=True, exist_ok=True)
         self._init_schema()
 
     # -- connections and transactions ---------------------------------------------------------

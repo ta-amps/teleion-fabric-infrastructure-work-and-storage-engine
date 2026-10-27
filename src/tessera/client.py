@@ -3,6 +3,8 @@ switches between the in-process store and the service by configuration alone."""
 
 from __future__ import annotations
 
+import hashlib
+import json
 import time
 from collections.abc import Sequence
 from typing import Any
@@ -18,18 +20,22 @@ from tessera.errors import (
     VersionConflict,
 )
 from tessera.models import (
+    BucketConfig,
+    BucketInfo,
     ChildSpec,
     Event,
     Health,
     Job,
     JobStatus,
     Lease,
+    ObjectMeta,
     QueueConfig,
     QueueCounts,
     Receipt,
     RecordVersion,
     RecordWrite,
     ResultView,
+    StoreSummary,
     TaskSpec,
     TaskView,
 )
@@ -328,4 +334,86 @@ class Client:
         return str(resp.json()["sha256"])
 
     def get_blob(self, sha256: str) -> bytes:
-        return self._call("GET", f"/v1/blobs/{sha256}").content
+        data = self._call("GET", f"/v1/blobs/{sha256}").content
+        if hashlib.sha256(data).hexdigest() != sha256:
+            raise TesseraError(f"blob {sha256} failed its hash check")
+        return data
+
+    def stores(self) -> list[StoreSummary]:
+        resp = self._call("GET", "/v1/stores")
+        return [StoreSummary.model_validate(s) for s in resp.json()["stores"]]
+
+    def list_records(
+        self, store: str, *, prefix: str = "", limit: int = 100
+    ) -> list[RecordVersion]:
+        params: dict[str, Any] = {"limit": limit}
+        if prefix:
+            params["prefix"] = prefix
+        resp = self._call("GET", f"/v1/stores/{store}/records", params=params)
+        return [RecordVersion.model_validate(r) for r in resp.json()["records"]]
+
+    def define_bucket(self, config: BucketConfig) -> BucketInfo:
+        resp = self._call("POST", "/v1/buckets/define", body=config.model_dump())
+        return BucketInfo.model_validate(resp.json())
+
+    def buckets(self) -> list[BucketInfo]:
+        resp = self._call("GET", "/v1/buckets")
+        return [BucketInfo.model_validate(b) for b in resp.json()["buckets"]]
+
+    def put_object(
+        self,
+        bucket: str,
+        key: str,
+        data: bytes,
+        *,
+        content_type: str = "application/octet-stream",
+        metadata: dict[str, Any] | None = None,
+        expected_version: int | None = None,
+    ) -> ObjectMeta:
+        headers = {"content-type": content_type}
+        if metadata is not None:
+            headers["x-tessera-metadata"] = json.dumps(metadata, separators=(",", ":"))
+        params: dict[str, Any] = {}
+        if expected_version is not None:
+            params["expected_version"] = expected_version
+        resp = self._call(
+            "POST",
+            f"/v1/buckets/{bucket}/objects/{key}",
+            content=data,
+            headers=headers,
+            params=params or None,
+        )
+        return ObjectMeta.model_validate(resp.json())
+
+    def get_object_meta(self, bucket: str, key: str, version: int | None = None) -> ObjectMeta:
+        params: dict[str, Any] = {"meta": "true"}
+        if version is not None:
+            params["version"] = version
+        resp = self._call("GET", f"/v1/buckets/{bucket}/objects/{key}", params=params)
+        return ObjectMeta.model_validate(resp.json())
+
+    def get_object(
+        self, bucket: str, key: str, version: int | None = None
+    ) -> tuple[ObjectMeta, bytes]:
+        params: dict[str, Any] | None = {"version": version} if version is not None else None
+        resp = self._call("GET", f"/v1/buckets/{bucket}/objects/{key}", params=params)
+        envelope = resp.headers.get("x-tessera-object-meta")
+        meta = (
+            ObjectMeta.model_validate(json.loads(envelope))
+            if envelope
+            else self.get_object_meta(bucket, key, version)
+        )
+        if hashlib.sha256(resp.content).hexdigest() != meta.sha256:
+            raise TesseraError(f"object {bucket}/{key} failed its hash check")
+        return meta, resp.content
+
+    def list_objects(self, bucket: str, *, prefix: str = "", limit: int = 100) -> list[ObjectMeta]:
+        params: dict[str, Any] = {"limit": limit}
+        if prefix:
+            params["prefix"] = prefix
+        resp = self._call("GET", f"/v1/buckets/{bucket}/objects", params=params)
+        return [ObjectMeta.model_validate(o) for o in resp.json()["objects"]]
+
+    def object_history(self, bucket: str, key: str) -> list[ObjectMeta]:
+        resp = self._call("GET", f"/v1/buckets/{bucket}/objects/{key}", params={"history": "true"})
+        return [ObjectMeta.model_validate(o) for o in resp.json()["versions"]]

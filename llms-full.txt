@@ -35,9 +35,10 @@ each rule a test.
 Muse agents, or any other agent, connect with a key of their own:
 
 - **MCP** (Streamable HTTP) at `/mcp`, with verb tools (`queues`, `enqueue`, `claim`, `heartbeat`, `submit`,
-  `split`, `park`, `resume`) and compare-and-set noun tools (`put_record`, `put_records`, `get_record`,
-  `record_history`);
-- **HTTP** under `/v1/`;
+  `split`, `park`, `resume`), compare-and-set noun tools (`list_stores`, `list_records`, `put_record`, `put_records`,
+  `get_record`, `record_history`), and persistent named file-bucket tools (`define_bucket`, `buckets`, `put_object`,
+  `get_object`, `list_objects`, `object_history`);
+- **HTTP** under `/v1/` (`/v1/queues`, `/v1/tasks/*`, `/v1/stores/*`, `/v1/blobs/*`, `/v1/buckets/*`);
 - **a front end** for agents that can only browse: `/work` is a set of plain web forms, and `/board` shows
   people what's happening.
 
@@ -63,12 +64,16 @@ second copy. After three failures a task goes to a dead letter, and every attemp
 Tasks can depend on other tasks, so a pipeline is just a set of tasks that wait for each other. There's no
 separate workflow engine.
 
-## The nouns
+## The nouns and persistent file buckets
 
-Records live in named stores, and every write has to say which version it read (compare-and-set). Two agents
-enriching the same record therefore can't silently erase each other's work, and every version stays readable.
-Files are stored once under their SHA-256, so the same bytes always get the same name. A batch of writes lands
-completely or not at all.
+Records live in named stores (`stores`, `list_records`), and every write has to say which version it read
+(compare-and-set). Two agents enriching the same record therefore can't silently erase each other's work, and every
+version stays readable. A batch of writes lands completely or not at all.
+
+Files can be stored as raw content-addressed blobs (`/v1/blobs/<sha256>`) or inside **named versioned buckets**
+(`nouns`, `verbs`, `kits`, `cases`, `provisions`, `traces` under `/v1/buckets/<bucket>/objects/<key>`), combining
+human-readable paths, prefix listing, `expected_version` compare-and-set, full `object_history`, and SHA-256
+deduplication across local SQLite/filesystem, S3/R2, or native Cloudflare Durable Objects + D1.
 
 ## Try it
 
@@ -125,11 +130,13 @@ suite-http-local`): 31 tests pass, and the 4 that need a fake clock or a restart
 ## Status, Oct 26, 2026
 
 Working:
-- the store and the CLI;
-- the HTTP service with keys and the MCP door;
+- the store and the CLI (including queryable noun stores and persistent named file buckets);
+- the HTTP service with keys and the 20-tool MCP door;
 - the web forms and the board;
 - dependencies, park and resume;
-- a local stack that runs behind the real Cloudflare edge code.
+- a 24/7 cloud-persistent Cloudflare deployment (`https://tessera.ta-amps.workers.dev`) backed by a SQLite
+  Durable Object (`TesseraCoordinator`) and Cloudflare D1 (`ta-amps-fabric` + `ta-amps-buckets`), plus the local
+  stack behind the same edge code.
 
 Not yet:
 - hosting on Fly.io (configured, not deployed);
@@ -689,7 +696,7 @@ Outputs above 1 MiB are refused: store the bytes as a blob and submit its hash.
   `heartbeat`, `submitted`, `retry_scheduled`, `dead_lettered`, `lease_lapsed`, `split`,
   `parent_ready`, `dependencies_met`, `parked`, `resumed`, `park_expired`, `cancelled`,
   `jobs_cancel_requested`, `job_registered`, `job_updated`, `records_written`, `blob_stored`,
-  `key_issued`, `key_revoked`. Read in pages of up to 10,000 after a given `seq`. An event never
+  `bucket_defined`, `object_stored`, `key_issued`, `key_revoked`. Read in pages of up to 10,000 after a given `seq`. An event never
   holds a key, a resume input or an output; it names the task, the worker and the token.
 - **Health**: `db_ok`, version, time, the reaper's last run, and per queue the counts, the age of the
   oldest claimable ready task and the number of expired leases not yet reaped.
@@ -705,9 +712,13 @@ Outputs above 1 MiB are refused: store the bytes as a blob and submit its hash.
 - **Records**: `put_record(store, key, value, expected_version)` writes version `head + 1` only if the
   head is still `expected_version` (`None` means the key must not exist); otherwise `version_conflict`
   with the current version. Every version is kept (`record_history`); `get_record` reads the head or a
-  given version. `put_records` applies a batch in one transaction: all writes or none.
-- **Blobs**: `put_blob(bytes)` stores up to 16 MiB under its SHA-256 and returns it; storing the same
-  bytes again is a no-op. `get_blob` verifies the hash before returning.
+  given version; `stores` and `list_records(store, prefix, limit)` query existing stores and head keys.
+  `put_records` applies a batch in one transaction: all writes or none.
+- **Blobs & buckets**: `put_blob(bytes)` stores up to 16 MiB under its SHA-256 and returns it; storing
+  the same bytes again is a no-op. `get_blob` verifies the hash before returning. `define_bucket` and
+  `buckets` organize content-addressed files into named buckets (`nouns`, `verbs`, `kits`, `cases`,
+  `provisions`, `traces`), and `put_object(bucket, key, bytes, expected_version)` / `get_object` /
+  `list_objects` / `object_history` maintain compare-and-set versioned files with SHA-256 verification.
 
 ## 7. HTTP service
 
@@ -732,11 +743,16 @@ nothing. Bodies are JSON. Successful bodies are the models in `src/tessera/model
 | GET /v1/health | | 200 Health | none |
 | GET /v1/events (`?after=&limit=`) | | 200 `{events}` | admin |
 | POST /v1/jobs, POST /v1/jobs/{id}, GET /v1/jobs (`?task_id=`) | | 201 Job, 200 Job, 200 `{jobs}` | the key that claimed |
+| GET /v1/stores, GET /v1/stores/{store}/records (`?prefix=&limit=`) | | 200 `{stores}`, `{records}` | key with store scope |
 | POST /v1/stores/{store}/records/{key} | `{value, expected_version}` | 200 RecordVersion | key with store scope |
 | POST /v1/stores/batch | `{writes}` | 200 `{records}` | key with store scope |
 | GET /v1/stores/{store}/records/{key} (`?version=`), `/history` | | 200 RecordVersion, `{versions}` | key with store scope |
+| POST /v1/buckets/define, GET /v1/buckets | BucketConfig | 200 BucketInfo, `{buckets}` | key with store scope |
+| POST /v1/buckets/{bucket}/objects/{key} (raw bytes) | `?expected_version=` | 201 ObjectMeta | key with store scope |
+| GET /v1/buckets/{bucket}/objects (`?prefix=`), `/objects/{key}` (`?version=&meta=&history=`) | | 200 `{objects}`, bytes / ObjectMeta / `{versions}` | key with store scope |
 | POST /v1/blobs (raw bytes) | | 201 `{sha256, size}` | key with store scope |
 | GET /v1/blobs/{sha256} | | 200 bytes | key with store scope |
+| POST /v1/admin/keys, GET /v1/admin/keys, POST /v1/admin/keys/{id}/revoke | IssueKeyBody | 201 key+KeyGrant, 200 `{keys}`, KeyGrant | admin |
 | POST /mcp | MCP over Streamable HTTP | | any key |
 | GET /board | | 200 HTML, read-only, reads `/v1/counts` | none |
 
@@ -874,7 +890,7 @@ The key prints once; keep it in the agent's environment or secret store.
 
 | Agent | Connects to | Needs |
 |---|---|---|
-| MCP clients | `<address>/mcp` (Streamable HTTP); tools `queues`, `claim`, `heartbeat`, `submit`, `split`, `park`, `resume` | `Authorization: Bearer <key>` |
+| MCP clients | `<address>/mcp` (Streamable HTTP); verb tools (`queues`, `enqueue`, `claim`, `heartbeat`, `submit`, `split`, `park`, `resume`), noun tools (`list_stores`, `list_records`, `put_record`, `put_records`, `get_record`, `record_history`), and bucket tools (`define_bucket`, `buckets`, `put_object`, `get_object`, `list_objects`, `object_history`) | `Authorization: Bearer <key>` |
 | HTTP clients | `POST <address>/v1/tasks/claim`, `/heartbeat`, `/submit`, `/split`, `/park`, `/resume`, and `/v1/tasks` to queue work (with `depends_on` for joins) | The same header; `Idempotency-Key` on submit |
 | Python | `tessera.client.Client(url, key)`: the same interface as the in-process `Store` | The key |
 | Browser-only agents | `<address>/work`: keyed forms that ask for the key at every step and never echo it | The key |

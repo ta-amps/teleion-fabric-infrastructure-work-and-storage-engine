@@ -115,9 +115,10 @@
         "src/tessera/_keys.py",
         "src/tessera/_observe.py",
         "src/tessera/_storage.py",
+        "src/tessera/_buckets.py",
         "src/tessera/schema.sql"
       ],
-      "role": "The reference backend and the only place state changes: queues, the five verbs, park and resume, dependencies, retries, split, model jobs, keys, counts, events, health, records and blobs, each operation one IMMEDIATE transaction",
+      "role": "The reference backend and the only place state changes: queues, the five verbs, park and resume, dependencies, retries, split, model jobs, keys, counts, events, health, queryable CAS records, content-addressed blobs and versioned named file buckets, each operation one IMMEDIATE transaction",
       "depends_on": [
         "clock",
         "errors",
@@ -132,7 +133,8 @@
         "conformance-draft/test_queue_semantics.py",
         "conformance-draft/test_storage.py",
         "conformance-draft/test_model_jobs.py",
-        "conformance-draft/test_task_graph.py"
+        "conformance-draft/test_task_graph.py",
+        "tests/test_buckets.py"
       ]
     },
     {
@@ -166,6 +168,7 @@
       "title": "HTTP service",
       "path": [
         "src/tessera/service.py",
+        "src/tessera/_service_buckets.py",
         "src/tessera/access.py"
       ],
       "kind": "service",
@@ -193,7 +196,7 @@
       "path": "src/tessera/mcp_door.py",
       "kind": "service",
       "domain": "neutral",
-      "role": "MCP server over Streamable HTTP at /mcp: verb tools (queues, enqueue, claim, heartbeat, submit, split, park, resume) and compare-and-set noun tools (put_record, put_records, get_record, record_history), behind the same keys and Gate",
+      "role": "MCP server over Streamable HTTP at /mcp: verb tools (queues, enqueue, claim, heartbeat, submit, split, park, resume), queryable CAS noun tools (list_stores, list_records, put_record, put_records, get_record, record_history) and persistent named bucket tools (define_bucket, buckets, put_object, get_object, list_objects, object_history), behind the same keys and Gate",
       "depends_on": [
         "errors",
         "grants",
@@ -206,6 +209,7 @@
       "tests": [
         "tests/test_service.py::test_the_mcp_door",
         "tests/test_service.py::test_mcp_door_enqueues_verbs_and_writes_cas_nouns",
+        "tests/test_buckets.py::test_http_client_mcp_and_admin_keys_for_buckets",
         "conformance-draft/test_service_surface.py::test_T11_an_mcp_client_can_claim_and_submit"
       ]
     },
@@ -265,14 +269,20 @@
     },
     {
       "id": "edge",
-      "title": "Edge Worker",
+      "title": "Cloud Worker & Edge",
       "path": [
         "deploy/cloudflare/worker.js",
+        "deploy/cloudflare/cloud_store.js",
+        "deploy/cloudflare/cloud_buckets.js",
+        "deploy/cloudflare/cloud_mcp.js",
+        "deploy/cloudflare/cloud_pages.js",
+        "deploy/cloudflare/d1-fabric.sql",
+        "deploy/cloudflare/d1-buckets.sql",
         "deploy/cloudflare/wrangler.jsonc"
       ],
       "kind": "edge",
       "domain": "neutral",
-      "role": "Reverse proxy: adds x-edge-auth, strips cookies and hop-by-hop headers, sets security headers, never caches writes",
+      "role": "24/7 native cloud execution on Cloudflare SQLite Durable Objects (TesseraCoordinator) + Cloudflare D1 (ta-amps-fabric and ta-amps-buckets) + Streamable HTTP /mcp, with optional STORAGE_MODE=origin reverse-proxy fallback",
       "depends_on": [
         "service"
       ]
@@ -327,10 +337,17 @@
         "POST /v1/jobs",
         "POST /v1/jobs/{id}",
         "GET /v1/jobs",
+        "GET /v1/stores",
+        "GET /v1/stores/{store}/records",
         "POST /v1/stores/{store}/records/{key}",
         "POST /v1/stores/batch",
         "GET /v1/stores/{store}/records/{key}",
         "GET /v1/stores/{store}/records/{key}/history",
+        "POST /v1/buckets/define",
+        "GET /v1/buckets",
+        "GET /v1/buckets/{bucket}/objects",
+        "POST /v1/buckets/{bucket}/objects/{key}",
+        "GET /v1/buckets/{bucket}/objects/{key}",
         "POST /v1/blobs",
         "GET /v1/blobs/{sha256}"
       ]
@@ -342,7 +359,7 @@
       "spec": "conformance-draft/SPEC.md",
       "auth": "Bearer key",
       "entry_points": [
-        "POST /mcp (Streamable HTTP): tools queues, enqueue, claim, heartbeat, submit, split, park, resume, put_record, put_records, get_record, record_history"
+        "POST /mcp (Streamable HTTP): tools queues, enqueue, claim, heartbeat, submit, split, park, resume, list_stores, list_records, put_record, put_records, get_record, record_history, define_bucket, buckets, put_object, get_object, list_objects, object_history"
       ]
     },
     {
@@ -777,6 +794,7 @@
         "src/tessera/_keys.py",
         "src/tessera/_observe.py",
         "src/tessera/_storage.py",
+        "src/tessera/_buckets.py",
         "src/tessera/client.py"
       ],
       "must_not_import": [
@@ -811,7 +829,8 @@
         "tessera._jobs",
         "tessera._keys",
         "tessera._observe",
-        "tessera._storage"
+        "tessera._storage",
+        "tessera._buckets"
       ],
       "why": "Two engines behind one port stay independent, so a third (Postgres, D1) can be added by meeting the port and passing the suite"
     },
@@ -821,6 +840,7 @@
       "package_root": "src/tessera",
       "files": [
         "src/tessera/service.py",
+        "src/tessera/_service_buckets.py",
         "src/tessera/mcp_door.py",
         "src/tessera/pages.py",
         "src/tessera/cli.py",
@@ -835,6 +855,7 @@
         "tessera._keys",
         "tessera._observe",
         "tessera._storage",
+        "tessera._buckets",
         "tessera.client",
         "tessera.testing"
       ],

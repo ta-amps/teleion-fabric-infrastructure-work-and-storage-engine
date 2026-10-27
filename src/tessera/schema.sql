@@ -169,3 +169,37 @@ CREATE TABLE IF NOT EXISTS blobs (
   size       INTEGER NOT NULL,
   created_at REAL    NOT NULL
 );
+
+-- Named buckets of versioned content-addressed files for reusable atomic nouns and verbs.
+CREATE TABLE IF NOT EXISTS buckets (
+  name        TEXT PRIMARY KEY,
+  description TEXT NOT NULL DEFAULT '',
+  created_at  REAL NOT NULL,
+  updated_at  REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS bucket_objects (
+  bucket       TEXT    NOT NULL REFERENCES buckets(name),
+  key          TEXT    NOT NULL,
+  version      INTEGER NOT NULL,
+  sha256       TEXT    NOT NULL REFERENCES blobs(sha256),
+  size         INTEGER NOT NULL,
+  content_type TEXT    NOT NULL,
+  metadata     TEXT    NOT NULL DEFAULT '{}',
+  created_at   REAL    NOT NULL,
+  updated_at   REAL    NOT NULL,
+  PRIMARY KEY (bucket, key)
+);
+CREATE INDEX IF NOT EXISTS idx_bucket_objects_prefix ON bucket_objects (bucket, key);
+
+CREATE TABLE IF NOT EXISTS bucket_object_versions (
+  bucket       TEXT    NOT NULL,
+  key          TEXT    NOT NULL,
+  version      INTEGER NOT NULL,
+  sha256       TEXT    NOT NULL REFERENCES blobs(sha256),
+  size         INTEGER NOT NULL,
+  content_type TEXT    NOT NULL,
+  metadata     TEXT    NOT NULL DEFAULT '{}',
+  created_at   REAL    NOT NULL,
+  PRIMARY KEY (bucket, key, version)
+);

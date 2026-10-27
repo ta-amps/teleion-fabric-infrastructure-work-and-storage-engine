@@ -7,18 +7,22 @@ from collections.abc import Sequence
 from typing import Any, Protocol
 
 from tessera.models import (
+    BucketConfig,
+    BucketInfo,
     ChildSpec,
     Event,
     Health,
     Job,
     JobStatus,
     Lease,
+    ObjectMeta,
     QueueConfig,
     QueueCounts,
     Receipt,
     RecordVersion,
     RecordWrite,
     ResultView,
+    StoreSummary,
     TaskSpec,
     TaskView,
 )
@@ -95,5 +99,29 @@ class Backend(Protocol):
     def record_history(self, store: str, key: str) -> list[RecordVersion]: ...
     def put_blob(self, data: bytes) -> str: ...
     def get_blob(self, sha256: str) -> bytes: ...
+    def stores(self) -> list[StoreSummary]: ...
+    def list_records(
+        self, store: str, *, prefix: str = "", limit: int = 100
+    ) -> list[RecordVersion]: ...
+    def define_bucket(self, config: BucketConfig) -> BucketInfo: ...
+    def buckets(self) -> list[BucketInfo]: ...
+    def put_object(
+        self,
+        bucket: str,
+        key: str,
+        data: bytes,
+        *,
+        content_type: str = "application/octet-stream",
+        metadata: dict[str, Any] | None = None,
+        expected_version: int | None = None,
+    ) -> ObjectMeta: ...
+    def get_object_meta(self, bucket: str, key: str, version: int | None = None) -> ObjectMeta: ...
+    def get_object(
+        self, bucket: str, key: str, version: int | None = None
+    ) -> tuple[ObjectMeta, bytes]: ...
+    def list_objects(
+        self, bucket: str, *, prefix: str = "", limit: int = 100
+    ) -> list[ObjectMeta]: ...
+    def object_history(self, bucket: str, key: str) -> list[ObjectMeta]: ...
 
     def close(self) -> None: ...

@@ -20,6 +20,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from tessera import pages
+from tessera._service_buckets import mount_storage_and_admin_routes
 from tessera._version import __version__
 from tessera.access import ClaimLimiter, Gate, ServiceSettings, bearer_secret
 from tessera.errors import (
@@ -45,9 +46,11 @@ WRITE_PATHS = (
     "/v1/tasks/resume",
     "/v1/tasks/cancel",
     "/v1/admin/reap",
+    "/v1/admin/keys/{key_id}/revoke",
     "/v1/jobs/{job_id}",
     "/v1/stores/batch",
     "/v1/blobs",
+    "/v1/buckets/define",
     "/work/claim",
     "/work/submit",
     "/work/heartbeat",
@@ -445,6 +448,8 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
     def get_blob(sha256: str, grant: KeyGrant = key) -> Response:
         gate.store_scope(grant)
         return Response(store.get_blob(sha256), media_type="application/octet-stream")
+
+    mount_storage_and_admin_routes(app, store, gate)
 
     # -- the agent door and pages -------------------------------------------------------------
 
