@@ -3,6 +3,10 @@
 Shared by Claude Code (through CLAUDE.md) and Muse Code (which reads AGENTS.md first). Keep it short and
 true. Change it only with Taylor's approval.
 
+## Worker execution direction
+
+Follow the [worker-first execution policy](docs/WORKER-FIRST-EXECUTION.md) when designing agentic work. Prefer claimed verbs and authorized workers, including private workers. Keep ordinary coordination deterministic; additional review is a verb when required. Distinguish required procedures from useful pointers and open-ended discovery. Tool preparation and separate-process execution follow the task workspace and execution contract. The policy does not widen effect, spending or publication authority.
+
 ## The project
 
 Tessera is an atomic work queue and atomic store for agent swarms where everything is either a verb

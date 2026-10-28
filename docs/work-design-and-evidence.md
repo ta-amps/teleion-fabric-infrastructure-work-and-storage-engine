@@ -142,3 +142,7 @@ verification. Fragility maintenance plans rechecks rather than establishing new
 source truth. Sustained load, every native harness, provider behavior, D1 outage
 and recovery combinations, and exactly-once external effects remain outside these
 regression results.
+
+## Worker placement and private work
+
+The [worker-first execution policy](WORKER-FIRST-EXECUTION.md) formalizes private workers, server inference exceptions, scope inheritance and honest coverage measurement. Use the existing contracts; a private tag alone never grants access.
