@@ -1,5 +1,9 @@
 @AGENTS.md
 
+## Worker execution direction
+
+Follow the [worker-first execution policy](docs/WORKER-FIRST-EXECUTION.md) when designing agentic work. Prefer claimed verbs and authorized workers, including private workers. Keep ordinary coordination deterministic; additional review is a verb when required. The policy does not widen effect, spending or publication authority.
+
 # Claude Code notes
 
 - The guard hook (`.claude/hooks/guard.py`, rules in `.claude/guard.json`) enforces the hard rules in

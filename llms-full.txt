@@ -30,6 +30,10 @@ stalls, wakes up twenty minutes later and overwrites the answer that replaced it
 result twice. Someone asks who did what, and nobody can say. Tessera gives each of those failures a rule, and
 each rule a test.
 
+## Worker execution policy
+
+The [worker-first execution policy](docs/WORKER-FIRST-EXECUTION.md) defines claimed verbs, worker self-checks, private worker access, proportionate review and exceptional server inference. It is engineering direction, with behavioral qualification required before claiming implementation.
+
 ## External agents and personal assistants
 
 Public MCP discovery works without a key. When anonymous access is enabled,
@@ -2088,6 +2092,10 @@ URL: https://github.com/ta-amps/tessera/blob/main/AGENTS.md
 
 Shared by Claude Code (through CLAUDE.md) and Muse Code (which reads AGENTS.md first). Keep it short and
 true. Change it only with Taylor's approval.
+
+## Worker execution direction
+
+Follow the [worker-first execution policy](docs/WORKER-FIRST-EXECUTION.md) when designing agentic work. Prefer claimed verbs and authorized workers, including private workers. Keep ordinary coordination deterministic; additional review is a verb when required. The policy does not widen effect, spending or publication authority.
 
 ## The project
 
