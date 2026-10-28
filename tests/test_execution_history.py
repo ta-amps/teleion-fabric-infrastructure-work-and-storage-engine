@@ -220,6 +220,11 @@ def test_http_success_recall_and_immutable_report_replay(memory: MemoryHarness) 
     assert recalled["report"]["usage"]["input_tokens"] is None
     assert "source_governance" not in recalled
     assert memory.request(actor, "GET", "/v1/executions/" + recalled["run_id"]).json() == recalled
+    audit = memory.request(actor, "GET", "/v1/me/audit").json()["events"]
+    event = next(row for row in audit if row["action"] == "getExecution")
+    assert event["resource_id"] == recalled["run_id"]
+    assert event["resource_type"] == "noun"
+    assert event["receipt_id"] == recalled["receipt_hash"]
 
 
 def test_stale_lease_neither_captures_nor_recalls(memory: MemoryHarness) -> None:

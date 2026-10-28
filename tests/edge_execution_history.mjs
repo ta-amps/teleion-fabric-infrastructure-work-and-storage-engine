@@ -27,6 +27,8 @@ export async function executionHistoryTests(test) {
     const {owner}=await setup(h),l=await claim(h,owner.key);
     assert.equal((await submit(h,owner.key,l)).status,200);
     const first=await run(h,owner.key,l);
+    const audit=await h.req('/v1/me/audit',{token:owner.key});
+    const event=audit.data.events.find(e=>e.action==='getExecution');assert.equal(event.resource_id,first.run_id);assert.equal(event.resource_type,'noun');assert.equal(event.receipt_id,first.receipt_hash);
     assert.equal(first.report.usage.input_tokens,0);assert.equal(first.trust.correctness,'not_independently_verified');
     const replay=await submit(h,owner.key,l,{execution_report:{summaries:{solution:'replacement'}}});
     assert.equal(replay.status,200);assert.equal(replay.data.replayed,true);
