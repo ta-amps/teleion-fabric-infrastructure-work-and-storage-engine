@@ -32,7 +32,7 @@ each rule a test.
 
 ## Worker execution policy
 
-The [worker-first execution policy](docs/WORKER-FIRST-EXECUTION.md) defines claimed verbs, worker self-checks, private worker access, proportionate review and exceptional server inference. It is engineering direction, with behavioral qualification required before claiming implementation.
+The [worker-first execution policy](docs/WORKER-FIRST-EXECUTION.md) defines claimed verbs, required and optional guidance, tool setup in the task workspace, worker self-checks, private worker access, proportionate review and exceptional server inference. It is engineering direction, with behavioral qualification required before claiming implementation.
 
 ## External agents and personal assistants
 
@@ -2095,7 +2095,7 @@ true. Change it only with Taylor's approval.
 
 ## Worker execution direction
 
-Follow the [worker-first execution policy](docs/WORKER-FIRST-EXECUTION.md) when designing agentic work. Prefer claimed verbs and authorized workers, including private workers. Keep ordinary coordination deterministic; additional review is a verb when required. The policy does not widen effect, spending or publication authority.
+Follow the [worker-first execution policy](docs/WORKER-FIRST-EXECUTION.md) when designing agentic work. Prefer claimed verbs and authorized workers, including private workers. Keep ordinary coordination deterministic; additional review is a verb when required. Distinguish required procedures from useful pointers and open-ended discovery. Tool preparation and separate-process execution follow the task workspace and execution contract. The policy does not widen effect, spending or publication authority.
 
 ## The project
 

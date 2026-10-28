@@ -7,6 +7,7 @@ These are design examples, not newly implemented endpoints or permission grants.
 | Research | Source-backed findings with dates and unresolved questions | Research agent | Source access, quotations, dates and claim-to-source checks |
 | Capability discovery | A reproduced gap and minimal failing fixture | Diagnostic agent | Reproduce the failure before proposing a repair |
 | Task decomposition | A bounded dependency plan with required inputs and effects | Planning agent | Typed dependencies, budgets, ownership and no authority expansion |
+| Tool preparation | A reproducible tool environment and invocation manifest | Worker with workspace and installation authority | Pinned source, confined setup, capability check and reusable environment evidence |
 | Implementation | A patch and reproducible test result | Coding agent | Task-specific checks, affected suite and clean environment |
 | Contract repair | A candidate schema, adapter or example fixing a demonstrated mismatch | Integration agent | Positive and wrong-type controls through the actual transport |
 | Review | A decision about an exact artifact and explicit question | Qualified review agent | Appropriate independence and evidence tied to that version |
@@ -42,3 +43,45 @@ Authentication, serving a stored file, checking a lease, hashing a result, simpl
 6. A public update, if authorized, uses an approved redacted projection. The private logs and credentials never become public merely because the incident is resolved.
 
 All of this can use worker inference without a coordinator model call. Operator-owned workers still consume operator resources; record that cost. Queue outage recovery follows the existing incident procedure rather than pretending the unavailable queue can schedule its own repair.
+
+## Worked tool preparation and separate-process execution
+
+This is an authoring example, not a new endpoint or a claim that a tool is installed. Replace workspace and version placeholders with actual authorized values from the resolved brief before running it. The source, digest, permitted installer, timeout and resource limits must also be resolved; this example does not supply a download to execute blindly.
+
+**Outcome:** convert the supplied local movie, which contains video and audio, into `outputs/result.mp4` with H.264 video and AAC audio. Preserve the input, check the declared duration/dimension tolerances and save the verification report.
+
+**Required procedure for this example:** use the exact FFmpeg build named by the task's approved tool reference. Reuse it if verified and compatible; otherwise prepare it under `<workspace>/.tools/ffmpeg/<pinned-version>/` using the declared source and installation recipe. Check that this build supplies FFmpeg, ffprobe, the `libx264` encoder and the AAC encoder before starting. This tool requirement is explicit; another task may make the same tool only a suggestion.
+
+**Run:** set the working directory to the assigned workspace. Launch the executable through the harness's existing supervised process adapter with an argument vector:
+
+```json
+[
+  "<workspace>/.tools/ffmpeg/<pinned-version>/bin/ffmpeg",
+  "-nostdin", "-n", "-i", "inputs/source.mov",
+  "-c:v", "libx264", "-c:a", "aac", "outputs/result.mp4"
+]
+```
+
+This example assumes a compatible Unix-style tool bundle; resolve the actual executable paths for the worker's platform. The command avoids an interactive prompt and refuses to overwrite an existing result. On retry, inspect the existing result and task history before choosing a new attempt path or any authorized replacement. Input files and any referenced media must remain within the declared file and network scope.
+
+**Check:** use the same pinned tool bundle to obtain machine-readable media information:
+
+```json
+[
+  "<workspace>/.tools/ffmpeg/<pinned-version>/bin/ffprobe",
+  "-v", "error", "-show_format", "-show_streams", "-of", "json",
+  "outputs/result.mp4"
+]
+```
+
+Compare the observed streams, dimensions and duration with the task's criteria, verify that the actual media decodes and perform playback or visual/audio inspection when the outcome depends on perceptual quality. A metadata probe alone does not establish that the whole output is good. Save the output reference and digest, the tool manifest, command result and relevant checks. Stop or retain the task's process/environment according to its declared lifecycle.
+
+The option semantics and probe output are described in the official [FFmpeg](https://ffmpeg.org/ffmpeg.html) and [ffprobe](https://ffmpeg.org/ffprobe.html) documentation, checked October 28, 2026. The commands illustrate process invocation; no codec performance or successful local run is claimed here.
+
+## The same outcome with open-ended guidance
+
+An alternative brief can retain the same output and permission requirements while saying:
+
+> FFmpeg and the linked media tools may help. These are starting points, not an exhaustive list or a required implementation. Inspect what is already available, search further when useful and choose a suitable approach. Prepare any needed tool in the assigned workspace, run it through the permitted execution environment and demonstrate the same acceptance checks. Record material departures from the suggested approach and why they helped.
+
+The worker can discover a better existing tool or composition without requesting a routine reviewer to choose for it. Required effects, spending limits, data destinations and result checks remain unchanged. If comparing tools is itself the requested outcome, produce a bounded comparison with observed evidence rather than claiming that a listed resource is best.

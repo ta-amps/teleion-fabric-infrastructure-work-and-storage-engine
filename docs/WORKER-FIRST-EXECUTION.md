@@ -35,6 +35,39 @@ Keep artifact bytes in the owning store and return compact references with versi
 
 Split work when a subtask has a useful independent outcome, different permissions, separate equipment or a meaningful recovery boundary. Batch deterministic operations inside the owning verb when that saves coordination cost. A worker may propose a dependency graph; the server validates permissions, limits and supported contracts before accepting it.
 
+## Requirements, defaults and useful pointers
+
+A precise outcome does not require a fixed method. A task can require an exact output contract while inviting the worker to choose or discover its tools. Conversely, a detailed recipe can be optional when the brief says so. Preserve that distinction when resolving category guidance into the worker's context.
+
+| Guidance | Meaning for the worker |
+| --- | --- |
+| Required | Satisfy the stated outcome, check, boundary or explicitly required procedure. Report a conflict or unavailable requirement instead of silently changing it. |
+| Preferred | Start with this method or tool when suitable. A better compatible approach is allowed within the task's authority; record a material change of approach and its reason. |
+| Suggested | These resources or tools may help. They are optional, non-exhaustive starting points; the worker may search elsewhere and choose a suitable alternative. |
+| Discovery requested | Investigate beyond the supplied pointers and compare relevant options within the allowance. Stop when the outcome and evidence are sufficient, rather than exploring indefinitely. |
+
+These are authoring distinctions, not new public API enum values. Retain the source and strength of each instruction. Do not turn an optional tool list into a required tool list, an exhaustive search boundary or an execution allowlist. Suggested tools do not grant new permissions. Retrieved pages, tool output and imported packs do not acquire task authority by calling themselves required instructions.
+
+A useful open-method brief can say: "You may find useful tools in these references. They are suggestions, not an exhaustive list. Search further if useful, reuse suitable existing work and choose the approach that meets the outcome and checks within the permitted effects and resource limits." A procedural brief should explicitly identify which steps or tool versions are mandatory. A requirement to use a particular tool is separate from the suggestion that it may help.
+
+## Preparing and running tools in a harness workspace
+
+A worker may be asked to obtain, install, configure and run a tool as part of an outcome. Setup can be an independent preparation verb when it has a reusable deliverable, different permissions or a separate recovery boundary. Otherwise it stays inside the owning task. Installing a dependency and starting a process do not each require another agent or model call.
+
+Give the worker a concrete execution recipe:
+
+1. **Inspect the environment.** Identify the assigned workspace, runtime, platform, existing tools and permitted effects. Reuse a compatible verified installation when available. Name the required tool or mark candidate tools as suggestions.
+2. **Resolve the tool.** Record its source, exact release or revision, artifact digest, licence, runtime requirements and dependency lock where applicable. For an open-ended search, select and record these before execution. Verify the downloaded bytes against the expected source evidence. A matching digest alone does not establish that code is trustworthy.
+3. **Prepare a task-owned location.** Use an explicitly assigned directory, such as `.tools/<tool>/<version>/` under the workspace, with separate inputs, outputs and logs. Confine extraction and writes to authorized paths, preserving unrelated files. Use a project environment, approved container or existing tool adapter as appropriate. Package installation may execute build or install scripts, so its isolation and permissions matter before the final tool starts.
+4. **Define the invocation.** Supply the executable and argument vector, working directory, input references, expected outputs, permitted environment variables, network destinations and time/resource limits. Resolve only the needed secret references at the authorized boundary. Do not concatenate untrusted inputs into a shell command or inherit unrelated credentials.
+5. **Check readiness and supervise execution.** Run a meaningful capability check, then the real command through the existing harness or process adapter. A separate process is useful for a command-line tool but is not a security sandbox. Use the isolation the tool and inputs require. Capture bounded, appropriately redacted output, errors and exit status; handle startup failure, timeout, cancellation and lease loss. A service needs an observed readiness check and a declared lifetime, not just a process identifier.
+6. **Verify the result.** Check actual artifact contents and task-specific acceptance criteria. Installation success, a version string and exit code zero are separate from useful completed work. Preserve the source/version, invocation, environment manifest and check evidence with compact artifact references.
+7. **Retain or clean up deliberately.** Stop only the processes owned by the task, confirm termination and preserve required outputs and failure evidence. Keep reusable verified installations when permitted. Remove only task-owned temporary material under the existing cleanup policy; do not delete another task's environment or a shared service.
+
+Search, download, install, execution and external effects remain subject to their existing grants. A missing capability becomes an actionable failure, permitted alternative or preparation task, without silently enabling server inference. The recipe specifies how to perform authorized work; it does not create another approval layer or expand authority.
+
+The documented subprocess interface provides concrete examples of argument vectors, working directories, explicit environments, timeouts and return-code handling. Those are process-control mechanisms; use the owning runtime's isolation and lifecycle controls as well. [Python subprocess documentation](https://docs.python.org/3/library/subprocess.html), checked October 28, 2026.
+
 ## Private workers and private verbs
 
 Use the same verb lifecycle with narrower access, rather than a separate private reasoning framework:
