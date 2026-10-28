@@ -16,6 +16,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from tessera.models import category_from_tag
+
 CategoryKind = Literal["noun", "verb"]
 DimensionDirection = Literal["higher_is_better", "lower_is_better"]
 DimensionDType = Literal["float", "int", "categorical"]
@@ -2855,6 +2857,8 @@ CATEGORY_REGISTRY: dict[str, CategorySpec] = {**NOUN_CATEGORIES, **VERB_CATEGORI
 
 def normalize_tag(raw_tag: str) -> str:
     """Normalize a tag string to deterministic lowercase ASCII token form."""
+    if category := category_from_tag(raw_tag):
+        return f"category:{category}"
     cleaned = raw_tag.strip().lower().replace("_", "-").replace(" ", "-")
     cleaned = _TAG_CLEAN_RE.sub("", cleaned)
     cleaned = _MULTI_HYPHEN_RE.sub("-", cleaned).strip("-")

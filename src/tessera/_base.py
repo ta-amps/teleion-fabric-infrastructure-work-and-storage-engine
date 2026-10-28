@@ -17,6 +17,7 @@ from importlib import resources
 from pathlib import Path
 from typing import Any
 
+from tessera._legacy_privacy import harden_task_tombstones
 from tessera.clock import Clock, SystemClock
 from tessera.errors import Forbidden, InvalidRequest, NotFound
 from tessera.models import (
@@ -347,6 +348,7 @@ class StoreBase:
             )
         self._migrate(conn, script)
         conn.executescript(script)
+        harden_task_tombstones(conn)
         conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION_INT}")
         conn.execute(
             "INSERT INTO meta (key, value) VALUES ('schema_version', ?)"

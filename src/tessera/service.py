@@ -28,6 +28,7 @@ from tessera._access_boundary import access_dispatch
 from tessera._access_contract import connect_html
 from tessera._access_routes import mount_access_routes
 from tessera._service_buckets import mount_storage_and_admin_routes, parse_governance_header
+from tessera._service_executions import mount_execution_routes
 from tessera._service_intelligence import mount_intelligence_routes, slice_bytes_response
 from tessera._version import __version__
 from tessera.access import ClaimLimiter, Gate, ServiceSettings, bearer_secret
@@ -136,6 +137,7 @@ class SubmitBody(LeaseRef):
     output: Any = None
     ok: StrictBool = True
     error: str | None = None
+    execution_report: dict[str, Any] | None = None
 
 
 class SplitBody(LeaseRef):
@@ -466,6 +468,7 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
             ok=body.ok,
             error=body.error,
             completed_by_key=grant.key_id,
+            execution_report=body.execution_report,
         )
         return receipt.model_dump(mode="json")
 
@@ -607,6 +610,7 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
         )
 
     mount_access_routes(app, store, gate, settings, require_key)
+    mount_execution_routes(app, store, gate, require_key)
     mount_storage_and_admin_routes(app, store, gate, require_key)
     mount_intelligence_routes(app, store, gate, require_key)
 

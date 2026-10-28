@@ -14,7 +14,7 @@ import sqlite3
 from collections.abc import Sequence
 from typing import Any
 
-from tessera._storage import StorageOps, extract_payload_tags
+from tessera._storage import StorageOps, extract_payload_tags, noun_filter_sql
 from tessera.errors import Forbidden, InvalidRequest, NotFound, VersionConflict
 from tessera.models import (
     BUCKET_KEY_PATTERN,
@@ -26,11 +26,12 @@ from tessera.models import (
     StoreSummary,
     VisibilityScope,
     can_view_governed,
+    canonical_category_tags,
+    category_from_tag,
     cohort_matches,
     normalize_cohorts,
     normalize_surface,
     normalize_surface_list,
-    normalize_tags,
     tag_matches_category,
 )
 from tessera.receipts import canonical_json
@@ -84,7 +85,8 @@ def matches_layer2_filters(
     ):
         return False
     if tag and tag.strip():
-        want_tag = tag.strip().lower()
+        cat_tag = category_from_tag(tag)
+        want_tag = f"category:{cat_tag}" if cat_tag else tag.strip().lower()
         if all(t.strip().lower() != want_tag for t in tags):
             return False
     if category and category.strip() and not tag_matches_category(tags, category):
@@ -176,14 +178,9 @@ class BucketOps(StorageOps):
             if prefix:
                 where += " AND h.key >= ? AND h.key < ?"
                 params.extend([prefix, _prefix_upper(prefix)])
-            if tag and tag.strip():
-                where += (
-                    " AND EXISTS (SELECT 1 FROM noun_tags nt"
-                    " WHERE nt.namespace = h.namespace AND nt.noun_type = 'record'"
-                    " AND nt.container = h.store AND nt.record_id = h.key"
-                    " AND LOWER(nt.tag) = LOWER(?))"
-                )
-                params.append(tag.strip())
+            predicate, filter_params = noun_filter_sql("record", tag=tag, category=category)
+            where += predicate
+            params.extend(filter_params)
             params.append(scan_cap)
             rows = c.execute(
                 "SELECT r.* FROM record_heads h"  # noqa: S608
@@ -197,6 +194,13 @@ class BucketOps(StorageOps):
         out: list[RecordVersion] = []
         for r in rows:
             rec = self._record(r)
+            rec = rec.model_copy(
+                update={
+                    "tags": canonical_category_tags(
+                        rec.value, [*rec.tags, *extract_payload_tags(rec.value)]
+                    )
+                }
+            )
             if not can_view_governed(
                 visibility_scope=rec.visibility_scope,
                 producer_surface=rec.producer_surface,
@@ -304,7 +308,12 @@ class BucketOps(StorageOps):
         self._assert_frontier_governance(prod, vis)
         allowed = normalize_surface_list(list(allowed_surfaces) if allowed_surfaces else [])
         cohorts = normalize_cohorts(list(target_cohorts) if target_cohorts else ["all"])
-        effective_tags = normalize_tags([*(tags or ()), *extract_payload_tags(metadata or {})])
+        try:
+            effective_tags = canonical_category_tags(
+                metadata or {}, [*(tags or ()), *extract_payload_tags(metadata or {})], strict=True
+            )
+        except ValueError as exc:
+            raise InvalidRequest(str(exc)) from exc
         self._assert_publisher_tags(effective_tags)
         allowed_json = canonical_json(allowed)
         cohorts_json = canonical_json(cohorts)
@@ -566,16 +575,9 @@ class BucketOps(StorageOps):
             if prefix:
                 where += " AND key >= ? AND key < ?"
                 params.extend([prefix, _prefix_upper(prefix)])
-            if tag and tag.strip():
-                where += (
-                    " AND EXISTS (SELECT 1 FROM noun_tags nt"
-                    " WHERE nt.namespace = bucket_objects.namespace"
-                    " AND nt.noun_type = 'object'"
-                    " AND nt.container = bucket_objects.bucket"
-                    " AND nt.record_id = bucket_objects.key"
-                    " AND LOWER(nt.tag) = LOWER(?))"
-                )
-                params.append(tag.strip())
+            predicate, filter_params = noun_filter_sql("object", tag=tag, category=category)
+            where += predicate
+            params.extend(filter_params)
             params.append(scan_cap)
             rows = c.execute(
                 f"SELECT * FROM bucket_objects {where} ORDER BY key LIMIT ?",  # noqa: S608
@@ -585,6 +587,13 @@ class BucketOps(StorageOps):
         out: list[ObjectMeta] = []
         for r in rows:
             meta = self._object_meta(r, updated_at=float(r["updated_at"]))
+            meta = meta.model_copy(
+                update={
+                    "tags": canonical_category_tags(
+                        meta.metadata, [*meta.tags, *extract_payload_tags(meta.metadata)]
+                    )
+                }
+            )
             if not can_view_governed(
                 visibility_scope=meta.visibility_scope,
                 producer_surface=meta.producer_surface,

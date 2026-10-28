@@ -1,3 +1,4 @@
+import { initExecutions, checkedReport, prepareExecution, validatePrepared, captureExecution, recallExecution, getExecution, listExecutions } from "./cloud_executions.js";
 import { initAccess, principalMetadata, requestIdentity, mintAnonymous, seedDemo, enforceAccess, audit, ownAudit, publicActivity, publicPrincipal } from "./cloud_access.js";
 // TesseraCoordinator: single-writer SQLite Durable Object (`new_sqlite_classes`) implementing
 // 100% of Tessera Spec v0.2 (queues, 5 verbs, dependencies, waves, park/resume, model jobs,
@@ -14,6 +15,7 @@ import { canonicalJson, receiptHash, sha256Hex } from "./cloud_buckets.js";
 import {
   PROTECTED_SURFACES,
   canViewGoverned,
+  canonicalCategoryTags,
   extractTags,
   listFeeds,
   matchReflex,
@@ -22,6 +24,7 @@ import {
   normalizeGovernance,
   normalizeNamespace,
   normalizeSurface,
+  nounFilterSql,
   pollFeed,
   publishFeed,
   recordDeadEndTombstone,
@@ -441,6 +444,7 @@ export class TesseraCoordinator extends DurableObject {
     ctx.blockConcurrencyWhile(async () => {
       this._ensureSchemaV3();
       initAccess(this);
+      initExecutions(this);
     });
   }
 
@@ -1217,6 +1221,7 @@ export class TesseraCoordinator extends DurableObject {
       this.seededNamespaces.clear();
       this._ensureSchemaV3();
       initAccess(this);
+      initExecutions(this);
       return;
     }
     const now = Date.now() / 1000;
@@ -2279,6 +2284,13 @@ export class TesseraCoordinator extends DurableObject {
           return { ok: true, status: 200, data: lease };
         }
 
+        case "listExecutions":
+          return {ok:true,status:200,data:listExecutions(this,args,grant,viewerCtx)};
+        case "getExecution":
+          return {ok:true,status:200,data:getExecution(this,args,grant,viewerCtx)};
+        case "recallExecution":
+          return {ok:true,status:200,data:await recallExecution(this,args,grant,viewerCtx)};
+
         case "submit": {
           const taskId = String(args.task_id || "");
           const token = Number(args.fencing_token);
@@ -2294,7 +2306,11 @@ export class TesseraCoordinator extends DurableObject {
           }
           this._requireHolder(grant, taskId);
 
+          const report = checkedReport(args.execution_report);
           const digest = await receiptHash(taskId, token, okFlag, outputVal, errorText);
+          const priorExecution = this._one("SELECT task_id,receipt_hash,completed_by_key FROM results WHERE namespace=? AND idempotency_key=?",this.namespace,idem);
+          if (priorExecution && (priorExecution.task_id!==taskId || priorExecution.receipt_hash!==digest || priorExecution.completed_by_key!==grant.key_id)) throw idemConflict("idempotency key is bound to the original task, actor and result");
+          const prepared = priorExecution ? null : await prepareExecution(this,taskId,token,digest,report,viewerCtx);
 
           let receipt = null;
           let staleMsg = null;
@@ -2327,6 +2343,7 @@ export class TesseraCoordinator extends DurableObject {
             if (!row) return;
             const task = this._taskRow(taskId);
             const config = this._queueConfig(task.queue);
+            validatePrepared(this,prepared,task,viewerCtx);
             if (task.queue === "eq03" && okFlag) reviewProof(this, taskId, grant.key_id, outputVal, forbid);
             if (task.queue === "frontier.verify" && okFlag) frontierVerificationProof(this, taskId, grant.key_id, outputVal, forbid);
             if (task.queue === "frontier.review" && okFlag) frontierReviewProof(this, taskId, grant.key_id, outputVal, forbid);
@@ -2374,6 +2391,7 @@ export class TesseraCoordinator extends DurableObject {
               now,
               JSON.stringify(grant.labels || {})
             );
+            captureExecution(this,prepared,task,row,digest,now,grant.labels || {});
             this._event("submitted", now, {
               task_id: taskId,
               queue: task.queue,
@@ -2764,6 +2782,7 @@ export class TesseraCoordinator extends DurableObject {
                 badReq
               );
               const text = canonicalJson(w.value);
+              gov.tags = canonicalCategoryTags(w.value, gov.tags, badReq);
               const allowedJson = JSON.stringify(gov.allowed_surfaces);
               const cohortsJson = JSON.stringify(gov.target_cohorts);
               const tagsJson = JSON.stringify(gov.tags);
@@ -2968,27 +2987,20 @@ export class TesseraCoordinator extends DurableObject {
           const cap = Math.max(1, Math.min(Number(args.limit || 100), 1000));
           const includeRestricted = Boolean(args.include_restricted);
           const scanLimit = Math.min(cap * 4, 2000);
-          const rows = prefix
-            ? this._all(
-                "SELECT r.* FROM record_heads h JOIN records r ON r.namespace = h.namespace AND r.store = h.store AND r.key = h.key AND r.version = h.version WHERE h.namespace = ? AND h.store = ? AND h.key >= ? AND h.key < ? ORDER BY h.key LIMIT ?",
-                this.namespace,
-                store,
-                prefix,
-                prefixUpper(prefix),
-                scanLimit
-              )
-            : this._all(
-                "SELECT r.* FROM record_heads h JOIN records r ON r.namespace = h.namespace AND r.store = h.store AND r.key = h.key AND r.version = h.version WHERE h.namespace = ? AND h.store = ? ORDER BY h.key LIMIT ?",
-                this.namespace,
-                store,
-                scanLimit
-              );
+          const filters = nounFilterSql("record", args);
+          let where = "WHERE h.namespace = ? AND h.store = ?";
+          const params = [this.namespace, store];
+          if (prefix) { where += " AND h.key >= ? AND h.key < ?"; params.push(prefix, prefixUpper(prefix)); }
+          where += filters.where; params.push(...filters.params, scanLimit);
+          const rows = this._all(
+            "SELECT r.* FROM record_heads h JOIN records r ON r.namespace = h.namespace AND r.store = h.store AND r.key = h.key AND r.version = h.version " + where + " ORDER BY h.key LIMIT ?",
+            ...params
+          );
           const out = [];
           for (const r of rows) {
             const view = this._recordView(r);
-            const mergedTags = [
-              ...new Set([...view.tags, ...extractTags(view.value)]),
-            ];
+            const mergedTags = canonicalCategoryTags(view.value, [...view.tags, ...extractTags(view.value)]);
+            view.tags = mergedTags;
             if (
               !canViewGoverned({
                 visibility_scope: view.visibility_scope,
@@ -3032,6 +3044,7 @@ export class TesseraCoordinator extends DurableObject {
         case "authorizeObjectWrite": {
           if (!grant.can_store) throw forbid("this needs a storage scope");
           const gov=normalizeGovernance(args,{defaultSurface:defaultGovSurface,ownerKeyId:grant.key_id,extraTags:extractTags(args.metadata || {})},badReq);
+          if (action === "authorizeObjectWrite") gov.tags = canonicalCategoryTags(args.metadata || {}, gov.tags, badReq);
           if (action === "authorizeObjectWrite") {
             const bucket=String(args.bucket||""), key=String(args.key||"");
             if (!NAME_RE.test(bucket) || !OBJECT_KEY_RE.test(key)) throw badReq("invalid bucket or object key");
@@ -3185,6 +3198,7 @@ export class TesseraCoordinator extends DurableObject {
             },
             badReq
           );
+          gov.tags = canonicalCategoryTags(metaObj, gov.tags, badReq);
           const allowedJson = JSON.stringify(gov.allowed_surfaces);
           const cohortsJson = JSON.stringify(gov.target_cohorts);
           const tagsJson = JSON.stringify(gov.tags);
@@ -3399,27 +3413,19 @@ export class TesseraCoordinator extends DurableObject {
           const cap = Math.max(1, Math.min(Number(args.limit || 100), 1000));
           const includeRestricted = Boolean(args.include_restricted);
           const scanLimit = Math.min(cap * 4, 2000);
-          const rows = prefix
-            ? this._all(
-                "SELECT * FROM bucket_objects WHERE namespace = ? AND bucket = ? AND key >= ? AND key < ? ORDER BY key LIMIT ?",
-                this.namespace,
-                bucket,
-                prefix,
-                prefixUpper(prefix),
-                scanLimit
-              )
-            : this._all(
-                "SELECT * FROM bucket_objects WHERE namespace = ? AND bucket = ? ORDER BY key LIMIT ?",
-                this.namespace,
-                bucket,
-                scanLimit
-              );
+          const filters = nounFilterSql("object", args);
+          let where = "WHERE o.namespace = ? AND o.bucket = ?";
+          const params = [this.namespace, bucket];
+          if (prefix) { where += " AND o.key >= ? AND o.key < ?"; params.push(prefix, prefixUpper(prefix)); }
+          where += filters.where; params.push(...filters.params, scanLimit);
+          const rows = this._all(
+            "SELECT o.* FROM bucket_objects o " + where + " ORDER BY o.key LIMIT ?", ...params
+          );
           const out = [];
           for (const r of rows) {
             const view = this._objectView(r);
-            const mergedTags = [
-              ...new Set([...view.tags, ...extractTags(view.metadata)]),
-            ];
+            const mergedTags = canonicalCategoryTags(view.metadata, [...view.tags, ...extractTags(view.metadata)]);
+            view.tags = mergedTags;
             if (
               !canViewGoverned({
                 visibility_scope: view.visibility_scope,

@@ -28,4 +28,4 @@ def test_external_agent_access_worker_contract() -> None:
     report = json.loads(result.stdout)
     failures = [test for test in report["tests"] if not test["passed"]]
     assert result.returncode == 0, json.dumps(failures, indent=2)
-    assert report["passed"] == 38
+    assert report["passed"] == 47

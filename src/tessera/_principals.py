@@ -49,6 +49,9 @@ SCOPES = {
     "mutation": "admin",
 }
 READ_ACTIONS = {
+    "recallExecution",
+    "getExecution",
+    "listExecutions",
     "getRecord",
     "listRecords",
     "recordHistory",
@@ -69,6 +72,9 @@ READ_ACTIONS = {
     "query",
 }
 ANON_ACTIONS = {
+    "recallExecution",
+    "getExecution",
+    "listExecutions",
     "queues",
     "counts",
     "claim",
@@ -269,7 +275,7 @@ class PrincipalOps(AccessSchemaOps):
         payload = (
             args.get("writes", args.get("value"))
             if action == "putRecords"
-            else args.get("output")
+            else {"output": args.get("output"), "execution_report": args.get("execution_report")}
             if action == "submit"
             else args.get("brief")
             if action == "enqueue"

@@ -101,7 +101,14 @@ def test_anonymous_full_loop_and_durable_provenance(
         headers=headers,
     )
     assert first.status_code == 200 and first.json()["labels"]["demo"] is True
-    again = client.post("/v1/tasks/submit", json={**ref, "output": {}}, headers=headers)
+    # Replays are bound to the original actor and result on both HTTP backends.
+    conflict = client.post("/v1/tasks/submit", json={**ref, "output": {}}, headers=headers)
+    assert conflict.status_code == 409
+    again = client.post(
+        "/v1/tasks/submit",
+        json={**ref, "output": {"record": "result", "version": 1}},
+        headers=headers,
+    )
     assert again.json()["replayed"] and again.json()["receipt_hash"] == first.json()["receipt_hash"]
     assert again.json()["labels"] == first.json()["labels"]
     results = client.get(f"/v1/tasks/{lease['task_id']}/results", headers=headers).json()["results"]

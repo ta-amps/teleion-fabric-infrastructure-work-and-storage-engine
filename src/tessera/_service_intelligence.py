@@ -302,19 +302,22 @@ def mount_intelligence_routes(
             or store_name
             or "tessera.seeds"
         )
-        records = store.list_records(target_store, limit=1000)
+        records = store.list_records(
+            target_store,
+            limit=1000,
+            category=category_id,
+            q=request.query_params.get("q", "") if request else "",
+            tag=request.query_params.get("tag") if request else None,
+            cohort=request.query_params.get("cohort") if request else None,
+            surface=request.query_params.get("surface") if request else None,
+        )
         items: list[dict[str, Any]] = []
         raw_by_id: dict[str, dict[str, Any]] = {}
         unranked: list[dict[str, Any]] = []
         now_ts = time.time()
         for rec in records:
             val: dict[str, Any] = rec.value if isinstance(rec.value, dict) else {"value": rec.value}
-            record_category = val.get("category_id") or val.get("category")
-            if (
-                record_category != category_id
-                if record_category
-                else not tag_matches_category(rec.tags, category_id)
-            ):
+            if not tag_matches_category(rec.tags, category_id):
                 continue
             iid = str(val.get("item_id") or val.get("id") or rec.key)
             raw_frag = val.get("fragility")

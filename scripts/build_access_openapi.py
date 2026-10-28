@@ -13,6 +13,9 @@ from tessera.service import create_app
 from tessera.store import Store
 
 PATHS = {
+    "/v1/executions/recall",
+    "/v1/tasks/{task_id}/executions",
+    "/v1/executions/{run_id}",
     "/v1/session/anonymous",
     "/v1/me",
     "/v1/me/audit",

@@ -94,6 +94,7 @@ const POST_ONLY_EXACT = new Set([
   "/v1/queues/define",
   "/v1/tasks",
   "/v1/tasks/claim",
+  "/v1/executions/recall",
   "/v1/tasks/heartbeat",
   "/v1/tasks/submit",
   "/v1/tasks/split",
@@ -671,6 +672,17 @@ const worker = {
         })
       );
     }
+    if (/^\/v1\/tasks\/[^/]+\/executions$/.test(path) && method === "GET") {
+      return rpcResponse(await stub.rpcCall(bearer,"listExecutions",{task_id:decodeURIComponent(path.split("/")[3]),after:Number(url.searchParams.get("after") || 0),limit:Number(url.searchParams.get("limit") || 20),...baseRpc}));
+    }
+    if (path === "/v1/executions/recall" && method === "POST") {
+      const { body, error } = await readJsonBody(request);
+      if (error) return error;
+      return rpcResponse(await stub.rpcCall(bearer,"recallExecution",{...body,...baseRpc}));
+    }
+    if (path.startsWith("/v1/executions/") && method === "GET") {
+      return rpcResponse(await stub.rpcCall(bearer,"getExecution",{run_id:decodeURIComponent(path.slice("/v1/executions/".length)),...baseRpc}));
+    }
     if (path === "/v1/tasks/claim" && method === "POST") {
       const { body, error } = await readJsonBody(request);
       if (error) return error;
@@ -1158,6 +1170,7 @@ const worker = {
         prefix: "",
         limit: 1000,
         ...parseLayer2Params(url.searchParams),
+        category: categoryId,
       });
       if (!recOut.ok) return rpcResponse(recOut);
       const nowTs = Date.now() / 1000;
@@ -1169,8 +1182,7 @@ const worker = {
           rec.value && typeof rec.value === "object" && !Array.isArray(rec.value)
             ? rec.value
             : { value: rec.value };
-        const recordCategory = val.category_id || val.category;
-        if (recordCategory ? recordCategory !== categoryId : !tagMatchesCategory(rec.tags || [], categoryId)) continue;
+        if (!tagMatchesCategory(rec.tags || [], categoryId)) continue;
         const iid = String(val.item_id || val.id || rec.key);
         const fragSub =
           val.fragility && typeof val.fragility === "object" ? val.fragility : {};

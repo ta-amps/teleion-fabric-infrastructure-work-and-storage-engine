@@ -184,11 +184,64 @@ export function cohortMatches(
 }
 
 export function tagMatchesCategory(tags, category) {
-  const cat = String(category || "").trim().toLowerCase();
-  if (!cat) return true;
-  const bare = cat.startsWith("category:") ? cat.slice("category:".length) : cat;
-  const candidates = new Set([cat, bare, `category:${bare}`, `cat:${bare}`]);
-  return tags.some((t) => candidates.has(String(t || "").trim().toLowerCase()));
+  const wanted = canonicalCategoryId(category);
+  if (!wanted) return true;
+  const declared = new Set(tags.map(categoryFromTag).filter(Boolean));
+  return declared.size === 1 && declared.has(wanted);
+}
+
+export function canonicalCategoryId(value) {
+  if (typeof value !== "string") return null;
+  let clean = value.trim().replace(/[A-Z]/g, c => c.toLowerCase());
+  for (const prefix of ["category:", "cat:"]) {
+    if (clean.startsWith(prefix)) { clean = clean.slice(prefix.length).trim(); break; }
+  }
+  return clean || null;
+}
+
+export function categoryFromTag(tag) {
+  const raw = String(tag || "").trim().toLowerCase();
+  return /^(category:|cat:|noun\.|verb\.)/.test(raw) ? canonicalCategoryId(tag) : null;
+}
+
+export function canonicalCategoryTags(value, tags, badReq = null) {
+  const normalized = [...new Set(tags.map(t => String(t).trim()).filter(Boolean))];
+  const declared = new Set(normalized.map(categoryFromTag).filter(Boolean));
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    for (const name of ["category_id", "category"]) {
+      const category = canonicalCategoryId(value[name]);
+      if (category) declared.add(category);
+    }
+  }
+  const remaining = normalized.filter(tag => !categoryFromTag(tag));
+  if (declared.size > 1) {
+    if (badReq) throw badReq("conflicting category declarations");
+    return remaining;
+  }
+  return declared.size ? [`category:${[...declared][0]}`, ...remaining] : remaining;
+}
+
+export function nounFilterSql(nounKind, {tag = null, category = null} = {}) {
+  if (!["record", "object"].includes(nounKind)) throw new Error("unknown noun kind");
+  const [alias, container, key, payload] = nounKind === "record"
+    ? ["h", "h.store", "h.key", "r.value"] : ["o", "o.bucket", "o.key", "o.metadata"];
+  const clauses = [], params = [], filters = [];
+  if (tag && String(tag).trim()) filters.push([String(tag).trim(), categoryFromTag(tag)]);
+  const wanted = canonicalCategoryId(category);
+  if (wanted) filters.push([`category:${wanted}`, wanted]);
+  for (const [raw, cat] of filters) {
+    const base = `EXISTS (SELECT 1 FROM noun_tags nt WHERE nt.namespace = ${alias}.namespace AND nt.noun_kind = '${nounKind}' AND nt.container = ${container} AND nt.noun_id = ${key}`;
+    if (cat) {
+      const aliases = [`category:${cat}`, `cat:${cat}`, cat];
+      const indexed = base + " AND LOWER(TRIM(nt.tag)) IN (?,?,?))";
+      const legacy = ["category_id", "category"].map(field => `(json_type(${payload}, '$.${field}') = 'text' AND LOWER(TRIM(json_extract(${payload}, '$.${field}'))) IN (?,?,?))`);
+      clauses.push(`(${[indexed, ...legacy].join(" OR ")})`);
+      params.push(...aliases, ...aliases, ...aliases);
+    } else {
+      clauses.push(base + " AND LOWER(TRIM(nt.tag)) = LOWER(?))"); params.push(raw);
+    }
+  }
+  return {where: clauses.map(c => " AND " + c).join(""), params};
 }
 
 export function matchesLayer2Filters({
@@ -211,7 +264,8 @@ export function matchesLayer2Filters({
     if (normalizeSurface(producer_surface) !== normalizeSurface(surface)) return false;
   }
   if (tag && String(tag).trim()) {
-    const want = String(tag).trim().toLowerCase();
+    const catTag = categoryFromTag(tag);
+    const want = catTag ? `category:${catTag}` : String(tag).trim().toLowerCase();
     if (!tags.some((t) => String(t).trim().toLowerCase() === want)) return false;
   }
   if (category && String(category).trim()) {
@@ -283,11 +337,11 @@ function similarity(query, hayTitle, hayBody, hayTags) {
 export function extractTags(obj) {
   if (!obj || typeof obj !== "object" || Array.isArray(obj)) return [];
   const out = [];
-  for (const k of ["domain", "surface", "stage", "kind", "category", "area", "track"]) {
+  for (const k of ["domain", "surface", "stage", "kind", "category", "category_id", "area", "track"]) {
     const v = obj[k];
     if (typeof v === "string" && v.trim()) {
       out.push(v.trim());
-      if (k === "category") out.push(`category:${v.trim()}`);
+      if (k === "category" || k === "category_id") out.push(`category:${canonicalCategoryId(v)}`);
     }
   }
   const rawTags = obj.tags;
@@ -303,7 +357,7 @@ export function extractTags(obj) {
   if (metaTags && typeof metaTags === "object" && !Array.isArray(metaTags)) {
     for (const k of Object.keys(metaTags).sort()) out.push(`${k}:${metaTags[k]}`);
   }
-  return [...new Set(out)].slice(0, 24);
+  return [...new Set(out)];
 }
 
 function parseJsonSafe(raw, fallback) {
@@ -324,7 +378,7 @@ function rowGovernance(row, extraTags = []) {
     visibility_scope: row.visibility_scope || "public_commons",
     allowed_surfaces: parseJsonSafe(row.allowed_surfaces, []),
     target_cohorts: parseJsonSafe(row.target_cohorts, ["all"]),
-    tags,
+    tags: canonicalCategoryTags(null, tags),
     owner_key_id: row.owner_key_id ?? null,
   };
 }
@@ -413,7 +467,11 @@ export function recordDeadEndTombstone(coord, task, failures, reason, now, canon
   const ns = coord.namespace || "main";
   const brief = parseJsonSafe(task.brief, {});
   const title = String(brief?.title || brief?.goal || task.id).slice(0, 140);
-  const tags = ["dead-letter", String(task.queue), String(task.kind)];
+  const sourceTags = parseJsonSafe(task.tags, []);
+  const tags = [...new Set([
+    ...(Array.isArray(sourceTags) ? sourceTags.filter(tag => tag !== "status:verified").map(String) : []),
+    "dead-letter", String(task.queue), String(task.kind),
+  ])];
   const tombstone = {
     task_id: task.id,
     queue: task.queue,
@@ -433,11 +491,15 @@ export function recordDeadEndTombstone(coord, task, failures, reason, now, canon
     dead_lettered_at: now,
   };
   const prodSurf = task.producer_surface || "surface:tessera";
-  const visScope = task.visibility_scope || "public_commons";
-  const allowedJson = task.allowed_surfaces || "[]";
+  // Failure details stay owner-private even for a shared/public task. Sharing is
+  // a reviewed noun publication, not an automatic side effect of a failed verb.
+  const visScope = "private";
+  const allowedJson = "[]";
   const cohortsJson = task.target_cohorts || '["all"]';
   const tagsJson = JSON.stringify(tags);
-  const ownerKey = task.owner_key_id ?? null;
+  // No external key can acquire this sentinel through key issuance. Null would
+  // activate the legacy same-surface fallback for unowned private nouns.
+  const ownerKey = task.owner_key_id || "system:operator-only";
 
   const head = coord._one(
     "SELECT version FROM record_heads WHERE namespace = ? AND store = ? AND key = ?",
@@ -551,34 +613,15 @@ export function searchNouns(coord, args, canonicalJson, badReq, viewerCtx = {}) 
   const enc = new TextEncoder();
 
   if (bucket == null) {
-    let recRows;
-    if (tagFilter) {
-      recRows =
-        store != null
-          ? coord._all(
-              "SELECT r.* FROM noun_tags nt JOIN record_heads h ON h.namespace = nt.namespace AND h.store = nt.container AND h.key = nt.noun_id JOIN records r ON r.namespace = h.namespace AND r.store = h.store AND r.key = h.key AND r.version = h.version WHERE nt.namespace = ? AND nt.noun_kind = 'record' AND LOWER(nt.tag) = LOWER(?) AND h.store = ? ORDER BY r.created_at DESC LIMIT 1000",
-              ns,
-              tagFilter,
-              store
-            )
-          : coord._all(
-              "SELECT r.* FROM noun_tags nt JOIN record_heads h ON h.namespace = nt.namespace AND h.store = nt.container AND h.key = nt.noun_id JOIN records r ON r.namespace = h.namespace AND r.store = h.store AND r.key = h.key AND r.version = h.version WHERE nt.namespace = ? AND nt.noun_kind = 'record' AND LOWER(nt.tag) = LOWER(?) ORDER BY r.created_at DESC LIMIT 1000",
-              ns,
-              tagFilter
-            );
-    } else {
-      recRows =
-        store != null
-          ? coord._all(
-              "SELECT r.* FROM record_heads h JOIN records r ON r.namespace = h.namespace AND r.store = h.store AND r.key = h.key AND r.version = h.version WHERE h.namespace = ? AND h.store = ? ORDER BY r.created_at DESC LIMIT 1000",
-              ns,
-              store
-            )
-          : coord._all(
-              "SELECT r.* FROM record_heads h JOIN records r ON r.namespace = h.namespace AND r.store = h.store AND r.key = h.key AND r.version = h.version WHERE h.namespace = ? ORDER BY r.created_at DESC LIMIT 1000",
-              ns
-            );
-    }
+    const filters = nounFilterSql("record", {tag: tagFilter, category: categoryFilter});
+    const params = [ns];
+    let where = "WHERE h.namespace = ?";
+    if (store != null) { where += " AND h.store = ?"; params.push(store); }
+    where += filters.where; params.push(...filters.params);
+    const recRows = coord._all(
+      "SELECT r.* FROM record_heads h JOIN records r ON r.namespace = h.namespace AND r.store = h.store AND r.key = h.key AND r.version = h.version " + where + " ORDER BY r.created_at DESC,h.store,h.key LIMIT 1000",
+      ...params
+    );
     for (const row of recRows) {
       const rawVal = String(row.value);
       const parsed = JSON.parse(rawVal);
@@ -641,34 +684,15 @@ export function searchNouns(coord, args, canonicalJson, badReq, viewerCtx = {}) 
   }
 
   if (store == null) {
-    let objRows;
-    if (tagFilter) {
-      objRows =
-        bucket != null
-          ? coord._all(
-              "SELECT o.* FROM noun_tags nt JOIN bucket_objects o ON o.namespace = nt.namespace AND o.bucket = nt.container AND o.key = nt.noun_id WHERE nt.namespace = ? AND nt.noun_kind = 'object' AND LOWER(nt.tag) = LOWER(?) AND o.bucket = ? ORDER BY o.updated_at DESC LIMIT 1000",
-              ns,
-              tagFilter,
-              bucket
-            )
-          : coord._all(
-              "SELECT o.* FROM noun_tags nt JOIN bucket_objects o ON o.namespace = nt.namespace AND o.bucket = nt.container AND o.key = nt.noun_id WHERE nt.namespace = ? AND nt.noun_kind = 'object' AND LOWER(nt.tag) = LOWER(?) ORDER BY o.updated_at DESC LIMIT 1000",
-              ns,
-              tagFilter
-            );
-    } else {
-      objRows =
-        bucket != null
-          ? coord._all(
-              "SELECT * FROM bucket_objects WHERE namespace = ? AND bucket = ? ORDER BY updated_at DESC LIMIT 1000",
-              ns,
-              bucket
-            )
-          : coord._all(
-              "SELECT * FROM bucket_objects WHERE namespace = ? ORDER BY updated_at DESC LIMIT 1000",
-              ns
-            );
-    }
+    const filters = nounFilterSql("object", {tag: tagFilter, category: categoryFilter});
+    const params = [ns];
+    let where = "WHERE o.namespace = ?";
+    if (bucket != null) { where += " AND o.bucket = ?"; params.push(bucket); }
+    where += filters.where; params.push(...filters.params);
+    const objRows = coord._all(
+      "SELECT o.* FROM bucket_objects o " + where + " ORDER BY o.updated_at DESC,o.bucket,o.key LIMIT 1000",
+      ...params
+    );
     for (const row of objRows) {
       const meta = JSON.parse(row.metadata);
       const gov = rowGovernance(row, extractTags(meta));

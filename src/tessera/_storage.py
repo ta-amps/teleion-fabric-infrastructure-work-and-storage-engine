@@ -17,6 +17,9 @@ from tessera.models import (
     RecordWrite,
     VisibilityScope,
     can_view_governed,
+    canonical_category_id,
+    canonical_category_tags,
+    category_from_tag,
     normalize_cohorts,
     normalize_surface,
     normalize_surface_list,
@@ -32,13 +35,13 @@ def extract_payload_tags(obj: Any) -> list[str]:
     if not isinstance(obj, dict):
         return []
     out: list[str] = []
-    for k in ("domain", "surface", "stage", "kind", "category", "area", "track"):
+    for k in ("domain", "surface", "stage", "kind", "category", "category_id", "area", "track"):
         v = obj.get(k)
         if isinstance(v, str) and v.strip():
             clean = v.strip()
             out.append(clean)
-            if k == "category" and not clean.lower().startswith("category:"):
-                out.append(f"category:{clean}")
+            if k in ("category", "category_id"):
+                out.append(f"category:{canonical_category_id(clean)}")
     raw_tags = obj.get("tags")
     if isinstance(raw_tags, list):
         out.extend(str(t).strip() for t in raw_tags if str(t).strip())
@@ -48,6 +51,55 @@ def extract_payload_tags(obj: Any) -> list[str]:
     if isinstance(meta_tags, dict):
         out.extend(f"{k}:{v}" for k, v in sorted(meta_tags.items()))
     return normalize_tags(out)
+
+
+def noun_filter_sql(
+    noun_type: str, *, tag: str | None = None, category: str | None = None
+) -> tuple[str, list[str]]:
+    """Indexed tag/category selection before bounds, with legacy field-only fallback."""
+    if noun_type not in ("record", "object"):
+        raise ValueError("unknown noun type")
+    alias, container, key, payload = (
+        ("h", "h.store", "h.key", "r.value")
+        if noun_type == "record"
+        else (
+            "bucket_objects",
+            "bucket_objects.bucket",
+            "bucket_objects.key",
+            "bucket_objects.metadata",
+        )
+    )
+    clauses: list[str] = []
+    params: list[str] = []
+    filters = [(tag.strip(), category_from_tag(tag))] if tag and tag.strip() else []
+    if category and (wanted := canonical_category_id(category)):
+        filters.append((f"category:{wanted}", wanted))
+    for raw, cat in filters:
+        if cat:
+            aliases = [f"category:{cat}", f"cat:{cat}", cat]
+            placeholders = ",".join("?" for _ in aliases)
+            indexed = (
+                "EXISTS (SELECT 1 FROM noun_tags nt"  # noqa: S608 - identifiers are allowlisted above
+                f" WHERE nt.namespace = {alias}.namespace AND nt.noun_type = '{noun_type}'"
+                f" AND nt.container = {container} AND nt.record_id = {key}"
+                f" AND LOWER(TRIM(nt.tag)) IN ({placeholders}))"
+            )
+            legacy = [
+                f"(json_type({payload}, '$.{field}') = 'text'"
+                f" AND LOWER(TRIM(json_extract({payload}, '$.{field}'))) IN ({placeholders}))"
+                for field in ("category_id", "category")
+            ]
+            clauses.append("(" + " OR ".join([indexed, *legacy]) + ")")
+            params.extend(aliases * 3)
+        else:
+            clauses.append(
+                "EXISTS (SELECT 1 FROM noun_tags nt"  # noqa: S608 - identifiers are allowlisted above
+                f" WHERE nt.namespace = {alias}.namespace AND nt.noun_type = '{noun_type}'"
+                f" AND nt.container = {container} AND nt.record_id = {key}"
+                " AND LOWER(TRIM(nt.tag)) = LOWER(?))"
+            )
+            params.append(raw)
+    return "".join(" AND " + clause for clause in clauses), params
 
 
 class StorageOps(StoreBase):
@@ -136,7 +188,12 @@ class StorageOps(StoreBase):
                 )
                 allowed = normalize_surface_list(w.allowed_surfaces)
                 cohorts = normalize_cohorts(w.target_cohorts)
-                effective_tags = normalize_tags([*w.tags, *extract_payload_tags(w.value)])
+                try:
+                    effective_tags = canonical_category_tags(
+                        w.value, [*w.tags, *extract_payload_tags(w.value)], strict=True
+                    )
+                except ValueError as exc:
+                    raise InvalidRequest(str(exc)) from exc
                 self._assert_publisher_tags(effective_tags)
 
                 try:

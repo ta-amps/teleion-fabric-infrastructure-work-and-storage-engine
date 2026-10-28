@@ -1,0 +1,501 @@
+{
+  "profile": "execution-matching-v1",
+  "valid": [
+    {
+      "name": "empty",
+      "input": {
+        "a": 1
+      },
+      "report": {},
+      "normalized": {},
+      "fingerprints": {
+        "input_hash": "015abd7f5cc57a2dd94b7590f04ad8084273905ee33ec5cebeae62276a97f862",
+        "contract_hash": null,
+        "exact_hash": null,
+        "shape_hash": null,
+        "simhash": null,
+        "bands": [],
+        "text_hash": null
+      }
+    },
+    {
+      "name": "unicode_contract",
+      "input": {
+        "\ud83e\udde9": "\u00e9",
+        "\ue000": [
+          true,
+          null,
+          0.5
+        ]
+      },
+      "report": {
+        "version": 1,
+        "contract": {
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "x": {
+                "type": "integer"
+              }
+            }
+          },
+          "output_schema": {
+            "type": "integer"
+          },
+          "context_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "environment_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "toolchain_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        },
+        "harness": {
+          "name": "synthetic",
+          "settings": {
+            "native_tools": true
+          }
+        },
+        "model": {
+          "name": "synthetic",
+          "revision": "r1"
+        },
+        "summaries": {
+          "problem": "Calculate 42 + 7.\r\n Use caf\u00e9 data \ud83e\udde9.",
+          "input": "Two integers; preserve input order.",
+          "solution": "49"
+        },
+        "usage": {
+          "input_tokens": null,
+          "output_tokens": null,
+          "source": "unreported",
+          "reason": "No provider call"
+        }
+      },
+      "normalized": {
+        "version": 1,
+        "contract": {
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "x": {
+                "type": "integer"
+              }
+            }
+          },
+          "output_schema": {
+            "type": "integer"
+          },
+          "context_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "environment_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "toolchain_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        },
+        "harness": {
+          "name": "synthetic",
+          "settings": {
+            "native_tools": true
+          }
+        },
+        "model": {
+          "name": "synthetic",
+          "revision": "r1"
+        },
+        "summaries": {
+          "problem": "Calculate 42 + 7.\r\n Use caf\u00e9 data \ud83e\udde9.",
+          "input": "Two integers; preserve input order.",
+          "solution": "49"
+        },
+        "usage": {
+          "input_tokens": null,
+          "output_tokens": null,
+          "source": "unreported",
+          "reason": "No provider call"
+        }
+      },
+      "fingerprints": {
+        "input_hash": "b5e2254e06ab4de341bd2da5e727952997b0b0bca5584c732f70f9e7da4ab582",
+        "contract_hash": "23decedd9998b07243c4942db731fb165eec6be64c7a7477c083eb206e232574",
+        "exact_hash": "6c0b02a736f14c1ed661cf640976c12adca52dd2770ab155a5935b8aac12afe6",
+        "shape_hash": "89acaf396632645693e076d7b171b7935125e58864a4f69eaa878dcf3dba4526",
+        "simhash": "bf22737ef9ad1209126d0b65449d9a6f",
+        "bands": [
+          "0:bf22",
+          "1:737e",
+          "2:f9ad",
+          "3:1209",
+          "4:126d",
+          "5:0b65",
+          "6:449d",
+          "7:9a6f"
+        ],
+        "text_hash": "18d8f635a65fe04b2e43fae067314805bf8017f29e95dc4eb6f799168c81a344"
+      }
+    },
+    {
+      "name": "partial_shape",
+      "input": [
+        1,
+        2
+      ],
+      "report": {
+        "contract": {
+          "input_schema": {
+            "type": "array"
+          },
+          "output_schema": {
+            "type": "string"
+          }
+        },
+        "summaries": {
+          "problem": "  SHA\t256 CASE  "
+        },
+        "artifact_refs": [
+          {
+            "store": "examples",
+            "key": "output",
+            "version": 1
+          }
+        ]
+      },
+      "normalized": {
+        "contract": {
+          "input_schema": {
+            "type": "array"
+          },
+          "output_schema": {
+            "type": "string"
+          }
+        },
+        "summaries": {
+          "problem": "  SHA\t256 CASE  "
+        },
+        "artifact_refs": [
+          {
+            "store": "examples",
+            "key": "output",
+            "version": 1
+          }
+        ],
+        "version": 1
+      },
+      "fingerprints": {
+        "input_hash": "49a64717d5d4cb19952e6eac2946415cf6879adacf9908e7d872332d32c6e684",
+        "contract_hash": "bec40d728d21c02afe78c8176ab4d39f7e753fdbfafddff4f96ba274d72a68d9",
+        "exact_hash": null,
+        "shape_hash": "bd9248b4ee3f494f0137f751e1dc65c60653f75ad3c72eb6dc7acb822b0befd5",
+        "simhash": "8e21482243027b81b161ee08eb2d8a23",
+        "bands": [
+          "0:8e21",
+          "1:4822",
+          "2:4302",
+          "3:7b81",
+          "4:b161",
+          "5:ee08",
+          "6:eb2d",
+          "7:8a23"
+        ],
+        "text_hash": "5c9da648b00f20f6fdc02bc68f5808549a53dad9367a7cf8843c95f6b62d73de"
+      }
+    },
+    {
+      "name": "blocks",
+      "input": {
+        "x": 2
+      },
+      "report": {
+        "blocks": [
+          {
+            "kind": "problem",
+            "text": "Add integers without external effects."
+          },
+          {
+            "kind": "context",
+            "text": "Use declared integer units."
+          },
+          {
+            "kind": "solution",
+            "text": "This must not affect request recall."
+          }
+        ]
+      },
+      "normalized": {
+        "blocks": [
+          {
+            "kind": "problem",
+            "text": "Add integers without external effects."
+          },
+          {
+            "kind": "context",
+            "text": "Use declared integer units."
+          },
+          {
+            "kind": "solution",
+            "text": "This must not affect request recall."
+          }
+        ],
+        "version": 1
+      },
+      "fingerprints": {
+        "input_hash": "5e2b030a4a0f1582d78c0fd9924511cd6b1f2df9879e574f5ea1406c94052418",
+        "contract_hash": null,
+        "exact_hash": null,
+        "shape_hash": null,
+        "simhash": "629aa852438e62968f98e890593452f1",
+        "bands": [
+          "0:629a",
+          "1:a852",
+          "2:438e",
+          "3:6296",
+          "4:8f98",
+          "5:e890",
+          "6:5934",
+          "7:52f1"
+        ],
+        "text_hash": "f7a4d2f36eab7047616db1d2e0452fd015e0e707b4c4d0a87833eab1b7c1ac7b"
+      }
+    },
+    {
+      "name": "embedding",
+      "input": null,
+      "report": {
+        "embedding": {
+          "model": "synthetic",
+          "revision": "fixed-v1",
+          "preprocessing": "utf8-v1",
+          "dimensions": 3,
+          "vector": [
+            -0.0,
+            0.1,
+            -0.25
+          ]
+        }
+      },
+      "normalized": {
+        "embedding": {
+          "model": "synthetic",
+          "revision": "fixed-v1",
+          "preprocessing": "utf8-v1",
+          "dimensions": 3,
+          "vector": [
+            0.0,
+            0.10000000149011612,
+            -0.25
+          ]
+        },
+        "version": 1
+      },
+      "fingerprints": {
+        "input_hash": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+        "contract_hash": null,
+        "exact_hash": null,
+        "shape_hash": null,
+        "simhash": null,
+        "bands": [],
+        "text_hash": null
+      }
+    },
+    {
+      "name": "one_feature",
+      "input": 1,
+      "report": {
+        "summaries": {
+          "problem": "A"
+        }
+      },
+      "normalized": {
+        "summaries": {
+          "problem": "A"
+        },
+        "version": 1
+      },
+      "fingerprints": {
+        "input_hash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+        "contract_hash": null,
+        "exact_hash": null,
+        "shape_hash": null,
+        "simhash": "d57f6ba1de07d279ff77bab001806d89",
+        "bands": [
+          "0:d57f",
+          "1:6ba1",
+          "2:de07",
+          "3:d279",
+          "4:ff77",
+          "5:bab0",
+          "6:0180",
+          "7:6d89"
+        ],
+        "text_hash": "2e59f36c5c383a23c7b036cfb02b4a57a439ef7f460aa6855fb48330118deee2"
+      }
+    },
+    {
+      "name": "float32_large",
+      "input": 1,
+      "report": {
+        "embedding": {
+          "model": "synthetic",
+          "revision": "fixed-v1",
+          "preprocessing": "utf8-v1",
+          "dimensions": 1,
+          "vector": [
+            1e+20
+          ]
+        }
+      },
+      "normalized": {
+        "embedding": {
+          "model": "synthetic",
+          "revision": "fixed-v1",
+          "preprocessing": "utf8-v1",
+          "dimensions": 1,
+          "vector": [
+            1.0000000200408773e+20
+          ]
+        },
+        "version": 1
+      },
+      "fingerprints": {
+        "input_hash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+        "contract_hash": null,
+        "exact_hash": null,
+        "shape_hash": null,
+        "simhash": null,
+        "bands": [],
+        "text_hash": null
+      }
+    },
+    {
+      "name": "canonical_numbers",
+      "input": {
+        "whole": 1.0,
+        "negative_zero": -0.0,
+        "normal": 1.5,
+        "tiny": 1e-07,
+        "large": 1.5e+16,
+        "large_integer": 9007199254740994
+      },
+      "report": {},
+      "normalized": {},
+      "fingerprints": {
+        "input_hash": "8f5dfadbe2379c0c588d11ad44701f7d7a2b5af30ff3f72a013060d29bcc1ccd",
+        "contract_hash": null,
+        "exact_hash": null,
+        "shape_hash": null,
+        "simhash": null,
+        "bands": [],
+        "text_hash": null
+      }
+    }
+  ],
+  "invalid": [
+    null,
+    [],
+    {
+      "version": false
+    },
+    {
+      "version": 2
+    },
+    {
+      "unexpected": 1
+    },
+    {
+      "model": "string"
+    },
+    {
+      "summaries": {
+        "problem": 3
+      }
+    },
+    {
+      "summaries": {
+        "other": "text"
+      }
+    },
+    {
+      "contract": {
+        "context_hash": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    {
+      "contract": {
+        "input_schema": true
+      }
+    },
+    {
+      "usage": {
+        "input_tokens": null,
+        "source": "unknown"
+      }
+    },
+    {
+      "usage": {
+        "input_tokens": true,
+        "source": "reported"
+      }
+    },
+    {
+      "blocks": [
+        {
+          "kind": "other",
+          "text": "x"
+        }
+      ]
+    },
+    {
+      "blocks": [
+        {
+          "kind": [],
+          "text": "x"
+        }
+      ]
+    },
+    {
+      "artifact_refs": [
+        {
+          "store": "s",
+          "key": "k",
+          "version": 0
+        }
+      ]
+    },
+    {
+      "artifact_refs": [
+        {
+          "store": "s",
+          "key": "k",
+          "version": 1,
+          "extra": 1
+        }
+      ]
+    },
+    {
+      "embedding": {
+        "model": "m",
+        "revision": "r",
+        "preprocessing": "p",
+        "dimensions": 2,
+        "vector": [
+          1
+        ]
+      }
+    },
+    {
+      "embedding": {
+        "model": "m",
+        "revision": "r",
+        "preprocessing": "p",
+        "dimensions": 1,
+        "vector": [
+          0
+        ]
+      }
+    },
+    {
+      "embedding": {
+        "model": "m",
+        "revision": "r",
+        "preprocessing": "p",
+        "dimensions": 1,
+        "vector": [
+          "1"
+        ]
+      }
+    }
+  ]
+}

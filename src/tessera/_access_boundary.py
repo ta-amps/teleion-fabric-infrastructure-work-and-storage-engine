@@ -56,6 +56,9 @@ MCP_ACTIONS = {
     "publish_feed": "publishFeed",
     "read_feed": "readFeed",
     "match_reflex": "matchReflex",
+    "recall_execution": "recallExecution",
+    "get_execution": "getExecution",
+    "list_executions": "listExecutions",
 }
 PUBLIC_PATHS = {"/v1/health", "/v1/openapi.json", "/v1/public/activity", "/v1/session/anonymous"}
 
@@ -83,6 +86,11 @@ def access_error(exc: TesseraError) -> JSONResponse:
 def http_action(path: str, method: str, args: dict[str, Any]) -> str:
     if path.startswith("/work/"):
         return path.rsplit("/", 1)[1]
+    if path == "/v1/executions/recall":
+        return "recallExecution"
+    if path.startswith("/v1/executions/"):
+        args["run_id"] = path.rsplit("/", 1)[1]
+        return "getExecution"
     if path == "/v1/session/anonymous":
         return "mint_session"
     if path == "/v1/me":
@@ -106,6 +114,9 @@ def http_action(path: str, method: str, args: dict[str, Any]) -> str:
         "/v1/tasks/split",
     }:
         return path.rsplit("/", 1)[1]
+    if path.startswith("/v1/tasks/") and path.endswith("/executions"):
+        args["task_id"] = path.split("/")[-2]
+        return "listExecutions"
     match = re.fullmatch(r"/v1/tasks/([^/]+)(/results)?", path)
     if match:
         args["task_id"] = match[1]
@@ -263,6 +274,12 @@ async def access_dispatch(
                 )
         else:
             action = http_action(path, request.method, args)
+        if (
+            action in {"submit", "recallExecution"}
+            and args.get("execution_report") is not None
+            and not isinstance(args["execution_report"], dict)
+        ):
+            raise InvalidRequest("execution_report must be a JSON object, not serialized JSON text")
         if not public and grant is None:
             grant = await run_in_threadpool(gate.grant, secret)
         namespace = store.current_scope().namespace

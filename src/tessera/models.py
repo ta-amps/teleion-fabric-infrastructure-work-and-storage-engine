@@ -97,13 +97,56 @@ def normalize_tags(values: Any) -> list[str]:
     return out
 
 
+def canonical_category_id(value: Any) -> str | None:
+    """Canonical category identifier; underscores and hyphens remain distinct."""
+    if not isinstance(value, str):
+        return None
+    clean = value.strip().translate(
+        str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")
+    )
+    for prefix in ("category:", "cat:"):
+        if clean.startswith(prefix):
+            clean = clean[len(prefix) :].strip()
+            break
+    return clean or None
+
+
+def category_from_tag(tag: str) -> str | None:
+    clean = tag.strip().lower()
+    if clean.startswith(("category:", "cat:", "noun.", "verb.")):
+        return canonical_category_id(tag)
+    return None
+
+
+def canonical_category_tags(value: Any, tags: Sequence[str], *, strict: bool = False) -> list[str]:
+    """Project one primary category for today's query contract.
+
+    Orthogonal domain/industry/facet tags remain combinable and unchanged. This
+    does not introduce a multi-parent category resolver or an authorization grant.
+    Reject new conflicts and omit conflicting legacy category projections.
+    """
+    normalized = normalize_tags(list(tags))
+    declarations = {category for tag in normalized if (category := category_from_tag(tag))}
+    if isinstance(value, dict):
+        declarations.update(
+            category
+            for name in ("category_id", "category")
+            if (category := canonical_category_id(value.get(name)))
+        )
+    remaining = [tag for tag in normalized if category_from_tag(tag) is None]
+    if len(declarations) > 1:
+        if strict:
+            raise ValueError("conflicting category declarations")
+        return remaining
+    return [f"category:{next(iter(declarations))}", *remaining] if declarations else remaining
+
+
 def tag_matches_category(tags: Sequence[str], category: str) -> bool:
-    cat = category.strip().lower()
-    if not cat:
+    wanted = canonical_category_id(category)
+    if not wanted:
         return True
-    bare = cat[len("category:") :] if cat.startswith("category:") else cat
-    candidates = {cat, bare, f"category:{bare}", f"cat:{bare}"}
-    return any(t.strip().lower() in candidates for t in tags)
+    declarations = {item for tag in tags if (item := category_from_tag(tag))}
+    return declarations == {wanted}
 
 
 def can_view_governed(

@@ -9,6 +9,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from tessera._base import new_id
+from tessera._execution_capture import capture_execution, checked_report
 from tessera._frontier_guard import review_proof as frontier_review_proof
 from tessera._frontier_guard import verification_proof as frontier_verification_proof
 from tessera._graph import GraphOps
@@ -447,6 +448,7 @@ class TaskOps(GraphOps):
         ok: bool = True,
         error: str | None = None,
         completed_by_key: str | None = None,
+        execution_report: dict[str, Any] | None = None,
         namespace: str | None = None,
     ) -> Receipt:
         """Store a result once and end the lease. Replaying an idempotency key returns the first
@@ -465,6 +467,7 @@ class TaskOps(GraphOps):
         actor_key = (
             completed_by_key if completed_by_key is not None else self.current_scope().key_id
         )
+        report = checked_report(execution_report)
         receipt: Receipt | None = None
         with self._tx() as c:
             now = self.clock.now()
@@ -473,8 +476,17 @@ class TaskOps(GraphOps):
                 (ns, idempotency_key),
             ).fetchone()
             if prior is not None:
-                if prior["task_id"] != task_id:
-                    raise IdempotencyConflict("idempotency key already used for another task")
+                if prior["task_id"] != task_id or (
+                    actor_key is not None
+                    and (
+                        prior["completed_by_key"] != actor_key
+                        or prior["receipt_hash"]
+                        != receipt_hash(task_id, fencing_token, ok, output, error)
+                    )
+                ):
+                    raise IdempotencyConflict(
+                        "idempotency key is bound to the original task, actor and result"
+                    )
                 return self._receipt(prior, replayed=True)
             row, stale = self._live_lease(c, ns, task_id, fencing_token, now)
             if row is not None:
@@ -538,6 +550,7 @@ class TaskOps(GraphOps):
                         canonical_json(labels),
                     ),
                 )
+                capture_execution(self, c, ns, task, row, digest, now, report, labels)
                 self._event(
                     c,
                     "submitted",
@@ -1027,10 +1040,22 @@ class TaskOps(GraphOps):
         reason: str,
         now: float,
     ) -> None:
-        """Persist a queryable dead-end tombstone in `negative.knowledge` when a verb dead-letters."""
+        """Keep failure details owner-private; sharing requires a reviewed noun publication."""
         brief = json.loads(task["brief"])
         title = str(brief.get("title") or brief.get("goal") or task["id"])[:140]
-        tags = ["dead-letter", str(task["queue"]), str(task["kind"])]
+        tags = list(
+            dict.fromkeys(
+                [
+                    *(str(tag) for tag in json.loads(task["tags"]) if tag != "status:verified"),
+                    "dead-letter",
+                    str(task["queue"]),
+                    str(task["kind"]),
+                ]
+            )
+        )
+        # A surface/public task can contain private diagnostics. An absent owner
+        # must not trigger the legacy same-surface fallback for unowned private nouns.
+        owner = task["owner_key_id"] or "system:operator-only"
         tombstone = {
             "task_id": task["id"],
             "queue": task["queue"],
@@ -1056,25 +1081,38 @@ class TaskOps(GraphOps):
         c.execute(
             "INSERT INTO records (namespace, store, key, version, value, producer_surface,"
             " visibility_scope, allowed_surfaces, target_cohorts, tags, owner_key_id, created_at)"
-            " VALUES (?, 'negative.knowledge', ?, ?, ?, ?, 'public_commons', '[]', '[\"all\"]', ?, ?, ?)",
+            " VALUES (?, 'negative.knowledge', ?, ?, ?, ?, 'private', '[]', ?, ?, ?, ?)",
             (
                 ns,
                 task["id"],
                 ver,
                 canonical_json(tombstone),
                 task["producer_surface"],
+                task["target_cohorts"],
                 tags_json,
-                task["owner_key_id"],
+                owner,
                 now,
             ),
         )
         c.execute(
             "INSERT INTO record_heads (namespace, store, key, version, producer_surface,"
             " visibility_scope, allowed_surfaces, target_cohorts, tags, owner_key_id, updated_at)"
-            " VALUES (?, 'negative.knowledge', ?, ?, ?, 'public_commons', '[]', '[\"all\"]', ?, ?, ?)"
+            " VALUES (?, 'negative.knowledge', ?, ?, ?, 'private', '[]', ?, ?, ?, ?)"
             " ON CONFLICT (namespace, store, key) DO UPDATE SET"
-            " version = excluded.version, tags = excluded.tags, updated_at = excluded.updated_at",
-            (ns, task["id"], ver, task["producer_surface"], tags_json, task["owner_key_id"], now),
+            " version = excluded.version, producer_surface = excluded.producer_surface,"
+            " visibility_scope = excluded.visibility_scope, allowed_surfaces = excluded.allowed_surfaces,"
+            " target_cohorts = excluded.target_cohorts, tags = excluded.tags,"
+            " owner_key_id = excluded.owner_key_id, updated_at = excluded.updated_at",
+            (
+                ns,
+                task["id"],
+                ver,
+                task["producer_surface"],
+                task["target_cohorts"],
+                tags_json,
+                owner,
+                now,
+            ),
         )
         self._sync_noun_tags(
             c,
