@@ -9,6 +9,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from tessera._base import StoreBase
+from tessera._frontier_guard import publication_proof as frontier_publication_proof
 from tessera._publication_guard import publication_proof
 from tessera.errors import Forbidden, InvalidRequest, NotFound, TesseraError, VersionConflict
 from tessera.models import (
@@ -121,6 +122,7 @@ class StorageOps(StoreBase):
                     (ns, w.store, w.key),
                 ).fetchone()
                 self._authorize_mutation(previous)
+                frontier_publication_proof(c, ns, w)
                 if self.current_scope().key_id and not self.current_scope().is_admin:
                     publication_proof(c, ns, w.store, w.value)
                 prod, owner = self._resolve_write_governance(
@@ -128,6 +130,10 @@ class StorageOps(StoreBase):
                     owner_key_id=w.owner_key_id,
                 )
                 vis: VisibilityScope = w.visibility_scope
+                # The catalog exception is internal and follows the transactional proof above.
+                self._assert_frontier_governance(
+                    prod, vis, catalog_verified=w.store == "frontier.catalog"
+                )
                 allowed = normalize_surface_list(w.allowed_surfaces)
                 cohorts = normalize_cohorts(w.target_cohorts)
                 effective_tags = normalize_tags([*w.tags, *extract_payload_tags(w.value)])
@@ -359,6 +365,7 @@ class StorageOps(StoreBase):
         tags: Sequence[str] = (),
         owner_key_id: str | None = None,
     ) -> str:
+        self._assert_frontier_governance(producer_surface, visibility_scope)
         self._assert_publisher_tags(list(tags or ()))
         if len(data) > MAX_BLOB_BYTES:
             raise InvalidRequest(f"blob is over {MAX_BLOB_BYTES} bytes")

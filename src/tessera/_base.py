@@ -212,6 +212,16 @@ class StoreBase:
         if ctx.key_id and not ctx.is_admin and not ctx.surface and "status:verified" in tags:
             raise Forbidden("verification labels require an authorized publisher")
 
+    def _assert_frontier_governance(
+        self, producer: str, visibility: str, *, catalog_verified: bool = False
+    ) -> None:
+        if (
+            (producer == "surface:frontier" or self.current_scope().surface == "surface:frontier")
+            and not catalog_verified
+            and visibility not in {"private", "surface_only"}
+        ):
+            raise Forbidden("Frontier publishes only through its verified catalog")
+
     def _authorize_mutation(self, row: sqlite3.Row | None) -> None:
         """CAS controls version; ownership controls who may change that version."""
         ctx = self.current_scope()

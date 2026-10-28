@@ -9,6 +9,8 @@ from collections.abc import Sequence
 from typing import Any
 
 from tessera._base import new_id
+from tessera._frontier_guard import review_proof as frontier_review_proof
+from tessera._frontier_guard import verification_proof as frontier_verification_proof
 from tessera._graph import GraphOps
 from tessera._publication_guard import review_proof
 from tessera.errors import (
@@ -194,6 +196,7 @@ class TaskOps(GraphOps):
         owner_key_id: str | None = None,
     ) -> None:
         """Insert a task: `ready`, or `waiting` on its dependencies while any is unresolved."""
+        self._assert_frontier_governance(producer_surface, visibility_scope)
         deps = list(dict.fromkeys(depends_on))
         if len(deps) > MAX_DEPENDENCIES:
             raise InvalidRequest(f"at most {MAX_DEPENDENCIES} dependencies per task")
@@ -480,6 +483,10 @@ class TaskOps(GraphOps):
                 effective_completed_by = actor_key if actor_key is not None else row["key_id"]
                 if task["queue"] == "eq03" and ok and effective_completed_by:
                     review_proof(c, ns, task_id, effective_completed_by, output)
+                if task["queue"] == "frontier.verify" and ok:
+                    frontier_verification_proof(c, ns, task_id, effective_completed_by, output)
+                if task["queue"] == "frontier.review" and ok:
+                    frontier_review_proof(c, ns, task_id, effective_completed_by, output)
                 del_cur = c.execute(
                     "DELETE FROM leases WHERE namespace = ? AND task_id = ? AND fencing_token = ?",
                     (ns, task_id, fencing_token),

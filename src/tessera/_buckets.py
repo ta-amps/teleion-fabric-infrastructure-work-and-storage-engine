@@ -15,7 +15,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from tessera._storage import StorageOps, extract_payload_tags
-from tessera.errors import InvalidRequest, NotFound, VersionConflict
+from tessera.errors import Forbidden, InvalidRequest, NotFound, VersionConflict
 from tessera.models import (
     BUCKET_KEY_PATTERN,
     NAME_PATTERN,
@@ -239,6 +239,10 @@ class BucketOps(StorageOps):
 
     def define_bucket(self, config: BucketConfig, *, namespace: str | None = None) -> BucketInfo:
         """Create or update a named bucket for versioned content-addressed files."""
+        if self.current_scope().surface == "surface:frontier":
+            raise Forbidden(
+                "Frontier uses versioned records; this backend has no bucket governance"
+            )
         ns = self._resolve_ns(namespace)
         now = self.clock.now()
         with self._tx() as c:
@@ -305,6 +309,7 @@ class BucketOps(StorageOps):
             producer_surface=producer_surface, owner_key_id=owner_key_id
         )
         vis: VisibilityScope = visibility_scope
+        self._assert_frontier_governance(prod, vis)
         allowed = normalize_surface_list(list(allowed_surfaces) if allowed_surfaces else [])
         cohorts = normalize_cohorts(list(target_cohorts) if target_cohorts else ["all"])
         effective_tags = normalize_tags([*(tags or ()), *extract_payload_tags(metadata or {})])

@@ -9,6 +9,7 @@ import {
 } from "../deploy/cloudflare/cloud_buckets.js";
 import { publicationTests } from "./edge_access_publication.mjs";
 import { finalReviewTests } from "./edge_access_review.mjs";
+import { frontierPublicationTests } from "./edge_frontier_publication.mjs";
 
 const norm = (value) =>
   value === undefined
@@ -1082,6 +1083,7 @@ await test("anonymous artifact byte budget is cumulative and returns retry metad
 
 await publicationTests(test);
 await finalReviewTests(test);
+await frontierPublicationTests(test);
 
 console.log(
   JSON.stringify(

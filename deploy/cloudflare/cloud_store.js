@@ -7,6 +7,7 @@ import { initAccess, principalMetadata, requestIdentity, mintAnonymous, seedDemo
 
 import { canonicalSha256, planFragilityRechecks } from "./ontology_engine.js";
 import { reviewProof, publicationProof } from "./cloud_publication.js";
+import { frontierVerificationProof, frontierReviewProof, frontierPublicationProof } from "./cloud_frontier_publication.js";
 import { DurableObject } from "cloudflare:workers";
 import { TESSERA_VERSION } from "./cloud_pages.js";
 import { canonicalJson, receiptHash, sha256Hex } from "./cloud_buckets.js";
@@ -1295,7 +1296,14 @@ export class TesseraCoordinator extends DurableObject {
     if (!this.isPrimary && this.env && this.env.COORDINATOR) {
       const primaryStub = this.env.COORDINATOR.get(this.env.COORDINATOR.idFromName("primary"));
       const shared = await primaryStub.resolveKeyGrant(secret);
-      if (shared) return this._hydrateGrant(shared);
+      if (shared) {
+        // Snapshot authenticated identity metadata, never the secret or its hash.
+        // Namespace-local publication proofs need the completed actors' accounts.
+        // Authorization still resolves through primary on every request.
+        this.ctx.storage.sql.exec("INSERT INTO access_principals(key_id,principal_kind,principal_id,account_id,namespace,key_prefix,labels,quota_tier,last_used_at,purge_at) VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(key_id) DO UPDATE SET principal_kind=excluded.principal_kind,account_id=excluded.account_id,last_used_at=excluded.last_used_at",
+          shared.key_id, shared.principal_kind, shared.principal_id || shared.key_id, shared.account_id || null, shared.namespace || "main", shared.key_prefix || "", JSON.stringify(shared.labels || {}), shared.quota_tier || "standard", Date.now()/1000, shared.purge_at || null);
+        return this._hydrateGrant(shared);
+      }
     }
     throw unauth("the key is unknown, expired or revoked");
   }
@@ -1336,6 +1344,7 @@ export class TesseraCoordinator extends DurableObject {
 
   _requireSurfaceWrite(grant, storeName, surfaceHeader) {
     if (grant.is_admin) return;
+    if (storeName === "frontier.catalog" && (grant.bound_surface !== "frontier" || !grant.queues.includes("frontier.review"))) throw scopeDenied("catalog publication requires the frontier review grant");
     for (const surf of PROTECTED_SURFACES) {
       if (storeName.startsWith(`${surf}.`)) {
         const bound = grant.bound_surface;
@@ -1747,8 +1756,9 @@ export class TesseraCoordinator extends DurableObject {
         out = { ok: true, status: 200, data: { events: this._all("SELECT seq,ts,type,task_id,fencing_token FROM events WHERE namespace=? AND task_id=? AND seq>? ORDER BY seq LIMIT 100", ns, args.task_id, Number(args.after) || 0) } };
       } else out = await this._rpcCall(secret, action, args);
       if (out.ok && grant.principal_kind === "anonymous" && out.data && typeof out.data === "object") {
-        out.data = { ...out.data, labels: grant.labels, namespace: ns, expires_at: grant.expires_at };
-        if (out.data.lease) out.data.lease = { ...out.data.lease, labels: grant.labels, principal_id: grant.principal_id };
+        out.data = { ...out.data, labels: grant.labels, namespace: ns, session_expires_at: grant.expires_at };
+        if (!Object.hasOwn(out.data, "expires_at")) out.data.expires_at = grant.expires_at;
+        if (out.data.lease) out.data.lease = { ...out.data.lease, labels: grant.labels, principal_id: grant.principal_id, session_expires_at: grant.expires_at };
       }
       if (out.ok && action === "claim" && out.data.lease) {
         out.data.lease.claim_receipt = await sha256Hex(new TextEncoder().encode(canonicalJson({ namespace: ns, task_id: out.data.lease.task_id, fencing_token: out.data.lease.fencing_token, claimed_at: out.data.lease.claimed_at })));
@@ -2304,6 +2314,8 @@ export class TesseraCoordinator extends DurableObject {
             const task = this._taskRow(taskId);
             const config = this._queueConfig(task.queue);
             if (task.queue === "eq03" && okFlag) reviewProof(this, taskId, grant.key_id, outputVal, forbid);
+            if (task.queue === "frontier.verify" && okFlag) frontierVerificationProof(this, taskId, grant.key_id, outputVal, forbid);
+            if (task.queue === "frontier.review" && okFlag) frontierReviewProof(this, taskId, grant.key_id, outputVal, forbid);
             this.ctx.storage.sql.exec(
               "DELETE FROM leases WHERE namespace = ? AND task_id = ? AND fencing_token = ?",
               this.namespace,
@@ -2442,8 +2454,10 @@ export class TesseraCoordinator extends DurableObject {
               const cid = newId("t");
               const prio = child.priority == null ? Number(task.priority) : Number(child.priority);
               const deps = (child.after || []).map((j) => ids[j]);
+              const frontierParent = task.producer_surface === "surface:frontier";
+              if (frontierParent && task.visibility_scope === "private" && child.visibility_scope && child.visibility_scope !== "private") throw forbid("private Frontier children cannot widen visibility");
               const childGov = normalizeGovernance(
-                child,
+                frontierParent ? { visibility_scope: task.visibility_scope, allowed_surfaces: JSON.parse(task.allowed_surfaces), target_cohorts: JSON.parse(task.target_cohorts), tags: JSON.parse(task.tags), ...child } : child,
                 {
                   defaultSurface: task.producer_surface || defaultGovSurface,
                   ownerKeyId: grant.key_id,
@@ -2715,6 +2729,7 @@ export class TesseraCoordinator extends DurableObject {
           const d1Stmts = [];
           this.ctx.storage.transactionSync(() => {
             for (const w of writes) {
+              frontierPublicationProof(this, w, forbid);
               if (!grant.is_admin) publicationProof(this, w.store, w.value, forbid);
               this._authorizeMutation(this._one("SELECT * FROM record_heads WHERE namespace = ? AND store = ? AND key = ?", this.namespace, w.store, w.key), grant, viewerCtx);
               const expected = w.expected_version === undefined ? null : w.expected_version;
@@ -2727,6 +2742,7 @@ export class TesseraCoordinator extends DurableObject {
                   defaultSurface: defaultGovSurface,
                   ownerKeyId: grant.key_id,
                   extraTags: extractTags(w.value),
+                  frontierCatalogVerified: w.store === "frontier.catalog",
                 },
                 badReq
               );

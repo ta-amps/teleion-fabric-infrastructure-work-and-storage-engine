@@ -18,6 +18,7 @@
 - [docs/comparison.md](https://github.com/ta-amps/tessera/blob/main/docs/comparison.md): Tessera: comparison
 - [docs/decisions.md](https://github.com/ta-amps/tessera/blob/main/docs/decisions.md): Tessera: decisions
 - [docs/expansion.md](https://github.com/ta-amps/tessera/blob/main/docs/expansion.md): Seeding & expanding atomic nouns and verbs with Muse / Meta agents
+- [docs/frontier-publication.md](https://github.com/ta-amps/tessera/blob/main/docs/frontier-publication.md): Frontier publication receipts
 - [docs/generalizing.md](https://github.com/ta-amps/tessera/blob/main/docs/generalizing.md): Tessera: generalizing it
 - [docs/glossary.md](https://github.com/ta-amps/tessera/blob/main/docs/glossary.md): Tessera: glossary
 - [docs/handoff.md](https://github.com/ta-amps/tessera/blob/main/docs/handoff.md): Tessera: handoff

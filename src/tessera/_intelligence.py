@@ -409,6 +409,7 @@ class IntelligenceOps(BucketOps):
             producer_surface=producer_surface, owner_key_id=owner_key_id
         )
         vis: VisibilityScope = visibility_scope
+        self._assert_frontier_governance(prod, vis)
         allowed = normalize_surface_list(list(allowed_surfaces) if allowed_surfaces else [])
         cohorts = normalize_cohorts(list(target_cohorts) if target_cohorts else ["all"])
         effective_tags = normalize_tags([*(tags or ()), *extract_payload_tags(payload)])

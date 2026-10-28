@@ -4,7 +4,7 @@
   "name": "tessera",
   "summary": "Tessera: a single-node atomic work queue and atomic store for AI agent swarms where everything is either a verb (a small unit of work: every task a tile, claimed once, finished once, receipted) or a noun (versioned records with compare-and-set and content-addressed blobs), giving swarms clear organization, reusability, and a safe way to pick up shared work. Many agents share one backlog safely: leases with heartbeats and a hard cap, fencing tokens, idempotent submits with receipts, retries then dead letters, split and merge, one counts record, and an append-only event log. Agents connect over HTTP, MCP, web forms or a CLI. It knows nothing about any domain and never calls a model itself.",
   "status": {
-    "as_of": "2026-10-27",
+    "as_of": "2026-10-28",
     "stage": "prototype",
     "notes": "Tracked anonymous demo sessions and account-bound keys share scoped HTTP/MCP routes, durable audit records, read-only public observer and generated access schemas. The spec remains a draft."
   },
@@ -23,7 +23,8 @@
     "opencode_ollama": "docs/opencode-and-ollama.md",
     "making_of": "docs/making-of.md",
     "handoff": "docs/handoff.md",
-    "access_modes": "docs/access-modes.md"
+    "access_modes": "docs/access-modes.md",
+    "frontier_publication": "docs/frontier-publication.md"
   },
   "read_order": [
     "README.md",
@@ -126,7 +127,8 @@
         "src/tessera/_intelligence.py",
         "src/tessera/schema.sql",
         "src/tessera/_principals.py",
-        "src/tessera/_publication_guard.py"
+        "src/tessera/_publication_guard.py",
+        "src/tessera/_frontier_guard.py"
       ],
       "role": "The reference backend and the only place state changes: queues, the five verbs, park and resume, dependencies, retries, automatic dead-end tombstones, split, model jobs, keys, counts, events, health, queryable CAS records, content-addressed blobs, versioned named file buckets, 0-call progressive L0 scent search, monotonic delta feeds and dual-resolution reflex recall, each operation one IMMEDIATE transaction",
       "depends_on": [
@@ -147,7 +149,8 @@
         "tests/test_buckets.py",
         "tests/test_intelligence.py",
         "tests/test_governance_and_isolation.py",
-        "tests/test_phase4_atomicity_and_vectors.py"
+        "tests/test_phase4_atomicity_and_vectors.py",
+        "tests/test_frontier_publication.py"
       ]
     },
     {
@@ -352,7 +355,8 @@
         "deploy/cloudflare/cloud_access_routes.js",
         "deploy/cloudflare/cloud_publication.js",
         "deploy/cloudflare/access_openapi.json",
-        "deploy/cloudflare/ontology_catalog.js"
+        "deploy/cloudflare/ontology_catalog.js",
+        "deploy/cloudflare/cloud_frontier_publication.js"
       ],
       "kind": "edge",
       "domain": "neutral",
