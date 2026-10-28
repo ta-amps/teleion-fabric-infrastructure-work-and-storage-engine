@@ -21,6 +21,17 @@ async function lease(h, owner, operator) {
 }
 
 export async function coreBoundaryTests(test) {
+  await test("surface authorization uses explicit scopes rather than key display labels", async h => {
+    const operator = await h.admin();
+    for (const label of ["surface:eranos", "eranos", "eranos-worker", "eranos_worker", "eranos.worker"]) {
+      const unbound = await h.key(operator, "synthetic-account", { label, scopes: ["nouns:read", "cas:write"] });
+      const denied = await h.post("/v1/stores/eranos.fixture/records/synthetic", { expected_version: 0, value: { synthetic: true } }, unbound.key, { "x-surface-id": "eranos" });
+      assert.equal(denied.status, 403);
+    }
+    const bound = await h.key(operator, "synthetic-account", { label: "unrelated display name", scopes: ["nouns:read", "cas:write", "surface:eranos"] });
+    assert.equal((await h.post("/v1/stores/eranos.fixture/records/synthetic", { expected_version: 0, value: { synthetic: true } }, bound.key)).status, 200);
+  });
+
   await test("record history requires original and current ownership, including quarantine", async h => {
     const { owner, other } = await people(h, "eranos");
     const path = "/v1/stores/eranos.fixture/records/history";

@@ -5,6 +5,10 @@ is a versioned record or content-addressed file. A verb is a leased task with an
 explicit result. A worker finds context, claims a bounded piece of work, saves an
 artifact and leaves a receipt that another worker can inspect.
 
+The [work-routing contract and executable example](work-routing.md) show how to
+use these primitives for team-private work with separate explicitly scoped keys,
+optional shimming and external workers as the default execution path.
+
 ```mermaid
 flowchart LR
   A[Agent or human] --> D[Discover nouns and ready verbs]

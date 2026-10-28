@@ -542,12 +542,18 @@ def test_admin_key_delegation_never_expands_authority(
         {"kinds": ["*"]},
         {"days": 3},
         {"account_id": "account:other"},
-        {"label": "shamash"},
+        {"scopes": ["nouns:read", "surface:shamash"]},
     ):
         assert (
             client.post("/v1/keys", json={**body, **change}, headers=auth(issuer)).status_code
             == 403
         )
+    renamed = client.post("/v1/keys", json={**body, "label": "shamash"}, headers=auth(issuer))
+    assert renamed.status_code == 201
+    renamed_grant = store.find_key(renamed.json()["key"])
+    assert renamed_grant is not None
+    assert renamed_grant.bound_surface() is None
+    assert renamed_grant.scopes == body["scopes"]
 
 
 def test_browser_cors_keeps_host_validation(tmp_path: Path) -> None:

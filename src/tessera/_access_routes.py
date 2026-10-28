@@ -154,9 +154,9 @@ def mount_access_routes(
             } or {"namespace:main"}
             if "namespace:*" not in parent_namespaces and not child_namespaces <= parent_namespaces:
                 raise Forbidden("delegated keys cannot expand their effective namespaces")
-            proposed = grant.model_copy(update={"label": body.label, "scopes": body.scopes})
+            proposed = grant.model_copy(update={"scopes": body.scopes})
             if proposed.bound_surface() != grant.bound_surface():
-                raise Forbidden("keys cannot expand surface authority through their labels")
+                raise Forbidden("delegated surface binding must match the issuer")
         secret, issued = store.issue_key(
             body.label,
             queues=body.queues,

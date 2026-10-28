@@ -98,7 +98,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [deploy/fly/README.md](deploy/fly/README.md) | Fly.io: the Tessera service |
 | [deploy/fly/fly.toml](deploy/fly/fly.toml) | Tessera service on one Fly.io machine with a volume (brief L20), reached through the Cloudflare edge |
 
-## docs/ (16)
+## docs/ (17)
 
 | File | What it is |
 |---|---|
@@ -118,6 +118,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [docs/setup.md](docs/setup.md) | Tessera: setup |
 | [docs/summary.md](docs/summary.md) | Tessera: summary |
 | [docs/work-design-and-evidence.md](docs/work-design-and-evidence.md) | Nouns, verbs and evidence |
+| [docs/work-routing.md](docs/work-routing.md) | Route agent work through nouns and verbs |
 
 ## harness/ (3)
 
@@ -189,7 +190,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [src/tessera/store.py](src/tessera/store.py) | The in-process Tessera store: the reference implementation of SPEC.md. |
 | [src/tessera/testing.py](src/tessera/testing.py) | Factories the conformance suite loads by name (TESSERABACKENDFACTORY="module:function"). |
 
-## tests/ (22)
+## tests/ (23)
 
 | File | What it is |
 |---|---|
@@ -215,8 +216,9 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [tests/test_service.py](tests/test_service.py) | The HTTP service: keys, scopes, POST-only writes, holders, rate limits, the edge lock, the agent door, the we… |
 | [tests/test_spec_events.py](tests/test_spec_events.py) | SPEC §5.5 lists every event type, and the code emits only listed types: a new event can't ship without a line… |
 | [tests/test_tools.py](tests/test_tools.py) | The Muse worker keeps its safety flags whatever the brief says, and briefs load in dependency order. |
+| [tests/test_work_routing.py](tests/test_work_routing.py) | Explicit grants, team-private routing and owner-only negative controls. |
 
-## tools/ (6)
+## tools/ (7)
 
 | File | What it is |
 |---|---|
@@ -226,3 +228,4 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [tools/opencode_bilateral.py](tools/opencode_bilateral.py) | Bilateral multi-agent test harness for Tessera over MCP (/mcp) + HTTP (/v1/), pairing OpenCode (opencode v2.x… |
 | [tools/seed.py](tools/seed.py) | Seed a Tessera database for Muse agents: the standard queues, one key per agent, and first tasks. |
 | [tools/swarm_expander.py](tools/swarm_expander.py) | Run a Muse / Meta Model API swarm worker that seeds, expands, processes, and promotes atomic nouns and verbs… |
+| [tools/team_private_work.py](tools/team_private_work.py) | Local executable work-routing example, using HTTP handlers and temporary state. |

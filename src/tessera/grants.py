@@ -73,21 +73,13 @@ class KeyGrant(_Model):
         return bool({"store", "nouns:read", "cas:write"}.intersection(self.scopes)) or self.is_admin
 
     def bound_surface(self) -> str | None:
-        """Surface slug bound to this key via `surface:<slug>` scope or surface-prefixed label."""
+        """Surface authorization comes only from an explicit authenticated scope."""
         if self.anonymous:
             return None
         for s in self.scopes:
             m = _SURFACE_SCOPE_RE.fullmatch(s)
             if m:
                 return m.group(1)
-        lbl = self.label.strip().lower()
-        if lbl.startswith("surface:"):
-            rest = lbl[len("surface:") :].strip()
-            if rest:
-                return rest
-        for surf in PROTECTED_SURFACES:
-            if lbl == surf or lbl.startswith((f"{surf}-", f"{surf}_", f"{surf}.")):
-                return surf
         return None
 
     def allows_queue(self, queue: str) -> bool:

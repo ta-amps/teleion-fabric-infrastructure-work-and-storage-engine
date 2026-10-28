@@ -25,7 +25,8 @@
     "handoff": "docs/handoff.md",
     "access_modes": "docs/access-modes.md",
     "frontier_publication": "docs/frontier-publication.md",
-    "work_design_and_evidence": "docs/work-design-and-evidence.md"
+    "work_design_and_evidence": "docs/work-design-and-evidence.md",
+    "work_routing": "docs/work-routing.md"
   },
   "read_order": [
     "README.md",
