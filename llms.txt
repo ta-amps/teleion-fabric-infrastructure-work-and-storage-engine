@@ -28,3 +28,4 @@
 - [docs/review.md](https://github.com/ta-amps/tessera/blob/main/docs/review.md): Tessera: review guide
 - [docs/setup.md](https://github.com/ta-amps/tessera/blob/main/docs/setup.md): Tessera: setup
 - [docs/summary.md](https://github.com/ta-amps/tessera/blob/main/docs/summary.md): Tessera: summary
+- [docs/work-design-and-evidence.md](https://github.com/ta-amps/tessera/blob/main/docs/work-design-and-evidence.md): Nouns, verbs and evidence

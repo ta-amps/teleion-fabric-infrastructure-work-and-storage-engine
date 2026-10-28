@@ -1,7 +1,11 @@
 # Tessera: architecture
 
-Tessera has one store and several doors. Every door ends in the same `BEGIN IMMEDIATE` transaction on one
-SQLite file, so the guarantees in [SPEC.md](../conformance-draft/SPEC.md) hold whichever way work comes in.
+Tessera has one coordination authority per backend and several doors. Local Python
+uses SQLite transactions; the native cloud backend uses a namespace-scoped SQLite
+Durable Object. The diagram below describes the local/origin path. Read
+[Nouns, verbs and evidence](work-design-and-evidence.md) for the current cloud/local
+distinction, review strategy, guarantees and limits alongside the
+[draft spec](../conformance-draft/SPEC.md).
 The same structure is written as data in [architecture.json](../architecture.json), which `make architecture`
 checks against the code (paths, tests, layering). `python3 scripts/check_architecture.py --mermaid` prints the
 component graph.

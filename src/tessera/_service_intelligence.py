@@ -19,7 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from tessera.access import Gate
 from tessera.errors import InvalidRequest
 from tessera.grants import KeyGrant
-from tessera.models import HandshakeRequest, VisibilityScope
+from tessera.models import HandshakeRequest, VisibilityScope, tag_matches_category
 from tessera.ontology import (
     ALLOWED_RELATION_TYPES,
     CALLER_PROFILES,
@@ -302,13 +302,20 @@ def mount_intelligence_routes(
             or store_name
             or "tessera.seeds"
         )
-        records = store.list_records(target_store, limit=max(1, min(limit, 200)))
+        records = store.list_records(target_store, limit=1000)
         items: list[dict[str, Any]] = []
         raw_by_id: dict[str, dict[str, Any]] = {}
         unranked: list[dict[str, Any]] = []
         now_ts = time.time()
         for rec in records:
             val: dict[str, Any] = rec.value if isinstance(rec.value, dict) else {"value": rec.value}
+            record_category = val.get("category_id") or val.get("category")
+            if (
+                record_category != category_id
+                if record_category
+                else not tag_matches_category(rec.tags, category_id)
+            ):
+                continue
             iid = str(val.get("item_id") or val.get("id") or rec.key)
             raw_frag = val.get("fragility")
             frag_sub: dict[str, Any] = raw_frag if isinstance(raw_frag, dict) else {}
@@ -334,7 +341,7 @@ def mount_intelligence_routes(
             norm_item: dict[str, Any] = {
                 "item_id": iid,
                 "id": iid,
-                "category_id": str(val.get("category_id") or val.get("category") or category_id),
+                "category_id": category_id,
                 "title": str(val.get("title") or iid),
                 "dimensions": dict(val.get("dimensions") or {}),
                 "trials": trials,
@@ -371,6 +378,7 @@ def mount_intelligence_routes(
             "store": target_store,
             "sort_axis": axis,
             "profile": profile,
+            "candidate_limit": 1000,
             "pareto_frontier_ids": sorted(frontier_ids),
             "ranked": out_rows,
             "unranked": unranked,

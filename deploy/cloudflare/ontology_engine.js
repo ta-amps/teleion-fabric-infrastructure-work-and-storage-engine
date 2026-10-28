@@ -457,7 +457,7 @@ export function planFragilityRechecks(items, nowTs, maxBatch = 25) {
       target_category_id: categoryId,
       domain,
       source_uri: rec.source_uri ?? null,
-      expected_sha256: rec.content_sha256 || rec.prev_sha256 || null,
+      expected_sha256: rec.expected_sha256 ?? rec.content_sha256 ?? rec.prev_sha256 ?? null,
       conditional_headers: headers,
       half_life_hours: hl,
       freshness_confidence: _round6(fresh),

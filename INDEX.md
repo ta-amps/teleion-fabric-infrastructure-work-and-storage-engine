@@ -98,7 +98,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [deploy/fly/README.md](deploy/fly/README.md) | Fly.io: the Tessera service |
 | [deploy/fly/fly.toml](deploy/fly/fly.toml) | Tessera service on one Fly.io machine with a volume (brief L20), reached through the Cloudflare edge |
 
-## docs/ (15)
+## docs/ (16)
 
 | File | What it is |
 |---|---|
@@ -117,6 +117,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [docs/review.md](docs/review.md) | Tessera: review guide |
 | [docs/setup.md](docs/setup.md) | Tessera: setup |
 | [docs/summary.md](docs/summary.md) | Tessera: summary |
+| [docs/work-design-and-evidence.md](docs/work-design-and-evidence.md) | Nouns, verbs and evidence |
 
 ## harness/ (3)
 
@@ -188,7 +189,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [src/tessera/store.py](src/tessera/store.py) | The in-process Tessera store: the reference implementation of SPEC.md. |
 | [src/tessera/testing.py](src/tessera/testing.py) | Factories the conformance suite loads by name (TESSERABACKENDFACTORY="module:function"). |
 
-## tests/ (20)
+## tests/ (22)
 
 | File | What it is |
 |---|---|
@@ -196,11 +197,13 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [tests/edge_access_loader.mjs](tests/edge_access_loader.mjs) | Minimal Cloudflare DurableObject class for deterministic Node SQLite tests. |
 | [tests/edge_access_publication.mjs](tests/edge_access_publication.mjs) | Storage-level approvals bind an authenticated draft, reviewer, receipt, and exact catalog value. |
 | [tests/edge_access_review.mjs](tests/edge_access_review.mjs) | Regressions for authorization before durable writes and public observation boundaries. |
+| [tests/edge_core_boundaries.mjs](tests/edge_core_boundaries.mjs) | Actual Worker routes with the harness's synthetic in-memory SQLite bindings. |
 | [tests/edge_frontier_publication.mjs](tests/edge_frontier_publication.mjs) |  |
 | [tests/test_access_modes.py](tests/test_access_modes.py) | Full anonymous/keyed agent loops, durable limits and adversarial isolation. |
 | [tests/test_board.py](tests/test_board.py) | Console Board v2 (/board, L19), UI chrome, and agent discovery routes. |
 | [tests/test_buckets.py](tests/test_buckets.py) | Tests for queryable noun stores, persistent named file buckets, external blobdir, and MCP tools. |
 | [tests/test_check_public.py](tests/test_check_public.py) | checkpublic finds secrets and private names, masks them, and honours the allow marker. |
+| [tests/test_core_boundaries.py](tests/test_core_boundaries.py) | Privacy over version history, strict outcomes, deadline boundaries and category plans. |
 | [tests/test_external_access_edge.py](tests/test_external_access_edge.py) | External-agent access through real Worker HTTP/MCP handlers and local SQLite bindings. |
 | [tests/test_frontier_publication.py](tests/test_frontier_publication.py) | Publication requires exact, namespace-bound evidence from independent principals. |
 | [tests/test_governance_and_isolation.py](tests/test_governance_and_isolation.py) | Universal 6-field governance envelope, namespace isolation (/ns/{namespace} & X-Namespace), Layer 1 surface o… |

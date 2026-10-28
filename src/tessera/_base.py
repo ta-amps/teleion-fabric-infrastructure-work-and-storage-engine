@@ -19,7 +19,13 @@ from typing import Any
 
 from tessera.clock import Clock, SystemClock
 from tessera.errors import Forbidden, InvalidRequest, NotFound
-from tessera.models import QueueConfig, TaskView, normalize_namespace, normalize_surface
+from tessera.models import (
+    QueueConfig,
+    TaskView,
+    can_view_governed,
+    normalize_namespace,
+    normalize_surface,
+)
 from tessera.receipts import canonical_json
 
 COUNT_COLUMNS = frozenset({"ready", "leased", "waiting", "done", "dead", "cancelled"})
@@ -236,6 +242,25 @@ class StoreBase:
         ):
             return
         raise Forbidden("only the owner or its authorized surface may mutate this resource")
+
+    def _can_read_version(self, row: sqlite3.Row, head: sqlite3.Row) -> bool:
+        """Both the version's original ACL and the current head must permit a read."""
+        ctx = self.current_scope()
+        tags = [*json.loads(row["tags"]), *json.loads(head["tags"])]
+        return all(
+            can_view_governed(
+                visibility_scope=entry["visibility_scope"],
+                producer_surface=entry["producer_surface"],
+                allowed_surfaces=json.loads(entry["allowed_surfaces"]),
+                owner_key_id=entry["owner_key_id"],
+                tags=tags,
+                viewer_surface=ctx.surface,
+                viewer_key_id=ctx.key_id,
+                is_admin=ctx.is_admin,
+                direct_get=True,
+            )
+            for entry in (head, row)
+        )
 
     def _task_visible(self, row: sqlite3.Row) -> bool:
         ctx = self.current_scope()

@@ -141,10 +141,10 @@ export function canViewGoverned({
   const normProd = normalizeSurface(producer_surface);
   const normViewer = viewer_surface ? normalizeSurface(viewer_surface) : null;
   if (tags.includes("status:quarantined")) {
-    if (direct_get) {
-      return Boolean(is_admin || (normViewer != null && normViewer === normProd));
-    }
-    return Boolean(is_admin && include_restricted);
+    const eligible = direct_get
+      ? is_admin || (normViewer != null && normViewer === normProd)
+      : is_admin && include_restricted;
+    if (!eligible) return false;
   }
   if (is_admin) return true;
   if (visibility_scope === "public_commons") return true;

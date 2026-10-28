@@ -299,7 +299,11 @@ def plan_fragility_rechecks(
                 target_category_id=category_id,
                 domain=domain,
                 source_uri=rec.get("source_uri"),
-                expected_sha256=rec.get("content_sha256") or rec.get("prev_sha256"),
+                expected_sha256=(
+                    rec.get("expected_sha256")
+                    or rec.get("content_sha256")
+                    or rec.get("prev_sha256")
+                ),
                 conditional_headers=headers,
                 half_life_hours=hl,
                 freshness_confidence=round(fresh, 6),

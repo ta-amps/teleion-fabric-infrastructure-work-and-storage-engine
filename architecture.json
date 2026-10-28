@@ -24,7 +24,8 @@
     "making_of": "docs/making-of.md",
     "handoff": "docs/handoff.md",
     "access_modes": "docs/access-modes.md",
-    "frontier_publication": "docs/frontier-publication.md"
+    "frontier_publication": "docs/frontier-publication.md",
+    "work_design_and_evidence": "docs/work-design-and-evidence.md"
   },
   "read_order": [
     "README.md",

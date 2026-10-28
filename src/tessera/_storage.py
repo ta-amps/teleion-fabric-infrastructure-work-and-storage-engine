@@ -279,11 +279,9 @@ class StorageOps(StoreBase):
         namespace: str | None = None,
     ) -> RecordVersion:
         ns = self._resolve_ns(namespace)
-        ctx = self.current_scope()
         with self._read() as c:
             head = c.execute(
-                "SELECT version, tags, producer_surface FROM record_heads"
-                " WHERE namespace = ? AND store = ? AND key = ?",
+                "SELECT * FROM record_heads WHERE namespace = ? AND store = ? AND key = ?",
                 (ns, store, key),
             ).fetchone()
             if head is None:
@@ -296,19 +294,7 @@ class StorageOps(StoreBase):
         if row is None:
             raise NotFound(f"record {store}/{key} has no version {target_version}")
         rec = self._record(row)
-        head_tags = json.loads(head["tags"])
-        combined_tags = normalize_tags([*rec.tags, *head_tags])
-        if not can_view_governed(
-            visibility_scope=rec.visibility_scope,
-            producer_surface=rec.producer_surface,
-            allowed_surfaces=rec.allowed_surfaces,
-            owner_key_id=rec.owner_key_id,
-            tags=combined_tags,
-            viewer_surface=ctx.surface,
-            viewer_key_id=ctx.key_id,
-            is_admin=ctx.is_admin,
-            direct_get=True,
-        ):
+        if not self._can_read_version(row, head):
             raise NotFound(f"record {store}/{key} does not exist")
         return rec
 
@@ -316,10 +302,9 @@ class StorageOps(StoreBase):
         self, store: str, key: str, *, namespace: str | None = None
     ) -> list[RecordVersion]:
         ns = self._resolve_ns(namespace)
-        ctx = self.current_scope()
         with self._read() as c:
             head = c.execute(
-                "SELECT tags FROM record_heads WHERE namespace = ? AND store = ? AND key = ?",
+                "SELECT * FROM record_heads WHERE namespace = ? AND store = ? AND key = ?",
                 (ns, store, key),
             ).fetchone()
             if head is None:
@@ -330,23 +315,7 @@ class StorageOps(StoreBase):
             ).fetchall()
         if not rows:
             raise NotFound(f"record {store}/{key} does not exist")
-        head_tags = json.loads(head["tags"])
-        visible: list[RecordVersion] = []
-        for r in rows:
-            rec = self._record(r)
-            combined_tags = normalize_tags([*rec.tags, *head_tags])
-            if can_view_governed(
-                visibility_scope=rec.visibility_scope,
-                producer_surface=rec.producer_surface,
-                allowed_surfaces=rec.allowed_surfaces,
-                owner_key_id=rec.owner_key_id,
-                tags=combined_tags,
-                viewer_surface=ctx.surface,
-                viewer_key_id=ctx.key_id,
-                is_admin=ctx.is_admin,
-                direct_get=True,
-            ):
-                visible.append(rec)
+        visible = [self._record(r) for r in rows if self._can_read_version(r, head)]
         if not visible:
             raise NotFound(f"record {store}/{key} does not exist")
         return visible

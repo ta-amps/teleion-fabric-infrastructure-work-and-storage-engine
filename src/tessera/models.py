@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -96,6 +97,15 @@ def normalize_tags(values: Any) -> list[str]:
     return out
 
 
+def tag_matches_category(tags: Sequence[str], category: str) -> bool:
+    cat = category.strip().lower()
+    if not cat:
+        return True
+    bare = cat[len("category:") :] if cat.startswith("category:") else cat
+    candidates = {cat, bare, f"category:{bare}", f"cat:{bare}"}
+    return any(t.strip().lower() in candidates for t in tags)
+
+
 def can_view_governed(
     *,
     visibility_scope: str,
@@ -113,9 +123,13 @@ def can_view_governed(
     norm_prod = normalize_surface(producer_surface)
     norm_viewer = normalize_surface(viewer_surface) if viewer_surface else None
     if "status:quarantined" in tags:
-        if direct_get:
-            return bool(is_admin or (norm_viewer is not None and norm_viewer == norm_prod))
-        return bool(is_admin and include_restricted)
+        eligible = (
+            is_admin or (norm_viewer is not None and norm_viewer == norm_prod)
+            if direct_get
+            else is_admin and include_restricted
+        )
+        if not eligible:
+            return False
     if is_admin:
         return True
     if visibility_scope == "public_commons":

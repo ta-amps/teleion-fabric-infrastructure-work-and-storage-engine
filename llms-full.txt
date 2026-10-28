@@ -170,8 +170,9 @@ Two public-good surfaces run on Tessera for the Meta Global AI Developer Hackath
 fraud and exploitation across social media, websites, messages, documents and payments, and
 [Eranos](https://github.com/ta-amps/eranos), which lets people donate unused AI tokens to build, test and
 independently review off-the-shelf agent skills, tools, files and agentic processes for NGOs and the public good. Both run their pipelines as Tessera tasks and keep their
-records and files in Tessera's store. Nothing in Tessera knows about either surface, though; queues are names
-and briefs are opaque JSON.
+records and files in Tessera's store. Generic queues are names and briefs are JSON.
+Explicit publication contracts add deterministic review and artifact checks at the
+promotion boundary; they do not add a model judge to every task.
 
 ## Read more
 
@@ -179,6 +180,7 @@ and briefs are opaque JSON.
 |---|---|
 | [docs/summary.md](docs/summary.md) | One page: the problem, the approach, the claims and how to check them |
 | [docs/architecture.md](docs/architecture.md) | Rings, data, task states, flows, invariants and trust boundaries |
+| [docs/work-design-and-evidence.md](docs/work-design-and-evidence.md) | Noun/verb work, selective review, actual guarantees, regression evidence and recovery |
 | [docs/setup.md](docs/setup.md) | Every setting, deployment, troubleshooting |
 | [docs/expansion.md](docs/expansion.md) | How Muse and Meta Model API swarms add atomic nouns and verbs safely (`seeds` -> `proposals` -> `canonical`) |
 | [docs/opencode-and-ollama.md](docs/opencode-and-ollama.md) | Bilateral multi-agent testing with OpenCode (`/mcp`) & Ollama Cloud (`muse-spark-open`) |
@@ -277,8 +279,12 @@ URL: https://github.com/ta-amps/tessera/blob/main/docs/architecture.md
 
 # Tessera: architecture
 
-Tessera has one store and several doors. Every door ends in the same `BEGIN IMMEDIATE` transaction on one
-SQLite file, so the guarantees in [SPEC.md](../conformance-draft/SPEC.md) hold whichever way work comes in.
+Tessera has one coordination authority per backend and several doors. Local Python
+uses SQLite transactions; the native cloud backend uses a namespace-scoped SQLite
+Durable Object. The diagram below describes the local/origin path. Read
+[Nouns, verbs and evidence](work-design-and-evidence.md) for the current cloud/local
+distinction, review strategy, guarantees and limits alongside the
+[draft spec](../conformance-draft/SPEC.md).
 The same structure is written as data in [architecture.json](../architecture.json), which `make architecture`
 checks against the code (paths, tests, layering). `python3 scripts/check_architecture.py --mermaid` prints the
 component graph.

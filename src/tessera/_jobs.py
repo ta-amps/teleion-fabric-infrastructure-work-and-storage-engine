@@ -22,9 +22,9 @@ class JobOps(TaskOps):
     ) -> Job:
         """Record a model job started under a live lease."""
         ns = self._resolve_ns(namespace)
-        now = self.clock.now()
         job: Job | None = None
         with self._tx() as c:
+            now = self.clock.now()
             row, stale = self._live_lease(c, ns, task_id, fencing_token, now)
             if row is not None:
                 try:
