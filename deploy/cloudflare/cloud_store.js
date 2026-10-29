@@ -1267,6 +1267,8 @@ export class TesseraCoordinator extends DurableObject {
       await this.ctx.storage.deleteAll();
       this.seededNamespaces.clear();
       this.schemaNames = null;
+      this.healthCache.clear();
+      this.demoSeeded = null;
       this._ensureSchemaV3();
       initAccess(this);
       initExecutions(this);
