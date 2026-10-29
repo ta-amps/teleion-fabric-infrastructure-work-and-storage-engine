@@ -433,7 +433,7 @@ function bytesToB64(bytes) {
   return btoa(s);
 }
 
-function govFields(args) {
+export function govFields(args) {
   const out = {};
   for (const k of [
     "producer_surface",
@@ -656,11 +656,12 @@ async function callTool(stub, env, ctx, secret, name, args, routeCtx) {
       else return { ok: false, code: "invalid_request", detail: "encoding must be 'utf-8' or 'base64'" };
 
       const nowSec = Date.now() / 1000;
-      const permit = await stub.rpcCall(secret, "authorizeObjectWrite", { ...base, bucket:args.bucket, key:args.key, metadata:args.metadata||{}, expected_version:args.expected_version??null, ...govFields(args) });
+      const permit = await stub.rpcCall(secret, "authorizeObjectWrite", { ...govFields(args), ...base, bucket:args.bucket, key:args.key, metadata:args.metadata||{}, expected_version:args.expected_version??null });
       if (!permit.ok) return permit;
       const stored = await storeCloudBlob(env, bytes, nowSec, routeCtx.namespace, permit.data.governance);
       if (stored.error) return { ok: false, code: stored.error, detail: stored.detail };
       const r = await stub.rpcCall(secret, "putObjectMeta", {
+        ...govFields(args),
         ...base,
         bucket: args.bucket,
         key: args.key,
@@ -670,7 +671,6 @@ async function callTool(stub, env, ctx, secret, name, args, routeCtx) {
         content_type: args.content_type ?? "text/plain; charset=utf-8",
         metadata: args.metadata ?? {},
         expected_version: args.expected_version ?? null,
-        ...govFields(args),
       });
       if (r.ok) ctx.waitUntil(mirrorBucketObjectToD1(env, r.data));
       return {

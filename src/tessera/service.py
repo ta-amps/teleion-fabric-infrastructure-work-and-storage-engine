@@ -26,7 +26,11 @@ from tessera import pages
 from tessera._access_boundary import access_dispatch
 from tessera._access_contract import connect_html
 from tessera._access_routes import mount_access_routes
-from tessera._service_buckets import mount_storage_and_admin_routes, parse_governance_header
+from tessera._service_buckets import (
+    check_claimed_content,
+    mount_storage_and_admin_routes,
+    parse_governance_header,
+)
 from tessera._service_executions import mount_execution_routes
 from tessera._service_intelligence import mount_intelligence_routes, slice_bytes_response
 from tessera._version import __version__
@@ -605,6 +609,7 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
         gate.store_scope(grant)
         gov = parse_governance_header(request)
         data = await request.body()
+        check_claimed_content(request, data)
         digest = await run_in_threadpool(lambda: store.put_blob(data, **gov))
         return {"sha256": digest, "size": len(data)}
 
