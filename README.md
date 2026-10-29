@@ -19,7 +19,9 @@ each rule a test.
 
 ## Worker execution policy
 
-The [worker-first execution policy](docs/WORKER-FIRST-EXECUTION.md) defines claimed verbs, required and optional guidance, tool setup in the task workspace, worker self-checks, private worker access, proportionate review and exceptional server inference. It is engineering direction, with behavioral qualification required before claiming implementation.
+Independently schedulable agentic work must run as a claimed verb on an authorized worker, unless an explicit server exception applies. A project organizes scoped nouns and verbs; it does not create another task or permission authority. The [worker-first execution policy](docs/WORKER-FIRST-EXECUTION.md) is a required design checkpoint, with behavioral qualification required before claiming implementation.
+
+The [optional fine-tuning worker example](docs/fine-tuning-workers.md) separates synthetic data and provenance, existing noun/verb authoring, and a worker-only PEFT backend. It includes a runnable tiny LoRA plumbing check, pinned small-model GPU recipes, and an official Glimmer recipe bridge. No training dependencies or model promotion are added to the server.
 
 The [execution reporting and recall guide](docs/execution-memory.md) explains optional worker telemetry, permitted prior-run lookup, HTTP/MCP access without a shim, and a bounded contribution task example. Reports accompany new submissions; worker claims remain separate from independent verification and public admission.
 

@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "mode": "smoke",
+  "model_id": "random-initialized-tiny-Llama",
+  "revision": "local-seed-17",
+  "license": "Random parameters; repository-owned synthetic data",
+  "quantization": "none",
+  "device": "cpu",
+  "sequence_budget": 1536,
+  "steps": 12,
+  "gradient_accumulation": 1,
+  "learning_rate": 0.003,
+  "rank": 8,
+  "seed": 17,
+  "target_modules": ["q_proj", "v_proj"],
+  "hardware_target": "CPU, or explicit --device cuda on a compatible GPU",
+  "purpose": "Random architecture and LoRA plumbing only; not pretrained Meta model fine-tuning"
+}
