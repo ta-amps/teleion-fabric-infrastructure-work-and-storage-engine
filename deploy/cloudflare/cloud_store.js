@@ -39,6 +39,7 @@ const TASK_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/;
 const RECORD_KEY_RE = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$/;
 const OBJECT_KEY_RE = /^[A-Za-z0-9][A-Za-z0-9_./:-]{0,511}$/;
 const SCOPE_SURFACE_RE = /^surface:[a-z0-9][a-z0-9_-]{0,47}$/;
+const SHA256_RE = /^[0-9a-f]{64}$/;
 
 const EFFECTS = ["read", "write-internal", "write-repo"];
 const EFFECT_RANK = { read: 0, "write-internal": 1, "write-repo": 2, public: 3 };
@@ -120,6 +121,16 @@ function validateObjectKey(key) {
 
 function isValidScope(scope) {
   return scope === "admin" || scope === "store" || SCOPE_SURFACE_RE.test(scope) || /^(nouns:read|verbs:claim|verbs:submit|cas:write|admin:keys|namespace:[a-z0-9*][a-z0-9_.*-]{0,63})$/.test(scope);
+}
+
+// The Worker computes these from received bytes before calling the coordinator. Refuse
+// anything that is not a digest and a byte count instead of trusting it as an identity.
+function serverContentIdentity(args) {
+  const sha256 = String(args.sha256 || "");
+  const size = Number(args.size);
+  if (!SHA256_RE.test(sha256)) throw badReq("sha256 must be the server-computed lowercase SHA-256 digest");
+  if (!Number.isSafeInteger(size) || size < 0) throw badReq("size must be the server-computed byte count");
+  return { sha256, size };
 }
 
 function parseJsonSafe(raw, fallback) {
@@ -3054,7 +3065,7 @@ export class TesseraCoordinator extends DurableObject {
         }
         case "recordBlobStored": {
           if (!grant.can_store) throw forbid("this needs a key with the store scope");
-          const { sha256, size } = args;
+          const { sha256, size } = serverContentIdentity(args);
           const gov = normalizeGovernance(
             args,
             { defaultSurface: defaultGovSurface, ownerKeyId: grant.key_id },
@@ -3181,8 +3192,7 @@ export class TesseraCoordinator extends DurableObject {
           if (expected != null && (!Number.isInteger(expected) || expected < 0)) {
             throw verConflict(`${bucket}/${key}: invalid expected version ${expected}`, null);
           }
-          const sha256 = String(args.sha256);
-          const size = Number(args.size);
+          const { sha256, size } = serverContentIdentity(args);
           const gov = normalizeGovernance(
             args,
             {

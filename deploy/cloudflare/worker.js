@@ -9,9 +9,9 @@ import { TOOLS as FABRIC_TOOLS } from "./cloud_mcp.js";
 // and the agent door (`/connect`, `/llms.txt`, `/llms-full.txt`, `/favicon.svg`,
 // `/.well-known/agent-card.json`, `/robots.txt`, `/board`, `/work`).
 
-import { loadCloudBlob, mirrorBucketObjectToD1, storeCloudBlob, validateWireNumbers } from "./cloud_buckets.js";
+import { loadCloudBlob, mirrorBucketObjectToD1, sha256Hex, storeCloudBlob, validateWireNumbers } from "./cloud_buckets.js";
 import { normalizeNamespace, sliceBytesResponse, tagMatchesCategory } from "./cloud_intelligence.js";
-import { handleMcpRequest } from "./cloud_mcp.js";
+import { govFields, handleMcpRequest } from "./cloud_mcp.js";
 import {
   ROBOTS_TXT,
   renderAgentCard,
@@ -254,8 +254,12 @@ function parseLayer2Params(searchParams) {
   };
 }
 
+// Only governance fields come from the upload header (the same list MCP accepts).
+// Content identity is computed from the received bytes; a claimed sha256 or size is
+// an integrity assertion that must match exactly, never a value the server stores.
 function parseHeaderGovernance(request, searchParams) {
   let gov = {};
+  const claimed = {};
   const rawGov = request.headers.get("x-tessera-governance");
   if (rawGov) {
     try {
@@ -263,7 +267,8 @@ function parseHeaderGovernance(request, searchParams) {
       if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
         return { error: problem(400, "invalid_request", "x-tessera-governance must be a JSON object") };
       }
-      gov = { ...parsed };
+      gov = govFields(parsed);
+      for (const field of ["sha256", "size"]) if (parsed[field] != null) claimed[field] = parsed[field];
     } catch {
       return { error: problem(400, "invalid_request", "x-tessera-governance is not valid JSON") };
     }
@@ -282,7 +287,17 @@ function parseHeaderGovernance(request, searchParams) {
       ? [...gov.target_cohorts, ...qCohorts]
       : qCohorts;
   }
-  return { gov };
+  return { gov, claimed };
+}
+
+async function contentIdentityMismatch(claimed, bytes) {
+  if (claimed.size != null && (!Number.isSafeInteger(claimed.size) || claimed.size !== bytes.byteLength)) {
+    return problem(400, "invalid_request", "the claimed size does not match the uploaded bytes");
+  }
+  if (claimed.sha256 != null && (typeof claimed.sha256 !== "string" || claimed.sha256.toLowerCase() !== await sha256Hex(bytes))) {
+    return problem(400, "invalid_request", "the claimed sha256 does not match the uploaded bytes");
+  }
+  return null;
 }
 
 async function proxyToOrigin(request, env) {
@@ -879,19 +894,22 @@ const worker = {
     if (path === "/v1/blobs" && method === "POST") {
       const authCheck = await stub.rpcCall(bearer, "verifyStoreScope", { ...baseRpc });
       if (!authCheck.ok) return rpcResponse(authCheck);
-      const { gov, error: govErr } = parseHeaderGovernance(request, url.searchParams);
+      const { gov, claimed, error: govErr } = parseHeaderGovernance(request, url.searchParams);
       if (govErr) return govErr;
-      const permit = await stub.rpcCall(bearer, "authorizeBlobWrite", { ...baseRpc, ...gov });
-      if (!permit.ok) return rpcResponse(permit);
       const raw = new Uint8Array(await request.arrayBuffer());
+      const mismatch = await contentIdentityMismatch(claimed, raw);
+      if (mismatch) return mismatch;
+      const permit = await stub.rpcCall(bearer, "authorizeBlobWrite", { ...gov, ...baseRpc });
+      if (!permit.ok) return rpcResponse(permit);
       const stored = await storeCloudBlob(env, raw, Date.now() / 1000, namespace, permit.data.governance);
       if (stored.error) return problem(stored.status || 400, stored.error, stored.detail);
+      // Server-computed identity is spread last so no client field can replace it.
       return rpcResponse(
         await stub.rpcCall(bearer, "recordBlobStored", {
+          ...gov,
           ...baseRpc,
           sha256: stored.sha256,
           size: stored.size,
-          ...gov,
         })
       );
     }
@@ -974,15 +992,18 @@ const worker = {
             return problem(400, "invalid_request", "x-tessera-metadata is not valid JSON");
           }
         }
-        const { gov, error: govErr } = parseHeaderGovernance(request, url.searchParams);
+        const { gov, claimed, error: govErr } = parseHeaderGovernance(request, url.searchParams);
         if (govErr) return govErr;
         const contentType = request.headers.get("content-type") || "application/octet-stream";
         const rawBytes = new Uint8Array(await request.arrayBuffer());
-        const permit = await stub.rpcCall(bearer, "authorizeObjectWrite", { ...baseRpc, bucket:bucketName, key:objKey, expected_version:expectedVersion, metadata, ...gov });
+        const mismatch = await contentIdentityMismatch(claimed, rawBytes);
+        if (mismatch) return mismatch;
+        const permit = await stub.rpcCall(bearer, "authorizeObjectWrite", { ...gov, ...baseRpc, bucket:bucketName, key:objKey, expected_version:expectedVersion, metadata });
         if (!permit.ok) return rpcResponse(permit);
         const stored = await storeCloudBlob(env, rawBytes, Date.now() / 1000, namespace, permit.data.governance);
         if (stored.error) return problem(stored.status || 400, stored.error, stored.detail);
         const out = await stub.rpcCall(bearer, "putObjectMeta", {
+          ...gov,
           ...baseRpc,
           bucket: bucketName,
           key: objKey,
@@ -991,7 +1012,6 @@ const worker = {
           content_type: contentType,
           metadata,
           expected_version: expectedVersion,
-          ...gov,
         });
         if (!out.ok) return rpcResponse(out);
         ctx.waitUntil(mirrorBucketObjectToD1(env, out.data));

@@ -6,6 +6,7 @@ Mounted by `tessera.service.create_app` behind the same `Gate` (`store` scope fo
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Callable
 from typing import Any
@@ -77,6 +78,28 @@ def parse_governance_header(request: Request) -> dict[str, Any]:
     if q_cohorts := qp.getlist("cohort"):
         out["target_cohorts"] = [c for c in q_cohorts if c.strip()]
     return out
+
+
+def check_claimed_content(request: Request, data: bytes) -> None:
+    """Reject a claimed `sha256` or `size` in `x-tessera-governance` that the bytes do not match.
+
+    Content identity always comes from the received bytes. A claim is only an integrity check,
+    matching the Worker edge, so a caller cannot bind another owner's digest to its upload.
+    """
+    raw_gov = request.headers.get("x-tessera-governance")
+    if not raw_gov:
+        return
+    parsed = json.loads(raw_gov)  # parse_governance_header already validated the JSON object
+    size = parsed.get("size")
+    if size is not None and (
+        isinstance(size, bool) or not isinstance(size, int) or size != len(data)
+    ):
+        raise InvalidRequest("the claimed size does not match the uploaded bytes")
+    digest = parsed.get("sha256")
+    if digest is not None and (
+        not isinstance(digest, str) or digest.lower() != hashlib.sha256(data).hexdigest()
+    ):
+        raise InvalidRequest("the claimed sha256 does not match the uploaded bytes")
 
 
 def mount_storage_and_admin_routes(
@@ -182,6 +205,7 @@ def mount_storage_and_admin_routes(
         gov = parse_governance_header(request)
         content_type = request.headers.get("content-type") or "application/octet-stream"
         data = await request.body()
+        check_claimed_content(request, data)
         saved = await run_in_threadpool(
             lambda: store.put_object(
                 bucket_name,
