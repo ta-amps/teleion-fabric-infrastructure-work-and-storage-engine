@@ -36,10 +36,14 @@ export function initAccess(c) {
     `CREATE INDEX IF NOT EXISTS access_events_owner ON access_events(principal_id,seq)`,
     `CREATE INDEX IF NOT EXISTS access_events_time ON access_events(ts)`,
   ];
+  // Read first: an existing object's cold start executes no write-capable statement.
+  c._ensureDdl(statements);
+  const needsLabels = !c._hasColumn("results", "labels");
+  const needsSalt = !c._one("SELECT value FROM meta WHERE key='access_hash_salt'");
+  if (!needsLabels && !needsSalt) return;
   c.ctx.storage.transactionSync(() => {
-    for (const sql of statements) c.ctx.storage.sql.exec(sql);
-    if (!c._hasColumn("results", "labels")) c.ctx.storage.sql.exec("ALTER TABLE results ADD COLUMN labels TEXT NOT NULL DEFAULT '{}'");
-    c.ctx.storage.sql.exec("INSERT OR IGNORE INTO meta(key,value) VALUES ('access_hash_salt',?)", randomSecret("salt_"));
+    if (needsLabels) c.ctx.storage.sql.exec("ALTER TABLE results ADD COLUMN labels TEXT NOT NULL DEFAULT '{}'");
+    if (needsSalt) c.ctx.storage.sql.exec("INSERT OR IGNORE INTO meta(key,value) VALUES ('access_hash_salt',?)", randomSecret("salt_"));
   });
 }
 

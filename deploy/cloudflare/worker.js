@@ -1,6 +1,6 @@
 import { agentStartAsset, withAgentStart } from "./agent_start.js";
 import { storageQuotaFailure } from "./storage_quota.js";
-import { accessRoute, accessDescription, ACCESS_TOOLS } from "./cloud_access_routes.js";
+import { accessDiscoveryRoute, accessRoute, accessDescription, ACCESS_TOOLS } from "./cloud_access_routes.js";
 import { TOOLS as FABRIC_TOOLS } from "./cloud_mcp.js";
 // Tessera Cloud Worker: 24/7 native cloud execution on Cloudflare Durable Object SQLite + D1
 // (`STORAGE_MODE = "cloud"`, the default) with optional Fly.io origin reverse-proxy fallback
@@ -367,6 +367,77 @@ function resolveNamespace(url, request) {
   return { namespace, path, isPrimary: namespace === "main" };
 }
 
+// Storage-free discovery: pages, agent instructions, contracts and the agent card. These
+// responses depend only on configuration, never on a principal or a Durable Object.
+function discoveryResponse(path, method, env, publicUrl, repoUrl) {
+  if (method !== "GET" && method !== "HEAD") return null;
+  const anonymousEnabled = env.ANONYMOUS_ACCESS_ENABLED === "true";
+  const access = accessDiscoveryRoute(path, method, publicUrl, anonymousEnabled, jsonResp, htmlResp);
+  if (access) return access;
+  const toolCount = `${FABRIC_TOOLS.length + ACCESS_TOOLS.length} tools`;
+  if (path === "/" || path === "/connect") {
+    return htmlResp(renderConnectHtml(publicUrl, repoUrl));
+  }
+  if (path === "/favicon.svg") {
+    return withSecurity(
+      new Response(renderFaviconSvg(), {
+        status: 200,
+        headers: {
+          "content-type": "image/svg+xml; charset=utf-8",
+          "cache-control": "public, max-age=86400",
+        },
+      }),
+      { noStore: false }
+    );
+  }
+  if (path === "/llms.txt") {
+    return withSecurity(
+      new Response(renderLlmsTxt(publicUrl, repoUrl).replace(/\b26 tools\b/g, toolCount) + "\n\nExternal harnesses and personal assistants: POST /v1/session/anonymous without secrets, then use Authorization: Bearer <session_token> for demo nouns and verbs. See /connect.json. tools/list is public; tool counts and schemas are authoritative there. Keyed production work remains protected.\n", {
+        status: 200,
+        headers: { "content-type": "text/plain; charset=utf-8" },
+      }),
+      { noStore: false }
+    );
+  }
+  if (path === "/llms-full.txt") {
+    return withSecurity(
+      new Response(renderLlmsFullTxt(publicUrl, repoUrl).replace(/\b26 tools\b/g, toolCount) + "\n\n" + JSON.stringify(accessDescription(publicUrl, anonymousEnabled), null, 2), {
+        status: 200,
+        headers: { "content-type": "text/plain; charset=utf-8" },
+      }),
+      { noStore: false }
+    );
+  }
+  if (path === "/.well-known/agent-card.json") {
+    return jsonResp({ ...renderAgentCard(publicUrl, repoUrl), tools: [...FABRIC_TOOLS, ...ACCESS_TOOLS], skills: [...FABRIC_TOOLS, ...ACCESS_TOOLS].map(t => ({ id: t.name, name: t.name, description: t.description })), tool_count: FABRIC_TOOLS.length + ACCESS_TOOLS.length, authentication: { discovery: "none", demo: "tan_ bearer session", keyed: "tsk_ bearer key" }, capabilities: { streaming: "long-poll", tools: true }, access: accessDescription(publicUrl, anonymousEnabled) });
+  }
+  if (path === "/robots.txt") {
+    return withSecurity(
+      new Response(ROBOTS_TXT, {
+        status: 200,
+        headers: { "content-type": "text/plain; charset=utf-8" },
+      }),
+      { noStore: false }
+    );
+  }
+  return null;
+}
+
+// MCP discovery (initialize, ping, tools/list, notifications and explain_access_modes) is
+// answered without storage. A body that is not JSON gets its parse error the same way.
+const STORAGELESS_MCP_METHODS = new Set(["initialize", "ping", "tools/list"]);
+async function mcpNeedsNoStorage(request) {
+  let payload;
+  try {
+    payload = await request.clone().json();
+  } catch {
+    return true;
+  }
+  const messages = Array.isArray(payload) ? payload : [payload];
+  return messages.every((m) => m && typeof m === "object" && (m.id === undefined || STORAGELESS_MCP_METHODS.has(m.method) || (m.method === "tools/call" && m.params?.name === "explain_access_modes")));
+}
+const STORAGELESS_STUB = new Proxy({}, { get: (_target, name) => () => { throw new Error(`storage-free MCP discovery must not call ${String(name)}`); } });
+
 const worker = {
   async fetch(request, env, ctx) {
     if ((env.STORAGE_MODE || "cloud") === "origin") {
@@ -377,9 +448,29 @@ const worker = {
     const nsResolved = resolveNamespace(url, request);
     if (nsResolved.error) return nsResolved.error;
     let { namespace, path, isPrimary } = nsResolved;
+    const method = request.method.toUpperCase();
+    const publicUrl =
+      (env.PUBLIC_URL || `${url.protocol}//${url.host}`).replace(/\/+$/, "") || DEFAULT_PUBLIC_URL;
+    const repoUrl = env.REPO_URL || DEFAULT_REPO_URL;
+    // Discovery needs no storage. Answer it before any Durable Object call, so pages, agent
+    // instructions and MCP tool discovery stay up while the storage allowance is exhausted.
+    const discovery = discoveryResponse(path, method, env, publicUrl, repoUrl);
+    if (discovery) return discovery;
+    if (path === "/mcp" && method === "POST" && (await mcpNeedsNoStorage(request))) {
+      return withSecurity(await handleMcpRequest(request, env, ctx, STORAGELESS_STUB, "", true, namespace), { isWrite: true });
+    }
     const coordBinding = env.COORDINATOR || env.TESSERA_COORDINATOR;
     const primary = coordBinding.get(coordBinding.idFromName("primary"));
     const requestBearer = extractBearer(request);
+    // Unauthenticated public reads of the main namespace need no identity or key lookup.
+    if (!requestBearer && namespace === "main" && (method === "GET" || method === "HEAD")) {
+      if (["/v1/health", "/api/health", "/healthz"].includes(path)) return jsonResp(await primary.publicHealthAndBoard(false, "main"));
+      if (path === "/board") {
+        const info = await primary.publicHealthAndBoard(true, "main");
+        return htmlResp(renderBoardHtml(info.health, info.snapshot, repoUrl));
+      }
+      if (path === "/v1/public/activity" && method === "GET") return jsonResp(await primary.publicActivity());
+    }
     const principal = requestBearer ? await primary.resolveKeyGrant(requestBearer) : null;
     const explicitNamespace = url.pathname.startsWith("/ns/") || request.headers.has("x-namespace") || request.headers.has("x-tessera-namespace");
     if (principal?.principal_kind === "anonymous" && !explicitNamespace) namespace = principal.namespace;
@@ -394,11 +485,7 @@ const worker = {
       openAnonymousSession: body => primary.openAnonymousSession(body, meta),
       auditForToken: (secret, args) => primary.auditForToken(secret, args),
     };
-    const method = request.method.toUpperCase();
-    const publicUrl =
-      (env.PUBLIC_URL || `${url.protocol}//${url.host}`).replace(/\/+$/, "") || DEFAULT_PUBLIC_URL;
-    const repoUrl = env.REPO_URL || DEFAULT_REPO_URL;
-    const bearer = extractBearer(request);
+    const bearer = requestBearer;
     const surfaceHeader = (request.headers.get("x-surface-id") || "").trim();
     const baseRpc = { namespace, isPrimary, surfaceHeader };
     if (namespace !== "main" && ["/board", "/healthz", "/v1/health", "/api/health"].includes(path)) {
@@ -439,51 +526,6 @@ const worker = {
     ) {
       const health = await stub.publicHealthAndBoard(false, namespace);
       return jsonResp(health);
-    }
-    if ((path === "/" || path === "/connect") && (method === "GET" || method === "HEAD")) {
-      return htmlResp(renderConnectHtml(publicUrl, repoUrl));
-    }
-    if (path === "/favicon.svg" && (method === "GET" || method === "HEAD")) {
-      return withSecurity(
-        new Response(renderFaviconSvg(), {
-          status: 200,
-          headers: {
-            "content-type": "image/svg+xml; charset=utf-8",
-            "cache-control": "public, max-age=86400",
-          },
-        }),
-        { noStore: false }
-      );
-    }
-    if (path === "/llms.txt" && (method === "GET" || method === "HEAD")) {
-      return withSecurity(
-        new Response(renderLlmsTxt(publicUrl, repoUrl).replace(/\b26 tools\b/g, `${FABRIC_TOOLS.length + ACCESS_TOOLS.length} tools`) + "\n\nExternal harnesses and personal assistants: POST /v1/session/anonymous without secrets, then use Authorization: Bearer <session_token> for demo nouns and verbs. See /connect.json. tools/list is public; tool counts and schemas are authoritative there. Keyed production work remains protected.\n", {
-          status: 200,
-          headers: { "content-type": "text/plain; charset=utf-8" },
-        }),
-        { noStore: false }
-      );
-    }
-    if (path === "/llms-full.txt" && (method === "GET" || method === "HEAD")) {
-      return withSecurity(
-        new Response(renderLlmsFullTxt(publicUrl, repoUrl).replace(/\b26 tools\b/g, `${FABRIC_TOOLS.length + ACCESS_TOOLS.length} tools`) + "\n\n" + JSON.stringify(accessDescription(publicUrl, env.ANONYMOUS_ACCESS_ENABLED === "true"), null, 2), {
-          status: 200,
-          headers: { "content-type": "text/plain; charset=utf-8" },
-        }),
-        { noStore: false }
-      );
-    }
-    if (path === "/.well-known/agent-card.json" && (method === "GET" || method === "HEAD")) {
-      return jsonResp({ ...renderAgentCard(publicUrl, repoUrl), tools: [...FABRIC_TOOLS, ...ACCESS_TOOLS], skills: [...FABRIC_TOOLS, ...ACCESS_TOOLS].map(t => ({ id: t.name, name: t.name, description: t.description })), tool_count: FABRIC_TOOLS.length + ACCESS_TOOLS.length, authentication: { discovery: "none", demo: "tan_ bearer session", keyed: "tsk_ bearer key" }, capabilities: { streaming: "long-poll", tools: true }, access: accessDescription(publicUrl, env.ANONYMOUS_ACCESS_ENABLED === "true") });
-    }
-    if (path === "/robots.txt" && (method === "GET" || method === "HEAD")) {
-      return withSecurity(
-        new Response(ROBOTS_TXT, {
-          status: 200,
-          headers: { "content-type": "text/plain; charset=utf-8" },
-        }),
-        { noStore: false }
-      );
     }
     if (path === "/board" && (method === "GET" || method === "HEAD")) {
       const info = await stub.publicHealthAndBoard(true, namespace);

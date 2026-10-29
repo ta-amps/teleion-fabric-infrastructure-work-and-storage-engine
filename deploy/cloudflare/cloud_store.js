@@ -490,6 +490,31 @@ export class TesseraCoordinator extends DurableObject {
     );
   }
 
+  // Cold start must stay read-only once the schema exists: the provider refuses every
+  // write-capable statement after its daily allowance is spent, even a CREATE ... IF NOT
+  // EXISTS that would change nothing. Run only the DDL whose table or index is missing.
+  _ensureDdl(statements) {
+    const names = new Set(this._all("SELECT name FROM sqlite_master WHERE type IN ('table', 'index')").map((r) => r.name));
+    const missing = statements.filter((stmt) => {
+      const m = /^\s*CREATE\s+(?:UNIQUE\s+)?(?:TABLE|INDEX)\s+IF\s+NOT\s+EXISTS\s+([A-Za-z0-9_]+)/i.exec(stmt);
+      return !m || !names.has(m[1]);
+    });
+    if (missing.length) this.ctx.storage.transactionSync(() => { for (const stmt of missing) this.ctx.storage.sql.exec(stmt); });
+    return missing.length;
+  }
+
+  // Observational writes (profile timestamps, identity snapshots, aggregated counters) must
+  // not turn a read into an outage. Only the provider's quota refusal is tolerated here.
+  _observe(write) {
+    try {
+      write();
+      return true;
+    } catch (e) {
+      if (!storageQuotaFailure(e)) throw e;
+      return false;
+    }
+  }
+
   _ensureSchemaV3() {
     const sql = this.ctx.storage.sql;
     if (this._tableExists("meta") && this._tableExists("noun_tags")) {
@@ -1291,7 +1316,10 @@ export class TesseraCoordinator extends DurableObject {
     if (!r) return null;
     const now = Date.now() / 1000;
     if (r.revoked_at != null || Number(r.expires_at) <= now) return null;
-    this.ctx.storage.sql.exec("UPDATE access_principals SET last_used_at=? WHERE key_id=? AND (last_used_at IS NULL OR last_used_at<=?)", now, r.key_id, now - LAST_USED_WRITE_INTERVAL_SECONDS);
+    const observed = this._one("SELECT last_used_at FROM access_principals WHERE key_id=?", r.key_id);
+    if (observed && (observed.last_used_at == null || Number(observed.last_used_at) <= now - LAST_USED_WRITE_INTERVAL_SECONDS)) {
+      this._observe(() => this.ctx.storage.sql.exec("UPDATE access_principals SET last_used_at=? WHERE key_id=? AND (last_used_at IS NULL OR last_used_at<=?)", now, r.key_id, now - LAST_USED_WRITE_INTERVAL_SECONDS));
+    }
     return {
       ...principalMetadata(this, r),
       key_id: r.key_id,
@@ -1317,8 +1345,12 @@ export class TesseraCoordinator extends DurableObject {
         // Snapshot authenticated identity metadata, never the secret or its hash.
         // Namespace-local publication proofs need the completed actors' accounts.
         // Authorization still resolves through primary on every request.
-        this.ctx.storage.sql.exec("INSERT INTO access_principals(key_id,principal_kind,principal_id,account_id,namespace,key_prefix,labels,quota_tier,last_used_at,purge_at) VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(key_id) DO UPDATE SET principal_kind=excluded.principal_kind,account_id=excluded.account_id,last_used_at=excluded.last_used_at WHERE access_principals.principal_kind IS NOT excluded.principal_kind OR access_principals.account_id IS NOT excluded.account_id OR access_principals.last_used_at IS NULL OR access_principals.last_used_at<=excluded.last_used_at-?",
-          shared.key_id, shared.principal_kind, shared.principal_id || shared.key_id, shared.account_id || null, shared.namespace || "main", shared.key_prefix || "", JSON.stringify(shared.labels || {}), shared.quota_tier || "standard", Date.now()/1000, shared.purge_at || null, LAST_USED_WRITE_INTERVAL_SECONDS);
+        const now = Date.now() / 1000;
+        const local = this._one("SELECT principal_kind, account_id, last_used_at FROM access_principals WHERE key_id=?", shared.key_id);
+        if (!local || local.principal_kind !== shared.principal_kind || (local.account_id ?? null) !== (shared.account_id || null) || local.last_used_at == null || Number(local.last_used_at) <= now - LAST_USED_WRITE_INTERVAL_SECONDS) {
+          this._observe(() => this.ctx.storage.sql.exec("INSERT INTO access_principals(key_id,principal_kind,principal_id,account_id,namespace,key_prefix,labels,quota_tier,last_used_at,purge_at) VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(key_id) DO UPDATE SET principal_kind=excluded.principal_kind,account_id=excluded.account_id,last_used_at=excluded.last_used_at WHERE access_principals.principal_kind IS NOT excluded.principal_kind OR access_principals.account_id IS NOT excluded.account_id OR access_principals.last_used_at IS NULL OR access_principals.last_used_at<=excluded.last_used_at-?",
+            shared.key_id, shared.principal_kind, shared.principal_id || shared.key_id, shared.account_id || null, shared.namespace || "main", shared.key_prefix || "", JSON.stringify(shared.labels || {}), shared.quota_tier || "standard", now, shared.purge_at || null, LAST_USED_WRITE_INTERVAL_SECONDS));
+        }
         return this._hydrateGrant(shared);
       }
     }

@@ -37,6 +37,29 @@ inside the observation interval. Only unchanged observational timestamps avoid
 repeated row updates. Reading a key profile can therefore show a last-used value
 up to one observation interval behind the latest audited action.
 
+## Storage-free discovery and read-only cold start
+
+After the daily allowance is spent the provider refuses every write-capable SQL statement,
+including a `CREATE TABLE IF NOT EXISTS` or `INSERT OR IGNORE` that would change no row. Before
+October 29 the coordinator constructor ran such statements on every cold start and every route,
+including `robots.txt`, called the primary object first, so one exhausted allowance took down
+every route.
+
+- Discovery is answered before any Durable Object call: `/`, `/connect`, `/connect.json`,
+  `/v1/openapi.json`, `/llms.txt`, `/llms-full.txt`, `/robots.txt`, `/favicon.svg`,
+  `/.well-known/agent-card.json`, and MCP `initialize`, `ping`, `tools/list`, notifications and
+  `explain_access_modes` (single or batched). These responses depend only on configuration.
+- Unauthenticated `GET /v1/health`, `/healthz`, `/board` and `/v1/public/activity` on the main
+  namespace skip the key and identity lookups.
+- Cold start reads `sqlite_master` and the marker rows first and runs only the DDL, column or salt
+  statements that are actually missing. A new object still creates its whole schema.
+- The profile timestamp and namespace identity snapshot are read first and written only when
+  due or changed; a provider refusal of those observational writes no longer fails the request.
+
+`tests/workerd_storage_exhaustion.mjs` refuses every write-capable statement after a warm start
+and checks that public reads still answer 200 while a write still reports `503
+storage_quota_exhausted`.
+
 ## Local measurements and remaining work
 
 The actual-workerd tests warm one authenticated key and make five ordinary

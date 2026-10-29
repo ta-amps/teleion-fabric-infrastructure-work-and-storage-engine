@@ -75,6 +75,7 @@ async function setup(bindings = {}) {
     });
     return { status: response.status, data: await response.json(), headers: response.headers };
   };
+  request.raw = path => worker.fetch("https://tessera.example" + path);
   const admin = async () => {
     const result = await request("/v1/admin/keys", { label: "synthetic-observer", queues: ["*"], scopes: ["admin", "store"], effect_classes: ["read", "write-internal"] }, undefined, { "X-Bootstrap-Secret": "synthetic-quota-bootstrap" });
     assert.equal(result.status, 201, JSON.stringify(result.data));
@@ -212,3 +213,35 @@ test("a scope change is visible inside the observational timestamp interval", as
   const after = await primary.testStats(key.key_id);
   assert.equal(after.principal.last_used_at, before.principal.last_used_at);
 });
+
+test("discovery and MCP tool discovery answer without touching any Durable Object", async () => {
+  // Every coordinator constructor fails, so any storage call would turn into a 503.
+  const { request } = await setup({ TEST_COLD_ERROR: quotaMessage });
+  const text = async (path) => (await worker(request, path)).status;
+  for (const path of ["/robots.txt", "/favicon.svg", "/llms.txt", "/llms-full.txt", "/.well-known/agent-card.json", "/connect.json", "/v1/openapi.json", "/", "/connect", "/ns/conformance-discovery/robots.txt"]) {
+    assert.equal(await text(path), 200, path);
+  }
+  for (const token of [undefined, "synthetic-bearer-not-a-key"]) {
+    const init = await request("/mcp", { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18" } }, token);
+    assert.equal(init.status, 200);
+    assert.equal(init.data.result.serverInfo.name, "tessera");
+    const list = await request("/mcp", { jsonrpc: "2.0", id: 2, method: "tools/list" }, token);
+    assert.equal(list.status, 200);
+    assert.ok(list.data.result.tools.some(tool => tool.name === "claim"));
+    const batch = await request("/mcp", [{ jsonrpc: "2.0", id: 3, method: "ping" }, { jsonrpc: "2.0", method: "notifications/initialized" }, { jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "explain_access_modes", arguments: {} } }], token);
+    assert.equal(batch.status, 200);
+    assert.deepEqual(batch.data.map(m => m.id), [3, 4]);
+    assert.equal(batch.data[1].result.isError, false);
+  }
+  // A storage-backed call still reports the provider outage honestly.
+  const storage = await request("/mcp", { jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "queues", arguments: {} } }, "synthetic-bearer-not-a-key");
+  assert.equal(storage.status, 503);
+  assert.equal(storage.data.code, "storage_quota_exhausted");
+});
+
+async function worker(request, path) {
+  // Raw fetch for non-JSON discovery bodies.
+  const response = await request.raw(path);
+  await response.arrayBuffer();
+  return response;
+}
