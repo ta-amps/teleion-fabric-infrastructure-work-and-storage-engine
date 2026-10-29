@@ -1,0 +1,22 @@
+{
+  "format": "tessera.continuous-tuning.trigger.v1",
+  "trigger_id": "tool-call-specialist.retrain-or-evaluate",
+  "version": 1,
+  "conditions": [
+    {"when": "no champion pointer exists", "then": "baseline round: freeze holdouts, evaluate the unchanged base"},
+    {"when": "accepted rows of the counted origins not yet trained on >= min_new_accepted_rows", "then": "training round"},
+    {"when": "interval_hours since the champion was last evaluated", "then": "evaluation round on a fresh holdout"},
+    {"otherwise": "no change"}
+  ],
+  "counted_origins": ["initial", "stream", "mined"],
+  "min_new_accepted_rows": 32,
+  "interval_hours": 24,
+  "max_training_rounds": 3,
+  "max_rounds_per_tick": 1,
+  "evaluated_by": "the tick verb, claimed by an authorized worker",
+  "schedule": {
+    "status": "not_activated",
+    "on_demand": "python -m examples.continuous_tuning.cli tick",
+    "later": "A flag-gated scheduled() handler may enqueue one idempotent tick verb per window. It never trains, evaluates or calls a model, and it grants no authority."
+  }
+}

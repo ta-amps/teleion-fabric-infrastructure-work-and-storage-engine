@@ -137,10 +137,35 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [docs/work-design-and-evidence.md](docs/work-design-and-evidence.md) | Nouns, verbs and evidence |
 | [docs/work-routing.md](docs/work-routing.md) | Route agent work through nouns and verbs |
 
-## examples/ (19)
+## examples/ (44)
 
 | File | What it is |
 |---|---|
+| [examples/continuous_tuning/__init__.py](examples/continuous_tuning/__init__.py) | Continuous tuning, evaluation and hard-example mining as Tessera nouns and verbs. |
+| [examples/continuous_tuning/backend_hf.py](examples/continuous_tuning/backend_hf.py) | Optional torch/Transformers/PEFT worker backend; never imported by Tessera's service. |
+| [examples/continuous_tuning/catalog.py](examples/continuous_tuning/catalog.py) | Verb templates and the execution report every verb submits. |
+| [examples/continuous_tuning/cli.py](examples/continuous_tuning/cli.py) | Command line surface: tick on demand, show status and the learning curve, build the pack. |
+| [examples/continuous_tuning/dataset.py](examples/continuous_tuning/dataset.py) | Curation: fingerprints, deduplication, contamination checks and dataset manifests. |
+| [examples/continuous_tuning/fabric.py](examples/continuous_tuning/fabric.py) | The learner's use of a local Tessera store: principals, private nouns, blobs and claims. |
+| [examples/continuous_tuning/fixture_backend.py](examples/continuous_tuning/fixture_backend.py) | A deterministic, dependency-free stand-in for the model backend (tests and CPU demos). |
+| [examples/continuous_tuning/learner_spec.json](examples/continuous_tuning/learner_spec.json) | JSON object: format, learner, strategy, version, facet, reads |
+| [examples/continuous_tuning/loop.py](examples/continuous_tuning/loop.py) | One on-demand tick: write spec nouns, enqueue a tick verb, then claim and run ready verbs. |
+| [examples/continuous_tuning/mcp_tools.json](examples/continuous_tuning/mcp_tools.json) | JSON object: format, served_by, source_files_sha256, tools_sha256, tools |
+| [examples/continuous_tuning/metrics.py](examples/continuous_tuning/metrics.py) | Strict scoring of one generated reply against its computed label, plus a failure taxonomy. |
+| [examples/continuous_tuning/mining.py](examples/continuous_tuning/mining.py) | Hard-example mining: turn dev failures into new, labeled training rows. |
+| [examples/continuous_tuning/model_verbs.py](examples/continuous_tuning/model_verbs.py) | Model verbs: tune hyperparameters, train adapters and evaluate through a swappable backend. |
+| [examples/continuous_tuning/promotion.py](examples/continuous_tuning/promotion.py) | The pre-registered promotion rule, applied to candidate and champion evaluations. |
+| [examples/continuous_tuning/promotion_rule.json](examples/continuous_tuning/promotion_rule.json) | JSON object: format, rule_id, version, registered, selection, promotion |
+| [examples/continuous_tuning/recipes/base-llama-3.2-1b-instruct.json](examples/continuous_tuning/recipes/base-llama-3.2-1b-instruct.json) | JSON object: format, base_id, model_id, source, files_sha256, license |
+| [examples/continuous_tuning/recipes/lora-sft-r16.json](examples/continuous_tuning/recipes/lora-sft-r16.json) | JSON object: format, recipe_id, version, method, rank, alpha |
+| [examples/continuous_tuning/recipes/search-lr3.json](examples/continuous_tuning/recipes/search-lr3.json) | JSON object: format, search_id, version, objective, max_trials, trials |
+| [examples/continuous_tuning/report.py](examples/continuous_tuning/report.py) | Read-only learning curve from the stored nouns and tick logs: no model, no writes. |
+| [examples/continuous_tuning/sanity.py](examples/continuous_tuning/sanity.py) | A small general-capability sanity set with computed answers (no tools, no system prompt). |
+| [examples/continuous_tuning/task.py](examples/continuous_tuning/task.py) | Deterministic typed tool-call examples: request, offered tools, label and features. |
+| [examples/continuous_tuning/templates.py](examples/continuous_tuning/templates.py) | Repository-authored request templates for typed Tessera tool calls (MIT, no model text). |
+| [examples/continuous_tuning/tools.py](examples/continuous_tuning/tools.py) | Tessera's real MCP tool definitions, their families, and a strict schema checker. |
+| [examples/continuous_tuning/trigger.json](examples/continuous_tuning/trigger.json) | JSON object: format, trigger_id, version, conditions, counted_origins, min_new_accepted_rows |
+| [examples/continuous_tuning/verbs.py](examples/continuous_tuning/verbs.py) | Deterministic verbs: generate examples, curate datasets, mine hard examples, decide promotion. |
 | [examples/finetuning/__init__.py](examples/finetuning/__init__.py) |  |
 | [examples/finetuning/author.py](examples/finetuning/author.py) | Preview fine-tuning artifact nouns and worker verbs using existing Tessera contracts. |
 | [examples/finetuning/data.py](examples/finetuning/data.py) | Owned synthetic research observations and family-separated dataset manifests. |

@@ -1,0 +1,26 @@
+{
+  "format": "tessera.continuous-tuning.recipe.v1",
+  "recipe_id": "lora-sft-r16",
+  "version": 1,
+  "method": "LoRA supervised fine-tuning with completion-only loss on a frozen bf16 base",
+  "rank": 16,
+  "alpha": 32,
+  "dropout": 0.05,
+  "learning_rate": 0.0002,
+  "epochs": 3,
+  "gradient_accumulation": 8,
+  "warmup_fraction": 0.1,
+  "weight_decay": 0.0,
+  "max_grad_norm": 1.0,
+  "seed": 17,
+  "sequence_budget": 4096,
+  "gradient_checkpointing": false,
+  "reload_logit_tolerance": 0.05,
+  "evaluation": {
+    "decoding": "greedy",
+    "batch_size": 16,
+    "decode_allowance_tokens": 256,
+    "allowance_basis": "about three times the longest label token count in every evaluation set; a reply that reaches it is recorded as reached_allowance, never truncated silently"
+  },
+  "purpose": "Small-data specialist adapter for typed tool calls; one microbatch row at a time, no padding in training"
+}

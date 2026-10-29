@@ -1,0 +1,70 @@
+{
+  "format": "tessera.continuous-tuning.learner-spec.v1",
+  "learner": "tool-call-specialist",
+  "strategy": "lora-sft-hard-example-mining",
+  "version": 1,
+  "facet": "Typed tool calls for the Tessera noun and verb fabric: pick the right served tool and give every argument its schema type, or refuse with a fixed reason",
+  "reads": [
+    {"noun": "tool snapshot", "store": "tuning.specs", "category": "noun.mcp_server"},
+    {"noun": "base model", "store": "tuning.specs", "category": "noun.model_spec"},
+    {"noun": "recipe and search space", "store": "tuning.specs", "category": "noun.code_node"},
+    {"noun": "accepted example batches", "store": "tuning.data", "category": "noun.benchmark_suite"},
+    {"noun": "frozen and fresh holdouts", "store": "tuning.data", "category": "noun.benchmark_suite"},
+    {"noun": "champion pointer", "store": "tuning.models", "category": "noun.model_spec"},
+    {"noun": "champion and base evaluation runs", "store": "tuning.evals", "category": "noun.eval_run"}
+  ],
+  "writes": [
+    {"noun": "example batches, accepted batches, training sets, fresh holdouts", "store": "tuning.data", "versioning": "create-only; key is role plus content digest"},
+    {"noun": "adapters (unadmitted candidates)", "store": "tuning.models", "versioning": "create-only; adapter bytes in private chunked blobs"},
+    {"noun": "evaluation runs, selections, promotion decisions", "store": "tuning.evals", "versioning": "create-only"},
+    {"noun": "champion pointer", "store": "tuning.models", "versioning": "the single mutable key, compare-and-set; record history keeps every version"}
+  ],
+  "trigger": "trigger.json",
+  "budget": {
+    "device": "one owned local CUDA GPU",
+    "max_search_trials": 3,
+    "max_strategies_per_round": 2,
+    "max_training_rows": 512,
+    "max_round_minutes": 45,
+    "provider_calls": 0,
+    "paid_compute": false,
+    "spending": "none; this learner never authorizes spending"
+  },
+  "evaluation": {
+    "baseline": "the current champion; before any promotion, the unchanged base model",
+    "selection": "dev only",
+    "decision": "frozen test, this round's fresh holdout, and the sanity set",
+    "rule": "promotion_rule.json"
+  },
+  "consumers": [
+    "workers that read this learner's champion pointer before typed tool calls",
+    "the learner's next round, which compares against the champion",
+    "people reviewing the learning curve and decisions"
+  ],
+  "data_plan": {
+    "dev": 80,
+    "test": 150,
+    "sanity": 40,
+    "initial": 64,
+    "stream": 32,
+    "mined_cap": 48,
+    "fresh_holdout": 48
+  },
+  "strategies": {
+    "1": [{"id": "lr_search", "search": "lr3", "train_on": ["initial"], "init": "base"}],
+    "2": [
+      {"id": "mined", "train_on": ["initial", "stream", "mined"], "init": "base"},
+      {"id": "random_control", "train_on": ["initial", "stream", "control"], "init": "base"}
+    ],
+    "default": [
+      {"id": "mined", "train_on": ["initial", "stream", "mined"], "init": "base"},
+      {"id": "continue_champion", "train_on": "new_since_champion", "replay": 32, "init": "champion"}
+    ]
+  },
+  "verbs": ["tick", "generate_examples", "curate_dataset", "tune_hyperparameters", "train_adapter", "evaluate", "decide_promotion", "mine_hard_examples"],
+  "limits": [
+    "Synthetic, owned data from repository templates; labels are computed, never model-written",
+    "No provider outputs, Muse API outputs, private histories or execution reports are training data",
+    "Adapters stay private nouns; promotion moves only a local pointer"
+  ]
+}
