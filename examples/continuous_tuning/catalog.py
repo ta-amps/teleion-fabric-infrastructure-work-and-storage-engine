@@ -148,6 +148,19 @@ VERBS: dict[str, dict[str, Any]] = {
         "model": False,
         "output": output_schema(decision="decision ref", pointer="champion pointer ref"),
     },
+    "serve_check": {
+        "category": "verb.benchmark_harness",
+        "summary": "Load one base, attach several adapter nouns by name and confirm each routed adapter reproduces its solo evaluation.",
+        "reads": ["adapter nouns", "their recorded dev evaluations", "base model", "dev holdout"],
+        "writes": ["serving check (noun.eval_run)"],
+        "checks": [
+            "Exactly one base is loaded",
+            "Each attached adapter's dev replies equal its recorded solo replies",
+            "The base with adapters disabled equals its baseline replies",
+        ],
+        "model": True,
+        "output": output_schema(serving_check="serving check ref"),
+    },
     "mine_hard_examples": {
         "category": "verb.problemize",
         "summary": "Turn the selected candidate's dev failures into new labeled training rows plus a matched control.",
@@ -162,6 +175,14 @@ VERBS: dict[str, dict[str, Any]] = {
         "output": output_schema(batches="mined and control batch refs"),
     },
 }
+
+
+def weights_digest(base: dict[str, Any]) -> str:
+    """One digest for the base weights, whether a single file or several shards."""
+    files = base.get("weights", ["model.safetensors"])
+    if len(files) == 1:
+        return str(base["files_sha256"][files[0]])
+    return digest({name: base["files_sha256"][name] for name in files})
 
 
 def clip(items: list[str], size: int = 512) -> list[str]:

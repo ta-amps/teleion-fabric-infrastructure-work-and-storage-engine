@@ -1,0 +1,115 @@
+{
+ "base_model_license": "Any base weights a worker supplies keep their own license (Llama 3.2 Community License and Acceptable Use Policy for the pinned bases); the pack carries none.",
+ "categories": {
+  "noun.code_node": 14,
+  "noun.mcp_server": 1,
+  "noun.model_spec": 2,
+  "noun.skill_pack": 1
+ },
+ "does_not": [
+  "execute",
+  "enqueue",
+  "activate",
+  "admit",
+  "publish",
+  "carry weights",
+  "carry credentials",
+  "grant permissions"
+ ],
+ "evaluation": {
+  "reason": "A pack holds specifications; measured results live in evidence/ and are not pack content.",
+  "result": null
+ },
+ "files": [
+  {
+   "path": "records/base_model.35f7440ce8870ef2.json",
+   "sha256": "036411d29ae845fcd2661b96544e6b2cd6f9481aedff105bef54e80d4824b5bd"
+  },
+  {
+   "path": "records/base_model.a7110b742efbc097.json",
+   "sha256": "ee19407b6a5c7cc513aeb5f531387b88095bf817f68089841193325170f6e2fc"
+  },
+  {
+   "path": "records/learner_spec.e4aef3be52d54c33.json",
+   "sha256": "0f3d0ef6d8b5eeaad0bf93390d63bb22d192ed759fe6f21c1b2356b3645e7143"
+  },
+  {
+   "path": "records/pack_index.5e9d7b9bd6232aaf.json",
+   "sha256": "a62d94f4d65a1c9cf6b14dfe921ba88d08911faf0304772be1a5a971bbb2ba21"
+  },
+  {
+   "path": "records/promotion_rule.520abffa83ef6080.json",
+   "sha256": "7e1636f905d1ee3f3eafade5a5b3acd5cbf6cd5eb63dfc94380c781175f47090"
+  },
+  {
+   "path": "records/search_space.099ed35b5dcc4f07.json",
+   "sha256": "1c189656104b6e7d51d61d98a0d3116cf839ed2774401d8b66f79c4f64f57d6f"
+  },
+  {
+   "path": "records/tool_snapshot.04b90e2ce2e7b3b0.json",
+   "sha256": "b9daa32a721e6021fc0a8e20caf2fdaeb6578f0e784a4b7e1ae2e17fc37e9123"
+  },
+  {
+   "path": "records/training_recipe.c538f95f751732b8.json",
+   "sha256": "354fee3143f194caf49a71b1028923463dfdb4b80b0a55fd75b31fe36029ae97"
+  },
+  {
+   "path": "records/trigger.600bb4e1b4c8659d.json",
+   "sha256": "d3f337157ba989e13eecccfbac37e4712b806de9d49a945ccad1f38f3ed885b4"
+  },
+  {
+   "path": "records/verb_template.090e0a551bfb3b91.json",
+   "sha256": "00e3fe8f0b9df765cbdd9ed8b4dfe3e448eb23bc6edb36b767f720725645588b"
+  },
+  {
+   "path": "records/verb_template.0dfc5a4aaf86364a.json",
+   "sha256": "cf95904fe46848a6b4d137a6eca112bad4999cee99a20596b1e50bdd64ad0e7a"
+  },
+  {
+   "path": "records/verb_template.0eca35dba157fbe0.json",
+   "sha256": "c8c8ca088ab1b9fd560abfd78b938e6c652dc156c952c7e81d06a757e171a9b3"
+  },
+  {
+   "path": "records/verb_template.10b97ac15340c5ee.json",
+   "sha256": "3f3d9c7fba206c98f10f396bb759493d49f11386b435357f021ad06dac6fcea0"
+  },
+  {
+   "path": "records/verb_template.34d9a5878c6d511a.json",
+   "sha256": "84af3323345f9c15099fe72e70d13a601354d9d79f38715324a6ceb195fdad79"
+  },
+  {
+   "path": "records/verb_template.3dbf10fcd634a9fd.json",
+   "sha256": "a702f5a6d0fac45e3ce9af97d475afc5f24014b771821a0ae6d2ada55cad9bea"
+  },
+  {
+   "path": "records/verb_template.4f0c0c36fea12537.json",
+   "sha256": "9942ad784ee1abd8c9050e1d4b1c98d9cf241b8745ef14823a587a3d0c84ed2e"
+  },
+  {
+   "path": "records/verb_template.a625527e2177c54e.json",
+   "sha256": "569b25f7ca02a76afb21e0a7b28cd9779ccb39a46fcc922908107abad07e313a"
+  },
+  {
+   "path": "records/verb_template.aa85127ec175f228.json",
+   "sha256": "a246887bc01b0622643b19435e9b917f9fbae95b43f0ccf6774e55aa19dc9e2c"
+  },
+  {
+   "path": "tasks/tick.llama-3.2-1b-instruct.json",
+   "sha256": "45809b075888216517f8d277a8cf1ca68fd6dc98f4b58cb61e3ca1454450e497"
+  },
+  {
+   "path": "tasks/tick.llama-3.2-3b-instruct.json",
+   "sha256": "f4a5f479e8b25a77ae611fa8c36223d9d253f992f14d8240c358dc23a5369964"
+  }
+ ],
+ "format": "tessera.continuous-tuning.seed-pack.v1",
+ "importer": null,
+ "importer_reason": "No manifest endpoint or generic importer exists. An owner writes the records with the batch-record API, verifies version-1 readback, then explicitly enqueues a tick seed in an existing queue.",
+ "license": "MIT",
+ "pack_id": "continuous-tuning.tool-call-specialist",
+ "records": 18,
+ "status": "offline_candidate",
+ "synthetic": true,
+ "tasks": 2,
+ "version": "1.0.0"
+}

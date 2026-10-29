@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from .catalog import weights_digest
 from .fabric import Fabric
 
 HERE = Path(__file__).parent
@@ -126,7 +127,7 @@ def learning_curve(root: Path, base_noun: Path) -> dict[str, Any]:
                 "learner": learner,
                 "base_model": {
                     "model_id": base["model_id"],
-                    "weights_sha256": base["files_sha256"]["model.safetensors"],
+                    "weights_sha256": weights_digest(base),
                 },
                 "pointer_version": version,
                 "champion": state["champion"]["label"],

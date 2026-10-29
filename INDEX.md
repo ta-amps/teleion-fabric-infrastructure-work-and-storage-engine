@@ -137,7 +137,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [docs/work-design-and-evidence.md](docs/work-design-and-evidence.md) | Nouns, verbs and evidence |
 | [docs/work-routing.md](docs/work-routing.md) | Route agent work through nouns and verbs |
 
-## examples/ (44)
+## examples/ (68)
 
 | File | What it is |
 |---|---|
@@ -154,13 +154,37 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [examples/continuous_tuning/metrics.py](examples/continuous_tuning/metrics.py) | Strict scoring of one generated reply against its computed label, plus a failure taxonomy. |
 | [examples/continuous_tuning/mining.py](examples/continuous_tuning/mining.py) | Hard-example mining: turn dev failures into new, labeled training rows. |
 | [examples/continuous_tuning/model_verbs.py](examples/continuous_tuning/model_verbs.py) | Model verbs: tune hyperparameters, train adapters and evaluate through a swappable backend. |
+| [examples/continuous_tuning/pack.py](examples/continuous_tuning/pack.py) | Seed pack: the learner's nouns (spec, trigger, rule, recipes, base models, tool snapshot, verb templates) as… |
+| [examples/continuous_tuning/pack/manifest.json](examples/continuous_tuning/pack/manifest.json) | JSON object: base_model_license, categories, does_not, evaluation, files, format |
+| [examples/continuous_tuning/pack/records/base_model.35f7440ce8870ef2.json](examples/continuous_tuning/pack/records/base_model.35f7440ce8870ef2.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
+| [examples/continuous_tuning/pack/records/base_model.a7110b742efbc097.json](examples/continuous_tuning/pack/records/base_model.a7110b742efbc097.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
+| [examples/continuous_tuning/pack/records/learner_spec.e4aef3be52d54c33.json](examples/continuous_tuning/pack/records/learner_spec.e4aef3be52d54c33.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
+| [examples/continuous_tuning/pack/records/pack_index.5e9d7b9bd6232aaf.json](examples/continuous_tuning/pack/records/pack_index.5e9d7b9bd6232aaf.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
+| [examples/continuous_tuning/pack/records/promotion_rule.520abffa83ef6080.json](examples/continuous_tuning/pack/records/promotion_rule.520abffa83ef6080.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
+| [examples/continuous_tuning/pack/records/search_space.099ed35b5dcc4f07.json](examples/continuous_tuning/pack/records/search_space.099ed35b5dcc4f07.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
+| [examples/continuous_tuning/pack/records/tool_snapshot.04b90e2ce2e7b3b0.json](examples/continuous_tuning/pack/records/tool_snapshot.04b90e2ce2e7b3b0.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
+| [examples/continuous_tuning/pack/records/training_recipe.c538f95f751732b8.json](examples/continuous_tuning/pack/records/training_recipe.c538f95f751732b8.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
+| [examples/continuous_tuning/pack/records/trigger.600bb4e1b4c8659d.json](examples/continuous_tuning/pack/records/trigger.600bb4e1b4c8659d.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
+| [examples/continuous_tuning/pack/records/verb_template.090e0a551bfb3b91.json](examples/continuous_tuning/pack/records/verb_template.090e0a551bfb3b91.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
+| [examples/continuous_tuning/pack/records/verb_template.0dfc5a4aaf86364a.json](examples/continuous_tuning/pack/records/verb_template.0dfc5a4aaf86364a.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
+| [examples/continuous_tuning/pack/records/verb_template.0eca35dba157fbe0.json](examples/continuous_tuning/pack/records/verb_template.0eca35dba157fbe0.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
+| [examples/continuous_tuning/pack/records/verb_template.10b97ac15340c5ee.json](examples/continuous_tuning/pack/records/verb_template.10b97ac15340c5ee.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
+| [examples/continuous_tuning/pack/records/verb_template.34d9a5878c6d511a.json](examples/continuous_tuning/pack/records/verb_template.34d9a5878c6d511a.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
+| [examples/continuous_tuning/pack/records/verb_template.3dbf10fcd634a9fd.json](examples/continuous_tuning/pack/records/verb_template.3dbf10fcd634a9fd.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
+| [examples/continuous_tuning/pack/records/verb_template.4f0c0c36fea12537.json](examples/continuous_tuning/pack/records/verb_template.4f0c0c36fea12537.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
+| [examples/continuous_tuning/pack/records/verb_template.a625527e2177c54e.json](examples/continuous_tuning/pack/records/verb_template.a625527e2177c54e.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
+| [examples/continuous_tuning/pack/records/verb_template.aa85127ec175f228.json](examples/continuous_tuning/pack/records/verb_template.aa85127ec175f228.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
+| [examples/continuous_tuning/pack/tasks/tick.llama-3.2-1b-instruct.json](examples/continuous_tuning/pack/tasks/tick.llama-3.2-1b-instruct.json) | JSON object: allowed_surfaces, brief, effect_class, idempotency_key, kind, namespace |
+| [examples/continuous_tuning/pack/tasks/tick.llama-3.2-3b-instruct.json](examples/continuous_tuning/pack/tasks/tick.llama-3.2-3b-instruct.json) | JSON object: allowed_surfaces, brief, effect_class, idempotency_key, kind, namespace |
 | [examples/continuous_tuning/promotion.py](examples/continuous_tuning/promotion.py) | The pre-registered promotion rule, applied to candidate and champion evaluations. |
 | [examples/continuous_tuning/promotion_rule.json](examples/continuous_tuning/promotion_rule.json) | JSON object: format, rule_id, version, registered, selection, promotion |
 | [examples/continuous_tuning/recipes/base-llama-3.2-1b-instruct.json](examples/continuous_tuning/recipes/base-llama-3.2-1b-instruct.json) | JSON object: format, base_id, model_id, source, files_sha256, license |
+| [examples/continuous_tuning/recipes/base-llama-3.2-3b-instruct.json](examples/continuous_tuning/recipes/base-llama-3.2-3b-instruct.json) | JSON object: format, base_id, model_id, source, weights, files_sha256 |
 | [examples/continuous_tuning/recipes/lora-sft-r16.json](examples/continuous_tuning/recipes/lora-sft-r16.json) | JSON object: format, recipe_id, version, method, rank, alpha |
 | [examples/continuous_tuning/recipes/search-lr3.json](examples/continuous_tuning/recipes/search-lr3.json) | JSON object: format, search_id, version, objective, max_trials, trials |
 | [examples/continuous_tuning/report.py](examples/continuous_tuning/report.py) | Read-only learning curve from the stored nouns and tick logs: no model, no writes. |
 | [examples/continuous_tuning/sanity.py](examples/continuous_tuning/sanity.py) | A small general-capability sanity set with computed answers (no tools, no system prompt). |
+| [examples/continuous_tuning/serve.py](examples/continuous_tuning/serve.py) | Several specialists over one base: one loaded base, adapters attached by name. |
 | [examples/continuous_tuning/task.py](examples/continuous_tuning/task.py) | Deterministic typed tool-call examples: request, offered tools, label and features. |
 | [examples/continuous_tuning/templates.py](examples/continuous_tuning/templates.py) | Repository-authored request templates for typed Tessera tool calls (MIT, no model text). |
 | [examples/continuous_tuning/tools.py](examples/continuous_tuning/tools.py) | Tessera's real MCP tool definitions, their families, and a strict schema checker. |
@@ -262,7 +286,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [src/tessera/store.py](src/tessera/store.py) | The in-process Tessera store: the reference implementation of SPEC.md. |
 | [src/tessera/testing.py](src/tessera/testing.py) | Factories the conformance suite loads by name (TESSERABACKENDFACTORY="module:function"). |
 
-## tests/ (45)
+## tests/ (46)
 
 | File | What it is |
 |---|---|
@@ -285,6 +309,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [tests/test_category_queries.py](tests/test_category_queries.py) | Category projections agree before bounded scans, without granting visibility. |
 | [tests/test_check_public.py](tests/test_check_public.py) | checkpublic finds secrets and private names, masks them, and honours the allow marker. |
 | [tests/test_claim_admission.py](tests/test_claim_admission.py) | Real async cancellation, fairness, resource bounds and HTTP default admission. |
+| [tests/test_continuous_tuning.py](tests/test_continuous_tuning.py) | Continuous tuning example: real tool definitions, held-out splits, contamination checks, strict metrics, mini… |
 | [tests/test_core_boundaries.py](tests/test_core_boundaries.py) | Privacy over version history, strict outcomes, deadline boundaries and category plans. |
 | [tests/test_dead_letter_privacy.py](tests/test_dead_letter_privacy.py) | Failure diagnostics remain private even when the source verb was shared. |
 | [tests/test_execution_adapters.py](tests/test_execution_adapters.py) | HTTP client framing and real local MCP execution-report flow, without inference. |

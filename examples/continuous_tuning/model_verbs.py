@@ -12,6 +12,7 @@ from typing import Any
 
 from examples.finetuning.data import file_digest
 
+from .catalog import weights_digest
 from .dataset import digest_bytes, jsonl
 from .metrics import aggregate, score
 from .sanity import sanity_messages, score_sanity
@@ -25,7 +26,7 @@ def model_info(ctx: Context, adapters: list[dict[str, Any]]) -> dict[str, Any]:
         "provider": "local",
         "name": base["model_id"],
         "base_id": base["base_id"],
-        "weights_sha256": base["files_sha256"]["model.safetensors"],
+        "weights_sha256": weights_digest(base),
         "adapters_sha256": [a["adapter_sha256"] for a in adapters],
         "invocation_origin": "worker_direct",
         "payer": "owner, local GPU",
@@ -51,6 +52,10 @@ def recipe_for(ctx: Context, state: dict[str, Any] | None, overrides: dict[str, 
     if state and state.get("tuned"):
         recipe.update(state["tuned"])
     recipe.update(overrides)
+    # Hardware fit belongs to the base noun; the hyperparameters stay the recipe's.
+    runtime = ctx.specs["base_model"].get("runtime", {})
+    if "gradient_checkpointing" in runtime:
+        recipe["gradient_checkpointing"] = runtime["gradient_checkpointing"]
     return recipe
 
 
@@ -126,7 +131,9 @@ def evaluate_sets(ctx, brief, label, adapter, sets, beat):
     backend = ctx.backend()
     value = ctx.fabric.read(adapter) if adapter else None
     model = backend.load(adapter_dir(ctx, value) if value else None)
-    settings = ctx.specs["recipe"]["evaluation"]
+    settings = dict(ctx.specs["recipe"]["evaluation"])
+    runtime = ctx.specs["base_model"].get("runtime", {})
+    settings["batch_size"] = runtime.get("eval_batch_size", settings["batch_size"])
     refs, prompt_total, output_total = {}, 0, 0
     try:
         for name, (rows, source) in sets.items():

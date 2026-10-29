@@ -22,7 +22,7 @@ from examples.finetuning.data import digest, file_digest
 import tessera
 from tessera import TaskSpec
 
-from . import model_verbs, verbs
+from . import model_verbs, serve, verbs
 from .catalog import VERBS, execution_report, learning_block, no_model_usage, store_supports
 from .fabric import NAMESPACE, QUEUE, WORKER, Fabric
 from .tools import SNAPSHOT, load_snapshot
@@ -43,6 +43,7 @@ HANDLERS: dict[str, Callable[..., verbs.Result]] = {
     "tune_hyperparameters": model_verbs.tune_hyperparameters,
     "train_adapter": model_verbs.train_adapter,
     "evaluate": model_verbs.evaluate,
+    "serve_check": serve.serve_check,
 }
 
 
@@ -340,7 +341,11 @@ def tick(
     now: Callable[[], float] = time.time,
     max_verbs: int = 64,
     log: Callable[[str], None] = lambda _line: None,
+    stage: str = "tick",
+    params: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """Enqueue one seed verb (the tick, or a single auxiliary verb such as serve_check) and
+    claim ready verbs until the queue is empty."""
     fabric = Fabric(root)
     try:
         with fabric.scope():
@@ -354,8 +359,10 @@ def tick(
                 toolchain=toolchain(), tick=tick_id,
             )  # fmt: skip
             learner = learner_key(specs)
-            item = step("tick", "tick", {}, [])
-            fabric.store.enqueue(task_spec(ctx, learner, 0, item, [], tick_id))
+            item = step(stage, stage, params or {}, [])
+            current, _ = fabric.pointer(learner)
+            round_id = 0 if stage == "tick" or current is None else current["round"]
+            fabric.store.enqueue(task_spec(ctx, learner, round_id, item, [], tick_id))
             ran = []
             for _ in range(max_verbs):
                 lease = fabric.store.claim(QUEUE, WORKER, key_id=fabric.worker_key_id)

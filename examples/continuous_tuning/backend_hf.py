@@ -47,8 +47,8 @@ class HFBackend:
         self.dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
 
     def verify_weights(self) -> bool:
-        name = "model.safetensors"
-        return file_digest(self.path / name) == self.base["files_sha256"][name]
+        names = self.base.get("weights", ["model.safetensors"])
+        return all(file_digest(self.path / n) == self.base["files_sha256"][n] for n in names)
 
     def environment(self) -> dict[str, Any]:
         torch = self.torch

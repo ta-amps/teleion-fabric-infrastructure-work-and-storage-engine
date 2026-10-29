@@ -1,0 +1,148 @@
+{
+ "allowed_surfaces": [],
+ "expected_version": 0,
+ "key": "verb_template.4f0c0c36fea12537517935594e138ebd7cbac0bf73152ece00a72ea2e9e9c5a2",
+ "namespace": "conformance-tuning",
+ "store": "tuning.specs",
+ "tags": [
+  "category:noun.code_node",
+  "role:verb_template",
+  "status:proposal",
+  "data:synthetic",
+  "spdx:MIT"
+ ],
+ "target_cohorts": [
+  "all"
+ ],
+ "value": {
+  "activation": "none",
+  "brief_schema": {
+   "properties": {
+    "learner": {
+     "type": "string"
+    },
+    "params": {
+     "type": "object"
+    },
+    "round": {
+     "minimum": 0,
+     "type": "integer"
+    },
+    "spec_refs": {
+     "additionalProperties": {
+      "properties": {
+       "key": {
+        "type": "string"
+       },
+       "store": {
+        "type": "string"
+       },
+       "value_sha256": {
+        "type": "string"
+       },
+       "version": {
+        "minimum": 1,
+        "type": "integer"
+       }
+      },
+      "required": [
+       "store",
+       "key",
+       "version",
+       "value_sha256"
+      ],
+      "type": "object"
+     },
+     "type": "object"
+    },
+    "stage": {
+     "type": "string"
+    },
+    "step": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "stage",
+    "step",
+    "round",
+    "learner",
+    "spec_refs",
+    "params"
+   ],
+   "type": "object"
+  },
+  "category_id": "noun.code_node",
+  "checks": [
+   "Rule digest pinned in the decision",
+   "Every integrity check passes before promotion",
+   "Moves only the private local pointer; no deployment, publication or admission"
+  ],
+  "dimension_basis": {
+   "determinism": "1.0: static repository JSON; every build yields identical bytes",
+   "evidence_grounding": "share of declared references that resolve to records in this pack; a noun without references is self-contained (1.0)",
+   "safety_compliance": "share of pack safety checks passed: no secret-like strings, private visibility, no public effect, nothing activated",
+   "token_efficiency": "1 - canonical value bytes / 65536, the per-record budget this pack keeps; floor 0",
+   "verification_tier": "deterministic_gate: tests/test_continuous_tuning.py validates every record"
+  },
+  "dimension_method": "continuous-tuning.pack-dimensions.v1",
+  "dimensions": {
+   "determinism": 1,
+   "evidence_grounding": 1,
+   "safety_compliance": 1,
+   "token_efficiency": 0.97496,
+   "verification_tier": "deterministic_gate"
+  },
+  "handler": "examples.continuous_tuning.verbs.decide_promotion",
+  "model": false,
+  "output": {
+   "properties": {
+    "learning": {
+     "type": "object"
+    },
+    "nouns": {
+     "description": "decision: decision ref; pointer: champion pointer ref",
+     "type": "object"
+    },
+    "stage": {
+     "type": "string"
+    },
+    "status": {
+     "enum": [
+      "ok",
+      "failed",
+      "no_op"
+     ],
+     "type": "string"
+    },
+    "step": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "step",
+    "stage",
+    "status",
+    "nouns",
+    "learning"
+   ],
+   "type": "object"
+  },
+  "pack": "continuous-tuning.tool-call-specialist",
+  "reads": [
+   "promotion rule",
+   "evaluation runs",
+   "adapter and training set integrity"
+  ],
+  "relations": [],
+  "role": "verb_template",
+  "spdx_license": "MIT",
+  "stage": "decide_promotion",
+  "summary": "Apply the pre-registered rule to candidate versus champion; keeping the champion is valid.",
+  "verb_category": "verb.verify_gate",
+  "writes": [
+   "promotion decision (noun.eval_run) and the champion pointer by compare-and-set"
+  ]
+ },
+ "visibility_scope": "private"
+}

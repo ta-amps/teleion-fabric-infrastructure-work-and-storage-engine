@@ -1,0 +1,1372 @@
+{
+ "allowed_surfaces": [],
+ "expected_version": 0,
+ "key": "tool_snapshot.04b90e2ce2e7b3b0f26f20201366a88e6c33157e698ce58cd84cb5dbfa1ece1d",
+ "namespace": "conformance-tuning",
+ "store": "tuning.specs",
+ "tags": [
+  "category:noun.mcp_server",
+  "role:tool_snapshot",
+  "status:proposal",
+  "data:synthetic",
+  "spdx:MIT"
+ ],
+ "target_cohorts": [
+  "all"
+ ],
+ "value": {
+  "activation": "none",
+  "category_id": "noun.mcp_server",
+  "dimension_basis": {
+   "determinism": "1.0: static repository JSON; every build yields identical bytes",
+   "evidence_grounding": "share of declared references that resolve to records in this pack; a noun without references is self-contained (1.0)",
+   "safety_compliance": "share of pack safety checks passed: no secret-like strings, private visibility, no public effect, nothing activated",
+   "token_efficiency": "1 - canonical value bytes / 65536, the per-record budget this pack keeps; floor 0",
+   "verification_tier": "deterministic_gate: tests/test_continuous_tuning.py validates every record"
+  },
+  "dimension_method": "continuous-tuning.pack-dimensions.v1",
+  "dimensions": {
+   "determinism": 1,
+   "evidence_grounding": 1,
+   "safety_compliance": 1,
+   "token_efficiency": 0.750153,
+   "verification_tier": "deterministic_gate"
+  },
+  "format": "tessera.continuous-tuning.mcp-tools.v1",
+  "pack": "continuous-tuning.tool-call-specialist",
+  "relations": [],
+  "role": "tool_snapshot",
+  "served_by": "tools/list = [...TOOLS, ...ACCESS_TOOLS]",
+  "source_files_sha256": {
+   "deploy/cloudflare/cloud_access_routes.js": "79ccea229ed38a0b26f3c7cf6e04e6301d1d21f52163e095dfd6c04f88c3388e",
+   "deploy/cloudflare/cloud_mcp.js": "84aae64ebd7d251332434e676125c178dc4062a4c940623c60fac656f8cf5e73"
+  },
+  "spdx_license": "MIT",
+  "tools": [
+   {
+    "description": "List the queues this key may use, with their lease settings.",
+    "inputSchema": {
+     "additionalProperties": false,
+     "properties": {},
+     "type": "object"
+    },
+    "name": "queues"
+   },
+   {
+    "description": "Enqueue a new atomic verb (task) in a queue this key may use.",
+    "inputSchema": {
+     "properties": {
+      "allowed_surfaces": {
+       "items": {
+        "type": "string"
+       },
+       "type": [
+        "array",
+        "null"
+       ]
+      },
+      "brief": {
+       "type": "object"
+      },
+      "depends_on": {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      "effect_class": {
+       "default": "write-internal",
+       "enum": [
+        "read",
+        "write-internal",
+        "write-repo",
+        "public"
+       ],
+       "type": "string"
+      },
+      "idempotency_key": {
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "kind": {
+       "default": "task",
+       "type": "string"
+      },
+      "owner_key_id": {
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "priority": {
+       "default": 50,
+       "type": "integer"
+      },
+      "producer_surface": {
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "queue": {
+       "type": "string"
+      },
+      "tags": {
+       "items": {
+        "type": "string"
+       },
+       "type": [
+        "array",
+        "null"
+       ]
+      },
+      "target_cohorts": {
+       "items": {
+        "type": "string"
+       },
+       "type": [
+        "array",
+        "null"
+       ]
+      },
+      "task_id": {
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "visibility_scope": {
+       "enum": [
+        "private",
+        "surface_only",
+        "allowlist_surfaces",
+        "public_commons",
+        null
+       ],
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     },
+     "required": [
+      "queue",
+      "brief"
+     ],
+     "type": "object"
+    },
+    "name": "enqueue"
+   },
+   {
+    "description": "Lease the next ready task in a queue. Returns {'lease': {...}} or {'lease': null}.",
+    "inputSchema": {
+     "properties": {
+      "effect_classes": {
+       "items": {
+        "type": "string"
+       },
+       "type": [
+        "array",
+        "null"
+       ]
+      },
+      "kinds": {
+       "items": {
+        "type": "string"
+       },
+       "type": [
+        "array",
+        "null"
+       ]
+      },
+      "queue": {
+       "type": "string"
+      },
+      "worker": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "queue",
+      "worker"
+     ],
+     "type": "object"
+    },
+    "name": "claim"
+   },
+   {
+    "description": "Extend a lease you hold. Call every heartbeat_seconds while working.",
+    "inputSchema": {
+     "properties": {
+      "fencing_token": {
+       "type": "integer"
+      },
+      "task_id": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "task_id",
+      "fencing_token"
+     ],
+     "type": "object"
+    },
+    "name": "heartbeat"
+   },
+   {
+    "description": "Submit the result of a task you hold, once, with an idempotency_key. Optional execution_report records worker-reported summaries and usage, not independent verification. Replays preserve the first report. Omit secrets, raw prompts and private internal reasoning.",
+    "inputSchema": {
+     "properties": {
+      "error": {
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "execution_report": {
+       "description": "Optional bounded execution-report-v1 telemetry; see docs/execution-memory.md for accepted fields.",
+       "type": [
+        "object",
+        "null"
+       ]
+      },
+      "fencing_token": {
+       "type": "integer"
+      },
+      "idempotency_key": {
+       "type": "string"
+      },
+      "ok": {
+       "default": true,
+       "type": "boolean"
+      },
+      "output": {},
+      "task_id": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "task_id",
+      "fencing_token",
+      "output",
+      "idempotency_key"
+     ],
+     "type": "object"
+    },
+    "name": "submit"
+   },
+   {
+    "description": "Recall permitted execution observations for a task you currently hold. Requires a live fencing_token; optional execution_report supplies typed context. No model call, automatic reuse or required shim. Validate current contracts and artifacts before reuse.",
+    "inputSchema": {
+     "additionalProperties": false,
+     "properties": {
+      "execution_report": {
+       "default": null,
+       "type": [
+        "object",
+        "null"
+       ]
+      },
+      "fencing_token": {
+       "minimum": 1,
+       "type": "integer"
+      },
+      "limit": {
+       "default": 5,
+       "maximum": 20,
+       "minimum": 1,
+       "type": "integer"
+      },
+      "task_id": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "task_id",
+      "fencing_token"
+     ],
+     "type": "object"
+    },
+    "name": "recall_execution"
+   },
+   {
+    "description": "Read a retained execution by run_id under its source queue and task grants. Reports are worker claims, not independent verification or publication authority. Anonymous runs are session-private and expire.",
+    "inputSchema": {
+     "additionalProperties": false,
+     "properties": {
+      "run_id": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "run_id"
+     ],
+     "type": "object"
+    },
+    "name": "get_execution"
+   },
+   {
+    "description": "List retained execution references for an authorized task after submitting, without computing hashes. Pagination uses after=fencing_token; source task and artifact permissions still apply. This is not public history.",
+    "inputSchema": {
+     "additionalProperties": false,
+     "properties": {
+      "after": {
+       "default": 0,
+       "minimum": 0,
+       "type": "integer"
+      },
+      "limit": {
+       "default": 20,
+       "maximum": 100,
+       "minimum": 1,
+       "type": "integer"
+      },
+      "task_id": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "task_id"
+     ],
+     "type": "object"
+    },
+    "name": "list_executions"
+   },
+   {
+    "description": "Split a task you hold into child tasks; parent waits until children resolve.",
+    "inputSchema": {
+     "properties": {
+      "children": {
+       "items": {
+        "type": "object"
+       },
+       "type": "array"
+      },
+      "fencing_token": {
+       "type": "integer"
+      },
+      "task_id": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "task_id",
+      "fencing_token",
+      "children"
+     ],
+     "type": "object"
+    },
+    "name": "split"
+   },
+   {
+    "description": "Park a task you hold while waiting for outside input.",
+    "inputSchema": {
+     "properties": {
+      "fencing_token": {
+       "type": "integer"
+      },
+      "reason": {
+       "type": "string"
+      },
+      "resume_within": {
+       "type": [
+        "number",
+        "null"
+       ]
+      },
+      "task_id": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "task_id",
+      "fencing_token",
+      "reason"
+     ],
+     "type": "object"
+    },
+    "name": "park"
+   },
+   {
+    "description": "Give a parked task the input it is waiting for.",
+    "inputSchema": {
+     "properties": {
+      "input": {
+       "type": "object"
+      },
+      "park": {
+       "type": [
+        "integer",
+        "null"
+       ]
+      },
+      "task_id": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "task_id",
+      "input"
+     ],
+     "type": "object"
+    },
+    "name": "resume"
+   },
+   {
+    "description": "List every atomic noun store with its key count and last update time.",
+    "inputSchema": {
+     "additionalProperties": false,
+     "properties": {},
+     "type": "object"
+    },
+    "name": "list_stores"
+   },
+   {
+    "description": "Query current head records in a noun store, optionally filtered by key prefix or governance/tag filters.",
+    "inputSchema": {
+     "properties": {
+      "category": {
+       "default": null,
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "cohort": {
+       "default": null,
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "include_restricted": {
+       "default": false,
+       "type": "boolean"
+      },
+      "limit": {
+       "default": 100,
+       "type": "integer"
+      },
+      "prefix": {
+       "default": "",
+       "type": "string"
+      },
+      "q": {
+       "default": "",
+       "type": "string"
+      },
+      "store_name": {
+       "type": "string"
+      },
+      "surface": {
+       "default": null,
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "tag": {
+       "default": null,
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     },
+     "required": [
+      "store_name"
+     ],
+     "type": "object"
+    },
+    "name": "list_records"
+   },
+   {
+    "description": "Write one versioned noun (record) using compare-and-set.",
+    "inputSchema": {
+     "properties": {
+      "allowed_surfaces": {
+       "items": {
+        "type": "string"
+       },
+       "type": [
+        "array",
+        "null"
+       ]
+      },
+      "expected_version": {
+       "default": null,
+       "type": [
+        "integer",
+        "null"
+       ]
+      },
+      "key": {
+       "type": "string"
+      },
+      "owner_key_id": {
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "producer_surface": {
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "store_name": {
+       "type": "string"
+      },
+      "tags": {
+       "items": {
+        "type": "string"
+       },
+       "type": [
+        "array",
+        "null"
+       ]
+      },
+      "target_cohorts": {
+       "items": {
+        "type": "string"
+       },
+       "type": [
+        "array",
+        "null"
+       ]
+      },
+      "value": {},
+      "visibility_scope": {
+       "enum": [
+        "private",
+        "surface_only",
+        "allowlist_surfaces",
+        "public_commons",
+        null
+       ],
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     },
+     "required": [
+      "store_name",
+      "key",
+      "value"
+     ],
+     "type": "object"
+    },
+    "name": "put_record"
+   },
+   {
+    "description": "Atomically write a batch of versioned nouns (records) using compare-and-set.",
+    "inputSchema": {
+     "properties": {
+      "writes": {
+       "items": {
+        "type": "object"
+       },
+       "type": "array"
+      }
+     },
+     "required": [
+      "writes"
+     ],
+     "type": "object"
+    },
+    "name": "put_records"
+   },
+   {
+    "description": "Read the latest (or a specific) version of an atomic noun (record).",
+    "inputSchema": {
+     "properties": {
+      "key": {
+       "type": "string"
+      },
+      "store_name": {
+       "type": "string"
+      },
+      "version": {
+       "type": [
+        "integer",
+        "null"
+       ]
+      }
+     },
+     "required": [
+      "store_name",
+      "key"
+     ],
+     "type": "object"
+    },
+    "name": "get_record"
+   },
+   {
+    "description": "List every saved version of an atomic noun (record) in order.",
+    "inputSchema": {
+     "properties": {
+      "key": {
+       "type": "string"
+      },
+      "store_name": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "store_name",
+      "key"
+     ],
+     "type": "object"
+    },
+    "name": "record_history"
+   },
+   {
+    "description": "Create or update a named persistent file bucket.",
+    "inputSchema": {
+     "properties": {
+      "allowed_surfaces": {
+       "items": {
+        "type": "string"
+       },
+       "type": [
+        "array",
+        "null"
+       ]
+      },
+      "description": {
+       "default": "",
+       "type": "string"
+      },
+      "name": {
+       "type": "string"
+      },
+      "owner_key_id": {
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "producer_surface": {
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "tags": {
+       "items": {
+        "type": "string"
+       },
+       "type": [
+        "array",
+        "null"
+       ]
+      },
+      "target_cohorts": {
+       "items": {
+        "type": "string"
+       },
+       "type": [
+        "array",
+        "null"
+       ]
+      },
+      "visibility_scope": {
+       "enum": [
+        "private",
+        "surface_only",
+        "allowlist_surfaces",
+        "public_commons",
+        null
+       ],
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     },
+     "required": [
+      "name"
+     ],
+     "type": "object"
+    },
+    "name": "define_bucket"
+   },
+   {
+    "description": "List persistent file buckets with object counts and byte totals.",
+    "inputSchema": {
+     "additionalProperties": false,
+     "properties": {},
+     "type": "object"
+    },
+    "name": "buckets"
+   },
+   {
+    "description": "Store a versioned file in a named cloud bucket using compare-and-set.",
+    "inputSchema": {
+     "properties": {
+      "allowed_surfaces": {
+       "items": {
+        "type": "string"
+       },
+       "type": [
+        "array",
+        "null"
+       ]
+      },
+      "bucket": {
+       "type": "string"
+      },
+      "content": {
+       "type": "string"
+      },
+      "content_type": {
+       "default": "text/plain; charset=utf-8",
+       "type": "string"
+      },
+      "encoding": {
+       "default": "utf-8",
+       "enum": [
+        "utf-8",
+        "base64"
+       ],
+       "type": "string"
+      },
+      "expected_version": {
+       "default": null,
+       "type": [
+        "integer",
+        "null"
+       ]
+      },
+      "key": {
+       "type": "string"
+      },
+      "metadata": {
+       "type": [
+        "object",
+        "null"
+       ]
+      },
+      "owner_key_id": {
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "producer_surface": {
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "tags": {
+       "items": {
+        "type": "string"
+       },
+       "type": [
+        "array",
+        "null"
+       ]
+      },
+      "target_cohorts": {
+       "items": {
+        "type": "string"
+       },
+       "type": [
+        "array",
+        "null"
+       ]
+      },
+      "visibility_scope": {
+       "enum": [
+        "private",
+        "surface_only",
+        "allowlist_surfaces",
+        "public_commons",
+        null
+       ],
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     },
+     "required": [
+      "bucket",
+      "key",
+      "content"
+     ],
+     "type": "object"
+    },
+    "name": "put_object"
+   },
+   {
+    "description": "Read a versioned file (or L2 byte slice via offset/max_bytes) from a named cloud bucket, verifying its SHA-256.",
+    "inputSchema": {
+     "properties": {
+      "bucket": {
+       "type": "string"
+      },
+      "encoding": {
+       "default": "auto",
+       "enum": [
+        "auto",
+        "utf-8",
+        "base64"
+       ],
+       "type": "string"
+      },
+      "key": {
+       "type": "string"
+      },
+      "max_bytes": {
+       "default": null,
+       "type": [
+        "integer",
+        "null"
+       ]
+      },
+      "offset": {
+       "default": 0,
+       "type": "integer"
+      },
+      "version": {
+       "type": [
+        "integer",
+        "null"
+       ]
+      }
+     },
+     "required": [
+      "bucket",
+      "key"
+     ],
+     "type": "object"
+    },
+    "name": "get_object"
+   },
+   {
+    "description": "List head files in a bucket, optionally filtered by key prefix or governance/tag filters.",
+    "inputSchema": {
+     "properties": {
+      "bucket": {
+       "type": "string"
+      },
+      "category": {
+       "default": null,
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "cohort": {
+       "default": null,
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "include_restricted": {
+       "default": false,
+       "type": "boolean"
+      },
+      "limit": {
+       "default": 100,
+       "type": "integer"
+      },
+      "prefix": {
+       "default": "",
+       "type": "string"
+      },
+      "q": {
+       "default": "",
+       "type": "string"
+      },
+      "surface": {
+       "default": null,
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "tag": {
+       "default": null,
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     },
+     "required": [
+      "bucket"
+     ],
+     "type": "object"
+    },
+    "name": "list_objects"
+   },
+   {
+    "description": "List every saved version of a file in a bucket in order.",
+    "inputSchema": {
+     "properties": {
+      "bucket": {
+       "type": "string"
+      },
+      "key": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "bucket",
+      "key"
+     ],
+     "type": "object"
+    },
+    "name": "object_history"
+   },
+   {
+    "description": "0-call progressive L0 scent search across head CAS records and versioned bucket files. Returns compact <=150-token summaries so agents discover reusable nouns before loading full payloads.",
+    "inputSchema": {
+     "properties": {
+      "bucket": {
+       "default": null,
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "category": {
+       "default": null,
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "cohort": {
+       "default": null,
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "include_restricted": {
+       "default": false,
+       "type": "boolean"
+      },
+      "limit": {
+       "default": 20,
+       "type": "integer"
+      },
+      "query": {
+       "default": "",
+       "type": "string"
+      },
+      "store_name": {
+       "default": null,
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "surface": {
+       "default": null,
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "tag": {
+       "default": null,
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     },
+     "type": "object"
+    },
+    "name": "search_nouns"
+   },
+   {
+    "description": "List monotonic cursor-sequenced live delta feeds.",
+    "inputSchema": {
+     "additionalProperties": false,
+     "properties": {},
+     "type": "object"
+    },
+    "name": "list_feeds"
+   },
+   {
+    "description": "Read delta entries from a live feed with monotonic seq > after.",
+    "inputSchema": {
+     "properties": {
+      "after": {
+       "default": 0,
+       "type": "integer"
+      },
+      "category": {
+       "default": null,
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "cohort": {
+       "default": null,
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "feed": {
+       "type": "string"
+      },
+      "include_restricted": {
+       "default": false,
+       "type": "boolean"
+      },
+      "limit": {
+       "default": 100,
+       "type": "integer"
+      },
+      "q": {
+       "default": "",
+       "type": "string"
+      },
+      "surface": {
+       "default": null,
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "tag": {
+       "default": null,
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     },
+     "required": [
+      "feed"
+     ],
+     "type": "object"
+    },
+    "name": "poll_feed"
+   },
+   {
+    "description": "Publish one monotonic delta entry to a live swarm feed.",
+    "inputSchema": {
+     "properties": {
+      "allowed_surfaces": {
+       "items": {
+        "type": "string"
+       },
+       "type": [
+        "array",
+        "null"
+       ]
+      },
+      "feed": {
+       "type": "string"
+      },
+      "kind": {
+       "default": "delta",
+       "type": "string"
+      },
+      "owner_key_id": {
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "payload": {
+       "type": "object"
+      },
+      "producer_surface": {
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "summary": {
+       "default": "",
+       "type": "string"
+      },
+      "tags": {
+       "items": {
+        "type": "string"
+       },
+       "type": [
+        "array",
+        "null"
+       ]
+      },
+      "target_cohorts": {
+       "items": {
+        "type": "string"
+       },
+       "type": [
+        "array",
+        "null"
+       ]
+      },
+      "visibility_scope": {
+       "enum": [
+        "private",
+        "surface_only",
+        "allowlist_surfaces",
+        "public_commons",
+        null
+       ],
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     },
+     "required": [
+      "feed",
+      "payload"
+     ],
+     "type": "object"
+    },
+    "name": "publish_feed"
+   },
+   {
+    "description": "0-call dual-resolution muscle-memory + fuzzy step recall + dead-end tombstone lookup. Call before solving to reuse verified 0-call recipes and avoid known dead ends.",
+    "inputSchema": {
+     "properties": {
+      "category": {
+       "default": null,
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "cohort": {
+       "default": null,
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "include_restricted": {
+       "default": false,
+       "type": "boolean"
+      },
+      "limit": {
+       "default": 5,
+       "type": "integer"
+      },
+      "query": {
+       "type": "string"
+      },
+      "surface": {
+       "default": null,
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "tag": {
+       "default": null,
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     },
+     "required": [
+      "query"
+     ],
+     "type": "object"
+    },
+    "name": "match_reflex"
+   },
+   {
+    "description": "Negotiate Surface Handshake v1.0: validate surface_id, clamp max_chars, and return isolated store namespace, allowed queues, capabilities, and handshake_id.",
+    "inputSchema": {
+     "properties": {
+      "protocol_version": {
+       "default": "1.0",
+       "type": "string"
+      },
+      "requested_max_chars": {
+       "default": 4000,
+       "type": "integer"
+      },
+      "requested_queues": {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      "requested_stores": {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      "surface_id": {
+       "type": "string"
+      },
+      "surface_version": {
+       "default": "0.1.0",
+       "type": "string"
+      }
+     },
+     "required": [
+      "surface_id"
+     ],
+     "type": "object"
+    },
+    "name": "handshake"
+   },
+   {
+    "description": "List ready verbs visible to this principal, with optional queue and status filters.",
+    "inputSchema": {
+     "additionalProperties": false,
+     "properties": {
+      "limit": {
+       "maximum": 100,
+       "minimum": 1,
+       "type": "integer"
+      },
+      "queue": {
+       "type": "string"
+      },
+      "status": {
+       "enum": [
+        "ready",
+        "leased",
+        "waiting",
+        "done",
+        "dead",
+        "cancelled"
+       ],
+       "type": "string"
+      }
+     },
+     "type": "object"
+    },
+    "name": "list_verbs"
+   },
+   {
+    "description": "Open a tracked, one-hour synthetic demo session without secrets. Use the returned session_token as Authorization: Bearer for subsequent calls. No production access.",
+    "inputSchema": {
+     "additionalProperties": false,
+     "properties": {
+      "agent_label": {
+       "maxLength": 64,
+       "type": "string"
+      }
+     },
+     "type": "object"
+    },
+    "name": "open_anonymous_session"
+   },
+   {
+    "description": "Public connection instructions, limits, labels and keyed upgrade path.",
+    "inputSchema": {
+     "additionalProperties": false,
+     "properties": {},
+     "type": "object"
+    },
+    "name": "explain_access_modes"
+   },
+   {
+    "description": "Show this bearer principal's scopes and expiry without exposing its secret.",
+    "inputSchema": {
+     "additionalProperties": false,
+     "properties": {},
+     "type": "object"
+    },
+    "name": "whoami"
+   },
+   {
+    "description": "Read only this principal's redacted request audit.",
+    "inputSchema": {
+     "additionalProperties": false,
+     "properties": {
+      "after": {
+       "minimum": 0,
+       "type": "integer"
+      },
+      "limit": {
+       "maximum": 200,
+       "minimum": 1,
+       "type": "integer"
+      }
+     },
+     "type": "object"
+    },
+    "name": "my_audit"
+   },
+   {
+    "description": "Operator audit. Requires admin scope.",
+    "inputSchema": {
+     "additionalProperties": false,
+     "properties": {
+      "after": {
+       "minimum": 0,
+       "type": "integer"
+      },
+      "limit": {
+       "maximum": 200,
+       "minimum": 1,
+       "type": "integer"
+      }
+     },
+     "type": "object"
+    },
+    "name": "admin_audit"
+   },
+   {
+    "description": "Cancel a task owned by this principal or its authorized surface.",
+    "inputSchema": {
+     "additionalProperties": false,
+     "properties": {
+      "reason": {
+       "type": "string"
+      },
+      "task_id": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "task_id"
+     ],
+     "type": "object"
+    },
+    "name": "cancel"
+   },
+   {
+    "description": "Read monotonic events for a task this principal may view; HTTP also supports bounded long-poll.",
+    "inputSchema": {
+     "additionalProperties": false,
+     "properties": {
+      "after": {
+       "minimum": 0,
+       "type": "integer"
+      },
+      "task_id": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "task_id"
+     ],
+     "type": "object"
+    },
+    "name": "claim_events"
+   }
+  ],
+  "tools_sha256": "e6cea83c79f3d77104423b352f9d0656bf101f4edef93af9052f920e452c0472"
+ },
+ "visibility_scope": "private"
+}

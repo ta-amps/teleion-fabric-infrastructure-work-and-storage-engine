@@ -54,13 +54,16 @@ def main(argv: list[str] | None = None) -> int:
     )
     commands = parser.add_subparsers(dest="command", required=True)
     tick = commands.add_parser("tick", help="evaluate the trigger and run at most one round")
+    serve = commands.add_parser("serve-check", help="one base, several adapters attached by name")
     curve = commands.add_parser("curve", help="print or write the learning curve")
-    for sub in (tick, curve):
+    for sub in (tick, serve, curve):
         sub.add_argument("--root", type=Path, required=True, help="private run directory")
         sub.add_argument("--base", type=Path, required=True, help="base-model noun JSON")
-    tick.add_argument("--base-path", type=Path)
-    tick.add_argument("--backend", choices=["hf", "fixture"], default="hf")
-    tick.add_argument("--max-verbs", type=int, default=64)
+    for sub in (tick, serve):
+        sub.add_argument("--base-path", type=Path)
+        sub.add_argument("--backend", choices=["hf", "fixture"], default="hf")
+        sub.add_argument("--max-verbs", type=int, default=64)
+    serve.add_argument("--max-adapters", type=int, default=3)
     curve.add_argument("--output", type=Path)
     pack = commands.add_parser("pack", help="write the seed pack (deterministic, offline)")
     pack.add_argument("--output", type=Path, default=HERE / "pack")
@@ -69,16 +72,22 @@ def main(argv: list[str] | None = None) -> int:
     )
     tools.add_argument("--repo", type=Path, default=HERE.parents[1])
     args = parser.parse_args(argv)
-    if args.command == "tick":
+    if args.command in ("tick", "serve-check"):
         from .loop import tick as run_tick
 
         factory = backend_factory(args.backend, args.base, args.base_path)
+        extra = (
+            {"stage": "serve_check", "params": {"max_adapters": args.max_adapters}}
+            if args.command == "serve-check"
+            else {}
+        )
         result = run_tick(
             args.root,
             args.base,
             factory,
             max_verbs=args.max_verbs,
             log=lambda line: print(line, file=sys.stderr, flush=True),
+            **extra,
         )
         print(
             json.dumps(
