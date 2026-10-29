@@ -105,6 +105,25 @@ each 750 ms check inside a claim-events long-poll wrote another row.
 - `GET /v1/claims/<task>/events?wait=N` is audited once per request; the later checks inside
   the same long-poll are not recorded. The Python service already audited once per request.
 
+## Retention and health reads
+
+Rows read are the next allowance to run out (5 million a day on Workers Free).
+
+- Every audit row used to run four retention `DELETE` statements, three of them scanning whole
+  tables (`access_limits`, `access_principals` twice). Retention now runs at most once every
+  five minutes per object instance and deletes expired rows in indexed batches of 500, using new
+  indexes `access_limits_window` and a partial `access_principals_purge` (only rows with a purge
+  time, so keyed principals pay nothing). Audit reads and public activity filter by the 24-hour
+  retention, so a row awaiting deletion is never shown.
+- `GET /v1/health` used to read every task row (`SELECT *`, briefs included) and query the
+  lease table once per leased task; `/board` added the board snapshot, every bucket and every
+  record head with its value. Both are now served from a per-namespace snapshot kept for 15
+  seconds and dropped by any successful state change in that object, so `time` is the moment
+  the snapshot was taken. A refresh reads only small task columns and finds expired leases with
+  one query. A refresh is still proportional to the namespace's public tasks; it is no longer
+  proportional to the request rate. Truly constant-time health would need incrementally
+  maintained public counts, which costs index writes on every task change and is not done.
+
 ## Local measurements and remaining work
 
 The actual-workerd tests warm one authenticated key and make five ordinary

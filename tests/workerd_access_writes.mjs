@@ -13,12 +13,13 @@ export { default } from './deploy/cloudflare/worker.js';
 import { TesseraCoordinator } from './deploy/cloudflare/cloud_store.js';
 import * as access from './deploy/cloudflare/cloud_access.js';
 const WRITE = /^\\s*(CREATE|INSERT|UPDATE|DELETE|ALTER|DROP|REPLACE)\\b/i;
-const state = globalThis.__accessWrites || (globalThis.__accessWrites = { writeStatements: 0, patched: false, constructed: [] });
+const state = globalThis.__accessWrites || (globalThis.__accessWrites = { writeStatements: 0, statements: 0, patched: false, constructed: [] });
 function patch(sql) {
   if (state.patched) return;
   state.patched = true;
   const proto = Object.getPrototypeOf(sql), exec = proto.exec;
   proto.exec = function (query, ...params) {
+    state.statements++;
     if (WRITE.test(String(query))) state.writeStatements++;
     return exec.call(this, query, ...params);
   };
@@ -30,6 +31,14 @@ export class FixtureCoordinator extends TesseraCoordinator {
     super(ctx, env);
   }
   testWriteStatements() { return state.writeStatements; }
+  testStatements() { return state.statements; }
+  testBackdateAudit(n) {
+    const old = Date.now() / 1000 - 90000;
+    for (let i = 0; i < n; i++) this.ctx.storage.sql.exec("INSERT INTO access_events(request_id,ts,namespace,principal_kind,principal_id,action,labels,scopes_used) VALUES (?,?,?,?,?,?,?,?)", 'synthetic-old-' + i, old + i / 1000, 'main', 'keyed', 'synthetic-old', 'counts', '{}', '[]');
+    return this._one("SELECT COUNT(*) n FROM access_events WHERE ts < ?", Date.now() / 1000 - 86400).n;
+  }
+  testExpiredAuditRows() { return this._one("SELECT COUNT(*) n FROM access_events WHERE ts < ?", Date.now() / 1000 - 86400).n; }
+  testRetentionDue() { this.accessRetainedAt = null; }
   testConstructed() { return state.constructed; }
   testAuditRows() { return this._one('SELECT COUNT(*) n FROM access_events').n; }
   testCounters(principalId) {
@@ -177,4 +186,34 @@ test("a long-poll for claim events is audited once per request", async () => {
   assert.deepEqual(poll.data.events, []);
   assert.ok(Date.now() - started >= 1500, "the request must actually have long-polled");
   assert.equal(await primary.testAuditRows(), rows + 1);
+});
+
+test("public health is served from a short snapshot that any state change refreshes", async () => {
+  const { request, primary, admin } = await setup();
+  assert.equal((await request("/v1/health")).status, 200);
+  const before = await primary.testStatements();
+  const again = await request("/v1/health");
+  assert.equal(again.status, 200);
+  assert.equal(await primary.testStatements(), before, "a cached snapshot runs no SQL");
+  assert.equal((await request("/v1/queues/define", { name: "conformance-health" }, admin.key)).status, 200);
+  assert.equal((await request("/v1/tasks", { queue: "conformance-health", brief: { synthetic: true }, idempotency_key: "health-1" }, admin.key)).status, 201);
+  const fresh = await request("/v1/health");
+  const queue = fresh.data.queues.find(q => q.name === "conformance-health");
+  assert.equal(queue.counts.ready, 1);
+  assert.ok(fresh.data.time >= again.data.time);
+});
+
+test("audit retention deletes expired rows in bounded batches at most once per interval", async () => {
+  const { request, primary, admin } = await setup();
+  assert.equal(await primary.testBackdateAudit(600), 600);
+  await primary.testRetentionDue();
+  assert.equal((await request("/v1/queues/define", { name: "conformance-retention" }, admin.key)).status, 200);
+  assert.equal(await primary.testExpiredAuditRows(), 100);
+  assert.equal((await request("/v1/queues/define", { name: "conformance-retention-2" }, admin.key)).status, 200);
+  assert.equal(await primary.testExpiredAuditRows(), 100, "retention is throttled between runs");
+  const audit = await request("/v1/admin/audit?limit=200", undefined, admin.key);
+  assert.ok(audit.data.events.every(e => e.ts >= Date.now() / 1000 - 86400 - 5), "expired rows are never shown");
+  await primary.testRetentionDue();
+  assert.equal((await request("/v1/queues/define", { name: "conformance-retention-3" }, admin.key)).status, 200);
+  assert.equal(await primary.testExpiredAuditRows(), 0);
 });

@@ -60,6 +60,9 @@ const MAX_CHILDREN = 100;
 const MAX_DEPENDENCIES = 100;
 const MAX_DEPTH = 4;
 const MAX_PARK_SECONDS = 2_592_000;
+const HEALTH_CACHE_SECONDS = 15;
+// Successful actions that change tasks, leases, nouns or keys; they drop cached snapshots.
+const STATE_CHANGING_ACTIONS = new Set(["enqueue", "claim", "heartbeat", "submit", "split", "park", "resume", "cancel", "defineQueue", "putRecords", "putObjectMeta", "recordBlobStored", "defineBucket", "publishFeed", "registerJob", "updateJob", "reap", "revokeKey"]);
 import { ClaimAdmission, ClaimPressure, IdleClaims, claimAdmissionOptions } from "./claim_admission.js";
 import { LAST_USED_WRITE_INTERVAL_SECONDS, storageQuotaFailure } from "./storage_quota.js";
 
@@ -451,6 +454,7 @@ export class TesseraCoordinator extends DurableObject {
     super(ctx, env);
     this.claimAdmission = new ClaimAdmission(claimAdmissionOptions(env));
     this.idleClaims = new IdleClaims();
+    this.healthCache = new Map();
     this.namespace = "main";
     this.isPrimary = true;
     this.seededNamespaces = new Set();
@@ -1270,6 +1274,7 @@ export class TesseraCoordinator extends DurableObject {
   async runReaper() {
     const now = Date.now() / 1000;
     let reaped = 0;
+    this.healthCache.clear();
     this.ctx.storage.transactionSync(() => {
       reaped = this._reap(now);
       this.ctx.storage.sql.exec(
@@ -1684,21 +1689,29 @@ export class TesseraCoordinator extends DurableObject {
     return record;
   }
 
+  // Public health and board snapshots are cached per namespace for HEALTH_CACHE_SECONDS and
+  // dropped whenever this object changes state, so a poller costs one scan per interval
+  // instead of one per request. `time` is when the snapshot was taken. A scan reads only
+  // small task columns and finds expired leases with one query instead of one per task.
   async publicHealthAndBoard(includeBoardMeta = false, namespace = "main") {
     await this._ensureAlarmPending();
     const ns = normalizeNamespace(namespace);
     const now = Date.now() / 1000;
     this.namespace = ns;
     this.isPrimary = ns === "main";
+    const cacheKey = `${includeBoardMeta ? "board" : "health"}\u0000${ns}`;
+    const cached = this.healthCache.get(cacheKey);
+    if (cached && now - cached.at >= 0 && now - cached.at < HEALTH_CACHE_SECONDS) return cached.value;
 
     const last = this._one("SELECT value FROM meta WHERE key = 'reaper_last_run'");
     const queues = [];
-    const publicTasks = this._all("SELECT * FROM tasks WHERE namespace=? ORDER BY queue", ns).filter(r => this._publicRow(r));
+    const publicTasks = this._all("SELECT id, queue, state, not_before, updated_at, visibility_scope, tags, target_cohorts FROM tasks WHERE namespace=? AND visibility_scope='public_commons' ORDER BY queue", ns).filter(r => this._publicRow(r));
+    const expiredIds = new Set(this._all("SELECT task_id FROM leases WHERE namespace=? AND (expires_at<=? OR hard_expires_at<=?)", ns, now, now).map(r => r.task_id));
     for (const name of [...new Set(publicTasks.map(t => t.queue))].sort()) {
       const tasks = publicTasks.filter(t => t.queue === name);
       const counts = Object.fromEntries(["ready","leased","waiting","done","dead","cancelled"].map(state => [state,tasks.filter(t => t.state===state).length]));
       const ready = tasks.filter(t => t.state==="ready" && t.not_before<=now).map(t => t.updated_at);
-      const expired = tasks.filter(t => t.state==="leased" && this._one("SELECT task_id FROM leases WHERE namespace=? AND task_id=? AND (expires_at<=? OR hard_expires_at<=?)",ns,t.id,now,now)).length;
+      const expired = tasks.filter(t => t.state==="leased" && expiredIds.has(t.id)).length;
       queues.push({ name, counts, oldest_ready_age_seconds: ready.length ? Math.max(0,now-Math.min(...ready)):null, expired_leases:expired });
     }
     const health = {
@@ -1709,13 +1722,15 @@ export class TesseraCoordinator extends DurableObject {
       reaper_last_run: last ? Number(last.value) : null,
       queues,
     };
-    if (!includeBoardMeta) return health;
-    return {
+    const value = includeBoardMeta ? {
       health,
       snapshot: this._boardSnapshot(ns),
       buckets: this._listBucketsInternal(),
       stores: this._listStoresInternal(),
-    };
+    } : health;
+    if (this.healthCache.size >= 256) this.healthCache.clear();
+    this.healthCache.set(cacheKey, { at: now, value });
+    return value;
   }
 
   _listStoresInternal(viewerCtx = {}) {
@@ -1855,6 +1870,7 @@ export class TesseraCoordinator extends DurableObject {
       const meta = args.access_meta || {};
       const mode = grant ? auditMode(action, out, meta) : "skip";
       const primary = ns !== "main" && this.env.COORDINATOR ? this.env.COORDINATOR.get(this.env.COORDINATOR.idFromName("primary")) : null;
+      if (out.ok && STATE_CHANGING_ACTIONS.has(action)) this.healthCache.clear();
       if (mode === "row") {
         audit(this, grant, action, args, out, meta);
         if (primary) await primary.recordAccessEvent(publicPrincipal(grant), action, args, out, meta);

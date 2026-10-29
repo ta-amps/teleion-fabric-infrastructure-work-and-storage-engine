@@ -37,6 +37,8 @@ export function initAccess(c) {
     `CREATE INDEX IF NOT EXISTS access_events_time ON access_events(ts)`,
     `CREATE TABLE IF NOT EXISTS access_counters (window INTEGER NOT NULL, principal_id TEXT NOT NULL, namespace TEXT NOT NULL, action TEXT NOT NULL, outcome TEXT NOT NULL, principal_kind TEXT NOT NULL, count INTEGER NOT NULL, first_ts REAL NOT NULL, last_ts REAL NOT NULL, PRIMARY KEY (window, principal_id, namespace, action, outcome)) WITHOUT ROWID`,
     `CREATE INDEX IF NOT EXISTS access_counters_owner ON access_counters(principal_id, window)`,
+    `CREATE INDEX IF NOT EXISTS access_limits_window ON access_limits(window)`,
+    `CREATE INDEX IF NOT EXISTS access_principals_purge ON access_principals(purge_at) WHERE purge_at IS NOT NULL`,
   ];
   // Read first: an existing object's cold start executes no write-capable statement.
   c._ensureDdl(statements);
@@ -134,11 +136,34 @@ export function audit(c, grant, action, args, out, meta = {}) {
     out?.status || (out?.ok ? 200 : 400), Number(meta.bytes_in || 0), new TextEncoder().encode(JSON.stringify(out?.data || {})).length,
     out?.ok ? null : out?.code || "unknown", JSON.stringify(labels), JSON.stringify(SCOPES[action] ? [SCOPES[action]] : READ_ACTIONS.has(action) ? ["nouns:read"] : []),
   );
-  c.ctx.storage.sql.exec("DELETE FROM access_events WHERE ts < ?", now - 86400);
-  c.ctx.storage.sql.exec("DELETE FROM access_counters WHERE window < ?", Math.floor((now - 86400) / COUNTER_WINDOW_SECONDS));
-  c.ctx.storage.sql.exec("DELETE FROM access_limits WHERE window < ?", Math.floor(now / 3600) - 24);
-  c.ctx.storage.sql.exec("DELETE FROM keys WHERE key_id IN (SELECT key_id FROM access_principals WHERE principal_kind='anonymous' AND purge_at<?)", now);
-  c.ctx.storage.sql.exec("DELETE FROM access_principals WHERE principal_kind='anonymous' AND purge_at<?", now);
+  retainAccess(c, now);
+}
+
+// Retention runs at most once per RETENTION_INTERVAL_SECONDS per object instance and deletes
+// expired rows in indexed batches, instead of four whole-table DELETE scans on every audit.
+// Reads also filter by age, so a row past retention is never shown while it awaits deletion.
+const RETENTION_SECONDS = 86400;
+const RETENTION_INTERVAL_SECONDS = 300;
+const RETENTION_BATCH = 500;
+export function retainAccess(c, now = Date.now() / 1000, { force = false } = {}) {
+  if (!force && c.accessRetainedAt != null && now - c.accessRetainedAt >= 0 && now - c.accessRetainedAt < RETENTION_INTERVAL_SECONDS) return 0;
+  c.accessRetainedAt = now;
+  const sql = c.ctx.storage.sql;
+  let deleted = 0;
+  const oldEvents = c._all("SELECT seq FROM access_events WHERE ts < ? ORDER BY ts LIMIT ?", now - RETENTION_SECONDS, RETENTION_BATCH);
+  for (const r of oldEvents) sql.exec("DELETE FROM access_events WHERE seq=?", r.seq);
+  deleted += oldEvents.length;
+  const oldWindows = c._all("SELECT DISTINCT window FROM access_counters WHERE window < ? ORDER BY window LIMIT 60", Math.floor((now - RETENTION_SECONDS) / COUNTER_WINDOW_SECONDS));
+  for (const r of oldWindows) sql.exec("DELETE FROM access_counters WHERE window=?", r.window);
+  const oldLimits = c._all("SELECT subject, window FROM access_limits WHERE window < ? LIMIT ?", Math.floor(now / 3600) - 24, RETENTION_BATCH);
+  for (const r of oldLimits) sql.exec("DELETE FROM access_limits WHERE subject=? AND window=?", r.subject, r.window);
+  deleted += oldLimits.length;
+  const expired = c._all("SELECT key_id FROM access_principals WHERE purge_at < ? AND principal_kind='anonymous' LIMIT ?", now, RETENTION_BATCH);
+  for (const r of expired) {
+    sql.exec("DELETE FROM keys WHERE key_id=?", r.key_id);
+    sql.exec("DELETE FROM access_principals WHERE key_id=?", r.key_id);
+  }
+  return deleted + expired.length;
 }
 
 export async function mintAnonymous(c, body, meta) {
@@ -245,17 +270,18 @@ export function enforceAccess(c, grant, action, args) {
 export function ownAudit(c, grant, args = {}) {
   const limit = Math.max(1, Math.min(Number(args.limit) || 50, 200));
   const all = grant.is_admin && args.admin;
-  const rows = all ? c._all("SELECT * FROM access_events WHERE seq>? ORDER BY seq DESC LIMIT ?", Number(args.after) || 0, limit)
-    : c._all("SELECT * FROM access_events WHERE principal_id=? AND seq>? ORDER BY seq DESC LIMIT ?", grant.principal_id || grant.key_id, Number(args.after) || 0, limit);
+  const since = Date.now() / 1000 - RETENTION_SECONDS, sinceWindow = Math.floor(since / COUNTER_WINDOW_SECONDS);
+  const rows = all ? c._all("SELECT * FROM access_events WHERE seq>? AND ts>=? ORDER BY seq DESC LIMIT ?", Number(args.after) || 0, since, limit)
+    : c._all("SELECT * FROM access_events WHERE principal_id=? AND seq>? AND ts>=? ORDER BY seq DESC LIMIT ?", grant.principal_id || grant.key_id, Number(args.after) || 0, since, limit);
   flushAccessCounters(c);
-  const counters = all ? c._all("SELECT * FROM access_counters ORDER BY window DESC, last_ts DESC LIMIT ?", limit)
-    : c._all("SELECT * FROM access_counters WHERE principal_id=? ORDER BY window DESC, last_ts DESC LIMIT ?", grant.principal_id || grant.key_id, limit);
+  const counters = all ? c._all("SELECT * FROM access_counters WHERE window>=? ORDER BY window DESC, last_ts DESC LIMIT ?", sinceWindow, limit)
+    : c._all("SELECT * FROM access_counters WHERE principal_id=? AND window>=? ORDER BY window DESC, last_ts DESC LIMIT ?", grant.principal_id || grant.key_id, sinceWindow, limit);
   return { events: rows.map(r => ({ ...r, labels: JSON.parse(r.labels), scopes_used: JSON.parse(r.scopes_used) })),
     counters: counters.map(r => ({ ...r, window_start: r.window * COUNTER_WINDOW_SECONDS, window_seconds: COUNTER_WINDOW_SECONDS })),
     counters_note: "Denied, failed and no-op requests and internal pre-checks are counted per minute instead of one row each; counts not yet written may be lost if the object restarts." };
 }
 export function publicActivity(c) {
-  const rows = c._all("SELECT ts,principal_kind,action,resource_type,status,labels FROM access_events WHERE action NOT IN ('verifyKey','verifyStoreScope') AND principal_kind IN ('anonymous','keyed','service_binding') ORDER BY seq DESC LIMIT 30");
+  const rows = c._all("SELECT ts,principal_kind,action,resource_type,status,labels FROM access_events WHERE action NOT IN ('verifyKey','verifyStoreScope') AND principal_kind IN ('anonymous','keyed','service_binding') AND ts>=? ORDER BY seq DESC LIMIT 30", Date.now() / 1000 - RETENTION_SECONDS);
   return { events: rows.map(r => ({ ...r, labels: JSON.parse(r.labels).demo ? ANON_LABELS : {} })) };
 }
 export function publicPrincipal(grant) {
