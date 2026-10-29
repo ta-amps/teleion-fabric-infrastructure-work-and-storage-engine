@@ -1,3 +1,4 @@
+import { agentStartAsset, withAgentStart } from "./agent_start.js";
 import { accessRoute, accessDescription, ACCESS_TOOLS } from "./cloud_access_routes.js";
 import { TOOLS as FABRIC_TOOLS } from "./cloud_mcp.js";
 // Tessera Cloud Worker: 24/7 native cloud execution on Cloudflare Durable Object SQLite + D1
@@ -1427,7 +1428,7 @@ const worker = {
 };
 
 
-export default {
+const onboardingApplication = {
   scheduled: worker.scheduled,
   async fetch(request, env, ctx) {
     const requestId = /^[a-zA-Z0-9._:-]{1,100}$/.test(request.headers.get("x-request-id") || "") ? request.headers.get("x-request-id") : crypto.randomUUID();
@@ -1456,5 +1457,12 @@ export default {
       for (const [k,v] of Object.entries(headers)) outHeaders.set(k,v);
       return new Response(response.body, { status: response.status, headers: outHeaders });
     } catch (e) { return problem(e.status || 500, e.code || "internal_error", e.detail || "request could not be completed", {}, headers); }
+  },
+};
+
+export default {
+  ...onboardingApplication,
+  async fetch(request, env, ctx) {
+    return agentStartAsset(request) || withAgentStart(request, await onboardingApplication.fetch(request, env, ctx));
   },
 };
