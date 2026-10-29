@@ -493,6 +493,7 @@ async function callTool(stub, env, ctx, secret, name, args, routeCtx) {
         ok: r.ok,
         status: r.status,
         code: r.code,
+        extra: r.extra,
         detail: r.detail,
         data: r.ok ? { lease: r.data.lease } : null,
       };
@@ -507,6 +508,7 @@ async function callTool(stub, env, ctx, secret, name, args, routeCtx) {
         ok: r.ok,
         status: r.status,
         code: r.code,
+        extra: r.extra,
         detail: r.detail,
         data: r.ok ? { lease: r.data } : null,
       };
@@ -526,6 +528,7 @@ async function callTool(stub, env, ctx, secret, name, args, routeCtx) {
         ok: r.ok,
         status: r.status,
         code: r.code,
+        extra: r.extra,
         detail: r.detail,
         data: r.ok ? { receipt: r.data } : null,
       };
@@ -596,6 +599,7 @@ async function callTool(stub, env, ctx, secret, name, args, routeCtx) {
         ok: r.ok,
         status: r.status,
         code: r.code,
+        extra: r.extra,
         detail: r.detail,
         data: r.ok ? { record: r.data.records[0] } : null,
       };
@@ -613,6 +617,7 @@ async function callTool(stub, env, ctx, secret, name, args, routeCtx) {
         ok: r.ok,
         status: r.status,
         code: r.code,
+        extra: r.extra,
         detail: r.detail,
         data: r.ok ? { record: r.data } : null,
       };
@@ -634,6 +639,7 @@ async function callTool(stub, env, ctx, secret, name, args, routeCtx) {
         ok: r.ok,
         status: r.status,
         code: r.code,
+        extra: r.extra,
         detail: r.detail,
         data: r.ok ? { bucket: r.data } : null,
       };
@@ -671,6 +677,7 @@ async function callTool(stub, env, ctx, secret, name, args, routeCtx) {
         ok: r.ok,
         status: r.status,
         code: r.code,
+        extra: r.extra,
         detail: r.detail,
         data: r.ok ? { object: r.data } : null,
       };
@@ -771,6 +778,7 @@ async function callTool(stub, env, ctx, secret, name, args, routeCtx) {
         ok: r.ok,
         status: r.status,
         code: r.code,
+        extra: r.extra,
         detail: r.detail,
         data: r.ok ? { entry: r.data } : null,
       };
@@ -875,7 +883,7 @@ export async function handleMcpRequest(
           id,
           result: {
             content: [{ type: "text", text: `${out.code}: ${out.detail}` }],
-            structuredContent: { error: { code: out.code, status: out.status, detail: out.detail }, access: out.status === 401 ? accessDescription(env.PUBLIC_URL || new URL(request.url).origin, env.ANONYMOUS_ACCESS_ENABLED === "true") : undefined },
+            structuredContent: { error: { code: out.code, status: out.status, detail: out.detail, ...(out.code === "storage_quota_exhausted" ? { retry_after: out.extra?.retry_after, reset_at: out.extra?.reset_at } : {}) }, access: out.status === 401 ? accessDescription(env.PUBLIC_URL || new URL(request.url).origin, env.ANONYMOUS_ACCESS_ENABLED === "true") : undefined },
             isError: true,
           },
         };

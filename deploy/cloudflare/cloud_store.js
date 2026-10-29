@@ -60,6 +60,7 @@ const MAX_DEPENDENCIES = 100;
 const MAX_DEPTH = 4;
 const MAX_PARK_SECONDS = 2_592_000;
 import { ClaimAdmission, ClaimPressure, claimAdmissionOptions } from "./claim_admission.js";
+import { LAST_USED_WRITE_INTERVAL_SECONDS, storageQuotaFailure } from "./storage_quota.js";
 
 class StoreErr extends Error {
   constructor(status, code, detail, extra = {}) {
@@ -1279,7 +1280,7 @@ export class TesseraCoordinator extends DurableObject {
     if (!r) return null;
     const now = Date.now() / 1000;
     if (r.revoked_at != null || Number(r.expires_at) <= now) return null;
-    this.ctx.storage.sql.exec("UPDATE access_principals SET last_used_at=? WHERE key_id=?", now, r.key_id);
+    this.ctx.storage.sql.exec("UPDATE access_principals SET last_used_at=? WHERE key_id=? AND (last_used_at IS NULL OR last_used_at<=?)", now, r.key_id, now - LAST_USED_WRITE_INTERVAL_SECONDS);
     return {
       ...principalMetadata(this, r),
       key_id: r.key_id,
@@ -1305,8 +1306,8 @@ export class TesseraCoordinator extends DurableObject {
         // Snapshot authenticated identity metadata, never the secret or its hash.
         // Namespace-local publication proofs need the completed actors' accounts.
         // Authorization still resolves through primary on every request.
-        this.ctx.storage.sql.exec("INSERT INTO access_principals(key_id,principal_kind,principal_id,account_id,namespace,key_prefix,labels,quota_tier,last_used_at,purge_at) VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(key_id) DO UPDATE SET principal_kind=excluded.principal_kind,account_id=excluded.account_id,last_used_at=excluded.last_used_at",
-          shared.key_id, shared.principal_kind, shared.principal_id || shared.key_id, shared.account_id || null, shared.namespace || "main", shared.key_prefix || "", JSON.stringify(shared.labels || {}), shared.quota_tier || "standard", Date.now()/1000, shared.purge_at || null);
+        this.ctx.storage.sql.exec("INSERT INTO access_principals(key_id,principal_kind,principal_id,account_id,namespace,key_prefix,labels,quota_tier,last_used_at,purge_at) VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(key_id) DO UPDATE SET principal_kind=excluded.principal_kind,account_id=excluded.account_id,last_used_at=excluded.last_used_at WHERE access_principals.principal_kind IS NOT excluded.principal_kind OR access_principals.account_id IS NOT excluded.account_id OR access_principals.last_used_at IS NULL OR access_principals.last_used_at<=excluded.last_used_at-?",
+          shared.key_id, shared.principal_kind, shared.principal_id || shared.key_id, shared.account_id || null, shared.namespace || "main", shared.key_prefix || "", JSON.stringify(shared.labels || {}), shared.quota_tier || "standard", Date.now()/1000, shared.purge_at || null, LAST_USED_WRITE_INTERVAL_SECONDS);
         return this._hydrateGrant(shared);
       }
     }
@@ -1512,6 +1513,8 @@ export class TesseraCoordinator extends DurableObject {
   }
 
   _errOut(e) {
+    const quota = storageQuotaFailure(e);
+    if (quota) return { ok: false, ...quota };
     if (e instanceof StoreErr || (e && typeof e.status === "number" && e.code)) {
       return {
         ok: false,
