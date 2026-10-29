@@ -268,7 +268,9 @@ class HFBackend:
         trainable = sum(p.numel() for p in params)
         total = sum(p.numel() for p in model.parameters())
         memory = self.peak()
-        self.release(model, optimizer)
+        # Drop every reference before loading a fresh base, or a 3B run holds two copies.
+        del model, optimizer, scheduler, params, loss
+        self.release()
         if checkpoint:
             checkpoint()
         restored = self.load(output)

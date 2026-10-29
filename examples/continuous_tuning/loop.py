@@ -92,7 +92,7 @@ def trigger(ctx: verbs.Context, learner: str) -> tuple[str, int, str]:
     return "no_op", state["round"], f"{new} new rows; interval not elapsed"
 
 
-def plan(kind: str, round_id: int, spec: dict[str, Any]) -> list[dict[str, Any]]:
+def plan(kind: str, round_id: int, spec: dict[str, Any], now: float) -> list[dict[str, Any]]:
     data = spec["data_plan"]
     if kind == "baseline":
         batches = [
@@ -128,7 +128,7 @@ def plan(kind: str, round_id: int, spec: dict[str, Any]) -> list[dict[str, Any]]
         "origin": "fresh_holdout",
     }
     if kind == "monitor":
-        fresh["batch"] = f"test-monitor-r{round_id}-{int(time.time())}"
+        fresh["batch"] = f"test-monitor-r{round_id}-{int(now)}"
         return [
             step("fresh", "generate_examples", {"batches": [fresh]}, []),
             step("freeze_fresh", "curate_dataset", {"mode": "freeze_fresh"}, ["fresh"]),
@@ -222,7 +222,7 @@ def tick_verb(ctx: verbs.Context, brief: dict[str, Any], deps: dict, beat) -> ve
             types=("trigger noun and champion pointer", "nothing"),
         )  # fmt: skip
     ids: dict[str, str] = {}
-    for item in plan(kind, round_id, ctx.specs["learner_spec"]):
+    for item in plan(kind, round_id, ctx.specs["learner_spec"], ctx.now()):
         spec = task_spec(
             ctx, brief["learner"], round_id, item, [ids[d] for d in item["deps"]], ctx.tick
         )

@@ -223,16 +223,30 @@ def loop_run(tmp_path_factory: pytest.TempPathFactory) -> dict:
     root = tmp_path_factory.mktemp("tuning")
     spec = json.loads((HERE / "learner_spec.json").read_bytes())
     backend = FixtureBackend(TOOLS, spec["data_plan"])
-    clock = iter(range(1_900_000_000, 1_900_100_000, 1000))
-    ticks = [tick(root, BASE, lambda: backend, now=lambda: float(next(clock))) for _ in range(5)]
+    # Five ticks a few minutes apart, then one more a day later: an evaluation-only round.
+    times = [1_900_000_000 + 1000 * i for i in range(5)] + [1_900_000_000 + 4000 + 90_000]
+    ticks = [tick(root, BASE, lambda: backend, now=lambda t=t: float(t)) for t in times]
     return {"root": root, "ticks": ticks}
 
 
 def test_loop_runs_rounds_as_claimed_verbs_with_execution_reports(loop_run: dict) -> None:
     ticks = loop_run["ticks"]
-    assert [t["round"] for t in ticks] == [0, 1, 2, 3, 3]
+    assert [t["round"] for t in ticks] == [0, 1, 2, 3, 3, 3]
     assert all(v["ok"] for t in ticks[:4] for v in t["verbs"])
     assert ticks[4]["verbs"][0]["status"] == "no_op" and len(ticks[4]["verbs"]) == 1
+    monitor = [v["stage"] for v in ticks[5]["verbs"]]
+    assert monitor == [
+        "tick",
+        "generate_examples",
+        "curate_dataset",
+        "evaluate",
+        "decide_promotion",
+    ]
+    assert (
+        all(v["ok"] for v in ticks[5]["verbs"])
+        and ticks[5]["verbs"][0]["summary"]["kind"] == "monitor"
+    )
+    assert ticks[5]["pointer_version"] == ticks[4]["pointer_version"] + 1
     stages = {v["stage"] for t in ticks for v in t["verbs"]}
     assert stages == {"tick", "generate_examples", "curate_dataset", "tune_hyperparameters", "train_adapter", "evaluate", "decide_promotion", "mine_hard_examples"}  # fmt: skip
     store = Store(loop_run["root"] / "fabric.db")
