@@ -96,6 +96,10 @@ def load_run(api: Api, lease: Lease, *, clock: Callable[[], float] = time.monoto
         brief.get("spec_version"),
     ):
         raise ValueError("run brief and pinned spec disagree")
+    # Output visibility comes only from the verified spec; a brief may repeat it, never widen it.
+    consumers = spec.consumers.model_dump()
+    if brief.get("consumers") is not None and brief["consumers"] != consumers:
+        raise ValueError("run brief consumers differ from the pinned spec")
     source = brief["source"]
     limit = min(int(source["max_observations"]), spec.budget.max_observations)
     return LearnerRun(
@@ -114,7 +118,7 @@ def load_run(api: Api, lease: Lease, *, clock: Callable[[], float] = time.monoto
         output_store=brief["output_store"],
         state_version=int(brief.get("state_version", 0)),
         options=dict(brief.get("options") or {}),
-        consumers=dict(brief.get("consumers") or {}),
+        consumers=consumers,
         clock=clock,
         last_heartbeat=clock(),
     )
