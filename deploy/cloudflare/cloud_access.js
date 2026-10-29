@@ -9,7 +9,7 @@ export const DEMO_QUOTAS = Object.freeze({
   request_bytes: 65536, sessions_per_ip_hour: 10,
 });
 export const ANON_LABELS = Object.freeze({ origin: "anonymous", demo: true, untrusted: true });
-const ANON_ACTIONS = new Set([
+const ANON_ACTIONS = new Set(["recallExecution", "getExecution", "listExecutions",
   "verifyKey", "verifyStoreScope", "queues", "counts", "claim", "heartbeat", "submit",
   "cancel", "enqueue", "task", "results", "putRecords", "getRecord", "listRecords",
   "recordHistory", "listStores", "stores", "searchNouns", "claimEvents", "me", "listVerbs",
@@ -17,7 +17,7 @@ const ANON_ACTIONS = new Set([
 const WRITE_ACTIONS = new Set(["putRecords", "enqueue", "submit"]);
 const SCOPES = { claim: "verbs:claim", heartbeat: "verbs:claim", cancel: "verbs:submit",
   submit: "verbs:submit", enqueue: "verbs:submit", putRecords: "cas:write", park: "verbs:submit", resume: "verbs:submit", split: "verbs:submit", registerJob: "verbs:submit", updateJob: "verbs:submit", putObjectMeta: "cas:write", authorizeBlobWrite: "cas:write", authorizeObjectWrite: "cas:write", recordBlobStored: "cas:write", defineBucket: "cas:write", publishFeed: "cas:write" };
-const READ_ACTIONS = new Set(["getRecord", "listRecords", "recordHistory", "listStores", "searchNouns", "task", "results", "queues", "counts", "claimEvents", "listVerbs", "stores", "buckets", "getObjectMeta", "listObjects", "objectHistory", "authorizeBlobRead", "feeds", "pollFeed", "matchReflex", "events", "jobs"]);
+const READ_ACTIONS = new Set(["recallExecution", "getExecution", "listExecutions","getRecord", "listRecords", "recordHistory", "listStores", "searchNouns", "task", "results", "queues", "counts", "claimEvents", "listVerbs", "stores", "buckets", "getObjectMeta", "listObjects", "objectHistory", "authorizeBlobRead", "feeds", "pollFeed", "matchReflex", "events", "jobs"]);
 
 function error(status, code, detail, extra = {}) {
   return Object.assign(new Error(detail), { status, code, detail, extra });
@@ -62,14 +62,15 @@ export async function requestIdentity(c, ip, ua) {
 export function audit(c, grant, action, args, out, meta = {}) {
   const now = Date.now() / 1000;
   const labels = grant?.labels || {};
-  const resource = args.task_id || out?.data?.lease?.task_id || args.key || args.writes?.[0]?.key || args.queue || null;
+  const runId = typeof args.run_id === "string" && /^run_[a-f0-9]{64}$/.test(args.run_id) ? args.run_id : null;
+  const resource = runId || args.task_id || out?.data?.lease?.task_id || args.key || args.writes?.[0]?.key || args.queue || null;
   c.ctx.storage.sql.exec(
     `INSERT INTO access_events(request_id,ts,namespace,principal_kind,principal_id,session_id,key_id,account_id,ip_hash,ua_hash,surface,route_or_tool,action,resource_type,resource_id,receipt_id,status,bytes_in,bytes_out,error_code,labels,scopes_used) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     meta.request_id || crypto.randomUUID(), now, args.namespace || grant?.namespace || "main",
     grant?.principal_kind || "unknown", grant?.principal_id || grant?.key_id || null, grant?.session_id || null,
     grant?.principal_kind === "anonymous" ? null : grant?.key_id || null, grant?.account_id || null,
     meta.ip_hash || null, meta.ua_hash || null, grant?.bound_surface || "tessera", meta.tool_name || meta.route || action,
-    action, args.task_id || action === "claim" ? "verb" : args.writes || args.key ? "noun" : "access",
+    action, runId ? "noun" : args.task_id || action === "claim" ? "verb" : args.writes || args.key ? "noun" : "access",
     resource, out?.data?.receipt_hash || out?.data?.lease?.claim_receipt || null,
     out?.status || (out?.ok ? 200 : 400), Number(meta.bytes_in || 0), new TextEncoder().encode(JSON.stringify(out?.data || {})).length,
     out?.ok ? null : out?.code || "unknown", JSON.stringify(labels), JSON.stringify(SCOPES[action] ? [SCOPES[action]] : READ_ACTIONS.has(action) ? ["nouns:read"] : []),
@@ -164,7 +165,7 @@ export function enforceAccess(c, grant, action, args) {
     if (!String(w.store).startsWith("demo.")) throw error(403, "scope_denied", "demo store required");
     return governed(w);
   });
-  const payload = JSON.stringify(action === "putRecords" ? args.writes : action === "submit" ? args.output : action === "enqueue" ? args.brief : {});
+  const payload = JSON.stringify(action === "putRecords" ? args.writes : action === "submit" ? {output:args.output,execution_report:args.execution_report} : action === "enqueue" ? args.brief : {});
   if (WRITE_ACTIONS.has(action) && (/@(?!example\.(?:com|org|net)\b)[a-z0-9.-]+\.[a-z]{2,}/i.test(payload) || /\b\d{3}-\d{2}-\d{4}\b|\b(?:\d[ -]?){13,19}\b/.test(payload)))
     throw error(400, "synthetic_only", "demo payloads must not contain personal or payment data; use example.com");
   const bytes = new TextEncoder().encode(payload).length;

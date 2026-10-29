@@ -20,6 +20,8 @@ git clone https://github.com/ta-amps/tessera.git
 cd tessera
 make setup          # uv sync: Python 3.12 and every dependency
 make check          # lint, format, mypy strict, tests, leak scan, suite lock, indexes, architecture.json
+npm ci              # pinned local Worker test dependencies; Node 22 or newer
+make test-worker    # actual workerd/SQLite HTTP and MCP tests; no cloud or model calls
 ```
 
 ## Try it with the CLI (no service)

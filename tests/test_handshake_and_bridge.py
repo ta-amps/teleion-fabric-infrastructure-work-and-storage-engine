@@ -69,8 +69,12 @@ def test_http_handshake_header_validation_and_surface_bridge_bidirectional_flow(
     try:
         store.define_queue(QueueConfig(name="solve"))
         store.define_queue(QueueConfig(name="eq02"))
-        kothar_secret, _ = store.issue_key("kothar-surface", queues=["solve"], scopes=["store"])
-        eranos_secret, _ = store.issue_key("eranos-surface", queues=["eq02"], scopes=["store"])
+        kothar_secret, _ = store.issue_key(
+            "kothar-surface", queues=["solve"], scopes=["store", "surface:kothar"]
+        )
+        eranos_secret, _ = store.issue_key(
+            "eranos-surface", queues=["eq02"], scopes=["store", "surface:eranos"]
+        )
         app = create_app(store, ServiceSettings())
         transport = httpx.WSGITransport if hasattr(httpx, "WSGITransport") else None
         _ = transport  # ASGI transport used via TestClient

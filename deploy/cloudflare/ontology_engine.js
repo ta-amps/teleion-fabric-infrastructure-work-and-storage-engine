@@ -1,4 +1,5 @@
 import { NOUN_CATALOG, VERB_CATALOG, PROFILE_CATALOG, PROFILE_ALIASES } from "./ontology_catalog.js";
+import { categoryFromTag } from "./cloud_intelligence.js";
 
 /**
  * Portable ES-Module Ontology, Ranking, Fragility, Reconciliation, and Profile Engine.
@@ -177,6 +178,9 @@ export const CATEGORY_REGISTRY = Object.freeze({
 });
 
 export function normalizeTag(rawTag) {
+  // Category identifiers are stable references; do not rewrite their underscores.
+  const category = categoryFromTag(rawTag);
+  if (category) return `category:${category}`;
   return String(rawTag)
     .trim()
     .toLowerCase()

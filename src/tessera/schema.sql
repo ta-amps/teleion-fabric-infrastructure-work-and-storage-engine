@@ -317,3 +317,19 @@ CREATE TABLE IF NOT EXISTS noun_tags (
   PRIMARY KEY (namespace, noun_type, container, record_id, tag)
 );
 CREATE INDEX IF NOT EXISTS idx_noun_tags_lookup ON noun_tags (namespace, tag, noun_type);
+
+-- Immutable execution nouns. Generic CAS APIs cannot bypass source queue grants.
+CREATE TABLE IF NOT EXISTS execution_runs (
+ namespace TEXT NOT NULL, run_id TEXT NOT NULL, task_id TEXT NOT NULL,
+ fencing_token INTEGER NOT NULL, receipt_hash TEXT NOT NULL, created_at REAL NOT NULL,
+ expires_at REAL, input_hash TEXT, exact_hash TEXT, shape_hash TEXT,
+ envelope TEXT NOT NULL, PRIMARY KEY(namespace, run_id),
+ UNIQUE(namespace, task_id, fencing_token)
+);
+CREATE INDEX IF NOT EXISTS execution_exact ON execution_runs(namespace,exact_hash);
+CREATE INDEX IF NOT EXISTS execution_input ON execution_runs(namespace,input_hash);
+CREATE INDEX IF NOT EXISTS execution_shape ON execution_runs(namespace,shape_hash);
+CREATE TABLE IF NOT EXISTS execution_bands (
+ namespace TEXT NOT NULL, band TEXT NOT NULL, run_id TEXT NOT NULL,
+ PRIMARY KEY(namespace,band,run_id)
+);

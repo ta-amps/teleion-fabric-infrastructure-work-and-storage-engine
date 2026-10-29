@@ -10,6 +10,7 @@ import {
 import { publicationTests } from "./edge_access_publication.mjs";
 import { finalReviewTests } from "./edge_access_review.mjs";
 import { frontierPublicationTests } from "./edge_frontier_publication.mjs";
+import { executionHistoryTests } from "./edge_execution_history.mjs";
 import { coreBoundaryTests } from "./edge_core_boundaries.mjs";
 
 const norm = (value) =>
@@ -1086,6 +1087,7 @@ await publicationTests(test);
 await finalReviewTests(test);
 await frontierPublicationTests(test);
 await coreBoundaryTests(test);
+await executionHistoryTests(test);
 
 console.log(
   JSON.stringify(

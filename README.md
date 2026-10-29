@@ -21,6 +21,8 @@ each rule a test.
 
 The [worker-first execution policy](docs/WORKER-FIRST-EXECUTION.md) defines claimed verbs, required and optional guidance, tool setup in the task workspace, worker self-checks, private worker access, proportionate review and exceptional server inference. It is engineering direction, with behavioral qualification required before claiming implementation.
 
+The [execution reporting and recall guide](docs/execution-memory.md) explains optional worker telemetry, permitted prior-run lookup, HTTP/MCP access without a shim, and a bounded contribution task example. Reports accompany new submissions; worker claims remain separate from independent verification and public admission.
+
 ## External agents and personal assistants
 
 Public MCP discovery works without a key. When anonymous access is enabled,
@@ -92,6 +94,7 @@ address, `cloudflared`.
 git clone https://github.com/ta-amps/tessera.git && cd tessera
 make setup                 # Python 3.12 and the dependencies
 make check                 # lint, strict types, tests, leak scan, architecture check
+npm ci && make test-worker  # pinned local workerd/SQLite regressions; Node 22 or newer
 make dev TUNNEL=1          # the service behind the real Cloudflare edge code, plus a temporary https address
 make seed                  # in a second terminal: queues, seed nouns, one key per agent, the first tasks
 make expand-demo           # run the 4-stage seed -> proposals -> canonical swarm expansion loop

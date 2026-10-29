@@ -17,7 +17,7 @@ from fnmatch import fnmatchcase
 from typing import Any, Literal
 
 from tessera._buckets import BucketOps, _validate_bucket_name, matches_layer2_filters
-from tessera._storage import extract_payload_tags
+from tessera._storage import extract_payload_tags, noun_filter_sql
 from tessera._version import __version__
 from tessera.errors import InvalidRequest
 from tessera.models import (
@@ -31,6 +31,7 @@ from tessera.models import (
     ReflexMatch,
     VisibilityScope,
     can_view_governed,
+    canonical_category_tags,
     cohort_matches,
     normalize_cohorts,
     normalize_surface_list,
@@ -153,14 +154,9 @@ class IntelligenceOps(BucketOps):
                 if store is not None:
                     rec_where += " AND h.store = ?"
                     rec_params.append(store)
-                if tag and tag.strip():
-                    rec_where += (
-                        " AND EXISTS (SELECT 1 FROM noun_tags nt"
-                        " WHERE nt.namespace = h.namespace AND nt.noun_type = 'record'"
-                        " AND nt.container = h.store AND nt.record_id = h.key"
-                        " AND LOWER(nt.tag) = LOWER(?))"
-                    )
-                    rec_params.append(tag.strip())
+                predicate, filter_params = noun_filter_sql("record", tag=tag, category=category)
+                rec_where += predicate
+                rec_params.extend(filter_params)
                 rec_rows = c.execute(
                     "SELECT r.* FROM record_heads h"  # noqa: S608
                     " JOIN records r"
@@ -173,7 +169,9 @@ class IntelligenceOps(BucketOps):
                     raw_val: str = row["value"]
                     parsed = json.loads(raw_val)
                     env_tags: list[str] = json.loads(row["tags"])
-                    tags = normalize_tags([*env_tags, *extract_payload_tags(parsed)])
+                    tags = canonical_category_tags(
+                        parsed, [*env_tags, *extract_payload_tags(parsed)]
+                    )
                     # Quarantined records NEVER appear in /v1/search.
                     if "status:quarantined" in tags:
                         continue
@@ -245,16 +243,9 @@ class IntelligenceOps(BucketOps):
                 if bucket is not None:
                     obj_where += " AND bucket = ?"
                     obj_params.append(bucket)
-                if tag and tag.strip():
-                    obj_where += (
-                        " AND EXISTS (SELECT 1 FROM noun_tags nt"
-                        " WHERE nt.namespace = bucket_objects.namespace"
-                        " AND nt.noun_type = 'object'"
-                        " AND nt.container = bucket_objects.bucket"
-                        " AND nt.record_id = bucket_objects.key"
-                        " AND LOWER(nt.tag) = LOWER(?))"
-                    )
-                    obj_params.append(tag.strip())
+                predicate, filter_params = noun_filter_sql("object", tag=tag, category=category)
+                obj_where += predicate
+                obj_params.extend(filter_params)
                 obj_rows = c.execute(
                     f"SELECT * FROM bucket_objects {obj_where} ORDER BY updated_at DESC LIMIT 1000",  # noqa: S608
                     obj_params,
@@ -262,7 +253,7 @@ class IntelligenceOps(BucketOps):
                 for row in obj_rows:
                     meta = json.loads(row["metadata"])
                     env_tags = json.loads(row["tags"])
-                    tags = normalize_tags([*env_tags, *extract_payload_tags(meta)])
+                    tags = canonical_category_tags(meta, [*env_tags, *extract_payload_tags(meta)])
                     # Quarantined objects NEVER appear in /v1/search.
                     if "status:quarantined" in tags:
                         continue

@@ -1,0 +1,13 @@
+{
+  "name": "tessera-worker-tests",
+  "private": true,
+  "type": "module",
+  "engines": {"node": ">=22"},
+  "scripts": {
+    "test:worker": "node --test tests/workerd_execution_history.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "miniflare": "5.20261023.1-beta"
+  }
+}

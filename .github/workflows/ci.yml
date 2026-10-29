@@ -14,11 +14,19 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install pinned Worker test dependencies
+        run: npm ci
       - uses: astral-sh/setup-uv@v6
       - name: Install
         run: uv sync --all-groups --all-extras
       - name: Lint, types, tests, conformance on the in-process store, leak scan
         run: make check
+      - name: Actual workerd SQLite HTTP and MCP regressions
+        run: make test-worker
       - name: The suite must fail against an empty backend
         run: make suite-stub
       - name: The whole suite over HTTP against a real local service

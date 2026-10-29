@@ -42,6 +42,8 @@ class AccessSchemaOps(StoreBase):
                 (self.clock.now(),),
             ).fetchall()
             tables = (
+                "execution_bands",
+                "execution_runs",
                 "task_deps",
                 "task_inputs",
                 "leases",

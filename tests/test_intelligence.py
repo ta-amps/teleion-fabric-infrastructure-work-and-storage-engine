@@ -86,7 +86,9 @@ def test_l0_search_dead_ends_feeds_reflexes_and_http_206(tmp_path: Path) -> None
                 error="catastrophic backtracking on malformed header",
             )
         assert rec.state_after == "dead"
-        tombstone = store.get_record("negative.knowledge", "dead-wire-parse-01")
+        # Embedded tasks without an owner keep diagnostics operator-only.
+        with store.scope_context(is_admin=True):
+            tombstone = store.get_record("negative.knowledge", "dead-wire-parse-01")
         assert tombstone.version == 1
         assert "catastrophic backtracking" in tombstone.value["l0_summary"]
 
@@ -108,7 +110,8 @@ def test_l0_search_dead_ends_feeds_reflexes_and_http_206(tmp_path: Path) -> None
             },
             expected_version=None,
         )
-        exact = store.match_reflex("verify multi-currency caps and parse wire bundle")
+        with store.scope_context(is_admin=True):
+            exact = store.match_reflex("verify multi-currency caps and parse wire bundle")
         assert exact.recommended_tier == "0_call_reflex"
         assert exact.hits[0].exact_hit is True
         assert any(d.key == "dead-wire-parse-01" for d in exact.dead_ends)

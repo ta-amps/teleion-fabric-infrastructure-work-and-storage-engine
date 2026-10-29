@@ -8,6 +8,7 @@ import json
 import time
 from collections.abc import Sequence
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -271,21 +272,73 @@ class Client:
         idempotency_key: str,
         ok: bool = True,
         error: str | None = None,
+        execution_report: dict[str, Any] | None = None,
         namespace: str | None = None,
     ) -> Receipt:
+        body: dict[str, Any] = {
+            "task_id": task_id,
+            "fencing_token": fencing_token,
+            "output": output,
+            "ok": ok,
+            "error": error,
+        }
+        if execution_report is not None:
+            body["execution_report"] = execution_report
         resp = self._call(
             "POST",
             "/v1/tasks/submit",
-            body={
-                "task_id": task_id,
-                "fencing_token": fencing_token,
-                "output": output,
-                "ok": ok,
-                "error": error,
-            },
+            body=body,
             headers=self._ns_headers(namespace, {"idempotency-key": idempotency_key}),
         )
         return Receipt.model_validate(resp.json())
+
+    def recall_execution(
+        self,
+        task_id: str,
+        fencing_token: int,
+        *,
+        execution_report: dict[str, Any] | None = None,
+        limit: int = 5,
+        namespace: str | None = None,
+    ) -> dict[str, Any]:
+        """Recall permitted prior runs while holding a live lease; reuse still needs validation."""
+        body: dict[str, Any] = {
+            "task_id": task_id,
+            "fencing_token": fencing_token,
+            "limit": limit,
+        }
+        if execution_report is not None:
+            body["execution_report"] = execution_report
+        result: dict[str, Any] = self._call(
+            "POST", "/v1/executions/recall", body=body, headers=self._ns_headers(namespace)
+        ).json()
+        return result
+
+    def get_execution(self, run_id: str, *, namespace: str | None = None) -> dict[str, Any]:
+        """Read an execution under its source task's current grants and retention policy."""
+        result: dict[str, Any] = self._call(
+            "GET",
+            f"/v1/executions/{quote(run_id, safe='')}",
+            headers=self._ns_headers(namespace),
+        ).json()
+        return result
+
+    def list_executions(
+        self,
+        task_id: str,
+        *,
+        after: int = 0,
+        limit: int = 20,
+        namespace: str | None = None,
+    ) -> dict[str, Any]:
+        """List permitted run references for one task, paginated by fencing token."""
+        result: dict[str, Any] = self._call(
+            "GET",
+            f"/v1/tasks/{quote(task_id, safe='')}/executions",
+            params={"after": after, "limit": limit},
+            headers=self._ns_headers(namespace),
+        ).json()
+        return result
 
     def cancel(self, task_id: str, reason: str = "", *, namespace: str | None = None) -> TaskView:
         resp = self._call(

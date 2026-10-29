@@ -49,6 +49,9 @@ SCOPES = {
     "mutation": "admin",
 }
 READ_ACTIONS = {
+    "recallExecution",
+    "getExecution",
+    "listExecutions",
     "getRecord",
     "listRecords",
     "recordHistory",
@@ -69,6 +72,9 @@ READ_ACTIONS = {
     "query",
 }
 ANON_ACTIONS = {
+    "recallExecution",
+    "getExecution",
+    "listExecutions",
     "queues",
     "counts",
     "claim",
@@ -269,7 +275,7 @@ class PrincipalOps(AccessSchemaOps):
         payload = (
             args.get("writes", args.get("value"))
             if action == "putRecords"
-            else args.get("output")
+            else {"output": args.get("output"), "execution_report": args.get("execution_report")}
             if action == "submit"
             else args.get("brief")
             if action == "enqueue"
@@ -332,15 +338,21 @@ class PrincipalOps(AccessSchemaOps):
         if not isinstance(nested, dict):
             nested = {}
         writes = args.get("writes") or []
+        run_id = args.get("run_id")
+        if not isinstance(run_id, str) or not re.fullmatch(r"run_[a-f0-9]{64}", run_id):
+            run_id = None
         resource = (
-            nested.get("task_id")
+            run_id
+            or nested.get("task_id")
             or args.get("task_id")
             or args.get("key")
             or (writes[0].get("key") if writes and isinstance(writes[0], dict) else None)
             or args.get("queue")
         )
         resource_type = (
-            "verb"
+            "noun"
+            if run_id
+            else "verb"
             if args.get("task_id") or action == "claim"
             else "noun"
             if writes or args.get("key")
