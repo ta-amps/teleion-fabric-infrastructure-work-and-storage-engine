@@ -8,8 +8,10 @@ import json
 import secrets
 import sqlite3
 from collections.abc import Sequence
+from typing import Any
 
-from tessera._base import StoreBase, new_id
+from tessera._base import new_id
+from tessera._principals import PrincipalOps
 from tessera.errors import InvalidRequest, NotFound
 from tessera.grants import EFFECTS, KeyGrant, is_valid_scope
 
@@ -20,7 +22,7 @@ def hash_secret(secret: str) -> str:
     return hashlib.sha256(secret.encode("utf-8")).hexdigest()
 
 
-class KeyOps(StoreBase):
+class KeyOps(PrincipalOps):
     def issue_key(
         self,
         label: str,
@@ -30,6 +32,12 @@ class KeyOps(StoreBase):
         effect_classes: Sequence[str] = EFFECTS,
         scopes: Sequence[str] = (),
         days: float = 14.0,
+        account_id: str | None = None,
+        principal_kind: str = "keyed",
+        principal_id: str | None = None,
+        namespace: str = "main",
+        labels: dict[str, Any] | None = None,
+        purge_at: float | None = None,
     ) -> tuple[str, KeyGrant]:
         """Create a key and return (secret, grant). The secret is shown once and never stored."""
         if not queues:
@@ -42,9 +50,15 @@ class KeyOps(StoreBase):
             raise InvalidRequest(
                 f"unknown effect classes or scopes: {sorted(unknown_effects | bad_scopes)}"
             )
-        secret = KEY_PREFIX + secrets.token_urlsafe(32)
+        if not 0 < days <= 365:
+            raise InvalidRequest("days must be between 0 and 365")
+        secret = ("tan_" if principal_kind == "anonymous" else KEY_PREFIX) + secrets.token_urlsafe(
+            32
+        )
         now = self.clock.now()
-        key_id = new_id("k")[:14]
+        key_id = (
+            principal_id if principal_kind == "anonymous" and principal_id else new_id("k")[:14]
+        )
         with self._tx() as c:
             c.execute(
                 "INSERT INTO keys (key_id, key_hash, label, queues, kinds, effect_classes, scopes,"
@@ -59,6 +73,25 @@ class KeyOps(StoreBase):
                     json.dumps(list(scopes)),
                     now,
                     now + days * 86400,
+                ),
+            )
+            kind = (
+                "service_binding"
+                if principal_kind == "keyed" and any(s.startswith("surface:") for s in scopes)
+                else principal_kind
+            )
+            c.execute(
+                "INSERT INTO access_principals(key_id,principal_kind,principal_id,account_id,namespace,key_prefix,labels,quota_tier,last_used_at,purge_at) VALUES (?,?,?,?,?,?,?,?,NULL,?)",
+                (
+                    key_id,
+                    kind,
+                    principal_id or key_id,
+                    None if kind == "anonymous" else account_id or f"operator:{key_id}",
+                    namespace,
+                    secret[:8],
+                    json.dumps(labels or {}),
+                    "demo" if kind == "anonymous" else "standard",
+                    purge_at,
                 ),
             )
             self._event(
@@ -82,7 +115,7 @@ class KeyOps(StoreBase):
             ).fetchone()
         if row is None:
             return None
-        grant = self._grant(row)
+        grant = self.principal_metadata(self._grant(row))
         if grant.revoked_at is not None or grant.expires_at <= self.clock.now():
             return None
         return grant
@@ -92,12 +125,12 @@ class KeyOps(StoreBase):
             row = c.execute("SELECT * FROM keys WHERE key_id = ?", (key_id,)).fetchone()
         if row is None:
             raise NotFound(f"key {key_id} does not exist")
-        return self._grant(row)
+        return self.principal_metadata(self._grant(row))
 
     def list_keys(self) -> list[KeyGrant]:
         with self._read() as c:
             rows = c.execute("SELECT * FROM keys ORDER BY created_at").fetchall()
-        return [self._grant(r) for r in rows]
+        return [self.principal_metadata(self._grant(r)) for r in rows]
 
     def revoke_key(self, key_id: str) -> KeyGrant:
         now = self.clock.now()

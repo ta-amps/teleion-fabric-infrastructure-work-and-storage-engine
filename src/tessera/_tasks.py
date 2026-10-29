@@ -10,6 +10,7 @@ from typing import Any
 
 from tessera._base import new_id
 from tessera._graph import GraphOps
+from tessera._publication_guard import review_proof
 from tessera.errors import (
     Forbidden,
     IdempotencyConflict,
@@ -33,7 +34,7 @@ from tessera.models import (
     TaskState,
     TaskView,
 )
-from tessera.receipts import canonical_json, receipt_hash
+from tessera.receipts import anonymous_labels, canonical_json, claim_receipt_hash, receipt_hash
 
 MAX_OUTPUT_BYTES = 1_048_576
 MAX_CHILDREN = 100
@@ -97,6 +98,20 @@ class TaskOps(GraphOps):
 
     def enqueue(self, spec: TaskSpec, *, namespace: str | None = None) -> str:
         """Add a ready task. Enqueueing an existing id or idempotency_key into the same queue replays its id."""
+        ctx = self.current_scope()
+        if ctx.anonymous:
+            if not spec.queue.startswith("demo."):
+                raise Forbidden("anonymous tasks require a demo queue")
+            spec = spec.model_copy(
+                update={
+                    "visibility_scope": "private",
+                    "producer_surface": "surface:tessera",
+                    "owner_key_id": ctx.key_id,
+                    "allowed_surfaces": [],
+                    "target_cohorts": ["all"],
+                    "tags": ["origin:anonymous", "demo:true", "untrusted:true"],
+                }
+            )
         ns = self._resolve_ns(namespace, model_ns=spec.namespace)
         prod_surface, owner_key = self._resolve_write_governance(
             producer_surface=spec.producer_surface,
@@ -258,6 +273,17 @@ class TaskOps(GraphOps):
         with self._tx() as c:
             config = self._queue_config(c, ns, queue)
             self._reap(c, now, namespace=ns, queue=queue)
+            if (
+                self.current_scope().anonymous
+                and c.execute(
+                    "SELECT COUNT(*) FROM leases WHERE namespace=? AND key_id=? AND expires_at>? AND hard_expires_at>?",
+                    (ns, effective_key, now, now),
+                ).fetchone()[0]
+                >= 1
+            ):
+                from tessera.errors import RateLimited
+
+                raise RateLimited("one concurrent demo claim allowed", retry_after=30)
             sql = [
                 "SELECT * FROM tasks"
                 " WHERE namespace = ? AND queue = ? AND state = 'ready' AND not_before <= ?"
@@ -269,8 +295,8 @@ class TaskOps(GraphOps):
             if effect_classes:
                 sql.append(f"AND effect_class IN ({', '.join('?' * len(effect_classes))})")
                 params.extend(effect_classes)
-            sql.append("ORDER BY priority DESC, created_at, id LIMIT 1")
-            row = c.execute(" ".join(sql), params).fetchone()
+            sql.append("ORDER BY priority DESC, created_at, id")
+            row = next((r for r in c.execute(" ".join(sql), params) if self._task_visible(r)), None)
             if row is None:
                 return None
             prev_token = int(row["fencing_token"])
@@ -305,6 +331,9 @@ class TaskOps(GraphOps):
                 detail={"attempt": attempt},
             )
             return Lease(
+                namespace=ns,
+                labels=anonymous_labels(json.loads(row["tags"]), self.current_scope().labels),
+                claim_receipt=claim_receipt_hash(ns, row["id"], token, now),
                 task_id=row["id"],
                 queue=queue,
                 fencing_token=token,
@@ -361,6 +390,9 @@ class TaskOps(GraphOps):
                     token=fencing_token,
                 )
                 lease = Lease(
+                    namespace=ns,
+                    labels=anonymous_labels(json.loads(task["tags"]), self.current_scope().labels),
+                    claim_receipt=claim_receipt_hash(ns, task_id, fencing_token, row["claimed_at"]),
                     task_id=task_id,
                     queue=task["queue"],
                     fencing_token=fencing_token,
@@ -444,7 +476,10 @@ class TaskOps(GraphOps):
                 task = self._task_row(c, ns, task_id)
                 config = self._queue_config(c, ns, task["queue"])
                 digest = receipt_hash(task_id, fencing_token, ok, output, error)
+                labels = anonymous_labels(json.loads(task["tags"]), self.current_scope().labels)
                 effective_completed_by = actor_key if actor_key is not None else row["key_id"]
+                if task["queue"] == "eq03" and ok and effective_completed_by:
+                    review_proof(c, ns, task_id, effective_completed_by, output)
                 del_cur = c.execute(
                     "DELETE FROM leases WHERE namespace = ? AND task_id = ? AND fencing_token = ?",
                     (ns, task_id, fencing_token),
@@ -477,8 +512,8 @@ class TaskOps(GraphOps):
                     )
                 c.execute(
                     "INSERT INTO results (namespace, idempotency_key, task_id, fencing_token, ok,"
-                    " output, error, receipt_hash, state_after, created_at, completed_by_key)"
-                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    " output, error, receipt_hash, state_after, created_at, completed_by_key, labels)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         ns,
                         idempotency_key,
@@ -491,6 +526,7 @@ class TaskOps(GraphOps):
                         state_after,
                         now,
                         effective_completed_by,
+                        canonical_json(labels),
                     ),
                 )
                 self._event(
@@ -505,6 +541,7 @@ class TaskOps(GraphOps):
                     detail={"ok": ok, "receipt_hash": digest, "state_after": state_after},
                 )
                 receipt = Receipt(
+                    labels=labels,
                     task_id=task_id,
                     fencing_token=fencing_token,
                     idempotency_key=idempotency_key,
@@ -1042,6 +1079,7 @@ class TaskOps(GraphOps):
     @staticmethod
     def _receipt(row: sqlite3.Row, *, replayed: bool) -> Receipt:
         return Receipt(
+            labels=json.loads(row["labels"]),
             task_id=row["task_id"],
             fencing_token=row["fencing_token"],
             idempotency_key=row["idempotency_key"],

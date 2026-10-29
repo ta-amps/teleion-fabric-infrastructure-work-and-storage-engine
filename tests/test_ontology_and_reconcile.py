@@ -22,9 +22,9 @@ from tessera.store import Store
 
 
 def test_ontology_registry_counts_and_bayesian_shrinkage() -> None:
-    assert len(NOUN_CATEGORIES) == 14
-    assert len(VERB_CATEGORIES) == 12
-    assert len(CALLER_PROFILES) == 6
+    assert len(NOUN_CATEGORIES) == 20
+    assert len(VERB_CATEGORIES) == 18
+    assert len(CALLER_PROFILES) == 8
     # 1-of-1 lucky item cannot beat 48-of-50 battle-tested item under EB shrinkage + Wilson
     eb_lucky = empirical_bayes_mean(1.0, 1)
     eb_proven = empirical_bayes_mean(48.0 / 50.0, 50)
@@ -71,8 +71,8 @@ def test_http_ontology_rankings_fragility_and_voting_routes(tmp_path: Path) -> N
         cats = client.get("/v1/categories?profile=autonomous_coding_harness", headers=headers)
         assert cats.status_code == 200
         cbody = cats.json()
-        assert len(cbody["noun_categories"]) == 14
-        assert len(cbody["verb_categories"]) == 12
+        assert len(cbody["noun_categories"]) == len(NOUN_CATEGORIES)
+        assert len(cbody["verb_categories"]) == len(VERB_CATEGORIES)
         assert cbody["active_profile"]["profile_id"] == "autonomous_coding_harness"
 
         for idx, (trials, succ) in enumerate([(2, 2), (40, 39)]):
@@ -172,3 +172,54 @@ def test_http_ontology_rankings_fragility_and_voting_routes(tmp_path: Path) -> N
         )
         assert vote.status_code == 200
         assert vote.json()["winner"] == "cand_a"
+
+
+def test_worker_catalog_matches_every_python_category_and_profile() -> None:
+    """A full registry comparison catches missing categories, fields, axes and profile policies."""
+    import importlib.util
+    import json
+    import shutil
+    import subprocess
+
+    import pytest
+
+    root = Path(__file__).resolve().parents[1]
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node runtime required for Worker parity")
+    script = """
+import {NOUN_CATEGORIES,VERB_CATEGORIES,CALLER_PROFILES,adaptNounView,validateCategoryPayload} from './deploy/cloudflare/ontology_engine.js';
+const validations={};
+for(const [key,spec] of Object.entries({...NOUN_CATEGORIES,...VERB_CATEGORIES})) {
+  const dimensions=Object.fromEntries(Object.entries(spec.dimensions).map(([name,d])=>[name,d.dtype==='categorical'?d.allowed_values.at(-1):d.dtype==='int'?Math.ceil(d.min_val):d.min_val]));
+  validations[key]=validateCategoryPayload(key,dimensions);
+}
+const alias=adaptNounView({noun_id:'synthetic',category_id:'noun.code_node',title:'Synthetic'},'swarm_worker');
+console.log(JSON.stringify({nouns:NOUN_CATEGORIES,verbs:VERB_CATEGORIES,profiles:CALLER_PROFILES,validations,alias_profile:alias.profile_id}));
+"""
+    result = subprocess.run(
+        [node, "--input-type=module", "-e", script],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    data = json.loads(result.stdout)
+    assert data["nouns"] == {
+        key: value.model_dump(mode="json") for key, value in NOUN_CATEGORIES.items()
+    }
+    assert data["verbs"] == {
+        key: value.model_dump(mode="json") for key, value in VERB_CATEGORIES.items()
+    }
+    assert data["profiles"] == {
+        key: value.model_dump(mode="json") for key, value in CALLER_PROFILES.items()
+    }
+    assert data["alias_profile"] == "autonomous_coding_harness"
+    assert all(result["valid"] for result in data["validations"].values())
+    spec = importlib.util.spec_from_file_location(
+        "build_ontology_catalog", root / "scripts/build_ontology_catalog.py"
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    assert (root / "deploy/cloudflare/ontology_catalog.js").read_text() == module.generated_source()

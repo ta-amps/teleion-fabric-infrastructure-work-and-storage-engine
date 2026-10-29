@@ -9,7 +9,7 @@ FACTORY_store := tessera.testing:create_store_backend
 FACTORY_http := tessera.testing:create_http_backend
 FACTORY_empty := tessera.testing:create_empty_backend
 
-.PHONY: help setup check lint types test suite suite-stub suite-http-local public lock-suite clean serve dev seed expand-demo bilateral-demo index index-check architecture
+.PHONY: openapi-check help setup check lint types test suite suite-stub suite-http-local public lock-suite clean serve dev seed expand-demo bilateral-demo index index-check architecture
 
 help: ## List the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-12s %s\n", $$1, $$2}'
@@ -17,7 +17,7 @@ help: ## List the targets
 setup: ## Install Python 3.12 and every dependency with uv
 	uv sync --all-groups --all-extras
 
-check: lint types test public lock-check index-check architecture ## Lint, types, unit tests, leak scan; run before every commit
+check: lint types test public lock-check index-check architecture openapi-check ## Lint, types, unit tests, leak scan; run before every commit
 
 lint: ## ruff lint and format check
 	uv run ruff check .
@@ -79,3 +79,6 @@ clean: ## Remove caches and local databases
 
 architecture: ## architecture.json must match the code: paths, tests, layering rules
 	python3 scripts/check_architecture.py . --summary
+
+openapi-check: ## Generated access schema must match the HTTP route/model contract
+	uv run python scripts/build_access_openapi.py --check

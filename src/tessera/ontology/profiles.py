@@ -1,8 +1,9 @@
 """Caller profile policies and adaptive rendering for Nouns and Verb task guidance.
 
-Defines the 6 canonical CallerProfile configurations and adapts identical underlying
+Defines the 8 canonical CallerProfile configurations and adapts identical underlying
 Noun records and Verb CategorySpecs for coding harnesses, chat research agents,
-NGO caseworkers, human stewards, deterministic verifiers, and low-budget donors.
+NGO caseworkers, human stewards, deterministic verifiers, low-budget donors,
+incident responders, and public researchers.
 """
 
 from __future__ import annotations
@@ -141,6 +142,47 @@ CALLER_PROFILES: dict[str, CallerProfile] = {
         ),
         max_task_cost_usd=0.01,
     ),
+    "incident_responder": CallerProfile(
+        profile_id="incident_responder",
+        title="Incident & Fault Responder",
+        cohort_persona="Low-latency operational fault containment and dead-letter recovery responder",
+        clamped_max_chars=6400,
+        preferred_execution_tier="0_call_reflex",
+        response_format="compact_signatures",
+        auto_shim_categories=(
+            "noun.recovery_playbook",
+            "noun.negative_tombstone",
+            "noun.tombstone",
+            "verb.recover_fault",
+        ),
+        require_human_on_routes=(
+            "noun.case_bundle",
+            "verb.vote_judge",
+        ),
+        max_task_cost_usd=0.05,
+    ),
+    "public_researcher": CallerProfile(
+        profile_id="public_researcher",
+        title="Public Reproducibility Researcher",
+        cohort_persona="Open-science evaluator prioritizing benchmark suites, public sources, and provenance citations",
+        clamped_max_chars=14000,
+        preferred_execution_tier="hybrid_1_call",
+        response_format="plain_language_caveats",
+        auto_shim_categories=(
+            "noun.benchmark_suite",
+            "noun.public_source",
+            "noun.eval_run",
+        ),
+        require_human_on_routes=(
+            "noun.case_bundle",
+            "noun.ngo_kit",
+        ),
+        max_task_cost_usd=0.20,
+    ),
+}
+
+_PROFILE_ALIASES: dict[str, str] = {
+    "swarm_worker": "autonomous_coding_harness",
 }
 
 
@@ -187,14 +229,15 @@ class AdaptedTaskGuidance(BaseModel):
 
 
 def get_caller_profile(profile: CallerProfile | str) -> CallerProfile:
-    """Resolve a CallerProfile instance from a profile ID or model."""
+    """Resolve a CallerProfile instance from a profile ID, alias, or model."""
     if isinstance(profile, CallerProfile):
         return profile
-    if profile not in CALLER_PROFILES:
+    resolved = _PROFILE_ALIASES.get(profile, profile)
+    if resolved not in CALLER_PROFILES:
         raise KeyError(
             f"Unknown caller profile {profile!r}; expected one of {sorted(CALLER_PROFILES)}"
         )
-    return CALLER_PROFILES[profile]
+    return CALLER_PROFILES[resolved]
 
 
 def _clamp_text(text: str, max_chars: int) -> tuple[str, bool]:

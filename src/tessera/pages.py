@@ -487,10 +487,12 @@ def mount_work_forms(
                 )
         except TesseraError as exc:
             return failed(exc)
+        request.state.access_result = {"lease": lease.model_dump(mode="json") if lease else None}
         if lease is None:
             return respond(
                 "Tessera: nothing ready", _form_claim("Nothing is ready in that queue yet.")
             )
+        request.state.access_result = {"lease": lease.model_dump(mode="json")}
         return respond(f"Tessera: task {lease.task_id}", _form_lease(lease.model_dump(mode="json")))
 
     @app.post("/work/heartbeat", response_class=HTMLResponse, include_in_schema=False)
@@ -507,6 +509,7 @@ def mount_work_forms(
                 lease = store.heartbeat(task_id, int(str(form.get("fencing_token", "0"))))
         except TesseraError as exc:
             return failed(exc)
+        request.state.access_result = {"lease": lease.model_dump(mode="json")}
         return respond(f"Tessera: task {lease.task_id}", _form_lease(lease.model_dump(mode="json")))
 
     @app.post("/work/submit", response_class=HTMLResponse, include_in_schema=False)
@@ -538,6 +541,7 @@ def mount_work_forms(
                 )
         except TesseraError as exc:
             return failed(exc)
+        request.state.access_result = {"receipt": receipt.model_dump(mode="json")}
         body = (
             f"<h1>Submitted</h1><p>Task {html.escape(receipt.task_id)} is now "
             f"<strong>{receipt.state_after}</strong>.</p><p class='muted'>Receipt "

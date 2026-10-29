@@ -243,6 +243,7 @@ class ChildSpec(_Model):
 
 
 class ChildResult(_Model):
+    completed_by_key: str | None = None
     task_id: str
     state: TaskState
     ok: bool | None = None
@@ -251,6 +252,8 @@ class ChildResult(_Model):
 
 
 class Lease(_Model):
+    labels: dict[str, Any] = Field(default_factory=dict)
+    claim_receipt: str | None = None
     namespace: str = Field(default="main", pattern=NAMESPACE_PATTERN)
     task_id: str
     queue: str
@@ -279,6 +282,7 @@ class LeaseInfo(_Model):
 
 
 class Receipt(_Model):
+    labels: dict[str, Any] = Field(default_factory=dict)
     task_id: str
     fencing_token: int
     idempotency_key: str
@@ -290,6 +294,7 @@ class Receipt(_Model):
 
 
 class ResultView(_Model):
+    labels: dict[str, Any] = Field(default_factory=dict)
     task_id: str
     fencing_token: int
     idempotency_key: str

@@ -104,7 +104,7 @@ def test_l0_search_dead_ends_feeds_reflexes_and_http_206(tmp_path: Path) -> None
                     {"node": "extract.currency_amounts"},
                     {"node": "checks.advance_to_payout"},
                 ],
-                "tags": ["wire", "parse", "deterministic"],
+                "tags": ["wire", "parse", "deterministic", "status:verified"],
             },
             expected_version=None,
         )

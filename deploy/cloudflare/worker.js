@@ -1,3 +1,5 @@
+import { accessRoute, accessDescription, ACCESS_TOOLS } from "./cloud_access_routes.js";
+import { TOOLS as FABRIC_TOOLS } from "./cloud_mcp.js";
 // Tessera Cloud Worker: 24/7 native cloud execution on Cloudflare Durable Object SQLite + D1
 // (`STORAGE_MODE = "cloud"`, the default) with optional Fly.io origin reverse-proxy fallback
 // (`STORAGE_MODE = "origin"`). Serves all Tessera Spec v0.2 HTTP routes (`/v1/*` and
@@ -5,7 +7,7 @@
 // and the agent door (`/connect`, `/llms.txt`, `/llms-full.txt`, `/favicon.svg`,
 // `/.well-known/agent-card.json`, `/robots.txt`, `/board`, `/work`).
 
-import { loadCloudBlob, mirrorBucketObjectToD1, storeCloudBlob } from "./cloud_buckets.js";
+import { loadCloudBlob, mirrorBucketObjectToD1, storeCloudBlob, validateWireNumbers } from "./cloud_buckets.js";
 import { normalizeNamespace, sliceBytesResponse } from "./cloud_intelligence.js";
 import { handleMcpRequest } from "./cloud_mcp.js";
 import {
@@ -346,7 +348,7 @@ function resolveNamespace(url, request) {
   return { namespace, path, isPrimary: namespace === "main" };
 }
 
-export default {
+const worker = {
   async fetch(request, env, ctx) {
     if ((env.STORAGE_MODE || "cloud") === "origin") {
       return proxyToOrigin(request, env);
@@ -355,10 +357,24 @@ export default {
     const url = new URL(request.url);
     const nsResolved = resolveNamespace(url, request);
     if (nsResolved.error) return nsResolved.error;
-    const { namespace, path, isPrimary } = nsResolved;
-    const doName = isPrimary ? "primary" : `ns:${namespace}`;
+    let { namespace, path, isPrimary } = nsResolved;
     const coordBinding = env.COORDINATOR || env.TESSERA_COORDINATOR;
-    const stub = coordBinding.get(coordBinding.idFromName(doName));
+    const primary = coordBinding.get(coordBinding.idFromName("primary"));
+    const requestBearer = extractBearer(request);
+    const principal = requestBearer ? await primary.resolveKeyGrant(requestBearer) : null;
+    const explicitNamespace = url.pathname.startsWith("/ns/") || request.headers.has("x-namespace") || request.headers.has("x-tessera-namespace");
+    if (principal?.principal_kind === "anonymous" && !explicitNamespace) namespace = principal.namespace;
+    isPrimary = namespace === "main";
+    const rawStub = coordBinding.get(coordBinding.idFromName(isPrimary ? "primary" : `ns:${namespace}`));
+    const identity = await primary.requestIdentity(request.headers.get("cf-connecting-ip"), request.headers.get("user-agent"));
+    const meta = { ...identity, request_id: request.headers.get("x-request-id") || crypto.randomUUID(), route: path, bytes_in: Number(request.headers.get("content-length") || 0) };
+    const stub = {
+      rpcCall: (secret, action, args = {}) => rawStub.rpcCall(secret, action, { ...args, access_meta: meta }),
+      publicHealthAndBoard: (...args) => rawStub.publicHealthAndBoard(...args),
+      bootstrapOrIssueKey: (secret, bootstrap, body) => primary.bootstrapOrIssueKey(secret, bootstrap, { ...body, access_meta: meta }),
+      openAnonymousSession: body => primary.openAnonymousSession(body, meta),
+      auditForToken: (secret, args) => primary.auditForToken(secret, args),
+    };
     const method = request.method.toUpperCase();
     const publicUrl =
       (env.PUBLIC_URL || `${url.protocol}//${url.host}`).replace(/\/+$/, "") || DEFAULT_PUBLIC_URL;
@@ -366,6 +382,13 @@ export default {
     const bearer = extractBearer(request);
     const surfaceHeader = (request.headers.get("x-surface-id") || "").trim();
     const baseRpc = { namespace, isPrimary, surfaceHeader };
+    if (namespace !== "main" && ["/board", "/healthz", "/v1/health", "/api/health"].includes(path)) {
+      const access = await stub.rpcCall(bearer, "verifyKey", baseRpc);
+      if (!access.ok) return rpcResponse(access);
+    }
+    const accessResponse = await accessRoute(request, env, { path, url, bearer, primary, stub, baseRpc, meta, publicUrl, rpcResponse, jsonResp, htmlResp, readJsonBody });
+    if (accessResponse) return accessResponse;
+
 
     // 1. Streamable HTTP MCP Door (`/mcp`)
     if (path === "/mcp") {
@@ -415,7 +438,7 @@ export default {
     }
     if (path === "/llms.txt" && (method === "GET" || method === "HEAD")) {
       return withSecurity(
-        new Response(renderLlmsTxt(publicUrl, repoUrl), {
+        new Response(renderLlmsTxt(publicUrl, repoUrl).replace(/\b26 tools\b/g, `${FABRIC_TOOLS.length + ACCESS_TOOLS.length} tools`) + "\n\nExternal harnesses and personal assistants: POST /v1/session/anonymous without secrets, then use Authorization: Bearer <session_token> for demo nouns and verbs. See /connect.json. tools/list is public; tool counts and schemas are authoritative there. Keyed production work remains protected.\n", {
           status: 200,
           headers: { "content-type": "text/plain; charset=utf-8" },
         }),
@@ -424,7 +447,7 @@ export default {
     }
     if (path === "/llms-full.txt" && (method === "GET" || method === "HEAD")) {
       return withSecurity(
-        new Response(renderLlmsFullTxt(publicUrl, repoUrl), {
+        new Response(renderLlmsFullTxt(publicUrl, repoUrl).replace(/\b26 tools\b/g, `${FABRIC_TOOLS.length + ACCESS_TOOLS.length} tools`) + "\n\n" + JSON.stringify(accessDescription(publicUrl, env.ANONYMOUS_ACCESS_ENABLED === "true"), null, 2), {
           status: 200,
           headers: { "content-type": "text/plain; charset=utf-8" },
         }),
@@ -432,7 +455,7 @@ export default {
       );
     }
     if (path === "/.well-known/agent-card.json" && (method === "GET" || method === "HEAD")) {
-      return jsonResp(renderAgentCard(publicUrl, repoUrl));
+      return jsonResp({ ...renderAgentCard(publicUrl, repoUrl), tools: [...FABRIC_TOOLS, ...ACCESS_TOOLS], skills: [...FABRIC_TOOLS, ...ACCESS_TOOLS].map(t => ({ id: t.name, name: t.name, description: t.description })), tool_count: FABRIC_TOOLS.length + ACCESS_TOOLS.length, authentication: { discovery: "none", demo: "tan_ bearer session", keyed: "tsk_ bearer key" }, capabilities: { streaming: "long-poll", tools: true }, access: accessDescription(publicUrl, env.ANONYMOUS_ACCESS_ENABLED === "true") });
     }
     if (path === "/robots.txt" && (method === "GET" || method === "HEAD")) {
       return withSecurity(
@@ -804,6 +827,14 @@ export default {
       if (method === "POST") {
         const { body, error } = await readJsonBody(request);
         if (error) return error;
+        let expectedVersion = body.expected_version ?? null;
+        const matchVersion = request.headers.get("if-match");
+        if (matchVersion != null) {
+          const rawVersion=matchVersion.replace(/^"|"$/g, "");
+          if (!/^\d+$/.test(rawVersion) || !Number.isSafeInteger(Number(rawVersion))) return problem(400,"invalid_request","If-Match must be a nonnegative integer version");
+          if (expectedVersion != null && expectedVersion !== Number(rawVersion)) return problem(400,"invalid_request","If-Match and expected_version disagree");
+          expectedVersion=Number(rawVersion);
+        }
         const out = await stub.rpcCall(bearer, "putRecords", {
           ...baseRpc,
           writes: [
@@ -811,7 +842,7 @@ export default {
               store: storeName,
               key: recKey,
               value: body.value,
-              expected_version: body.expected_version ?? null,
+              expected_version: expectedVersion,
               producer_surface: body.producer_surface,
               visibility_scope: body.visibility_scope,
               allowed_surfaces: body.allowed_surfaces,
@@ -822,7 +853,7 @@ export default {
           ],
         });
         if (!out.ok) return rpcResponse(out);
-        return jsonResp(out.data.records[0], 200);
+        return jsonResp(out.data.records[0], 200, {etag: `"${out.data.records[0].version}"`});
       }
       return problem(405, "method_not_allowed", "method not allowed");
     }
@@ -833,8 +864,10 @@ export default {
       if (!authCheck.ok) return rpcResponse(authCheck);
       const { gov, error: govErr } = parseHeaderGovernance(request, url.searchParams);
       if (govErr) return govErr;
+      const permit = await stub.rpcCall(bearer, "authorizeBlobWrite", { ...baseRpc, ...gov });
+      if (!permit.ok) return rpcResponse(permit);
       const raw = new Uint8Array(await request.arrayBuffer());
-      const stored = await storeCloudBlob(env, raw, Date.now() / 1000, namespace, gov);
+      const stored = await storeCloudBlob(env, raw, Date.now() / 1000, namespace, permit.data.governance);
       if (stored.error) return problem(stored.status || 400, stored.error, stored.detail);
       return rpcResponse(
         await stub.rpcCall(bearer, "recordBlobStored", {
@@ -928,7 +961,9 @@ export default {
         if (govErr) return govErr;
         const contentType = request.headers.get("content-type") || "application/octet-stream";
         const rawBytes = new Uint8Array(await request.arrayBuffer());
-        const stored = await storeCloudBlob(env, rawBytes, Date.now() / 1000, namespace, gov);
+        const permit = await stub.rpcCall(bearer, "authorizeObjectWrite", { ...baseRpc, bucket:bucketName, key:objKey, expected_version:expectedVersion, metadata, ...gov });
+        if (!permit.ok) return rpcResponse(permit);
+        const stored = await storeCloudBlob(env, rawBytes, Date.now() / 1000, namespace, permit.data.governance);
         if (stored.error) return problem(stored.status || 400, stored.error, stored.detail);
         const out = await stub.rpcCall(bearer, "putObjectMeta", {
           ...baseRpc,
@@ -1128,6 +1163,7 @@ export default {
       const nowTs = Date.now() / 1000;
       const items = [];
       const rawById = new Map();
+      const unranked = [];
       for (const rec of recOut.data.records || []) {
         const val =
           rec.value && typeof rec.value === "object" && !Array.isArray(rec.value)
@@ -1136,18 +1172,11 @@ export default {
         const iid = String(val.item_id || val.id || rec.key);
         const fragSub =
           val.fragility && typeof val.fragility === "object" ? val.fragility : {};
-        const liveSub =
-          val.live_probe && typeof val.live_probe === "object" ? val.live_probe : {};
-        const trials = Number(
-          val.trials ?? val.verified_hits ?? (liveSub.http_status === 200 ? 12 : 6)
-        );
-        const successes = Number(
-          val.successes != null
-            ? val.successes
-            : (liveSub.http_status ?? 200) === 200
-              ? trials
-              : Math.max(0, trials - 2)
-        );
+        const trials = val.trials, successes = val.successes;
+        if (!Number.isInteger(trials) || trials < 0 || typeof successes !== "number" || !Number.isFinite(successes) || successes < 0 || successes > trials) {
+          unranked.push({ id: iid, trials: null, successes: null, score: null, reason: "Reproducible trial and success counts are unavailable or invalid" });
+          continue;
+        }
         const normItem = {
           item_id: iid,
           id: iid,
@@ -1190,6 +1219,7 @@ export default {
         profile,
         pareto_frontier_ids: [...frontierIds].sort(),
         ranked: outRows,
+        unranked,
       });
     }
 
@@ -1340,11 +1370,11 @@ export default {
         normBallots.push({
           voter_key_id: voterKey,
           choice: mappedChoice,
-          citations: Array.isArray(b.citations) ? b.citations : ["verified:receipt"],
+          citations: Array.isArray(b.citations) ? b.citations : [],
           verification_receipt_sha256:
-            b.verification_receipt_sha256 || "a".repeat(64),
-          rationale: String(b.rationale || "verified"),
-          defect_summary: String(b.defect_summary || "superseded"),
+            b.verification_receipt_sha256 || null,
+          rationale: String(b.rationale || ""),
+          defect_summary: String(b.defect_summary || ""),
         });
         if (voterKey && !(voterKey in calibrations) && "verified_passes" in b) {
           const passes = Number(b.verified_passes || 0);
@@ -1365,6 +1395,8 @@ export default {
       const win = receipt.winning_candidate_id;
       return jsonResp({
         ...receipt,
+        simulated_status: receipt.status, status: "simulation_result", persisted: false,
+        verified: false, reason: "Caller-supplied ballots are a local calculation, not authenticated independent votes",
         winner: win ? revAlias[win] || win : null,
       });
     }
@@ -1373,38 +1405,41 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
-    if (!env.FABRIC_DB) return;
-    const scanJob = async () => {
-      try {
-        const rows = await env.FABRIC_DB.prepare(
-          "SELECT key, value_json, updated_at FROM record_heads WHERE namespace = 'main' AND store = 'registry.feeds' LIMIT 100"
-        ).all();
-        const nowTs = Date.now() / 1000;
-        const items = (rows?.results || []).map((r) => {
-          let val = {};
-          try {
-            val = JSON.parse(r.value_json || "{}");
-          } catch {
-            val = {};
-          }
-          const fragSub =
-            val.fragility && typeof val.fragility === "object" ? val.fragility : {};
-          return {
-            item_id: String(val.id || r.key),
-            category_id: "noun.feed_source",
-            source_uri: val.url || null,
-            expected_sha256: val.content_sha256 || null,
-            half_life_hours: fragSub.half_life_hours ?? val.half_life_hours ?? 12.0,
-            fragility_score: fragSub.fragility_score ?? val.fragility_score ?? 0.85,
-            last_verified_at: val.last_checked_at || r.updated_at || nowTs,
-            importance: 1.0,
-          };
-        });
-        planFragilityRechecks(items, nowTs, 15);
-      } catch {
-        // Non-fatal scheduled fragility sweep
-      }
-    };
-    ctx.waitUntil(scanJob());
+    if (String(env.FRAGILITY_PLANNER_ENABLED || "false") !== "true") return;
+    const primary = env.COORDINATOR.get(env.COORDINATOR.idFromName("primary"));
+    ctx.waitUntil(primary.planMaintenance());
+  },
+};
+
+
+export default {
+  scheduled: worker.scheduled,
+  async fetch(request, env, ctx) {
+    const requestId = /^[a-zA-Z0-9._:-]{1,100}$/.test(request.headers.get("x-request-id") || "") ? request.headers.get("x-request-id") : crypto.randomUUID();
+    const headers = { "access-control-allow-origin": "*", "access-control-allow-methods": "GET, HEAD, POST, PUT, DELETE, OPTIONS", "access-control-allow-headers": "Authorization, Content-Type, If-Match, X-Request-Id, X-Agent-Label, Idempotency-Key, X-Namespace, X-Tessera-Namespace, X-Surface-Id, MCP-Protocol-Version, MCP-Session-Id", "access-control-expose-headers": "ETag, Retry-After, X-Request-Id, MCP-Session-Id", "x-request-id": requestId, "cache-control": "no-store" };
+    if (request.method === "OPTIONS") return new Response(null, { status: 204, headers });
+    try {
+      const h = new Headers(request.headers); h.set("x-request-id", requestId);
+      if (request.body) {
+        const limit = (h.get("authorization") || "").startsWith("Bearer tan_") ? 65536 : new URL(request.url).pathname.includes("/blobs") ? 16*1024*1024 : 1024*1024;
+        const reader = request.body.getReader(); const chunks = []; let size = 0;
+        while (true) {
+          const { done, value } = await reader.read(); if (done) break;
+          size += value.byteLength;
+          if (size > limit) { await reader.cancel(); return problem(413, "payload_too_large", "request exceeds byte limit", {}, headers); }
+          chunks.push(value);
+        }
+        h.set("content-length", String(size));
+        const bytes = new Uint8Array(size); let offset = 0;
+        for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+        if ((h.get("content-type") || "").includes("json")) validateWireNumbers(new TextDecoder().decode(bytes));
+        h.set("content-length", String(size));
+        request = new Request(request, { headers: h, body: bytes });
+      } else request = new Request(request, { headers: h });
+      const response = await worker.fetch(request, env, ctx);
+      const outHeaders = new Headers(response.headers);
+      for (const [k,v] of Object.entries(headers)) outHeaders.set(k,v);
+      return new Response(response.body, { status: response.status, headers: outHeaders });
+    } catch (e) { return problem(e.status || 500, e.code || "internal_error", e.detail || "request could not be completed", {}, headers); }
   },
 };

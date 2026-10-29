@@ -770,7 +770,12 @@ def test_l26_receipt_vectors_python_and_cloudflare_edge_node_parity(tmp_path: Pa
 
             const llmsFullRes = await req("/llms-full.txt");
             assert.equal(llmsFullRes.status, 200);
-            assert.ok((await llmsFullRes.text()).includes("26 tools"));
+            const publicTools = await req("/mcp", {{
+              method: "POST", headers: {{ "Content-Type": "application/json" }},
+              body: JSON.stringify({{ jsonrpc: "2.0", id: 1, method: "tools/list" }}),
+            }});
+            const toolCount = (await publicTools.json()).result.tools.length;
+            assert.ok((await llmsFullRes.text()).includes(`${{toolCount}} tools`));
 
             // 3. Issue admin + scoped keys via x-bootstrap-secret.
             const bootHdr = {{
@@ -804,7 +809,7 @@ def test_l26_receipt_vectors_python_and_cloudflare_edge_node_parity(tmp_path: Pa
                 queues: ["*"],
                 kinds: ["*"],
                 effect_classes: ["read", "write-internal"],
-                scopes: ["store", "surface:shamash"],
+                scopes: ["store", "surface:shamash", "namespace:main", "namespace:alpha"],
               }}),
             }});
             assert.equal(createParkerRes.status, 201);
@@ -875,6 +880,11 @@ def test_l26_receipt_vectors_python_and_cloudflare_edge_node_parity(tmp_path: Pa
               headers: {{ Authorization: `Bearer ${{parkerSecret}}` }},
             }});
             assert.equal(alphaMiss.status, 404);
+            const betaDenied = await req("/ns/beta/v1/stores/notes/records/item1", {{
+              headers: {{ Authorization: `Bearer ${{parkerSecret}}` }},
+            }});
+            assert.equal(betaDenied.status, 403);
+            assert.equal((await betaDenied.json()).code, "scope_denied");
 
             // Protected surface ownership & eq03 queue requirement.
             const shamashDenied = await req("/v1/stores/shamash.cases/records/c1", {{
@@ -929,7 +939,9 @@ def test_l26_receipt_vectors_python_and_cloudflare_edge_node_parity(tmp_path: Pa
               headers: {{ Authorization: `Bearer ${{eranosEq03Key}}`, "Content-Type": "application/json" }},
               body: JSON.stringify({{ value: {{ title: "with-eq03" }} }}),
             }});
-            assert.equal(eq03Present.status, 200);
+            // Queue entitlement alone is insufficient without a completed bound review receipt.
+            // The positive proof/publication flow runs in edge_access_harness.mjs.
+            assert.equal(eq03Present.status, 403);
 
             // Quarantine hiding on list_records, search, and match_reflex.
             const putQuarantined = await req("/v1/stores/tessera.reflexes/records/q1", {{

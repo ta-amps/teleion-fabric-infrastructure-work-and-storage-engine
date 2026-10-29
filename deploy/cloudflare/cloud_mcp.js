@@ -1,3 +1,4 @@
+import { ACCESS_TOOLS, accessDescription } from "./cloud_access_routes.js";
 // Native Streamable HTTP MCP Door (`/mcp`) for Tessera Cloud.
 // Exposes 26 tools across atomic verbs, queryable CAS nouns, persistent cloud buckets,
 // progressive L0 scent search, delta feeds, reflex recall, and Surface Handshake v1.0
@@ -34,7 +35,7 @@ const LAYER2_SCHEMA_PROPS = {
   include_restricted: { type: "boolean", default: false },
 };
 
-const TOOLS = [
+export const TOOLS = [
   {
     name: "queues",
     description: "List the queues this key may use, with their lease settings.",
@@ -588,7 +589,9 @@ async function callTool(stub, env, ctx, secret, name, args, routeCtx) {
       else return { ok: false, code: "invalid_request", detail: "encoding must be 'utf-8' or 'base64'" };
 
       const nowSec = Date.now() / 1000;
-      const stored = await storeCloudBlob(env, bytes, nowSec, routeCtx.namespace, govFields(args));
+      const permit = await stub.rpcCall(secret, "authorizeObjectWrite", { ...base, bucket:args.bucket, key:args.key, metadata:args.metadata||{}, expected_version:args.expected_version??null, ...govFields(args) });
+      if (!permit.ok) return permit;
+      const stored = await storeCloudBlob(env, bytes, nowSec, routeCtx.namespace, permit.data.governance);
       if (stored.error) return { ok: false, code: stored.error, detail: stored.detail };
       const r = await stub.rpcCall(secret, "putObjectMeta", {
         ...base,
@@ -761,25 +764,6 @@ export async function handleMcpRequest(
   }
   const surfaceHeader = (request.headers.get("x-surface-id") || "").trim();
   const routeCtx = { namespace, isPrimary, surfaceHeader };
-  const authCheck = await stub.rpcCall(bearerSecret, "verifyKey", { ...routeCtx });
-  if (!authCheck.ok) {
-    return new Response(
-      JSON.stringify({
-        type: "about:blank",
-        title: "Unauthorized",
-        status: 401,
-        code: "unauthorized",
-        detail: authCheck.detail,
-      }),
-      {
-        status: 401,
-        headers: {
-          "content-type": "application/problem+json",
-          "www-authenticate": 'Bearer realm="tessera"',
-        },
-      }
-    );
-  }
 
   let payload;
   try {
@@ -810,18 +794,27 @@ export async function handleMcpRequest(
       return { jsonrpc: "2.0", id, result: {} };
     }
     if (method === "tools/list") {
-      return { jsonrpc: "2.0", id, result: { tools: TOOLS } };
+      return { jsonrpc: "2.0", id, result: { tools: [...TOOLS, ...ACCESS_TOOLS] } };
     }
     if (method === "tools/call") {
       const toolName = params?.name;
       const toolArgs = params?.arguments || {};
-      const out = await callTool(stub, env, ctx, bearerSecret, toolName, toolArgs, routeCtx);
+      let out;
+      if (toolName === "open_anonymous_session") out = await stub.openAnonymousSession(toolArgs);
+      else if (toolName === "explain_access_modes") out = { ok: true, data: accessDescription(env.PUBLIC_URL || new URL(request.url).origin, env.ANONYMOUS_ACCESS_ENABLED === "true") };
+      else if (toolName === "whoami") out = await stub.rpcCall(bearerSecret, "me", routeCtx);
+      else if (toolName === "my_audit" || toolName === "admin_audit") out = await stub.auditForToken(bearerSecret, { ...toolArgs, admin: toolName === "admin_audit" });
+      else if (toolName === "cancel") out = await stub.rpcCall(bearerSecret, "cancel", { ...toolArgs, ...routeCtx });
+      else if (toolName === "list_verbs") out = await stub.rpcCall(bearerSecret, "listVerbs", { ...toolArgs, ...routeCtx });
+      else if (toolName === "claim_events") out = await stub.rpcCall(bearerSecret, "claimEvents", { ...toolArgs, ...routeCtx });
+      else out = await callTool(stub, env, ctx, bearerSecret, toolName, toolArgs, routeCtx);
       if (!out.ok) {
         return {
           jsonrpc: "2.0",
           id,
           result: {
             content: [{ type: "text", text: `${out.code}: ${out.detail}` }],
+            structuredContent: { error: { code: out.code, status: out.status, detail: out.detail }, access: out.status === 401 ? accessDescription(env.PUBLIC_URL || new URL(request.url).origin, env.ANONYMOUS_ACCESS_ENABLED === "true") : undefined },
             isError: true,
           },
         };

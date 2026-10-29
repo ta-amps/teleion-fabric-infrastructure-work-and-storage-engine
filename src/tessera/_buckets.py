@@ -308,6 +308,7 @@ class BucketOps(StorageOps):
         allowed = normalize_surface_list(list(allowed_surfaces) if allowed_surfaces else [])
         cohorts = normalize_cohorts(list(target_cohorts) if target_cohorts else ["all"])
         effective_tags = normalize_tags([*(tags or ()), *extract_payload_tags(metadata or {})])
+        self._assert_publisher_tags(effective_tags)
         allowed_json = canonical_json(allowed)
         cohorts_json = canonical_json(cohorts)
         tags_json = canonical_json(effective_tags)
@@ -334,6 +335,11 @@ class BucketOps(StorageOps):
                 owner_key_id=owner,
             )
 
+            previous = c.execute(
+                "SELECT * FROM bucket_objects WHERE namespace = ? AND bucket = ? AND key = ?",
+                (ns, bucket, key),
+            ).fetchone()
+            self._authorize_mutation(previous)
             if expected_version in (None, 0):
                 cur = c.execute(
                     "INSERT OR IGNORE INTO bucket_objects"

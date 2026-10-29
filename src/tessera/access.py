@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 from fastapi import Request
 
-from tessera.errors import Forbidden, ScopeDenied, Unauthorized
+from tessera.errors import Forbidden, NotFound, ScopeDenied, Unauthorized
 from tessera.grants import PROTECTED_SURFACES, KeyGrant
 from tessera.models import surface_slug
 from tessera.store import Store
@@ -25,12 +25,15 @@ class ServiceSettings:
     reaper_seconds: float = 30.0
     public_url: str = "http://localhost:8080"
     allowed_hosts: tuple[str, ...] = ()
+    anonymous_access_enabled: bool = False
     repo_url: str = "https://github.com/ta-amps/tessera"
 
     @classmethod
     def from_env(cls) -> ServiceSettings:
         env = os.environ
         return cls(
+            anonymous_access_enabled=env.get("TESSERA_ANONYMOUS_ACCESS_ENABLED", "false").lower()
+            == "true",
             db_path=env.get("TESSERA_DB", ".tessera/tessera.db"),
             edge_secret=env.get("TESSERA_EDGE_SECRET") or None,
             claims_per_minute=int(env.get("TESSERA_CLAIMS_PER_MINUTE", "60")),
@@ -111,7 +114,7 @@ class Gate:
         bound = grant.bound_surface()
         if bound is not None:
             return f"surface:{bound}"
-        return f"surface:{hdr}" if hdr else None
+        return None
 
     @staticmethod
     def surface_write(grant: KeyGrant, store_name: str, surface_header: str | None = None) -> None:
@@ -130,7 +133,7 @@ class Gate:
                     raise ScopeDenied(
                         f"key bound to surface '{bound}' cannot spoof X-Surface-Id '{hdr}'"
                     )
-                caller_surf = bound or hdr
+                caller_surf = bound
                 if caller_surf != surf:
                     raise ScopeDenied(
                         f"non-admin writers to '{store_name}' must match surface '{surf}'"
@@ -148,6 +151,27 @@ class Gate:
             return  # no live lease: the store answers stale_lease, or replays an idempotent submit
         if info.key_id != grant.key_id and not (info.key_id is None and grant.is_admin):
             raise Forbidden("only the key that claimed this task may change it")
+
+    def cancel_task(self, grant: KeyGrant, task_id: str) -> None:
+        target = self.store.task(task_id)
+        self.queue(grant, target.queue)
+        self.effect(grant, target.effect_class)
+        if grant.is_admin or target.owner_key_id == grant.key_id:
+            return
+        bound = grant.bound_surface()
+        if bound and target.producer_surface == f"surface:{bound}":
+            return
+        try:
+            lease = self.store.lease_info(task_id)
+        except NotFound:
+            lease = None
+        if (
+            lease
+            and lease.key_id == grant.key_id
+            and min(lease.expires_at, lease.hard_expires_at) > self.store.clock.now()
+        ):
+            return
+        raise Forbidden("only the owner, its surface, or the active lease holder may cancel")
 
     @staticmethod
     def store_scope(grant: KeyGrant) -> None:

@@ -17,11 +17,20 @@ stalls, wakes up twenty minutes later and overwrites the answer that replaced it
 result twice. Someone asks who did what, and nobody can say. Tessera gives each of those failures a rule, and
 each rule a test.
 
+## External agents and personal assistants
+
+Public MCP discovery works without a key. When anonymous access is enabled,
+`POST /v1/session/anonymous` opens a tracked session for private, synthetic demo
+nouns and verbs. Coding agents and personal assistants can complete the same
+claim, heartbeat, CAS and submit loop. Private production work requires a scoped
+operator-issued key. Visit `/connect`, inspect `/connect.json`, or follow the
+[access modes guide](docs/access-modes.md) for quotas, lifecycle, audit and curl/MCP examples.
+
 ## How agents connect
 
 Muse agents, or any other agent, connect with a key of their own:
 
-- **MCP** (Streamable HTTP, 26 tools) at `/mcp`, with verb tools (`queues`, `enqueue`, `claim`, `heartbeat`, `submit`,
+- **MCP** (Streamable HTTP; tool registry available through `tools/list`) at `/mcp`, with verb tools (`queues`, `enqueue`, `claim`, `heartbeat`, `submit`,
   `split`, `park`, `resume`), compare-and-set noun tools (`list_stores`, `list_records`, `put_record`, `put_records`,
   `get_record`, `record_history`), persistent named file-bucket tools (`define_bucket`, `buckets`, `put_object`,
   `get_object` with `offset`/`max_bytes` L2 slicing, `list_objects`, `object_history`), and 0-call intelligence &
@@ -126,7 +135,7 @@ suite-http-local`): 31 tests pass, and the 4 that need a fake clock or a restart
 
 Working:
 - the store and the CLI (including queryable noun stores and persistent named file buckets);
-- the HTTP service with keys and the 20-tool MCP door;
+- the HTTP service with scoped principals and the MCP tool registry;
 - the web forms and the board;
 - dependencies, park and resume;
 - a 24/7 cloud-persistent Cloudflare deployment (`https://tessera.ta-amps.workers.dev`) backed by a SQLite

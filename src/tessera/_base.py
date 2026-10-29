@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from tessera.clock import Clock, SystemClock
-from tessera.errors import InvalidRequest, NotFound
+from tessera.errors import Forbidden, InvalidRequest, NotFound
 from tessera.models import QueueConfig, TaskView, normalize_namespace, normalize_surface
 from tessera.receipts import canonical_json
 
@@ -94,6 +94,8 @@ class ScopeContext:
     surface: str | None = None
     key_id: str | None = None
     is_admin: bool = False
+    anonymous: bool = False
+    labels: dict[str, Any] | None = None
 
 
 _DEFAULT_SCOPE = ScopeContext()
@@ -147,6 +149,8 @@ class StoreBase:
         surface: str | None = None,
         key_id: str | None = None,
         is_admin: bool | None = None,
+        anonymous: bool | None = None,
+        labels: dict[str, Any] | None = None,
     ) -> Iterator[ScopeContext]:
         prev = self.current_scope()
         updated = ScopeContext(
@@ -158,6 +162,8 @@ class StoreBase:
             ),
             key_id=key_id if key_id is not None else prev.key_id,
             is_admin=is_admin if is_admin is not None else prev.is_admin,
+            anonymous=anonymous if anonymous is not None else prev.anonymous,
+            labels=labels if labels is not None else prev.labels,
         )
         token = _SCOPE_CTX.set(updated)
         try:
@@ -168,7 +174,10 @@ class StoreBase:
     def _resolve_ns(self, explicit: str | None = None, *, model_ns: str | None = None) -> str:
         ctx_ns = self.current_scope().namespace
         if explicit is not None:
-            return normalize_namespace(explicit)
+            normalized = normalize_namespace(explicit)
+            if self.current_scope().key_id and normalized != ctx_ns:
+                raise Forbidden("payload namespace must match the authenticated request namespace")
+            return normalized
         if model_ns is not None and model_ns != "main":
             norm_model = normalize_namespace(model_ns)
             if ctx_ns != "main" and norm_model != ctx_ns:
@@ -193,8 +202,50 @@ class StoreBase:
             surf = normalize_surface(producer_surface)
         else:
             surf = "surface:tessera"
+        if ctx.key_id and not ctx.is_admin and surf != (ctx.surface or "surface:tessera"):
+            raise Forbidden("producer_surface must match the authenticated surface")
         owner = ctx.key_id if ctx.key_id is not None else owner_key_id
         return surf, owner
+
+    def _assert_publisher_tags(self, tags: list[str]) -> None:
+        ctx = self.current_scope()
+        if ctx.key_id and not ctx.is_admin and not ctx.surface and "status:verified" in tags:
+            raise Forbidden("verification labels require an authorized publisher")
+
+    def _authorize_mutation(self, row: sqlite3.Row | None) -> None:
+        """CAS controls version; ownership controls who may change that version."""
+        ctx = self.current_scope()
+        if row is None or ctx.key_id is None or ctx.is_admin:
+            return
+        if row["owner_key_id"] == ctx.key_id:
+            return
+        if (
+            ctx.surface
+            and row["visibility_scope"] != "private"
+            and row["producer_surface"] == ctx.surface
+        ):
+            return
+        raise Forbidden("only the owner or its authorized surface may mutate this resource")
+
+    def _task_visible(self, row: sqlite3.Row) -> bool:
+        ctx = self.current_scope()
+        if ctx.key_id is None and ctx.surface is None:
+            return True  # The embedded Store is an operator API, not an HTTP principal.
+        if ctx.is_admin:
+            return True
+        tags = json.loads(row["tags"])
+        if "status:quarantined" in tags and ctx.surface != row["producer_surface"]:
+            return False
+        if row["visibility_scope"] == "private":
+            return bool(row["owner_key_id"] == ctx.key_id)
+        if row["visibility_scope"] == "surface_only":
+            return bool(ctx.surface and ctx.surface == row["producer_surface"])
+        if row["visibility_scope"] == "allowlist_surfaces":
+            return bool(
+                ctx.surface
+                and ctx.surface in [row["producer_surface"], *json.loads(row["allowed_surfaces"])]
+            )
+        return bool("all" in json.loads(row["target_cohorts"]) or row["owner_key_id"] == ctx.key_id)
 
     # -- connections and transactions ---------------------------------------------------------
 
