@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "namespace": "conformance-research",
+  "queue": "research",
+  "output_store": "research.candidates",
+  "stage": "build_collector",
+  "profile": {
+    "store": "research.profiles",
+    "key": "SYNTHETIC-profile",
+    "version": 1,
+    "value_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "inputs": [
+    {
+      "store": "research.candidates",
+      "key": "SYNTHETIC-source-or-collector",
+      "version": 1,
+      "value_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ],
+  "max_sources": 5,
+  "max_candidates": 3,
+  "max_fetches": 10,
+  "max_runtime_seconds": 600
+}

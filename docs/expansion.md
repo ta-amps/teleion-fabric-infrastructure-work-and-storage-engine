@@ -4,6 +4,11 @@ How a Muse Code agent, MCP client, or Meta Model API worker (`muse-spark-1.3`, `
 Standard mode) safely **adds new atomic nouns and verbs and processes them end to end** without unbounded
 fan-out or unreviewed store pollution.
 
+For source-discovery meta-seeds and proposed daily collection, use the newer
+[research seed authoring tool](research-seeds.md). It creates bounded worker
+contracts on the same fabric. Its schedule stage creates a proposal noun; a
+general recurring research scheduler is not installed by either workflow.
+
 ## Why dedicated `seed` and `expand` queues + staged noun stores?
 
 If any swarm worker could recursively spawn tasks on execution queues or write directly into canonical
