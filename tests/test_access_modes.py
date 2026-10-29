@@ -616,3 +616,38 @@ def test_delegation_cannot_drop_fine_mode_or_namespace(
     assert client.post("/ns/alpha/v1/keys", json=body, headers=auth(scoped)).status_code == 403
     body["scopes"] = ["nouns:read", "namespace:alpha"]
     assert client.post("/ns/alpha/v1/keys", json=body, headers=auth(scoped)).status_code == 201
+
+
+def test_denied_and_no_op_requests_are_counted_not_written_per_request(
+    access: tuple[TestClient, Store, FakeClock, str],
+) -> None:
+    """Same rule as the Worker: unauthenticated requests write nothing, denied and empty claims
+    are counted per minute, and successful actions keep their own audit row."""
+    client, store, _clock, admin = access
+    store.define_queue(QueueConfig(name="conformance-counted"))
+    worker, _ = store.issue_key(
+        "worker", queues=["conformance-counted"], scopes=["verbs:claim", "nouns:read"]
+    )
+
+    def rows() -> int:
+        with store._read() as c:
+            return int(c.execute("SELECT COUNT(*) FROM access_events").fetchone()[0])
+
+    assert client.get("/v1/counts", headers=auth(worker)).status_code == 200
+    before = rows()
+    assert client.get("/v1/counts").status_code == 401
+    assert client.get("/v1/counts", headers=auth("synthetic-invalid-bearer")).status_code == 401
+    claim = {"queue": "conformance-counted", "worker": "w"}
+    for _ in range(5):
+        assert client.post("/v1/tasks/claim", json=claim, headers=auth(worker)).status_code == 204
+    for _ in range(3):
+        assert client.post("/v1/admin/reap", json={}, headers=auth(worker)).status_code == 403
+    assert rows() == before
+    audit = client.get("/v1/me/audit", headers=auth(worker)).json()
+    counted = {(c["action"], c["outcome"]): c["count"] for c in audit["counters"]}
+    assert counted[("claim", "empty")] == 5
+    assert sum(n for (action, _), n in counted.items() if action != "claim") == 3
+    assert audit["counters_note"]
+    assert client.get("/v1/counts", headers=auth(worker)).status_code == 200
+    assert rows() == before + 2  # the audit read above and this successful read
+    assert client.get("/v1/admin/audit", headers=auth(admin)).json()["counters"]

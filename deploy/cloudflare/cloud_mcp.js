@@ -906,7 +906,13 @@ export async function handleMcpRequest(
   };
 
   if (Array.isArray(payload)) {
-    const results = (await Promise.all(payload.map(processOne))).filter(Boolean);
+    // One call at a time: each passes the same authentication and claim admission as a
+    // single request, and a batch cannot fan out into unbounded concurrent storage calls.
+    const results = [];
+    for (const msg of payload) {
+      const result = await processOne(msg);
+      if (result) results.push(result);
+    }
     if (!results.length) return new Response(null, { status: 202 });
     return Response.json(results, { headers: { "cache-control": "no-store" } });
   }

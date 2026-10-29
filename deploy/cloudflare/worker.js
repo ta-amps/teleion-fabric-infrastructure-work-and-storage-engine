@@ -1,5 +1,6 @@
 import { agentStartAsset, withAgentStart } from "./agent_start.js";
 import { storageQuotaFailure } from "./storage_quota.js";
+import { namespaceAllowed, publicPrincipal } from "./cloud_access.js";
 import { accessDiscoveryRoute, accessRoute, accessDescription, ACCESS_TOOLS } from "./cloud_access_routes.js";
 import { TOOLS as FABRIC_TOOLS } from "./cloud_mcp.js";
 // Tessera Cloud Worker: 24/7 native cloud execution on Cloudflare Durable Object SQLite + D1
@@ -478,8 +479,27 @@ const worker = {
     const rawStub = coordBinding.get(coordBinding.idFromName(isPrimary ? "primary" : `ns:${namespace}`));
     const identity = await primary.requestIdentity(request.headers.get("cf-connecting-ip"), request.headers.get("user-agent"));
     const meta = { ...identity, request_id: request.headers.get("x-request-id") || crypto.randomUUID(), route: path, bytes_in: Number(request.headers.get("content-length") || 0) };
+    // Authentication and namespace authorization happen here, before any namespace object is
+    // touched: a caller without a valid key, or without a grant for the namespace it named,
+    // neither writes a row nor creates a coordinator object for that name. The coordinator
+    // still re-checks the full grant on every call.
+    const principals = new Map([[requestBearer, principal]]);
+    const principalFor = async (secret) => {
+      if (!principals.has(secret)) principals.set(secret, secret ? await primary.resolveKeyGrant(secret) : null);
+      return principals.get(secret);
+    };
     const stub = {
-      rpcCall: (secret, action, args = {}) => rawStub.rpcCall(secret, action, { ...args, access_meta: meta }),
+      rpcCall: async (secret, action, args = {}, accessFlags = {}) => {
+        const grant = await principalFor(secret);
+        if (!grant) return { ok: false, status: 401, code: "unauthorized", detail: secret ? "the key is unknown, expired or revoked" : "a bearer key is required", extra: {} };
+        const target = normalizeNamespace(args.namespace || "main");
+        if (!namespaceAllowed(grant, target)) {
+          const denied = { ok: false, status: 403, code: "scope_denied", detail: "this principal may not access this namespace", extra: {} };
+          ctx.waitUntil(primary.countAccessEvent(publicPrincipal(grant), action, { namespace: target }, denied, meta));
+          return denied;
+        }
+        return rawStub.rpcCall(secret, action, { ...args, access_meta: { ...meta, ...accessFlags } });
+      },
       publicHealthAndBoard: (...args) => rawStub.publicHealthAndBoard(...args),
       bootstrapOrIssueKey: (secret, bootstrap, body) => primary.bootstrapOrIssueKey(secret, bootstrap, { ...body, access_meta: meta }),
       openAnonymousSession: body => primary.openAnonymousSession(body, meta),

@@ -1,5 +1,5 @@
 import { initExecutions, checkedReport, prepareExecution, validatePrepared, captureExecution, recallExecution, getExecution, listExecutions } from "./cloud_executions.js";
-import { initAccess, principalMetadata, requestIdentity, mintAnonymous, seedDemo, enforceAccess, audit, ownAudit, publicActivity, publicPrincipal } from "./cloud_access.js";
+import { initAccess, principalMetadata, requestIdentity, mintAnonymous, seedDemo, enforceAccess, audit, auditMode, countAccess, ownAudit, publicActivity, publicPrincipal } from "./cloud_access.js";
 // TesseraCoordinator: single-writer SQLite Durable Object (`new_sqlite_classes`) implementing
 // 100% of Tessera Spec v0.2 (queues, 5 verbs, dependencies, waves, park/resume, model jobs,
 // counts, events, scoped keys, queryable CAS records, persistent named file buckets,
@@ -1800,6 +1800,7 @@ export class TesseraCoordinator extends DurableObject {
   async seedDemo(grant, purgeAt) { return seedDemo(this, grant, purgeAt); }
   publicActivity() { return publicActivity(this); }
   recordAccessEvent(grant, action, args, out, meta) { audit(this, grant, action, args, out, meta); }
+  countAccessEvent(grant, action, args, out, meta) { countAccess(this, grant, action, args, out, meta); }
   async auditForToken(secret, args = {}) {
     try {
       const grant = await this._grantFromSecret(secret);
@@ -1843,10 +1844,18 @@ export class TesseraCoordinator extends DurableObject {
       }
     } catch (e) { out = this._errOut(e instanceof ClaimPressure ? rateLim(e.message, e.retryAfter) : e); }
     try {
-      audit(this, grant, action, args, out, args.access_meta || {});
-      if (ns !== "main" && this.env.COORDINATOR) {
-        const primary = this.env.COORDINATOR.get(this.env.COORDINATOR.idFromName("primary"));
-        await primary.recordAccessEvent(grant ? publicPrincipal(grant) : null, action, args, out, args.access_meta || {});
+      // A request that never authenticated writes nothing. Successful actions keep their own
+      // row; denied, failed and no-op ones are counted (see auditMode in cloud_access.js).
+      const meta = args.access_meta || {};
+      const mode = grant ? auditMode(action, out, meta) : "skip";
+      const primary = ns !== "main" && this.env.COORDINATOR ? this.env.COORDINATOR.get(this.env.COORDINATOR.idFromName("primary")) : null;
+      if (mode === "row") {
+        audit(this, grant, action, args, out, meta);
+        if (primary) await primary.recordAccessEvent(publicPrincipal(grant), action, args, out, meta);
+      } else if (mode === "count") {
+        // Every namespace's counters live with the principal's audit in the primary object.
+        if (primary) await primary.countAccessEvent(publicPrincipal(grant), action, { namespace: ns }, { ok: out.ok, status: out.status, code: out.code, data: { lease: out.data?.lease ? true : null } }, meta);
+        else countAccess(this, grant, action, args, out, meta);
       }
       if (permit) out.headers = { ...out.headers, "x-claim-wait-ms": String(permit.waitMs), "x-claim-concurrency": String(this.claimAdmission.limit) };
       return out;

@@ -60,6 +60,33 @@ every route.
 and checks that public reads still answer 200 while a write still reports `503
 storage_quota_exhausted`.
 
+## Requests that never authenticate, denials and no-op requests
+
+Before October 29 a request without a valid key still wrote an audit row, and a request to
+`/ns/<any name>/...` created a coordinator object for that name with its whole schema (about 200
+rows) before authentication failed.
+
+- The Worker now refuses a missing, unknown, expired or revoked key with `401` before any
+  namespace object is touched, and checks the key's namespace grant (`namespace:<name>`,
+  `namespace:*` or admin) before calling that namespace's object. The only storage calls on that
+  path are the read-only key lookup and identity hashing on the primary object. The coordinator
+  still re-checks the full grant on every call.
+- Every successful action keeps its own redacted audit row, reads included (a read of an
+  execution record still names its run). Denied and failed requests, `429` responses, empty
+  claims and internal pre-checks (`verifyKey`, `verifyStoreScope`, `authorizeBlobWrite`,
+  `authorizeObjectWrite`) are counted instead: one `access_counters` row per minute, principal,
+  namespace, action and outcome. `/v1/me/audit` and `/v1/admin/audit` return them as `counters`.
+- On the Worker the counters are buffered in the primary object's memory and written when their
+  minute has passed, when 1,024 distinct counters are waiting, or before an audit read. Counts
+  not yet written are lost if the object is evicted; that is the accepted trade for not writing
+  one row per no-op request. The Python service writes each counter increment directly.
+- MCP batches now run one call at a time, so each call passes the same authentication and claim
+  admission as a single request and a batch cannot fan out into unbounded concurrent storage
+  calls. The existing request byte limit (1 MiB, 64 KiB for demo sessions) bounds a batch; there
+  is no separate item cap.
+
+`tests/workerd_access_writes.mjs` and `tests/test_access_modes.py` cover these rules.
+
 ## Local measurements and remaining work
 
 The actual-workerd tests warm one authenticated key and make five ordinary

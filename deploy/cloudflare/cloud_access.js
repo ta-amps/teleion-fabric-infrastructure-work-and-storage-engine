@@ -35,6 +35,8 @@ export function initAccess(c) {
     `CREATE TABLE IF NOT EXISTS access_events (seq INTEGER PRIMARY KEY AUTOINCREMENT, request_id TEXT NOT NULL, ts REAL NOT NULL, namespace TEXT NOT NULL, principal_kind TEXT NOT NULL, principal_id TEXT, session_id TEXT, key_id TEXT, account_id TEXT, ip_hash TEXT, ua_hash TEXT, surface TEXT, route_or_tool TEXT, action TEXT NOT NULL, resource_type TEXT, resource_id TEXT, receipt_id TEXT, status INTEGER, bytes_in INTEGER, bytes_out INTEGER, error_code TEXT, labels TEXT NOT NULL, scopes_used TEXT NOT NULL)`,
     `CREATE INDEX IF NOT EXISTS access_events_owner ON access_events(principal_id,seq)`,
     `CREATE INDEX IF NOT EXISTS access_events_time ON access_events(ts)`,
+    `CREATE TABLE IF NOT EXISTS access_counters (window INTEGER NOT NULL, principal_id TEXT NOT NULL, namespace TEXT NOT NULL, action TEXT NOT NULL, outcome TEXT NOT NULL, principal_kind TEXT NOT NULL, count INTEGER NOT NULL, first_ts REAL NOT NULL, last_ts REAL NOT NULL, PRIMARY KEY (window, principal_id, namespace, action, outcome)) WITHOUT ROWID`,
+    `CREATE INDEX IF NOT EXISTS access_counters_owner ON access_counters(principal_id, window)`,
   ];
   // Read first: an existing object's cold start executes no write-capable statement.
   c._ensureDdl(statements);
@@ -63,6 +65,59 @@ export async function requestIdentity(c, ip, ua) {
   return { ip_hash: await hash(`${day}:ip:${String(ip || "unknown").slice(0, 128)}`), ua_hash: await hash(`${day}:ua:${String(ua || "").slice(0, 512)}`) };
 }
 
+// Every successful action keeps its own redacted audit row, reads included. Denied, failed
+// and no-op requests, and the internal pre-checks of a larger request, are aggregated
+// instead: one counter row per minute, principal, namespace, action and outcome.
+const PRECHECK_ACTIONS = new Set(["verifyKey", "verifyStoreScope", "authorizeBlobWrite", "authorizeObjectWrite"]);
+const COUNTER_WINDOW_SECONDS = 60;
+const COUNTER_FLUSH_ENTRIES = 1024;
+const COUNTER_MEMORY_ENTRIES = 8192;
+export function auditMode(action, out, meta = {}) {
+  if (meta.repeat) return "skip"; // a long-poll's later checks; its first check is audited
+  if (!out?.ok || PRECHECK_ACTIONS.has(action)) return "count";
+  if (action === "claim" && !out.data?.lease) return "count";
+  return "row";
+}
+
+export function namespaceAllowed(grant, ns) {
+  const scopes = Array.isArray(grant?.scopes) ? grant.scopes : [];
+  if (grant?.is_admin || scopes.includes("admin")) return true;
+  const namespaceScopes = scopes.filter(s => s.startsWith("namespace:"));
+  return namespaceScopes.length ? namespaceScopes.some(s => s === `namespace:${ns}` || s === "namespace:*") : ns === "main";
+}
+
+// Counters are buffered in object memory and written when their minute has passed, when the
+// buffer is large, or before an audit read. An object evicted between writes loses at most
+// its unwritten counts; that is the accepted cost of not writing a row per no-op request.
+export function countAccess(c, grant, action, args, out, meta = {}) {
+  if (!grant || auditMode(action, out, meta) !== "count") return;
+  const now = Date.now() / 1000, window = Math.floor(now / COUNTER_WINDOW_SECONDS);
+  const principal = grant.principal_id || grant.key_id;
+  const namespace = args.namespace || grant.namespace || "main";
+  const outcome = out?.ok ? (action === "claim" && !out.data?.lease ? "empty" : String(out.status || 200)) : `${out?.status || 400}:${out?.code || "unknown"}`;
+  const buffer = c.accessCounters || (c.accessCounters = new Map());
+  const key = [window, principal, namespace, action, outcome].join("\u0000");
+  const row = buffer.get(key);
+  if (row) { row.count++; row.last_ts = now; }
+  else buffer.set(key, { window, principal_id: principal, namespace, action, outcome, principal_kind: grant.principal_kind || "keyed", count: 1, first_ts: now, last_ts: now });
+  flushAccessCounters(c, { before: window });
+}
+
+export function flushAccessCounters(c, { before = Infinity } = {}) {
+  const buffer = c.accessCounters;
+  if (!buffer?.size) return true;
+  let rows = [...buffer].filter(([, r]) => r.window < before);
+  if (buffer.size >= COUNTER_FLUSH_ENTRIES) rows = [...buffer];
+  if (!rows.length) return true;
+  const written = c._observe(() => c.ctx.storage.transactionSync(() => {
+    for (const [, r] of rows) c.ctx.storage.sql.exec("INSERT INTO access_counters(window,principal_id,namespace,action,outcome,principal_kind,count,first_ts,last_ts) VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(window,principal_id,namespace,action,outcome) DO UPDATE SET count=count+excluded.count,last_ts=MAX(last_ts,excluded.last_ts)",
+      r.window, r.principal_id, r.namespace, r.action, r.outcome, r.principal_kind, r.count, r.first_ts, r.last_ts);
+  }));
+  if (written) for (const [key] of rows) buffer.delete(key);
+  else for (const [key] of [...buffer].slice(0, Math.max(0, buffer.size - COUNTER_MEMORY_ENTRIES))) buffer.delete(key);
+  return written;
+}
+
 export function audit(c, grant, action, args, out, meta = {}) {
   const now = Date.now() / 1000;
   const labels = grant?.labels || {};
@@ -80,6 +135,7 @@ export function audit(c, grant, action, args, out, meta = {}) {
     out?.ok ? null : out?.code || "unknown", JSON.stringify(labels), JSON.stringify(SCOPES[action] ? [SCOPES[action]] : READ_ACTIONS.has(action) ? ["nouns:read"] : []),
   );
   c.ctx.storage.sql.exec("DELETE FROM access_events WHERE ts < ?", now - 86400);
+  c.ctx.storage.sql.exec("DELETE FROM access_counters WHERE window < ?", Math.floor((now - 86400) / COUNTER_WINDOW_SECONDS));
   c.ctx.storage.sql.exec("DELETE FROM access_limits WHERE window < ?", Math.floor(now / 3600) - 24);
   c.ctx.storage.sql.exec("DELETE FROM keys WHERE key_id IN (SELECT key_id FROM access_principals WHERE principal_kind='anonymous' AND purge_at<?)", now);
   c.ctx.storage.sql.exec("DELETE FROM access_principals WHERE principal_kind='anonymous' AND purge_at<?", now);
@@ -141,9 +197,7 @@ export function seedDemo(c, grant, purgeAt) {
 
 export function enforceAccess(c, grant, action, args) {
   const ns = args.namespace || "main";
-  const namespaceScopes = grant.scopes.filter(s => s.startsWith("namespace:"));
-  if (!grant.is_admin && !(namespaceScopes.length ? namespaceScopes.some(s => s === `namespace:${ns}` || s === "namespace:*") : ns === "main"))
-    throw error(403, "scope_denied", "this principal may not access this namespace");
+  if (!namespaceAllowed(grant, ns)) throw error(403, "scope_denied", "this principal may not access this namespace");
   const fineScopes = grant.scopes.some(s => s.includes(":") && !s.startsWith("surface:") && !s.startsWith("namespace:"));
   const required = SCOPES[action] || (READ_ACTIONS.has(action) ? "nouns:read" : null);
   if (!grant.is_admin && fineScopes && required && !grant.scopes.includes(required)) throw error(403, "scope_denied", `missing ${required} scope`);
@@ -190,9 +244,15 @@ export function enforceAccess(c, grant, action, args) {
 
 export function ownAudit(c, grant, args = {}) {
   const limit = Math.max(1, Math.min(Number(args.limit) || 50, 200));
-  const rows = grant.is_admin && args.admin ? c._all("SELECT * FROM access_events WHERE seq>? ORDER BY seq DESC LIMIT ?", Number(args.after) || 0, limit)
+  const all = grant.is_admin && args.admin;
+  const rows = all ? c._all("SELECT * FROM access_events WHERE seq>? ORDER BY seq DESC LIMIT ?", Number(args.after) || 0, limit)
     : c._all("SELECT * FROM access_events WHERE principal_id=? AND seq>? ORDER BY seq DESC LIMIT ?", grant.principal_id || grant.key_id, Number(args.after) || 0, limit);
-  return { events: rows.map(r => ({ ...r, labels: JSON.parse(r.labels), scopes_used: JSON.parse(r.scopes_used) })) };
+  flushAccessCounters(c);
+  const counters = all ? c._all("SELECT * FROM access_counters ORDER BY window DESC, last_ts DESC LIMIT ?", limit)
+    : c._all("SELECT * FROM access_counters WHERE principal_id=? ORDER BY window DESC, last_ts DESC LIMIT ?", grant.principal_id || grant.key_id, limit);
+  return { events: rows.map(r => ({ ...r, labels: JSON.parse(r.labels), scopes_used: JSON.parse(r.scopes_used) })),
+    counters: counters.map(r => ({ ...r, window_start: r.window * COUNTER_WINDOW_SECONDS, window_seconds: COUNTER_WINDOW_SECONDS })),
+    counters_note: "Denied, failed and no-op requests and internal pre-checks are counted per minute instead of one row each; counts not yet written may be lost if the object restarts." };
 }
 export function publicActivity(c) {
   const rows = c._all("SELECT ts,principal_kind,action,resource_type,status,labels FROM access_events WHERE action NOT IN ('verifyKey','verifyStoreScope') AND principal_kind IN ('anonymous','keyed','service_binding') ORDER BY seq DESC LIMIT 30");
