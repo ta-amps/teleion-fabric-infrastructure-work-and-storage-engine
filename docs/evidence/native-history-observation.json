@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "observed_date": "2026-10-29",
+  "source_revision": "b1b470475c3ff03db0963bbcf6b271911d79f73e",
+  "worker_version": "42d8bf93-0d37-47e6-8937-1070df117c27",
+  "harness": "OpenCode 2.1.2",
+  "provider": "Ollama Cloud",
+  "model": "kimi-k2.7-code",
+  "interface": "Direct deployed Tessera MCP; no context shim or Frontier connector",
+  "scope": "One synthetic execution-report and recall loop per principal. Worker observations do not qualify public artifact admission or universal client compatibility.",
+  "worker_inference_requests": 30,
+  "server_model_requests": 0,
+  "transport": "Loopback observation gate forwarding only to the fixed official Ollama chat endpoint, with request/deadline/output bounds and no tool-payload repair.",
+  "permissions": "Deny by default; twelve exact MCP operation permissions. No shell, filesystem, arbitrary URL or approval bypass.",
+  "runs": [
+    {
+      "mode": "anonymous",
+      "passed": true,
+      "native_event_counts": {
+        "step_start": 14,
+        "tool_use": 13,
+        "step_finish": 13,
+        "text": 1
+      },
+      "native_calls": [
+        "tessera_whoami",
+        "tessera_claim",
+        "tessera_heartbeat",
+        "tessera_put_record",
+        "tessera_get_record",
+        "tessera_submit",
+        "tessera_list_executions",
+        "tessera_get_execution",
+        "tessera_enqueue",
+        "tessera_claim",
+        "tessera_recall_execution",
+        "tessera_cancel",
+        "tessera_my_audit"
+      ],
+      "provider_requests": 15,
+      "provider_usage_records": 15,
+      "provider_reported_prompt_tokens_sum": 68975,
+      "provider_reported_completion_tokens_sum": 3180,
+      "exact_input_recall": true,
+      "independent_http_readback": true,
+      "fresh_key_revoked": null,
+      "run_fingerprint": "db1d178ad17a37cfd2c661e4398f733e10beed19edff767a73e9e9243806dc74",
+      "cost_usd": null,
+      "cost_reason": "Subscription use is not a per-run invoice."
+    },
+    {
+      "mode": "keyed",
+      "passed": true,
+      "native_event_counts": {
+        "step_start": 14,
+        "text": 2,
+        "tool_use": 13,
+        "step_finish": 13
+      },
+      "native_calls": [
+        "tessera_whoami",
+        "tessera_claim",
+        "tessera_heartbeat",
+        "tessera_put_record",
+        "tessera_get_record",
+        "tessera_submit",
+        "tessera_list_executions",
+        "tessera_get_execution",
+        "tessera_enqueue",
+        "tessera_claim",
+        "tessera_recall_execution",
+        "tessera_cancel",
+        "tessera_my_audit"
+      ],
+      "provider_requests": 15,
+      "provider_usage_records": 15,
+      "provider_reported_prompt_tokens_sum": 62803,
+      "provider_reported_completion_tokens_sum": 3437,
+      "exact_input_recall": true,
+      "independent_http_readback": true,
+      "fresh_key_revoked": true,
+      "run_fingerprint": "46b9f15a1bd21503f4115657086e8fe744483570a7a83e0e5b811e446cdef2f7",
+      "cost_usd": null,
+      "cost_reason": "Subscription use is not a per-run invoice."
+    }
+  ],
+  "retained_setup_failures": [
+    {
+      "mode": "anonymous",
+      "provider_requests": 0,
+      "reason": "Test driver module-name collision before any network request; corrected."
+    },
+    {
+      "mode": "keyed",
+      "provider_requests": 0,
+      "reason": "Test driver used an unsupported enqueue HTTP path before inference; corrected to the documented route; fresh key revoked."
+    }
+  ],
+  "limits": [
+    "One run per principal, not a reliability estimate.",
+    "Native Muse, Grokbot, Muse.ai and other model/version combinations are not established by this evidence.",
+    "No automatic output replay, generated-code admission, general category resolver or new shim activation was enabled."
+  ]
+}

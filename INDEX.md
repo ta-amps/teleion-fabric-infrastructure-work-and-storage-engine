@@ -102,7 +102,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [deploy/fly/README.md](deploy/fly/README.md) | Fly.io: the Tessera service |
 | [deploy/fly/fly.toml](deploy/fly/fly.toml) | Tessera service on one Fly.io machine with a volume (brief L20), reached through the Cloudflare edge |
 
-## docs/ (20)
+## docs/ (21)
 
 | File | What it is |
 |---|---|
@@ -112,6 +112,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [docs/architecture.md](docs/architecture.md) | Tessera: architecture |
 | [docs/comparison.md](docs/comparison.md) | Tessera: comparison |
 | [docs/decisions.md](docs/decisions.md) | Tessera: decisions |
+| [docs/evidence/native-history-observation.json](docs/evidence/native-history-observation.json) | JSON object: schema_version, observed_date, source_revision, worker_version, harness, provider |
 | [docs/execution-memory.md](docs/execution-memory.md) | Execution reports and permitted recall |
 | [docs/expansion.md](docs/expansion.md) | Seeding & expanding atomic nouns and verbs with Muse / Meta agents |
 | [docs/frontier-publication.md](docs/frontier-publication.md) | Frontier publication receipts |

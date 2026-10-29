@@ -1,5 +1,28 @@
 # Tessera: handoff
 
+## Integration checkpoint, October 29, 2026
+
+The reviewed release is merged into `main`. The tested implementation revision is
+`b1b470475c3ff03db0963bbcf6b271911d79f73e`; [its GitHub checks](https://github.com/ta-amps/tessera/actions/runs/40872587755) passed.
+Fresh builds matched the deployed Worker executable exactly.
+
+262 Python checks passed, with six existing skips; five actual workerd cases, local HTTP conformance (32 passed, four skipped), and the empty-backend negative control passed. The deployed anonymous/keyed history smoke passed 112 checks.
+
+Execution observations and bounded recall are protected nouns captured with accepted verb completion. Recall never grants permission to replay an effect. Category query repairs are implemented; a general category/profile resolver remains separate work.
+
+Follow the [worker-first policy](WORKER-FIRST-EXECUTION.md): independently
+schedulable reasoning is a claimed verb; inputs, contracts, artifacts and evidence
+are scoped nouns. Workers reason and self-check. Authentication, leases, CAS,
+types and receipts stay deterministic. Server inference is an explicitly
+configured, scoped and bounded exception. Missing capacity or invalid input does
+not enable it automatically.
+
+The earlier inventory below is dated history. These checks cover the recorded
+implementations and fixtures; they are not universal harness, load or rendered-UI
+certification.
+
+## Earlier handoff
+
 Where the work stands as of Oct 26, 2026, how to verify every guarantee from a fresh clone, what sits in
 `briefs/` for the next workers, and how Shamash and Eranos connect to the fabric.
 
