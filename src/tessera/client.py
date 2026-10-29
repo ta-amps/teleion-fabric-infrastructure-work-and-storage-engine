@@ -340,6 +340,26 @@ class Client:
         ).json()
         return result
 
+    def execution_observations(
+        self,
+        queue: str,
+        *,
+        kind: str | None = None,
+        after: str | None = None,
+        limit: int = 50,
+        namespace: str | None = None,
+    ) -> dict[str, Any]:
+        """Bounded observations of permitted runs in one queue; follow next_after to page."""
+        params: dict[str, Any] = {"queue": queue, "limit": limit}
+        if kind is not None:
+            params["kind"] = kind
+        if after is not None:
+            params["after"] = after
+        result: dict[str, Any] = self._call(
+            "GET", "/v1/executions", params=params, headers=self._ns_headers(namespace)
+        ).json()
+        return result
+
     def cancel(self, task_id: str, reason: str = "", *, namespace: str | None = None) -> TaskView:
         resp = self._call(
             "POST",

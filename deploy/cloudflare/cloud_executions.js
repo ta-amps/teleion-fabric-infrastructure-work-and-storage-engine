@@ -80,7 +80,7 @@ function allowed(c,envelope,grant,view) {
   }
   return referencesVisible(c,envelope.report,view);
 }
-function executionView(c,row,grant,view,includeOutput=true) {
+export function executionView(c,row,grant,view,includeOutput=true) {
   const e=JSON.parse(row.envelope);
   if(!allowed(c,e,grant,view)) throw missing();
   const result=c._one((includeOutput?'SELECT *':'SELECT ok')+' FROM results WHERE namespace=? AND task_id=? AND fencing_token=? AND receipt_hash=?',row.namespace,row.task_id,row.fencing_token,row.receipt_hash);

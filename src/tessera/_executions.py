@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from typing import Any, cast
 
@@ -16,8 +17,10 @@ from tessera._execution_capture import (
 from tessera.errors import Forbidden, InvalidRequest, NotFound, StaleLease
 from tessera.execution_matching import compare
 from tessera.grants import KeyGrant
+from tessera.observations import USE_POLICY, observation
 
 CANDIDATE_LIMIT = 500
+_CURSOR = re.compile(r"[0-9]{1,15}")
 
 
 class ExecutionOps(StoreBase):
@@ -115,6 +118,71 @@ class ExecutionOps(StoreBase):
         return {
             "executions": executions,
             "next_after": rows[-1]["fencing_token"] if len(rows) == limit else None,
+        }
+
+    def execution_observations(
+        self,
+        queue: str,
+        *,
+        grant: KeyGrant,
+        kind: str | None = None,
+        after: str | None = None,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        """Bounded observations of permitted runs in one queue, in capture order."""
+        if not isinstance(queue, str) or not queue or len(queue) > 128:
+            raise InvalidRequest("queue must be a nonempty string of at most 128 characters")
+        if kind is not None and (not isinstance(kind, str) or len(kind) > 128):
+            raise InvalidRequest("kind must be a string of at most 128 characters")
+        if after is not None and (not isinstance(after, str) or not _CURSOR.fullmatch(after)):
+            raise InvalidRequest("after must be a cursor returned as next_after")
+        if type(limit) is not int or not 1 <= limit <= 100:
+            raise InvalidRequest("limit must be an integer from 1 to 100")
+        ns = self.current_scope().namespace
+        if not grant.allows_namespace(ns) or not (grant.is_admin or grant.allows_queue(queue)):
+            raise Forbidden(f"this key may not read executions in queue {queue!r}")
+        sql = (
+            "SELECT r.rowid AS seq,r.*,t.kind AS task_kind FROM execution_runs r JOIN tasks t "
+            "ON t.namespace=r.namespace AND t.id=r.task_id WHERE r.namespace=? AND r.rowid>? "
+            "AND t.queue=? AND (r.expires_at IS NULL OR r.expires_at>?)"
+        )
+        args: list[Any] = [ns, int(after or 0), queue, self.clock.now()]
+        if kind is not None:
+            sql += " AND t.kind=?"
+            args.append(kind)
+        items = []
+        with self._read() as c:
+            rows = c.execute(sql + " ORDER BY r.rowid LIMIT ?", (*args, limit)).fetchall()
+            for row in rows:
+                try:
+                    view = self._execution_view(c, row, grant, include_output=False)
+                except NotFound:
+                    continue
+                result = (
+                    {"state_after": "done", "error": None}
+                    if view["ok"]
+                    else c.execute(
+                        "SELECT state_after,error FROM results WHERE namespace=? AND task_id=? AND fencing_token=? AND receipt_hash=?",
+                        (ns, row["task_id"], row["fencing_token"], row["receipt_hash"]),
+                    ).fetchone()
+                )
+                item = observation(
+                    view,
+                    category=row["task_kind"],
+                    ok=view["ok"],
+                    state_after=result["state_after"],
+                    error=result["error"],
+                )
+                items.append({"seq": str(row["seq"]), **item})
+        return {
+            "observations": items,
+            "next_after": str(rows[-1]["seq"]) if len(rows) == limit else None,
+            "coverage": {
+                "permission_filtered": True,
+                "reason": "Runs hidden by current grants are skipped while the cursor advances.",
+            },
+            "evidence_only": True,
+            "use_policy": USE_POLICY,
         }
 
     def get_execution(self, run_id: str, *, grant: KeyGrant) -> dict[str, Any]:

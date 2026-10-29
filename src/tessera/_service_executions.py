@@ -36,6 +36,16 @@ def mount_execution_routes(
             limit=body.limit,
         )
 
+    @app.get("/v1/executions")
+    def execution_observations(
+        queue: str = Query(min_length=1, max_length=128),
+        kind: str | None = Query(default=None, max_length=128),
+        after: str | None = Query(default=None, pattern=r"^[0-9]{1,15}$"),
+        limit: int = Query(default=50, ge=1, le=100),
+        grant: KeyGrant = key,
+    ) -> dict[str, Any]:
+        return store.execution_observations(queue, grant=grant, kind=kind, after=after, limit=limit)
+
     @app.get("/v1/executions/{run_id}")
     def execution(run_id: str, grant: KeyGrant = key) -> dict[str, Any]:
         return store.get_execution(run_id, grant=grant)
