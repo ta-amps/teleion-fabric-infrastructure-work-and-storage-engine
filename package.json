@@ -4,7 +4,7 @@
   "type": "module",
   "engines": {"node": ">=22"},
   "scripts": {
-    "test:worker": "node --test tests/workerd_execution_history.mjs"
+    "test:worker": "node --test tests/workerd_*.mjs"
   },
   "devDependencies": {
     "esbuild": "0.28.2",

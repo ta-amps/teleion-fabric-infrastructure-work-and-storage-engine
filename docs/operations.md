@@ -44,6 +44,10 @@ their own queue first, and `uv run tessera reap` reaps everything.
 
 ## When something looks wrong
 
+See [storage availability](storage-availability.md) for provider-quota `503`
+responses, UTC retry guidance and the distinction between approximate profile
+timestamps and per-action audit events.
+
 | Signal | Look at | Usual cause |
 |---|---|---|
 | Expired leases climbing in health | `tessera events` for `lease_lapsed` | A worker stopped heartbeating |

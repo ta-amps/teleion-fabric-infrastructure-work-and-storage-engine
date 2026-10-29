@@ -1,4 +1,5 @@
 import { agentStartAsset, withAgentStart } from "./agent_start.js";
+import { storageQuotaFailure } from "./storage_quota.js";
 import { accessRoute, accessDescription, ACCESS_TOOLS } from "./cloud_access_routes.js";
 import { TOOLS as FABRIC_TOOLS } from "./cloud_mcp.js";
 // Tessera Cloud Worker: 24/7 native cloud execution on Cloudflare Durable Object SQLite + D1
@@ -191,9 +192,10 @@ function rpcResponse(out, extraHeaders = {}) {
   if (!out.ok) {
     const hdrs = { ...extraHeaders };
     const extra = {};
-    if (out.code === "rate_limited" && out.extra?.retry_after != null) {
+    if (["rate_limited", "storage_quota_exhausted"].includes(out.code) && out.extra?.retry_after != null) {
       hdrs["retry-after"] = String(Math.max(1, Math.ceil(Number(out.extra.retry_after))));
     }
+    if (out.code === "storage_quota_exhausted") Object.assign(extra, out.extra);
     if (out.code === "version_conflict") {
       extra.current_version = out.extra?.current_version ?? null;
     }
@@ -1458,7 +1460,11 @@ const onboardingApplication = {
       const outHeaders = new Headers(response.headers);
       for (const [k,v] of Object.entries(headers)) outHeaders.set(k,v);
       return new Response(response.body, { status: response.status, headers: outHeaders });
-    } catch (e) { return problem(e.status || 500, e.code || "internal_error", e.detail || "request could not be completed", {}, headers); }
+    } catch (e) {
+      const quota = storageQuotaFailure(e);
+      if (quota) return problem(quota.status, quota.code, quota.detail, quota.extra, { ...headers, "retry-after": String(quota.extra.retry_after) });
+      return problem(e.status || 500, e.code || "internal_error", e.detail || "request could not be completed", {}, headers);
+    }
   },
 };
 

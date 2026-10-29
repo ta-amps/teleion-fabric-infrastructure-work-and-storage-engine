@@ -1142,6 +1142,11 @@ Delegated issuers cannot widen scopes, queue/kind/effect grants, expiry,
 account or surface authority. Rotate by minting a replacement, switching the
 client, then revoking the previous key.
 
+The cloud `last_used_at` profile field coalesces observational updates within a
+60-second interval. Every action retains its audit event; this is not an
+authorization cache. Current expiry, revocation and scope checks still run,
+including after a paced claim waits. See [storage availability](storage-availability.md).
+
 ## Audit, events and browser clients
 
 `GET /v1/me/audit` and MCP `my_audit` return only the current principal's events.
@@ -1951,6 +1956,10 @@ their own queue first, and `uv run tessera reap` reaps everything.
 - Drill one restore before the demo: stop the service, swap in the backup, run `make suite BACKEND=http`.
 
 ## When something looks wrong
+
+See [storage availability](storage-availability.md) for provider-quota `503`
+responses, UTC retry guidance and the distinction between approximate profile
+timestamps and per-action audit events.
 
 | Signal | Look at | Usual cause |
 |---|---|---|
