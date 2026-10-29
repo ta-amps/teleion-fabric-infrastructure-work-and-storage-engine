@@ -1,0 +1,149 @@
+{
+ "allowed_surfaces": [],
+ "expected_version": 0,
+ "key": "verb_template.090e0a551bfb3b919331b11a6864666100969a6a8094e2640e3ea3e2a333409f",
+ "namespace": "conformance-tuning",
+ "store": "tuning.specs",
+ "tags": [
+  "category:noun.code_node",
+  "role:verb_template",
+  "status:proposal",
+  "data:synthetic",
+  "spdx:MIT"
+ ],
+ "target_cohorts": [
+  "all"
+ ],
+ "value": {
+  "activation": "none",
+  "brief_schema": {
+   "properties": {
+    "learner": {
+     "type": "string"
+    },
+    "params": {
+     "type": "object"
+    },
+    "round": {
+     "minimum": 0,
+     "type": "integer"
+    },
+    "spec_refs": {
+     "additionalProperties": {
+      "properties": {
+       "key": {
+        "type": "string"
+       },
+       "store": {
+        "type": "string"
+       },
+       "value_sha256": {
+        "type": "string"
+       },
+       "version": {
+        "minimum": 1,
+        "type": "integer"
+       }
+      },
+      "required": [
+       "store",
+       "key",
+       "version",
+       "value_sha256"
+      ],
+      "type": "object"
+     },
+     "type": "object"
+    },
+    "stage": {
+     "type": "string"
+    },
+    "step": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "stage",
+    "step",
+    "round",
+    "learner",
+    "spec_refs",
+    "params"
+   ],
+   "type": "object"
+  },
+  "category_id": "noun.code_node",
+  "checks": [
+   "Training rows share no exact, request or template-shape fingerprint with any evaluation row",
+   "Training rows come only from training families",
+   "Duplicates are rejected with a recorded reason"
+  ],
+  "dimension_basis": {
+   "determinism": "1.0: static repository JSON; every build yields identical bytes",
+   "evidence_grounding": "share of declared references that resolve to records in this pack; a noun without references is self-contained (1.0)",
+   "safety_compliance": "share of pack safety checks passed: no secret-like strings, private visibility, no public effect, nothing activated",
+   "token_efficiency": "1 - canonical value bytes / 65536, the per-record budget this pack keeps; floor 0",
+   "verification_tier": "deterministic_gate: tests/test_continuous_tuning.py validates every record"
+  },
+  "dimension_method": "continuous-tuning.pack-dimensions.v1",
+  "dimensions": {
+   "determinism": 1,
+   "evidence_grounding": 1,
+   "safety_compliance": 1,
+   "token_efficiency": 0.974609,
+   "verification_tier": "deterministic_gate"
+  },
+  "handler": "examples.continuous_tuning.verbs.curate_dataset",
+  "model": false,
+  "output": {
+   "properties": {
+    "learning": {
+     "type": "object"
+    },
+    "nouns": {
+     "description": "holdouts: frozen set ref; accepted: accepted batch refs",
+     "type": "object"
+    },
+    "stage": {
+     "type": "string"
+    },
+    "status": {
+     "enum": [
+      "ok",
+      "failed",
+      "no_op"
+     ],
+     "type": "string"
+    },
+    "step": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "step",
+    "stage",
+    "status",
+    "nouns",
+    "learning"
+   ],
+   "type": "object"
+  },
+  "pack": "continuous-tuning.tool-call-specialist",
+  "reads": [
+   "candidate batches",
+   "frozen holdouts",
+   "fresh holdouts",
+   "accepted batches"
+  ],
+  "relations": [],
+  "role": "verb_template",
+  "spdx_license": "MIT",
+  "stage": "curate_dataset",
+  "summary": "Freeze holdouts, accept new training rows and assemble training sets with zero contamination.",
+  "verb_category": "verb.ingest",
+  "writes": [
+   "frozen holdout, accepted batch and training set nouns (noun.benchmark_suite)"
+  ]
+ },
+ "visibility_scope": "private"
+}

@@ -1,0 +1,149 @@
+{
+ "allowed_surfaces": [],
+ "expected_version": 0,
+ "key": "pack_index.0adb151fcd9eae2d899cc51abfe38ef4bbe89e153a8dc20beb753f113202e9b5",
+ "namespace": "conformance-tuning",
+ "store": "tuning.specs",
+ "tags": [
+  "category:noun.skill_pack",
+  "role:pack_index",
+  "status:proposal",
+  "data:synthetic",
+  "spdx:MIT"
+ ],
+ "target_cohorts": [
+  "all"
+ ],
+ "value": {
+  "activation": "none",
+  "category_id": "noun.skill_pack",
+  "definition": "Index of the learner spec, its trigger, rule, recipes, base-model descriptions, tool snapshot and verb templates. A discovery label, not a service, queue or permission.",
+  "dimension_basis": {
+   "determinism": "1.0: static repository JSON; every build yields identical bytes",
+   "evidence_grounding": "share of declared references that resolve to records in this pack; a noun without references is self-contained (1.0)",
+   "safety_compliance": "share of pack safety checks passed: no secret-like strings, private visibility, no public effect, nothing activated",
+   "token_efficiency": "1 - canonical value bytes / 65536, the per-record budget this pack keeps; floor 0",
+   "verification_tier": "deterministic_gate: tests/test_continuous_tuning.py validates every record"
+  },
+  "dimension_method": "continuous-tuning.pack-dimensions.v1",
+  "dimensions": {
+   "determinism": 1,
+   "evidence_grounding": 1,
+   "safety_compliance": 1,
+   "token_efficiency": 0.944275,
+   "verification_tier": "deterministic_gate"
+  },
+  "pack": "continuous-tuning.tool-call-specialist",
+  "relations": [
+   {
+    "note": "uses tools",
+    "relation": "requires_noun",
+    "target_category": "noun.mcp_server",
+    "target_id": "tool_snapshot.04b90e2ce2e7b3b0f26f20201366a88e6c33157e698ce58cd84cb5dbfa1ece1d"
+   },
+   {
+    "note": "uses base:llama-3.2-1b-instruct",
+    "relation": "requires_noun",
+    "target_category": "noun.model_spec",
+    "target_id": "base_model.35f7440ce8870ef2dc89fc096e61e222fc897ac9bf3521d974f3ea31a49cc768"
+   },
+   {
+    "note": "uses base:llama-3.2-3b-instruct",
+    "relation": "requires_noun",
+    "target_category": "noun.model_spec",
+    "target_id": "base_model.a7110b742efbc097f7a049f858482e808121c07c12b8e45a247836cdeae2ded5"
+   },
+   {
+    "note": "uses trigger",
+    "relation": "requires_noun",
+    "target_category": "noun.code_node",
+    "target_id": "trigger.06b5614255fea258362a8c7fd9d502f3eae35cccce6e3ad5d5de476691f1d804"
+   },
+   {
+    "note": "uses rule",
+    "relation": "requires_noun",
+    "target_category": "noun.code_node",
+    "target_id": "promotion_rule.520abffa83ef6080089441137aabb547f4dec09ebfbf4a8b319a9679a4fd00c8"
+   },
+   {
+    "note": "uses recipe",
+    "relation": "requires_noun",
+    "target_category": "noun.code_node",
+    "target_id": "training_recipe.c538f95f751732b87961bde82c6ba46e95210ac11612ea028f1d2e9b195b12ee"
+   },
+   {
+    "note": "uses search",
+    "relation": "requires_noun",
+    "target_category": "noun.code_node",
+    "target_id": "search_space.099ed35b5dcc4f0758f4c8a981a8103738a1253f1de3a1009ab6e28ddf88186e"
+   },
+   {
+    "note": "uses verb:tick",
+    "relation": "requires_noun",
+    "target_category": "noun.code_node",
+    "target_id": "verb_template.10b97ac15340c5ee0f6b519509fc32aecc987e0d32b903066845a350f4d3937b"
+   },
+   {
+    "note": "uses verb:generate_examples",
+    "relation": "requires_noun",
+    "target_category": "noun.code_node",
+    "target_id": "verb_template.a625527e2177c54e4f4fc8b599be5e985b4cd7f4378fdc22697882b0f1ecd888"
+   },
+   {
+    "note": "uses verb:curate_dataset",
+    "relation": "requires_noun",
+    "target_category": "noun.code_node",
+    "target_id": "verb_template.090e0a551bfb3b919331b11a6864666100969a6a8094e2640e3ea3e2a333409f"
+   },
+   {
+    "note": "uses verb:tune_hyperparameters",
+    "relation": "requires_noun",
+    "target_category": "noun.code_node",
+    "target_id": "verb_template.0dfc5a4aaf86364a98cc375a5f55664b0d7a2101542b261781fd81c63ade4aa1"
+   },
+   {
+    "note": "uses verb:train_adapter",
+    "relation": "requires_noun",
+    "target_category": "noun.code_node",
+    "target_id": "verb_template.aa85127ec175f22870f6cdb4814ac7b974fbff8200f1babcd451514eebf969f4"
+   },
+   {
+    "note": "uses verb:evaluate",
+    "relation": "requires_noun",
+    "target_category": "noun.code_node",
+    "target_id": "verb_template.3dbf10fcd634a9fd2845b63231653933df89e1f8b3e5200723267ea593d5270c"
+   },
+   {
+    "note": "uses verb:decide_promotion",
+    "relation": "requires_noun",
+    "target_category": "noun.code_node",
+    "target_id": "verb_template.f7654361e9bb3583b20b08b6e2f6928828f944561be93eef8de3e9b304b532af"
+   },
+   {
+    "note": "uses verb:serve_check",
+    "relation": "requires_noun",
+    "target_category": "noun.code_node",
+    "target_id": "verb_template.34d9a5878c6d511a2e2a0005449f94bae686ac3004627faf9257c601a73a089b"
+   },
+   {
+    "note": "uses verb:mine_hard_examples",
+    "relation": "requires_noun",
+    "target_category": "noun.code_node",
+    "target_id": "verb_template.0eca35dba157fbe0288e6c69bf269aeaccde0f50de3dc0ed9d0941aba28e7145"
+   },
+   {
+    "note": "uses learner_spec",
+    "relation": "requires_noun",
+    "target_category": "noun.code_node",
+    "target_id": "learner_spec.c4fc7ab6d0eb99c52bcfa577f907f7dfd96c349bf4325afcd8c69b0560136701"
+   }
+  ],
+  "role": "pack_index",
+  "seed_kinds": [
+   "verb.decompose_dag"
+  ],
+  "spdx_license": "MIT",
+  "title": "Continuous tuning learner for typed Tessera tool calls"
+ },
+ "visibility_scope": "private"
+}

@@ -1,0 +1,39 @@
+{
+  "format": "tessera.continuous-tuning.promotion-rule.v1",
+  "rule_id": "tool-call-specialist.promotion",
+  "version": 1,
+  "registered": "2026-10-29, committed before round 1 ran",
+  "selection": {
+    "split": "dev",
+    "metric": "exact_match_strict",
+    "tie_break": ["json_valid_rate", "lower learning rate", "fewer training rows", "label"],
+    "note": "Dev chooses among candidates; the frozen test is read only for the dev winner's decision"
+  },
+  "promotion": {
+    "baseline": "the current champion; before any promotion, the unchanged base model",
+    "primary_metric": "exact_match_strict",
+    "min_delta": 0.03,
+    "paired_bootstrap": {
+      "resamples": 2000,
+      "confidence": 0.95,
+      "seed": "tool-call-specialist.promotion.v1",
+      "require_lower_bound_above": 0.0
+    },
+    "no_regression": [
+      {"name": "test JSON validity does not drop more than 0.02", "split": "test", "metric": "json_valid_rate", "max_drop": 0.02},
+      {"name": "test schema validity does not drop more than 0.02", "split": "test", "metric": "schema_valid_rate", "max_drop": 0.02},
+      {"name": "test refusal accuracy does not drop more than 0.03", "split": "test", "metric": "refusal_accuracy", "max_drop": 0.03},
+      {"name": "sanity accuracy does not drop more than 0.05 against the champion", "split": "sanity", "metric": "accuracy", "max_drop": 0.05},
+      {"name": "sanity accuracy stays within 0.10 of the unchanged base", "split": "sanity", "metric": "accuracy", "max_drop": 0.10, "against": "base"},
+      {"name": "fresh holdout exact match does not drop below the champion", "split": "fresh", "metric": "exact_match_strict", "max_drop": 0.0, "optional": true}
+    ],
+    "integrity": ["no_contamination", "frozen_base_unchanged", "adapter_reload_equivalent", "holdout_digests_match"],
+    "otherwise": "keep_champion",
+    "effects": "Moves only the private local champion pointer that the next round compares against. No deployment, publication, admission or serving change."
+  },
+  "ablation": "When a round trains several strategies, dev selects one. Test results for the others are analysis only and never change the decision.",
+  "caveats": [
+    "The frozen test is evaluated once per round, so later rounds carry multiple-comparison risk; each round's fresh holdout is the check against that",
+    "Synthetic templates measure this task only; no claim about other tasks or real user traffic follows"
+  ]
+}

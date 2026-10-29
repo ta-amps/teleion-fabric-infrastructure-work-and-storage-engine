@@ -1,0 +1,65 @@
+{
+ "allowed_surfaces": [],
+ "expected_version": 0,
+ "key": "training_recipe.c538f95f751732b87961bde82c6ba46e95210ac11612ea028f1d2e9b195b12ee",
+ "namespace": "conformance-tuning",
+ "store": "tuning.specs",
+ "tags": [
+  "category:noun.code_node",
+  "role:training_recipe",
+  "status:proposal",
+  "data:synthetic",
+  "spdx:MIT"
+ ],
+ "target_cohorts": [
+  "all"
+ ],
+ "value": {
+  "activation": "none",
+  "alpha": 32,
+  "category_id": "noun.code_node",
+  "dimension_basis": {
+   "determinism": "1.0: static repository JSON; every build yields identical bytes",
+   "evidence_grounding": "share of declared references that resolve to records in this pack; a noun without references is self-contained (1.0)",
+   "safety_compliance": "share of pack safety checks passed: no secret-like strings, private visibility, no public effect, nothing activated",
+   "token_efficiency": "1 - canonical value bytes / 65536, the per-record budget this pack keeps; floor 0",
+   "verification_tier": "deterministic_gate: tests/test_continuous_tuning.py validates every record"
+  },
+  "dimension_method": "continuous-tuning.pack-dimensions.v1",
+  "dimensions": {
+   "determinism": 1,
+   "evidence_grounding": 1,
+   "safety_compliance": 1,
+   "token_efficiency": 0.984863,
+   "verification_tier": "deterministic_gate"
+  },
+  "dropout": 0.05,
+  "epochs": 3,
+  "evaluation": {
+   "allowance_basis": "about three times the longest label token count in every evaluation set; a reply that reaches it is recorded as reached_allowance, never truncated silently",
+   "batch_size": 16,
+   "decode_allowance_tokens": 256,
+   "decoding": "greedy"
+  },
+  "format": "tessera.continuous-tuning.recipe.v1",
+  "gradient_accumulation": 8,
+  "gradient_checkpointing": false,
+  "learning_rate": 0.0002,
+  "max_grad_norm": 1,
+  "method": "LoRA supervised fine-tuning with completion-only loss on a frozen bf16 base",
+  "pack": "continuous-tuning.tool-call-specialist",
+  "purpose": "Small-data specialist adapter for typed tool calls; one microbatch row at a time, no padding in training",
+  "rank": 16,
+  "recipe_id": "lora-sft-r16",
+  "relations": [],
+  "reload_logit_tolerance": 0.05,
+  "role": "training_recipe",
+  "seed": 17,
+  "sequence_budget": 4096,
+  "spdx_license": "MIT",
+  "version": 1,
+  "warmup_fraction": 0.1,
+  "weight_decay": 0
+ },
+ "visibility_scope": "private"
+}
