@@ -1,6 +1,70 @@
 {
   "components": {
     "schemas": {
+      "AccessCounter": {
+        "description": "Per-minute count of denied, failed, no-op or pre-check requests for one principal.",
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "first_ts": {
+            "title": "First Ts",
+            "type": "number"
+          },
+          "last_ts": {
+            "title": "Last Ts",
+            "type": "number"
+          },
+          "namespace": {
+            "title": "Namespace",
+            "type": "string"
+          },
+          "outcome": {
+            "title": "Outcome",
+            "type": "string"
+          },
+          "principal_id": {
+            "title": "Principal Id",
+            "type": "string"
+          },
+          "principal_kind": {
+            "title": "Principal Kind",
+            "type": "string"
+          },
+          "window": {
+            "title": "Window",
+            "type": "integer"
+          },
+          "window_seconds": {
+            "title": "Window Seconds",
+            "type": "integer"
+          },
+          "window_start": {
+            "title": "Window Start",
+            "type": "number"
+          }
+        },
+        "required": [
+          "window",
+          "window_start",
+          "window_seconds",
+          "principal_id",
+          "principal_kind",
+          "namespace",
+          "action",
+          "outcome",
+          "count",
+          "first_ts",
+          "last_ts"
+        ],
+        "title": "AccessCounter",
+        "type": "object"
+      },
       "AccessEvent": {
         "properties": {
           "account_id": {
@@ -454,6 +518,25 @@
       },
       "AuditEvents": {
         "properties": {
+          "counters": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AccessCounter"
+            },
+            "title": "Counters",
+            "type": "array"
+          },
+          "counters_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Counters Note"
+          },
           "events": {
             "items": {
               "$ref": "#/components/schemas/AccessEvent"

@@ -643,6 +643,7 @@ def test_l26_receipt_vectors_python_and_cloudflare_edge_node_parity(tmp_path: Pa
                 waitUntil(_p) {{}},
                 storage: {{
                   async setAlarm(_ms) {{}},
+                  async getAlarm() {{ return null; }},
                   transactionSync(fn) {{
                     db.exec("SAVEPOINT _cf_tx");
                     try {{

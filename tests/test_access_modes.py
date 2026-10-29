@@ -616,3 +616,59 @@ def test_delegation_cannot_drop_fine_mode_or_namespace(
     assert client.post("/ns/alpha/v1/keys", json=body, headers=auth(scoped)).status_code == 403
     body["scopes"] = ["nouns:read", "namespace:alpha"]
     assert client.post("/ns/alpha/v1/keys", json=body, headers=auth(scoped)).status_code == 201
+
+
+def test_denied_and_no_op_requests_are_counted_not_written_per_request(
+    access: tuple[TestClient, Store, FakeClock, str],
+) -> None:
+    """Same rule as the Worker: unauthenticated requests write nothing, denied and empty claims
+    are counted per minute, and successful actions keep their own audit row."""
+    client, store, _clock, admin = access
+    store.define_queue(QueueConfig(name="conformance-counted"))
+    worker, _ = store.issue_key(
+        "worker", queues=["conformance-counted"], scopes=["verbs:claim", "nouns:read"]
+    )
+
+    def rows() -> int:
+        with store._read() as c:
+            return int(c.execute("SELECT COUNT(*) FROM access_events").fetchone()[0])
+
+    assert client.get("/v1/counts", headers=auth(worker)).status_code == 200
+    before = rows()
+    assert client.get("/v1/counts").status_code == 401
+    assert client.get("/v1/counts", headers=auth("synthetic-invalid-bearer")).status_code == 401
+    claim = {"queue": "conformance-counted", "worker": "w"}
+    for _ in range(5):
+        assert client.post("/v1/tasks/claim", json=claim, headers=auth(worker)).status_code == 204
+    for _ in range(3):
+        assert client.post("/v1/admin/reap", json={}, headers=auth(worker)).status_code == 403
+    assert rows() == before
+    audit = client.get("/v1/me/audit", headers=auth(worker)).json()
+    counted = {(c["action"], c["outcome"]): c["count"] for c in audit["counters"]}
+    assert counted[("claim", "empty")] == 5
+    assert sum(n for (action, _), n in counted.items() if action != "claim") == 3
+    assert audit["counters_note"]
+    assert client.get("/v1/counts", headers=auth(worker)).status_code == 200
+    assert rows() == before + 2  # the audit read above and this successful read
+    assert client.get("/v1/admin/audit", headers=auth(admin)).json()["counters"]
+
+
+def test_ipv6_prefix_grouping_and_paced_global_sessions_match_the_worker(
+    access: tuple[TestClient, Store, FakeClock, str],
+) -> None:
+    from tessera._principals import ip_group, mint_allowance
+
+    _client, store, _clock, _admin = access
+    assert ip_group("2001:db8:1:2::1") == "2001:db8:1:2::/64"
+    assert ip_group("2001:0db8:0001:0002:ffff:ffff:ffff:ffff") == "2001:db8:1:2::/64"
+    assert ip_group("[2001:db8:1:3::9]") == "2001:db8:1:3::/64"
+    assert ip_group("::ffff:192.0.2.7") == "192.0.2.7"
+    assert ip_group("not an address") == "not an address"
+    same = store.request_identity("2001:db8:1:2::1", "ua")["ip_hash"]
+    assert store.request_identity("2001:db8:1:2:aaaa::1", "ua")["ip_hash"] == same
+    assert store.request_identity("2001:db8:1:3::1", "ua")["ip_hash"] != same
+    assert mint_allowance(1000, 0, 0)[0] == 100
+    assert mint_allowance(1000, 1800, 0)[0] == 600
+    assert mint_allowance(1000, 3599, 0)[0] == 1000
+    assert mint_allowance(1000, 60, 116) == (116, 2)
+    assert mint_allowance(1000, 3000, 1000)[1] == 600

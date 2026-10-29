@@ -1,5 +1,5 @@
 import { initExecutions, checkedReport, prepareExecution, validatePrepared, captureExecution, recallExecution, getExecution, listExecutions } from "./cloud_executions.js";
-import { initAccess, principalMetadata, requestIdentity, mintAnonymous, seedDemo, enforceAccess, audit, ownAudit, publicActivity, publicPrincipal } from "./cloud_access.js";
+import { initAccess, principalMetadata, requestIdentity, mintAnonymous, seedDemo, ensureDemoSeeded, enforceAccess, audit, auditMode, countAccess, ownAudit, publicActivity, publicPrincipal } from "./cloud_access.js";
 // TesseraCoordinator: single-writer SQLite Durable Object (`new_sqlite_classes`) implementing
 // 100% of Tessera Spec v0.2 (queues, 5 verbs, dependencies, waves, park/resume, model jobs,
 // counts, events, scoped keys, queryable CAS records, persistent named file buckets,
@@ -60,7 +60,10 @@ const MAX_CHILDREN = 100;
 const MAX_DEPENDENCIES = 100;
 const MAX_DEPTH = 4;
 const MAX_PARK_SECONDS = 2_592_000;
-import { ClaimAdmission, ClaimPressure, claimAdmissionOptions } from "./claim_admission.js";
+const HEALTH_CACHE_SECONDS = 15;
+// Successful actions that change tasks, leases, nouns or keys; they drop cached snapshots.
+const STATE_CHANGING_ACTIONS = new Set(["enqueue", "claim", "heartbeat", "submit", "split", "park", "resume", "cancel", "defineQueue", "putRecords", "putObjectMeta", "recordBlobStored", "defineBucket", "publishFeed", "registerJob", "updateJob", "reap", "revokeKey"]);
+import { ClaimAdmission, ClaimPressure, IdleClaims, claimAdmissionOptions } from "./claim_admission.js";
 import { LAST_USED_WRITE_INTERVAL_SECONDS, storageQuotaFailure } from "./storage_quota.js";
 
 class StoreErr extends Error {
@@ -450,6 +453,8 @@ export class TesseraCoordinator extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
     this.claimAdmission = new ClaimAdmission(claimAdmissionOptions(env));
+    this.idleClaims = new IdleClaims();
+    this.healthCache = new Map();
     this.namespace = "main";
     this.isPrimary = true;
     this.seededNamespaces = new Set();
@@ -488,6 +493,36 @@ export class TesseraCoordinator extends DurableObject {
     return Boolean(
       this._one("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", table)
     );
+  }
+
+  // Cold start must stay read-only once the schema exists: the provider refuses every
+  // write-capable statement after its daily allowance is spent, even a CREATE ... IF NOT
+  // EXISTS that would change nothing. Run only the DDL whose table or index is missing.
+  _ensureDdl(statements) {
+    // One sqlite_master scan per object instance; names created here are added to it.
+    const names = this.schemaNames || (this.schemaNames = new Set(this._all("SELECT name FROM sqlite_master WHERE type IN ('table', 'index')").map((r) => r.name)));
+    const pattern = /^\s*CREATE\s+(?:UNIQUE\s+)?(?:TABLE|INDEX)\s+IF\s+NOT\s+EXISTS\s+([A-Za-z0-9_]+)/i;
+    const missing = statements.filter((stmt) => {
+      const m = pattern.exec(stmt);
+      return !m || !names.has(m[1]);
+    });
+    if (missing.length) {
+      this.ctx.storage.transactionSync(() => { for (const stmt of missing) this.ctx.storage.sql.exec(stmt); });
+      for (const stmt of missing) { const m = pattern.exec(stmt); if (m) names.add(m[1]); }
+    }
+    return missing.length;
+  }
+
+  // Observational writes (profile timestamps, identity snapshots, aggregated counters) must
+  // not turn a read into an outage. Only the provider's quota refusal is tolerated here.
+  _observe(write) {
+    try {
+      write();
+      return true;
+    } catch (e) {
+      if (!storageQuotaFailure(e)) throw e;
+      return false;
+    }
   }
 
   _ensureSchemaV3() {
@@ -1231,20 +1266,46 @@ export class TesseraCoordinator extends DurableObject {
     if (purge && Number(purge.value) <= Date.now()/1000) {
       await this.ctx.storage.deleteAll();
       this.seededNamespaces.clear();
+      this.schemaNames = null;
+      this.healthCache.clear();
+      this.demoSeeded = null;
       this._ensureSchemaV3();
       initAccess(this);
       initExecutions(this);
       return;
     }
+    await this.runReaper();
+  }
+
+  // One reaper run: lapse expired leases, wake expired parks, record the run and keep the
+  // alarm chain alive. The alarm, the admin reap verb and the Worker cron all use it.
+  async runReaper() {
     const now = Date.now() / 1000;
+    let reaped = 0;
+    this.healthCache.clear();
     this.ctx.storage.transactionSync(() => {
-      this._reap(now);
+      reaped = this._reap(now);
       this.ctx.storage.sql.exec(
         "INSERT INTO meta (key, value) VALUES ('reaper_last_run', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
         String(now)
       );
     });
     await this._scheduleNextAlarm();
+    return { reaped, reaper_last_run: now };
+  }
+
+  // An alarm is only rescheduled by a successful run, and the platform stops retrying a
+  // handler that keeps failing (for example while the storage allowance is exhausted). Check
+  // once per object instance that a run is pending whenever leases or timed waits exist.
+  async _ensureAlarmPending() {
+    if (this.alarmChecked) return;
+    this.alarmChecked = true;
+    try {
+      if ((await this.ctx.storage.getAlarm()) == null) await this._scheduleNextAlarm();
+    } catch (e) {
+      if (!storageQuotaFailure(e)) throw e;
+      this.alarmChecked = false;
+    }
   }
 
   _hydrateGrant(raw) {
@@ -1291,7 +1352,10 @@ export class TesseraCoordinator extends DurableObject {
     if (!r) return null;
     const now = Date.now() / 1000;
     if (r.revoked_at != null || Number(r.expires_at) <= now) return null;
-    this.ctx.storage.sql.exec("UPDATE access_principals SET last_used_at=? WHERE key_id=? AND (last_used_at IS NULL OR last_used_at<=?)", now, r.key_id, now - LAST_USED_WRITE_INTERVAL_SECONDS);
+    const observed = this._one("SELECT last_used_at FROM access_principals WHERE key_id=?", r.key_id);
+    if (observed && (observed.last_used_at == null || Number(observed.last_used_at) <= now - LAST_USED_WRITE_INTERVAL_SECONDS)) {
+      this._observe(() => this.ctx.storage.sql.exec("UPDATE access_principals SET last_used_at=? WHERE key_id=? AND (last_used_at IS NULL OR last_used_at<=?)", now, r.key_id, now - LAST_USED_WRITE_INTERVAL_SECONDS));
+    }
     return {
       ...principalMetadata(this, r),
       key_id: r.key_id,
@@ -1317,8 +1381,12 @@ export class TesseraCoordinator extends DurableObject {
         // Snapshot authenticated identity metadata, never the secret or its hash.
         // Namespace-local publication proofs need the completed actors' accounts.
         // Authorization still resolves through primary on every request.
-        this.ctx.storage.sql.exec("INSERT INTO access_principals(key_id,principal_kind,principal_id,account_id,namespace,key_prefix,labels,quota_tier,last_used_at,purge_at) VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(key_id) DO UPDATE SET principal_kind=excluded.principal_kind,account_id=excluded.account_id,last_used_at=excluded.last_used_at WHERE access_principals.principal_kind IS NOT excluded.principal_kind OR access_principals.account_id IS NOT excluded.account_id OR access_principals.last_used_at IS NULL OR access_principals.last_used_at<=excluded.last_used_at-?",
-          shared.key_id, shared.principal_kind, shared.principal_id || shared.key_id, shared.account_id || null, shared.namespace || "main", shared.key_prefix || "", JSON.stringify(shared.labels || {}), shared.quota_tier || "standard", Date.now()/1000, shared.purge_at || null, LAST_USED_WRITE_INTERVAL_SECONDS);
+        const now = Date.now() / 1000;
+        const local = this._one("SELECT principal_kind, account_id, last_used_at FROM access_principals WHERE key_id=?", shared.key_id);
+        if (!local || local.principal_kind !== shared.principal_kind || (local.account_id ?? null) !== (shared.account_id || null) || local.last_used_at == null || Number(local.last_used_at) <= now - LAST_USED_WRITE_INTERVAL_SECONDS) {
+          this._observe(() => this.ctx.storage.sql.exec("INSERT INTO access_principals(key_id,principal_kind,principal_id,account_id,namespace,key_prefix,labels,quota_tier,last_used_at,purge_at) VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(key_id) DO UPDATE SET principal_kind=excluded.principal_kind,account_id=excluded.account_id,last_used_at=excluded.last_used_at WHERE access_principals.principal_kind IS NOT excluded.principal_kind OR access_principals.account_id IS NOT excluded.account_id OR access_principals.last_used_at IS NULL OR access_principals.last_used_at<=excluded.last_used_at-?",
+            shared.key_id, shared.principal_kind, shared.principal_id || shared.key_id, shared.account_id || null, shared.namespace || "main", shared.key_prefix || "", JSON.stringify(shared.labels || {}), shared.quota_tier || "standard", now, shared.purge_at || null, LAST_USED_WRITE_INTERVAL_SECONDS));
+        }
         return this._hydrateGrant(shared);
       }
     }
@@ -1629,20 +1697,29 @@ export class TesseraCoordinator extends DurableObject {
     return record;
   }
 
+  // Public health and board snapshots are cached per namespace for HEALTH_CACHE_SECONDS and
+  // dropped whenever this object changes state, so a poller costs one scan per interval
+  // instead of one per request. `time` is when the snapshot was taken. A scan reads only
+  // small task columns and finds expired leases with one query instead of one per task.
   async publicHealthAndBoard(includeBoardMeta = false, namespace = "main") {
+    await this._ensureAlarmPending();
     const ns = normalizeNamespace(namespace);
     const now = Date.now() / 1000;
     this.namespace = ns;
     this.isPrimary = ns === "main";
+    const cacheKey = `${includeBoardMeta ? "board" : "health"}\u0000${ns}`;
+    const cached = this.healthCache.get(cacheKey);
+    if (cached && now - cached.at >= 0 && now - cached.at < HEALTH_CACHE_SECONDS) return cached.value;
 
     const last = this._one("SELECT value FROM meta WHERE key = 'reaper_last_run'");
     const queues = [];
-    const publicTasks = this._all("SELECT * FROM tasks WHERE namespace=? ORDER BY queue", ns).filter(r => this._publicRow(r));
+    const publicTasks = this._all("SELECT id, queue, state, not_before, updated_at, visibility_scope, tags, target_cohorts FROM tasks WHERE namespace=? AND visibility_scope='public_commons' ORDER BY queue", ns).filter(r => this._publicRow(r));
+    const expiredIds = new Set(this._all("SELECT task_id FROM leases WHERE namespace=? AND (expires_at<=? OR hard_expires_at<=?)", ns, now, now).map(r => r.task_id));
     for (const name of [...new Set(publicTasks.map(t => t.queue))].sort()) {
       const tasks = publicTasks.filter(t => t.queue === name);
       const counts = Object.fromEntries(["ready","leased","waiting","done","dead","cancelled"].map(state => [state,tasks.filter(t => t.state===state).length]));
       const ready = tasks.filter(t => t.state==="ready" && t.not_before<=now).map(t => t.updated_at);
-      const expired = tasks.filter(t => t.state==="leased" && this._one("SELECT task_id FROM leases WHERE namespace=? AND task_id=? AND (expires_at<=? OR hard_expires_at<=?)",ns,t.id,now,now)).length;
+      const expired = tasks.filter(t => t.state==="leased" && expiredIds.has(t.id)).length;
       queues.push({ name, counts, oldest_ready_age_seconds: ready.length ? Math.max(0,now-Math.min(...ready)):null, expired_leases:expired });
     }
     const health = {
@@ -1653,13 +1730,15 @@ export class TesseraCoordinator extends DurableObject {
       reaper_last_run: last ? Number(last.value) : null,
       queues,
     };
-    if (!includeBoardMeta) return health;
-    return {
+    const value = includeBoardMeta ? {
       health,
       snapshot: this._boardSnapshot(ns),
       buckets: this._listBucketsInternal(),
       stores: this._listStoresInternal(),
-    };
+    } : health;
+    if (this.healthCache.size >= 256) this.healthCache.clear();
+    this.healthCache.set(cacheKey, { at: now, value });
+    return value;
   }
 
   _listStoresInternal(viewerCtx = {}) {
@@ -1745,6 +1824,7 @@ export class TesseraCoordinator extends DurableObject {
   async seedDemo(grant, purgeAt) { return seedDemo(this, grant, purgeAt); }
   publicActivity() { return publicActivity(this); }
   recordAccessEvent(grant, action, args, out, meta) { audit(this, grant, action, args, out, meta); }
+  countAccessEvent(grant, action, args, out, meta) { countAccess(this, grant, action, args, out, meta); }
   async auditForToken(secret, args = {}) {
     try {
       const grant = await this._grantFromSecret(secret);
@@ -1754,12 +1834,16 @@ export class TesseraCoordinator extends DurableObject {
   }
   async rpcCall(secret, action, args = {}) {
     let grant = null, out, permit;
+    await this._ensureAlarmPending();
     const ns = normalizeNamespace(args.namespace || "main");
     this.namespace = ns;
     this.isPrimary = ns === "main";
     try {
       grant = await this._grantFromSecret(secret);
       args = enforceAccess(this, grant, action, { ...args, namespace: ns });
+      await ensureDemoSeeded(this, grant, ns);
+      this.namespace = ns;
+      this.isPrimary = ns === "main";
       if (action === "claim") {
         this._requireQueue(grant, String(args.queue || ""));
         if (!String(args.worker || "")) throw badReq("worker is required");
@@ -1782,15 +1866,29 @@ export class TesseraCoordinator extends DurableObject {
         if (!Object.hasOwn(out.data, "expires_at")) out.data.expires_at = grant.expires_at;
         if (out.data.lease) out.data.lease = { ...out.data.lease, labels: grant.labels, principal_id: grant.principal_id, session_expires_at: grant.expires_at };
       }
+      if (out.ok && action === "claim") {
+        if (out.data.lease) this.idleClaims.granted(ns, String(args.queue || ""), grant.key_id);
+        else out.data.retry_after = this.idleClaims.empty(ns, String(args.queue || ""), grant.key_id);
+      }
+      if (out.ok && action === "enqueue") this.idleClaims.work(ns, String(args.queue || ""));
       if (out.ok && action === "claim" && out.data.lease) {
         out.data.lease.claim_receipt = await sha256Hex(new TextEncoder().encode(canonicalJson({ namespace: ns, task_id: out.data.lease.task_id, fencing_token: out.data.lease.fencing_token, claimed_at: out.data.lease.claimed_at })));
       }
     } catch (e) { out = this._errOut(e instanceof ClaimPressure ? rateLim(e.message, e.retryAfter) : e); }
     try {
-      audit(this, grant, action, args, out, args.access_meta || {});
-      if (ns !== "main" && this.env.COORDINATOR) {
-        const primary = this.env.COORDINATOR.get(this.env.COORDINATOR.idFromName("primary"));
-        await primary.recordAccessEvent(grant ? publicPrincipal(grant) : null, action, args, out, args.access_meta || {});
+      // A request that never authenticated writes nothing. Successful actions keep their own
+      // row; denied, failed and no-op ones are counted (see auditMode in cloud_access.js).
+      const meta = args.access_meta || {};
+      const mode = grant ? auditMode(action, out, meta) : "skip";
+      const primary = ns !== "main" && this.env.COORDINATOR ? this.env.COORDINATOR.get(this.env.COORDINATOR.idFromName("primary")) : null;
+      if (out.ok && STATE_CHANGING_ACTIONS.has(action)) this.healthCache.clear();
+      if (mode === "row") {
+        audit(this, grant, action, args, out, meta);
+        if (primary) await primary.recordAccessEvent(publicPrincipal(grant), action, args, out, meta);
+      } else if (mode === "count") {
+        // Every namespace's counters live with the principal's audit in the primary object.
+        if (primary) await primary.countAccessEvent(publicPrincipal(grant), action, { namespace: ns }, { ok: out.ok, status: out.status, code: out.code, data: { lease: out.data?.lease ? true : null } }, meta);
+        else countAccess(this, grant, action, args, out, meta);
       }
       if (permit) out.headers = { ...out.headers, "x-claim-wait-ms": String(permit.waitMs), "x-claim-concurrency": String(this.claimAdmission.limit) };
       return out;
@@ -1890,15 +1988,7 @@ export class TesseraCoordinator extends DurableObject {
 
         case "reap": {
           if (!grant.is_admin) throw forbid("this needs a key with the admin scope");
-          let reaped = 0;
-          this.ctx.storage.transactionSync(() => {
-            reaped = this._reap(now);
-            this.ctx.storage.sql.exec(
-              "INSERT INTO meta (key, value) VALUES ('reaper_last_run', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
-              String(now)
-            );
-          });
-          await this._scheduleNextAlarm();
+          const { reaped } = await this.runReaper();
           return { ok: true, status: 200, data: { reaped } };
         }
 

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import ipaddress
 import json
+import math
 import re
 import secrets
 from typing import TYPE_CHECKING, Any, cast
@@ -28,6 +30,29 @@ DEMO_QUOTAS = {
     "sessions_per_ip_hour": 10,
 }
 ANON_LABELS: dict[str, Any] = {"origin": "anonymous", "demo": True, "untrusted": True}
+# Successful actions keep one audit row each, reads included. Denied, failed and no-op
+# requests and internal pre-checks are counted per minute instead (same rule as the Worker).
+PRECHECK_ACTIONS = frozenset(
+    {"verifyKey", "verifyStoreScope", "authorizeBlobWrite", "authorizeObjectWrite"}
+)
+COUNTER_WINDOW_SECONDS = 60
+COUNTERS_NOTE = (
+    "Denied, failed and no-op requests and internal pre-checks are counted per minute instead of "
+    "one row each; counts not yet written may be lost if the object restarts."
+)
+
+
+def audit_mode(action: str, status: int, output: dict[str, Any], *, has_grant: bool) -> str:
+    """Return row, count or skip for one access event."""
+    if not has_grant:
+        return "skip"
+    if status >= 400 or action in PRECHECK_ACTIONS:
+        return "count"
+    if action == "claim" and not (output.get("task_id") or output.get("lease")):
+        return "count"
+    return "row"
+
+
 SCOPES = {
     "claim": "verbs:claim",
     "heartbeat": "verbs:claim",
@@ -125,6 +150,36 @@ def public_principal(grant: KeyGrant) -> dict[str, Any]:
     }
 
 
+GLOBAL_SESSIONS_PER_HOUR = 1000
+
+
+def ip_group(ip: str) -> str:
+    """Attribute IPv6 callers by /64 and IPv4-mapped addresses by IPv4 (same rule as the Worker)."""
+    raw = ip.strip().lower().strip("[]").split("%")[0]
+    try:
+        addr = ipaddress.ip_address(raw)
+    except ValueError:
+        return raw
+    if isinstance(addr, ipaddress.IPv6Address):
+        if addr.ipv4_mapped is not None:
+            return str(addr.ipv4_mapped)
+        return str(ipaddress.ip_network(f"{addr}/64", strict=False))
+    return str(addr)
+
+
+def mint_allowance(ceiling: int, seconds_into_hour: float, used: int) -> tuple[int, float]:
+    """Sessions allowed so far this hour and, when exhausted, seconds until the next one.
+
+    The hourly allowance accrues evenly after a burst of a tenth, so one caller cannot spend it
+    in minutes and lock everyone else out until the next hour (same rule as the Worker).
+    """
+    burst = math.ceil(ceiling / 10)
+    allowed = min(ceiling, burst + math.floor(ceiling * seconds_into_hour / 3600))
+    if used < ceiling:
+        return allowed, max(1.0, math.ceil((used - burst + 1) * 3600 / ceiling - seconds_into_hour))
+    return allowed, max(1.0, math.ceil(3600 - seconds_into_hour))
+
+
 class PrincipalOps(AccessSchemaOps):
     def request_identity(self, ip: str, ua: str) -> dict[str, str]:
         with self._read() as c:
@@ -134,7 +189,10 @@ class PrincipalOps(AccessSchemaOps):
             name: hmac.new(
                 salt.encode(), f"{day}:{kind}:{value}".encode(), hashlib.sha256
             ).hexdigest()
-            for name, kind, value in (("ip_hash", "ip", ip[:128]), ("ua_hash", "ua", ua[:512]))
+            for name, kind, value in (
+                ("ip_hash", "ip", ip_group(ip)[:128]),
+                ("ua_hash", "ua", ua[:512]),
+            )
         }
 
     def principal_metadata(self, grant: KeyGrant) -> KeyGrant:
@@ -165,7 +223,10 @@ class PrincipalOps(AccessSchemaOps):
         now = self.clock.now()
         window = int(now // 3600)
         with self._tx() as c:
-            for subject, maximum in ((f"mint:{ip_hash}", 10), ("mint:global", 1000)):
+            for subject, maximum, paced in (
+                (f"mint:{ip_hash}", 10, False),
+                ("mint:global", GLOBAL_SESSIONS_PER_HOUR, True),
+            ):
                 c.execute(
                     "INSERT OR IGNORE INTO access_limits(subject,window) VALUES (?,?)",
                     (subject, window),
@@ -174,8 +235,13 @@ class PrincipalOps(AccessSchemaOps):
                     "SELECT requests FROM access_limits WHERE subject=? AND window=?",
                     (subject, window),
                 ).fetchone()
-                if row[0] >= maximum:
-                    raise RateLimited("anonymous session mint quota exceeded", 3600 - now % 3600)
+                allowed, wait = (
+                    mint_allowance(maximum, now % 3600, row[0])
+                    if paced
+                    else (maximum, 3600 - now % 3600)
+                )
+                if row[0] >= allowed:
+                    raise RateLimited("anonymous session mint quota exceeded", wait)
                 c.execute(
                     "UPDATE access_limits SET requests=requests+1 WHERE subject=? AND window=?",
                     (subject, window),
@@ -362,6 +428,40 @@ class PrincipalOps(AccessSchemaOps):
             resource = out.get("key_id") or args.get("key_id")
             resource_type = "key"
         now = self.clock.now()
+        mode = audit_mode(action, status, out, has_grant=grant is not None)
+        if mode == "skip" or grant is None:
+            return
+        if mode == "count":
+            window = int(now // COUNTER_WINDOW_SECONDS)
+            outcome = (
+                f"{status}:{error_code or 'unknown'}"
+                if status >= 400
+                else "empty"
+                if action == "claim"
+                else str(status)
+            )
+            with self._tx() as c:
+                c.execute(
+                    "INSERT INTO access_counters(window,principal_id,namespace,action,outcome,"
+                    "principal_kind,count,first_ts,last_ts) VALUES (?,?,?,?,?,?,1,?,?)"
+                    " ON CONFLICT(window,principal_id,namespace,action,outcome)"
+                    " DO UPDATE SET count=count+1,last_ts=excluded.last_ts",
+                    (
+                        window,
+                        grant.principal_id or grant.key_id,
+                        meta.get("namespace") or grant.namespace,
+                        action,
+                        outcome,
+                        grant.principal_kind,
+                        now,
+                        now,
+                    ),
+                )
+                c.execute(
+                    "DELETE FROM access_counters WHERE window<?",
+                    (int((now - 86400) // COUNTER_WINDOW_SECONDS),),
+                )
+            return
         with self._tx() as c:
             c.execute(
                 """INSERT INTO access_events(request_id,ts,namespace,principal_kind,principal_id,session_id,
@@ -371,14 +471,14 @@ class PrincipalOps(AccessSchemaOps):
                     meta.get("request_id") or secrets.token_hex(16),
                     now,
                     meta.get("namespace") or (grant.namespace if grant else "main"),
-                    grant.principal_kind if grant else "unknown",
-                    (grant.principal_id or grant.key_id) if grant else None,
-                    grant.session_id if grant else None,
-                    grant.key_id if grant and not grant.anonymous else None,
-                    grant.account_id if grant else None,
+                    grant.principal_kind,
+                    grant.principal_id or grant.key_id,
+                    grant.session_id,
+                    grant.key_id if not grant.anonymous else None,
+                    grant.account_id,
                     meta.get("ip_hash"),
                     meta.get("ua_hash"),
-                    (grant.bound_surface() or "tessera") if grant else "tessera",
+                    grant.bound_surface() or "tessera",
                     meta.get("route_or_tool") or action,
                     action,
                     resource_type,
@@ -388,7 +488,7 @@ class PrincipalOps(AccessSchemaOps):
                     meta.get("bytes_in", 0),
                     meta.get("bytes_out", 0),
                     error_code,
-                    json.dumps(grant.labels if grant else {}),
+                    json.dumps(grant.labels),
                     json.dumps(
                         [SCOPES[action]]
                         if action in SCOPES
@@ -398,11 +498,10 @@ class PrincipalOps(AccessSchemaOps):
                     ),
                 ),
             )
-            if grant:
-                c.execute(
-                    "UPDATE access_principals SET last_used_at=? WHERE key_id=?",
-                    (now, grant.key_id),
-                )
+            c.execute(
+                "UPDATE access_principals SET last_used_at=? WHERE key_id=?",
+                (now, grant.key_id),
+            )
             c.execute("DELETE FROM access_events WHERE ts<?", (now - 86400,))
             c.execute("DELETE FROM access_limits WHERE window<?", (int(now // 3600) - 24,))
 
@@ -427,6 +526,21 @@ class PrincipalOps(AccessSchemaOps):
                         max(1, min(limit, 200)),
                     ),
                 ).fetchall()
+            since = int((self.clock.now() - 86400) // COUNTER_WINDOW_SECONDS)
+            capped = max(1, min(limit, 200))
+            counters = (
+                c.execute(
+                    "SELECT * FROM access_counters WHERE window>=?"
+                    " ORDER BY window DESC, last_ts DESC LIMIT ?",
+                    (since, capped),
+                ).fetchall()
+                if admin
+                else c.execute(
+                    "SELECT * FROM access_counters WHERE principal_id=? AND window>=?"
+                    " ORDER BY window DESC, last_ts DESC LIMIT ?",
+                    (grant.principal_id or grant.key_id, since, capped),
+                ).fetchall()
+            )
         return {
             "events": [
                 {
@@ -435,7 +549,16 @@ class PrincipalOps(AccessSchemaOps):
                     "scopes_used": json.loads(row["scopes_used"]),
                 }
                 for row in rows
-            ]
+            ],
+            "counters": [
+                {
+                    **dict(row),
+                    "window_start": row["window"] * COUNTER_WINDOW_SECONDS,
+                    "window_seconds": COUNTER_WINDOW_SECONDS,
+                }
+                for row in counters
+            ],
+            "counters_note": COUNTERS_NOTE,
         }
 
     def public_activity(self) -> dict[str, Any]:

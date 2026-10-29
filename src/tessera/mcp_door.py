@@ -152,7 +152,14 @@ def build_mcp(
             raise ToolError(
                 f"{exc.code}: {exc.detail}; retry after {exc.retry_after:.0f} s"
             ) from exc
-        return {"lease": None if lease is None else lease.model_dump(mode="json")}
+        namespace = store.current_scope().namespace
+        if lease is None:
+            return {
+                "lease": None,
+                "retry_after": limiter.idle.empty(namespace, queue, grant.key_id),
+            }
+        limiter.idle.granted(namespace, queue, grant.key_id)
+        return {"lease": lease.model_dump(mode="json")}
 
     @server.tool(
         description="Extend a lease you hold. Call it every heartbeat_seconds while working."

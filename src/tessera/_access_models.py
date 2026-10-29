@@ -62,8 +62,26 @@ class AccessEvent(BaseModel):
     scopes_used: list[str]
 
 
+class AccessCounter(BaseModel):
+    """Per-minute count of denied, failed, no-op or pre-check requests for one principal."""
+
+    window: int
+    window_start: float
+    window_seconds: int
+    principal_id: str
+    principal_kind: str
+    namespace: str
+    action: str
+    outcome: str
+    count: int
+    first_ts: float
+    last_ts: float
+
+
 class AuditEvents(BaseModel):
     events: list[AccessEvent]
+    counters: list[AccessCounter] = []
+    counters_note: str | None = None
 
 
 class PublicEvent(BaseModel):

@@ -495,7 +495,7 @@ async function callTool(stub, env, ctx, secret, name, args, routeCtx) {
         code: r.code,
         extra: r.extra,
         detail: r.detail,
-        data: r.ok ? { lease: r.data.lease } : null,
+        data: r.ok ? (r.data.lease ? { lease: r.data.lease } : { lease: null, retry_after: r.data.retry_after ?? 5 }) : null,
       };
     }
     case "heartbeat": {
@@ -906,7 +906,13 @@ export async function handleMcpRequest(
   };
 
   if (Array.isArray(payload)) {
-    const results = (await Promise.all(payload.map(processOne))).filter(Boolean);
+    // One call at a time: each passes the same authentication and claim admission as a
+    // single request, and a batch cannot fan out into unbounded concurrent storage calls.
+    const results = [];
+    for (const msg of payload) {
+      const result = await processOne(msg);
+      if (result) results.push(result);
+    }
     if (!results.length) return new Response(null, { status: 202 });
     return Response.json(results, { headers: { "cache-control": "no-store" } });
   }
