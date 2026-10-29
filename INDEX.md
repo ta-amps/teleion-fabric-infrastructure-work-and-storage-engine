@@ -106,7 +106,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [deploy/fly/README.md](deploy/fly/README.md) | Fly.io: the Tessera service |
 | [deploy/fly/fly.toml](deploy/fly/fly.toml) | Tessera service on one Fly.io machine with a volume (brief L20), reached through the Cloudflare edge |
 
-## docs/ (27)
+## docs/ (28)
 
 | File | What it is |
 |---|---|
@@ -119,6 +119,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [docs/comparison.md](docs/comparison.md) | Tessera: comparison |
 | [docs/decisions.md](docs/decisions.md) | Tessera: decisions |
 | [docs/evidence/native-history-observation.json](docs/evidence/native-history-observation.json) | JSON object: schema_version, observed_date, source_revision, worker_version, harness, provider |
+| [docs/execution-learning.md](docs/execution-learning.md) | Execution learning: observations, fingerprints and swappable learners |
 | [docs/execution-memory.md](docs/execution-memory.md) | Execution reports and permitted recall |
 | [docs/expansion.md](docs/expansion.md) | Seeding & expanding atomic nouns and verbs with Muse / Meta agents |
 | [docs/fine-tuning-workers.md](docs/fine-tuning-workers.md) | Optional fine-tuning workers |
@@ -182,7 +183,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [scripts/dev_stack.sh](scripts/dev_stack.sh) | Run Tessera on this machine behind the real Cloudflare edge code (wrangler dev), with the origin |
 | [scripts/suite_http_local.py](scripts/suite_http_local.py) | Run the whole conformance suite over HTTP against a real tessera serve process on this machine. |
 
-## src/ (53)
+## src/ (63)
 
 | File | What it is |
 |---|---|
@@ -224,6 +225,16 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [src/tessera/execution_matching.py](src/tessera/execution_matching.py) | Bounded execution-report validation and candidate matching, never reuse authorization. |
 | [src/tessera/fingerprints.py](src/tessera/fingerprints.py) | Deterministic problem fingerprints: a small pure library, not a learning policy. |
 | [src/tessera/grants.py](src/tessera/grants.py) | What a worker key may do: its queues, kinds, effect classes and scopes, and the rules that narrow a request t… |
+| [src/tessera/learners/__init__.py](src/tessera/learners/__init__.py) | Swappable learners over execution observations. |
+| [src/tessera/learners/catalog.py](src/tessera/learners/catalog.py) | Learner specs for every learning facet: three implemented, the rest proposed designs. |
+| [src/tessera/learners/contract.py](src/tessera/learners/contract.py) | The common learner contract: spec nouns, config nouns and run verbs. |
+| [src/tessera/learners/memory.py](src/tessera/learners/memory.py) | Memory learner, strategy minhash-lsh v1: asynchronous fingerprint index plus recall. |
+| [src/tessera/learners/pack.py](src/tessera/learners/pack.py) | Deterministic seed-pack export of learner spec nouns, a default config and verb templates. |
+| [src/tessera/learners/path_statistics.py](src/tessera/learners/path_statistics.py) | Path statistics learner, strategy wilson-grouping v1: what worked, per path. |
+| [src/tessera/learners/routing.py](src/tessera/learners/routing.py) | Routing-weights learner, strategy beta-bandit v1: advisory selection weights per family. |
+| [src/tessera/learners/runtime.py](src/tessera/learners/runtime.py) | Shared runtime for learner run verbs: pinned spec checks, bounded paging, output writes. |
+| [src/tessera/learners/stats.py](src/tessera/learners/stats.py) | Deterministic outcome statistics over execution observations, shared by learners. |
+| [src/tessera/learners/worker.py](src/tessera/learners/worker.py) | Run one claimed learner verb with its registered deterministic runner, then submit. |
 | [src/tessera/mcp_door.py](src/tessera/mcp_door.py) | The MCP door (SPEC §7): atomic verbs, progressive L0 noun search, CAS records, buckets, delta feeds, and refl… |
 | [src/tessera/models.py](src/tessera/models.py) | Records that cross Tessera's boundary: what callers send and what every backend returns. |
 | [src/tessera/observations.py](src/tessera/observations.py) | The optional report.learning block and the stable execution observation view. |
@@ -240,7 +251,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [src/tessera/store.py](src/tessera/store.py) | The in-process Tessera store: the reference implementation of SPEC.md. |
 | [src/tessera/testing.py](src/tessera/testing.py) | Factories the conformance suite loads by name (TESSERABACKENDFACTORY="module:function"). |
 
-## tests/ (47)
+## tests/ (48)
 
 | File | What it is |
 |---|---|
@@ -269,6 +280,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [tests/test_execution_adapters.py](tests/test_execution_adapters.py) | HTTP client framing and real local MCP execution-report flow, without inference. |
 | [tests/test_execution_distillation.py](tests/test_execution_distillation.py) | Bounded task authoring and private local claim fixtures, without model execution. |
 | [tests/test_execution_history.py](tests/test_execution_history.py) | Execution recall uses accepted results and rechecks source permissions and expiry. |
+| [tests/test_execution_learning.py](tests/test_execution_learning.py) | Learning reports, the observation read interface and swappable learners, end to end. |
 | [tests/test_execution_learning_vectors.py](tests/test_execution_learning_vectors.py) | Problem fingerprints, learning-block checks and observations match across Python and Worker. |
 | [tests/test_execution_matching.py](tests/test_execution_matching.py) | Execution fingerprints are portable retrieval evidence, not completion proofs. |
 | [tests/test_execution_output_budget.py](tests/test_execution_output_budget.py) | Large historical results are loaded only for selected hits and bounded in recall. |
@@ -292,11 +304,12 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [tests/workerd_execution_learning.mjs](tests/workerd_execution_learning.mjs) | Actual Worker and SQLite Durable Objects: learning reports, observations and row costs. |
 | [tests/workerd_storage_quota.mjs](tests/workerd_storage_quota.mjs) | Real Worker/SQLite behavior; fixture-only RPC methods never ship in the product. |
 
-## tools/ (10)
+## tools/ (11)
 
 | File | What it is |
 |---|---|
 | [tools/execution_distillation.py](tools/execution_distillation.py) | Prepare one bounded external-worker distillation verb. |
+| [tools/learner.py](tools/learner.py) | Learner seed-pack and run helper; offline commands are the default. |
 | [tools/load_briefs.py](tools/load_briefs.py) | Put briefs on the build queue once their dependencies are done. |
 | [tools/meta_open_bridge.py](tools/meta_open_bridge.py) | Local Meta Model API /v1/responses bridge backed by Meta open-weight models (muse-spark-open) on any OpenAI/O… |
 | [tools/muse_worker.py](tools/muse_worker.py) | Run one Muse Code worker on one Tessera brief. |
