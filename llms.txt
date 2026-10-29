@@ -29,6 +29,7 @@
 - [docs/making-of.md](https://github.com/ta-amps/tessera/blob/main/docs/making-of.md): The making-of
 - [docs/opencode-and-ollama.md](https://github.com/ta-amps/tessera/blob/main/docs/opencode-and-ollama.md): Bilateral swarm testing with OpenCode & Ollama Cloud (muse-spark-open)
 - [docs/operations.md](https://github.com/ta-amps/tessera/blob/main/docs/operations.md): Operations
+- [docs/opportunity-lab.md](https://github.com/ta-amps/tessera/blob/main/docs/opportunity-lab.md): Opportunity Lab
 - [docs/research-seeds.md](https://github.com/ta-amps/tessera/blob/main/docs/research-seeds.md): Research seeds and proposed recurring work
 - [docs/review.md](https://github.com/ta-amps/tessera/blob/main/docs/review.md): Tessera: review guide
 - [docs/setup.md](https://github.com/ta-amps/tessera/blob/main/docs/setup.md): Tessera: setup
