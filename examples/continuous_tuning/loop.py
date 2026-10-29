@@ -22,7 +22,7 @@ from examples.finetuning.data import digest, file_digest
 import tessera
 from tessera import TaskSpec
 
-from . import model_verbs, serve, verbs
+from . import decide, model_verbs, serve, verbs
 from .catalog import VERBS, execution_report, learning_block, no_model_usage, store_supports
 from .fabric import NAMESPACE, QUEUE, WORKER, Fabric
 from .tools import SNAPSHOT, load_snapshot
@@ -39,7 +39,7 @@ HANDLERS: dict[str, Callable[..., verbs.Result]] = {
     "generate_examples": verbs.generate_examples,
     "curate_dataset": verbs.curate_dataset,
     "mine_hard_examples": verbs.mine_hard_examples,
-    "decide_promotion": verbs.decide_promotion,
+    "decide_promotion": decide.decide_promotion,
     "tune_hyperparameters": model_verbs.tune_hyperparameters,
     "train_adapter": model_verbs.train_adapter,
     "evaluate": model_verbs.evaluate,

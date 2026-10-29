@@ -123,7 +123,24 @@ def learning_curve(root: Path, base_noun: Path) -> dict[str, Any]:
                         "privacy": log["privacy"],
                     }
                 )
+            serving = [
+                {
+                    "round": value["round"],
+                    "adapters": [
+                        {k: a[k] for k in ("label", "identical_replies", "rows")}
+                        for a in value["adapters"]
+                    ],
+                    "base_with_adapters_disabled": value["base_with_adapters_disabled"][
+                        "identical_replies"
+                    ],
+                    "loaded_bases": value["loaded_bases"],
+                    "peak_allocated_bytes": value["memory"]["peak_allocated_bytes"],
+                }
+                for _, value in fabric.list("evals", "serving_check.")
+                if value["learner"] == learner
+            ]
             return {
+                "serving_checks": serving,
                 "learner": learner,
                 "base_model": {
                     "model_id": base["model_id"],

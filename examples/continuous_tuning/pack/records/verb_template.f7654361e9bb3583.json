@@ -1,7 +1,7 @@
 {
  "allowed_surfaces": [],
  "expected_version": 0,
- "key": "verb_template.4f0c0c36fea12537517935594e138ebd7cbac0bf73152ece00a72ea2e9e9c5a2",
+ "key": "verb_template.f7654361e9bb3583b20b08b6e2f6928828f944561be93eef8de3e9b304b532af",
  "namespace": "conformance-tuning",
  "store": "tuning.specs",
  "tags": [
@@ -90,10 +90,10 @@
    "determinism": 1,
    "evidence_grounding": 1,
    "safety_compliance": 1,
-   "token_efficiency": 0.97496,
+   "token_efficiency": 0.974945,
    "verification_tier": "deterministic_gate"
   },
-  "handler": "examples.continuous_tuning.verbs.decide_promotion",
+  "handler": "examples.continuous_tuning.decide.decide_promotion",
   "model": false,
   "output": {
    "properties": {

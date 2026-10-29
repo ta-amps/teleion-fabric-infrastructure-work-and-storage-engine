@@ -41,7 +41,7 @@ HANDLERS = {
     "generate_examples": "examples.continuous_tuning.verbs.generate_examples",
     "curate_dataset": "examples.continuous_tuning.verbs.curate_dataset",
     "mine_hard_examples": "examples.continuous_tuning.verbs.mine_hard_examples",
-    "decide_promotion": "examples.continuous_tuning.verbs.decide_promotion",
+    "decide_promotion": "examples.continuous_tuning.decide.decide_promotion",
     "tune_hyperparameters": "examples.continuous_tuning.model_verbs.tune_hyperparameters",
     "train_adapter": "examples.continuous_tuning.model_verbs.train_adapter",
     "evaluate": "examples.continuous_tuning.model_verbs.evaluate",

@@ -23,9 +23,9 @@
     "version": 1
    },
    "learner_spec": {
-    "key": "learner_spec.181a502321e41691e2d5436affed8e4322e7fd0086ac6056a1a070088d9cc3d3",
+    "key": "learner_spec.c4fc7ab6d0eb99c52bcfa577f907f7dfd96c349bf4325afcd8c69b0560136701",
     "store": "tuning.specs",
-    "value_sha256": "181a502321e41691e2d5436affed8e4322e7fd0086ac6056a1a070088d9cc3d3",
+    "value_sha256": "c4fc7ab6d0eb99c52bcfa577f907f7dfd96c349bf4325afcd8c69b0560136701",
     "version": 1
    },
    "recipe": {
@@ -63,7 +63,7 @@
   "step": "tick"
  },
  "effect_class": "write-internal",
- "idempotency_key": "continuous-tuning-seed:a1155d08788f60c63f219a9ec06a61d189e1c2d93922b4f127398a174685f113",
+ "idempotency_key": "continuous-tuning-seed:01be3e4eaad76bb41045c3bbc1f1ec5a7b133ff3f60a1731f90d3ffd146f1abb",
  "kind": "verb.decompose_dag",
  "namespace": "conformance-tuning",
  "queue": "conformance-tuning",

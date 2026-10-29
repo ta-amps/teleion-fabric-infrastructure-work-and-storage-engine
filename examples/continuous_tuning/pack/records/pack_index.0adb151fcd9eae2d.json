@@ -1,7 +1,7 @@
 {
  "allowed_surfaces": [],
  "expected_version": 0,
- "key": "pack_index.b464536539667b57e9dffcbe1836cdaa74b641e305ab8d54035eb66fa6f2f7ec",
+ "key": "pack_index.0adb151fcd9eae2d899cc51abfe38ef4bbe89e153a8dc20beb753f113202e9b5",
  "namespace": "conformance-tuning",
  "store": "tuning.specs",
  "tags": [
@@ -117,7 +117,7 @@
     "note": "uses verb:decide_promotion",
     "relation": "requires_noun",
     "target_category": "noun.code_node",
-    "target_id": "verb_template.4f0c0c36fea12537517935594e138ebd7cbac0bf73152ece00a72ea2e9e9c5a2"
+    "target_id": "verb_template.f7654361e9bb3583b20b08b6e2f6928828f944561be93eef8de3e9b304b532af"
    },
    {
     "note": "uses verb:serve_check",
@@ -135,7 +135,7 @@
     "note": "uses learner_spec",
     "relation": "requires_noun",
     "target_category": "noun.code_node",
-    "target_id": "learner_spec.181a502321e41691e2d5436affed8e4322e7fd0086ac6056a1a070088d9cc3d3"
+    "target_id": "learner_spec.c4fc7ab6d0eb99c52bcfa577f907f7dfd96c349bf4325afcd8c69b0560136701"
    }
   ],
   "role": "pack_index",

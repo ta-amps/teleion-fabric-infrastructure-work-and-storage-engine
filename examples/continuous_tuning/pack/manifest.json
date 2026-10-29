@@ -30,12 +30,12 @@
    "sha256": "ee19407b6a5c7cc513aeb5f531387b88095bf817f68089841193325170f6e2fc"
   },
   {
-   "path": "records/learner_spec.181a502321e41691.json",
-   "sha256": "2563332e83703a1d117a61696af69dd37862a6cde243e85cdca2fc658e8cfc9d"
+   "path": "records/learner_spec.c4fc7ab6d0eb99c5.json",
+   "sha256": "766c90ae22205a38afeafb4b491e96568fcd5297fcad61f0d8fb3423cf21f7dd"
   },
   {
-   "path": "records/pack_index.b464536539667b57.json",
-   "sha256": "4f74738f3ff34f5893bb351615759c787f3ba091a5f82e6aa9aa4578f926b8e9"
+   "path": "records/pack_index.0adb151fcd9eae2d.json",
+   "sha256": "67b613c4a608aea165ef77b2eae9245ea43a20e2c1f5bac4a1860f686cdd425e"
   },
   {
    "path": "records/promotion_rule.520abffa83ef6080.json",
@@ -82,10 +82,6 @@
    "sha256": "a702f5a6d0fac45e3ce9af97d475afc5f24014b771821a0ae6d2ada55cad9bea"
   },
   {
-   "path": "records/verb_template.4f0c0c36fea12537.json",
-   "sha256": "9942ad784ee1abd8c9050e1d4b1c98d9cf241b8745ef14823a587a3d0c84ed2e"
-  },
-  {
    "path": "records/verb_template.a625527e2177c54e.json",
    "sha256": "569b25f7ca02a76afb21e0a7b28cd9779ccb39a46fcc922908107abad07e313a"
   },
@@ -94,12 +90,16 @@
    "sha256": "a246887bc01b0622643b19435e9b917f9fbae95b43f0ccf6774e55aa19dc9e2c"
   },
   {
+   "path": "records/verb_template.f7654361e9bb3583.json",
+   "sha256": "60bd15727b5642a2a75915e51093d72a18d9afdd0934e453be52c3bb9a59b8f3"
+  },
+  {
    "path": "tasks/tick.llama-3.2-1b-instruct.json",
-   "sha256": "9c790be9c5bbdd66b379ac45f8c58193efe792b66429a4f0f2f59e3e41ea9884"
+   "sha256": "00a512d4126a9d03ad22d30d9f7b7f720a6a13171fe55021f32fac98308dd030"
   },
   {
    "path": "tasks/tick.llama-3.2-3b-instruct.json",
-   "sha256": "566dc9fc09a0e4547ccc21181556e66231ef9aba2f9ea5984a4749b11a310ae2"
+   "sha256": "cdb4b6c68d6aca8e0eecdeb726cb4cdfba78a67c5cc3fc667c2c8b7832f2e9df"
   }
  ],
  "format": "tessera.continuous-tuning.seed-pack.v1",
