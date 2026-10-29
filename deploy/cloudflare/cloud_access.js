@@ -9,6 +9,7 @@ export const DEMO_QUOTAS = Object.freeze({
   request_bytes: 65536, sessions_per_ip_hour: 10,
 });
 export const ANON_LABELS = Object.freeze({ origin: "anonymous", demo: true, untrusted: true });
+export const GLOBAL_SESSIONS_PER_HOUR = 1000;
 const ANON_ACTIONS = new Set(["recallExecution", "getExecution", "listExecutions",
   "verifyKey", "verifyStoreScope", "queues", "counts", "claim", "heartbeat", "submit",
   "cancel", "enqueue", "task", "results", "putRecords", "getRecord", "listRecords",
@@ -59,12 +60,38 @@ export function principalMetadata(c, key) {
       key_prefix: null, labels: {}, quota_tier: "standard", last_used_at: null };
 }
 
+// IPv6 callers are attributed by /64, the usual allocation to one subscriber, so rotating
+// addresses inside one prefix cannot multiply the per-address session limit. IPv4-mapped
+// addresses count as their IPv4 address. Anything unparsable is used as given.
+export function ipGroup(ip) {
+  const raw = String(ip || "unknown").trim().toLowerCase().replace(/^\[|\]$/g, "").split("%")[0];
+  if (!raw.includes(":")) return raw;
+  const mapped = /^[0:]*:ffff:(\d{1,3}(?:\.\d{1,3}){3})$/.exec(raw);
+  if (mapped) return mapped[1];
+  const halves = raw.split("::");
+  if (halves.length > 2) return raw;
+  const left = halves[0] ? halves[0].split(":") : [], right = halves.length === 2 && halves[1] ? halves[1].split(":") : [];
+  const fill = halves.length === 2 ? 8 - left.length - right.length : 0;
+  const groups = [...left, ...Array(Math.max(0, fill)).fill("0"), ...right];
+  if (fill < 0 || groups.length !== 8 || groups.some(g => !/^[0-9a-f]{1,4}$/.test(g))) return raw;
+  return groups.slice(0, 4).map(g => g.replace(/^0+(?=.)/, "")).join(":") + "::/64";
+}
+
+// The hourly global session allowance accrues evenly through the hour after a burst, so one
+// caller cannot spend it in minutes and lock everyone else out until the next hour. The
+// answer is the number allowed so far and, when exhausted, the seconds until the next one.
+export function mintAllowance(ceiling, secondsIntoHour) {
+  const burst = Math.ceil(ceiling / 10);
+  const allowed = Math.min(ceiling, burst + Math.floor(ceiling * secondsIntoHour / 3600));
+  return { allowed, nextIn: (used) => used < ceiling ? Math.max(1, Math.ceil((used - burst + 1) * 3600 / ceiling - secondsIntoHour)) : Math.max(1, Math.ceil(3600 - secondsIntoHour)) };
+}
+
 export async function requestIdentity(c, ip, ua) {
   const salt = c._one("SELECT value FROM meta WHERE key='access_hash_salt'").value;
   const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(salt), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   const hash = async value => Array.from(new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(value))), b => b.toString(16).padStart(2, "0")).join("");
   const day = Math.floor(Date.now() / 86400000);
-  return { ip_hash: await hash(`${day}:ip:${String(ip || "unknown").slice(0, 128)}`), ua_hash: await hash(`${day}:ua:${String(ua || "").slice(0, 512)}`) };
+  return { ip_hash: await hash(`${day}:ip:${ipGroup(ip).slice(0, 128)}`), ua_hash: await hash(`${day}:ua:${String(ua || "").slice(0, 512)}`) };
 }
 
 // Every successful action keeps its own redacted audit row, reads included. Denied, failed
@@ -179,10 +206,11 @@ export async function mintAnonymous(c, body, meta) {
     namespace, labels, scopes, expires_at: now + DEMO_QUOTAS.session_seconds };
   c.ctx.storage.transactionSync(() => {
     const window = Math.floor(now / 3600);
-    for (const [subject, ceiling] of [[`mint:${meta.ip_hash || "unknown"}`, DEMO_QUOTAS.sessions_per_ip_hour], ["mint:global", 1000]]) {
+    for (const [subject, ceiling, paced] of [[`mint:${meta.ip_hash || "unknown"}`, DEMO_QUOTAS.sessions_per_ip_hour, false], ["mint:global", GLOBAL_SESSIONS_PER_HOUR, true]]) {
       c.ctx.storage.sql.exec("INSERT OR IGNORE INTO access_limits(subject,window) VALUES (?,?)", subject, window);
       const used = c._one("SELECT requests FROM access_limits WHERE subject=? AND window=?", subject, window);
-      if (used.requests >= ceiling) throw error(429, "rate_limited", "anonymous session mint quota exceeded", { retry_after: 3600 - now % 3600 });
+      const pace = paced ? mintAllowance(ceiling, now % 3600) : null;
+      if (used.requests >= (pace ? pace.allowed : ceiling)) throw error(429, "rate_limited", "anonymous session mint quota exceeded", { retry_after: pace ? pace.nextIn(used.requests) : 3600 - now % 3600 });
       c.ctx.storage.sql.exec("UPDATE access_limits SET requests=requests+1 WHERE subject=? AND window=?", subject, window);
     }
     c.ctx.storage.sql.exec("INSERT INTO keys(key_id,key_hash,label,queues,kinds,effect_classes,scopes,created_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?)",
@@ -191,8 +219,8 @@ export async function mintAnonymous(c, body, meta) {
       id, "anonymous", id, null, namespace, token.slice(0, 8), JSON.stringify(labels), "demo", now, now + DEMO_QUOTAS.retention_seconds);
     audit(c, grant, "mint_session", { namespace }, { ok: true, status: 201, data: {} }, meta);
   });
-  const stub = c.env.COORDINATOR.get(c.env.COORDINATOR.idFromName(`ns:${namespace}`));
-  await stub.seedDemo(grant, now + DEMO_QUOTAS.retention_seconds);
+  // The demo namespace object, its schema and its practice tasks are created by the session's
+  // first call (ensureDemoSeeded), so a session that is never used costs only these rows.
   return { session_token: token, ...grant, key_id: null, quotas: DEMO_QUOTAS, persisted: true, retention_expires_at: now + DEMO_QUOTAS.retention_seconds };
 }
 
@@ -218,6 +246,15 @@ export function seedDemo(c, grant, purgeAt) {
     c.ctx.storage.sql.exec("INSERT OR REPLACE INTO meta(key,value) VALUES ('demo_purge_at',?)", String(purgeAt));
   });
   return c.ctx.storage.setAlarm(purgeAt * 1000);
+}
+
+export async function ensureDemoSeeded(c, grant, ns) {
+  if (grant.principal_kind !== "anonymous" || ns !== grant.namespace || c.demoSeeded === ns) return;
+  if (!c._one("SELECT value FROM meta WHERE key='demo_purge_at'")) {
+    const purgeAt = Number(grant.purge_at) || (Date.now() / 1000 + DEMO_QUOTAS.retention_seconds);
+    await seedDemo(c, grant, purgeAt);
+  }
+  c.demoSeeded = ns;
 }
 
 export function enforceAccess(c, grant, action, args) {

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import ipaddress
 import json
+import math
 import re
 import secrets
 from typing import TYPE_CHECKING, Any, cast
@@ -148,6 +150,36 @@ def public_principal(grant: KeyGrant) -> dict[str, Any]:
     }
 
 
+GLOBAL_SESSIONS_PER_HOUR = 1000
+
+
+def ip_group(ip: str) -> str:
+    """Attribute IPv6 callers by /64 and IPv4-mapped addresses by IPv4 (same rule as the Worker)."""
+    raw = ip.strip().lower().strip("[]").split("%")[0]
+    try:
+        addr = ipaddress.ip_address(raw)
+    except ValueError:
+        return raw
+    if isinstance(addr, ipaddress.IPv6Address):
+        if addr.ipv4_mapped is not None:
+            return str(addr.ipv4_mapped)
+        return str(ipaddress.ip_network(f"{addr}/64", strict=False))
+    return str(addr)
+
+
+def mint_allowance(ceiling: int, seconds_into_hour: float, used: int) -> tuple[int, float]:
+    """Sessions allowed so far this hour and, when exhausted, seconds until the next one.
+
+    The hourly allowance accrues evenly after a burst of a tenth, so one caller cannot spend it
+    in minutes and lock everyone else out until the next hour (same rule as the Worker).
+    """
+    burst = math.ceil(ceiling / 10)
+    allowed = min(ceiling, burst + math.floor(ceiling * seconds_into_hour / 3600))
+    if used < ceiling:
+        return allowed, max(1.0, math.ceil((used - burst + 1) * 3600 / ceiling - seconds_into_hour))
+    return allowed, max(1.0, math.ceil(3600 - seconds_into_hour))
+
+
 class PrincipalOps(AccessSchemaOps):
     def request_identity(self, ip: str, ua: str) -> dict[str, str]:
         with self._read() as c:
@@ -157,7 +189,10 @@ class PrincipalOps(AccessSchemaOps):
             name: hmac.new(
                 salt.encode(), f"{day}:{kind}:{value}".encode(), hashlib.sha256
             ).hexdigest()
-            for name, kind, value in (("ip_hash", "ip", ip[:128]), ("ua_hash", "ua", ua[:512]))
+            for name, kind, value in (
+                ("ip_hash", "ip", ip_group(ip)[:128]),
+                ("ua_hash", "ua", ua[:512]),
+            )
         }
 
     def principal_metadata(self, grant: KeyGrant) -> KeyGrant:
@@ -188,7 +223,10 @@ class PrincipalOps(AccessSchemaOps):
         now = self.clock.now()
         window = int(now // 3600)
         with self._tx() as c:
-            for subject, maximum in ((f"mint:{ip_hash}", 10), ("mint:global", 1000)):
+            for subject, maximum, paced in (
+                (f"mint:{ip_hash}", 10, False),
+                ("mint:global", GLOBAL_SESSIONS_PER_HOUR, True),
+            ):
                 c.execute(
                     "INSERT OR IGNORE INTO access_limits(subject,window) VALUES (?,?)",
                     (subject, window),
@@ -197,8 +235,13 @@ class PrincipalOps(AccessSchemaOps):
                     "SELECT requests FROM access_limits WHERE subject=? AND window=?",
                     (subject, window),
                 ).fetchone()
-                if row[0] >= maximum:
-                    raise RateLimited("anonymous session mint quota exceeded", 3600 - now % 3600)
+                allowed, wait = (
+                    mint_allowance(maximum, now % 3600, row[0])
+                    if paced
+                    else (maximum, 3600 - now % 3600)
+                )
+                if row[0] >= allowed:
+                    raise RateLimited("anonymous session mint quota exceeded", wait)
                 c.execute(
                     "UPDATE access_limits SET requests=requests+1 WHERE subject=? AND window=?",
                     (subject, window),

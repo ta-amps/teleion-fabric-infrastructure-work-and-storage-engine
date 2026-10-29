@@ -1,5 +1,5 @@
 import { initExecutions, checkedReport, prepareExecution, validatePrepared, captureExecution, recallExecution, getExecution, listExecutions } from "./cloud_executions.js";
-import { initAccess, principalMetadata, requestIdentity, mintAnonymous, seedDemo, enforceAccess, audit, auditMode, countAccess, ownAudit, publicActivity, publicPrincipal } from "./cloud_access.js";
+import { initAccess, principalMetadata, requestIdentity, mintAnonymous, seedDemo, ensureDemoSeeded, enforceAccess, audit, auditMode, countAccess, ownAudit, publicActivity, publicPrincipal } from "./cloud_access.js";
 // TesseraCoordinator: single-writer SQLite Durable Object (`new_sqlite_classes`) implementing
 // 100% of Tessera Spec v0.2 (queues, 5 verbs, dependencies, waves, park/resume, model jobs,
 // counts, events, scoped keys, queryable CAS records, persistent named file buckets,
@@ -1833,6 +1833,9 @@ export class TesseraCoordinator extends DurableObject {
     try {
       grant = await this._grantFromSecret(secret);
       args = enforceAccess(this, grant, action, { ...args, namespace: ns });
+      await ensureDemoSeeded(this, grant, ns);
+      this.namespace = ns;
+      this.isPrimary = ns === "main";
       if (action === "claim") {
         this._requireQueue(grant, String(args.queue || ""));
         if (!String(args.worker || "")) throw badReq("worker is required");

@@ -651,3 +651,24 @@ def test_denied_and_no_op_requests_are_counted_not_written_per_request(
     assert client.get("/v1/counts", headers=auth(worker)).status_code == 200
     assert rows() == before + 2  # the audit read above and this successful read
     assert client.get("/v1/admin/audit", headers=auth(admin)).json()["counters"]
+
+
+def test_ipv6_prefix_grouping_and_paced_global_sessions_match_the_worker(
+    access: tuple[TestClient, Store, FakeClock, str],
+) -> None:
+    from tessera._principals import ip_group, mint_allowance
+
+    _client, store, _clock, _admin = access
+    assert ip_group("2001:db8:1:2::1") == "2001:db8:1:2::/64"
+    assert ip_group("2001:0db8:0001:0002:ffff:ffff:ffff:ffff") == "2001:db8:1:2::/64"
+    assert ip_group("[2001:db8:1:3::9]") == "2001:db8:1:3::/64"
+    assert ip_group("::ffff:192.0.2.7") == "192.0.2.7"
+    assert ip_group("not an address") == "not an address"
+    same = store.request_identity("2001:db8:1:2::1", "ua")["ip_hash"]
+    assert store.request_identity("2001:db8:1:2:aaaa::1", "ua")["ip_hash"] == same
+    assert store.request_identity("2001:db8:1:3::1", "ua")["ip_hash"] != same
+    assert mint_allowance(1000, 0, 0)[0] == 100
+    assert mint_allowance(1000, 1800, 0)[0] == 600
+    assert mint_allowance(1000, 3599, 0)[0] == 1000
+    assert mint_allowance(1000, 60, 116) == (116, 2)
+    assert mint_allowance(1000, 3000, 1000)[1] == 600

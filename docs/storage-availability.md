@@ -124,6 +124,29 @@ Rows read are the next allowance to run out (5 million a day on Workers Free).
   proportional to the request rate. Truly constant-time health would need incrementally
   maintained public counts, which costs index writes on every task change and is not done.
 
+## Anonymous sessions
+
+Anonymous demo access stays on. Before October 29 minting a session also created its demo
+namespace object, schema and practice tasks (about 210 rows), the global allowance of 1,000
+sessions per clock hour could be spent by one caller in minutes and then refused everyone until
+the next hour, and the per-address limit (10 per hour) keyed on the full address, so rotating
+IPv6 addresses inside one prefix bypassed it.
+
+- The demo namespace object, schema and practice tasks are created by the session's first call
+  instead of at mint (Worker). A session that is never used costs only its key, principal,
+  limit and audit rows in the primary object. The Python service seeds in its own database as
+  before.
+- The per-address limit groups IPv6 callers by /64 and IPv4-mapped IPv6 by its IPv4 address.
+  Audit `ip_hash` values use the same grouping (they are daily-rotated HMACs).
+- The global hourly allowance accrues evenly: a tenth is available at once and the rest at a
+  steady rate through the hour, and a refusal carries `Retry-After` until the next session
+  becomes available instead of until the next hour. Both runtimes share the rule
+  (`mintAllowance` / `mint_allowance`).
+
+Not changed: each anonymous request still updates its `access_limits` row (the durable demo
+quota), and a used session's object still pays its full schema. A purged demo object is
+recreated empty by the purge alarm.
+
 ## Local measurements and remaining work
 
 The actual-workerd tests warm one authenticated key and make five ordinary
