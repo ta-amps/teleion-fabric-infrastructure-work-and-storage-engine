@@ -140,7 +140,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [docs/work-design-and-evidence.md](docs/work-design-and-evidence.md) | Nouns, verbs and evidence |
 | [docs/work-routing.md](docs/work-routing.md) | Route agent work through nouns and verbs |
 
-## examples/ (72)
+## examples/ (73)
 
 | File | What it is |
 |---|---|
@@ -152,6 +152,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [examples/continuous_tuning/dataset.py](examples/continuous_tuning/dataset.py) | Curation: fingerprints, deduplication, contamination checks and dataset manifests. |
 | [examples/continuous_tuning/decide.py](examples/continuous_tuning/decide.py) | The promotion verb: apply the pre-registered rule and move the champion pointer. |
 | [examples/continuous_tuning/evidence/llama-3.2-1b-instruct-2026-10-29.json](examples/continuous_tuning/evidence/llama-3.2-1b-instruct-2026-10-29.json) | JSON object: benchmark_tools_sha256, captured, code, curve, format, hardware |
+| [examples/continuous_tuning/evidence/llama-3.2-3b-instruct-2026-10-29.json](examples/continuous_tuning/evidence/llama-3.2-3b-instruct-2026-10-29.json) | JSON object: benchmark_tools_sha256, captured, code, curve, format, frozen_sets_sha256 |
 | [examples/continuous_tuning/fabric.py](examples/continuous_tuning/fabric.py) | The learner's use of a local Tessera store: principals, private nouns, blobs and claims. |
 | [examples/continuous_tuning/fixture_backend.py](examples/continuous_tuning/fixture_backend.py) | A deterministic, dependency-free stand-in for the model backend (tests and CPU demos). |
 | [examples/continuous_tuning/learner_spec.json](examples/continuous_tuning/learner_spec.json) | JSON object: format, learner, strategy, version, facet, reads |

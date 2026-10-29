@@ -19,8 +19,9 @@ and 8% of its calls stringified a typed value. One round on 63 owned synthetic
 examples lifted it to 43% with no stringified values. The next round, with twice the
 data, did not beat that, and the pre-registered rule kept the champion. A round that
 continued from the champion reached 51%, again beating the champion on a fresh holdout.
-A fourth round raised dev but not test, and the rule kept it out. A second
-base, Llama 3.2 3B Instruct, runs through the same frozen evaluation below. This
+A fourth round raised dev but not test, and the rule kept it out. On the same frozen
+test, Llama 3.2 3B Instruct went from 52% to 73% after one round. Its second round
+scored 79% but cut schema validity past a pre-registered limit, so it was kept out. This
 is one synthetic task with one seed per configuration on one GPU. It shows the loop
 measuring and keeping real gains from little data; it does not show general
 improvement. The [measured results](#measured-results) have the details.
@@ -389,8 +390,72 @@ was rerun. The public summary is
 
 ### Second base: Llama 3.2 3B Instruct
 
-Running through the same frozen holdouts as of this commit; results follow in a later
-commit.
+Same frozen dev, test and sanity sets (identical digests), same recipe, search and
+rule; bf16 LoRA with gradient checkpointing (24.3 M trainable parameters), evaluation
+batch 8, no quantization. These rounds ran on main after the execution-learning merge,
+so their reports carry the learning block natively.
+
+| Round | Candidate (dev-selected) | Training rows | Test exact | Fresh: candidate / champion / base | Sanity | Decision |
+| --- | --- | --- | --- | --- | --- | --- |
+| 0 | unchanged base | 0 | 0.520 | not run | 0.925 | baseline |
+| 1 | lr 4e-4 of three trials (dev 0.775) | 63 | **0.727** | 0.646 / 0.563 / 0.563 | 0.950 | promoted: +0.207, 95% [0.120, 0.293], 40 rows better, 9 worse |
+| 2 | random control (dev 0.8125 vs mined 0.650) | 138 | 0.793 | 0.667 / 0.625 / 0.521 | 1.000 | kept champion: +0.067, 95% [0.007, 0.133], but schema validity fell 0.025 against a 0.02 limit |
+
+The 3B starts far stronger (0.520) but stringifies more (17.5% of calls; schema valid
+0.675). The same 63 rows removed stringified values, lifted schema validity to 0.908 and
+type correctness to 0.933, and gained +0.207. In round 2 the random-control adapter
+scored higher still (0.793, fresh 0.667, sanity 1.000), but its schema validity fell
+0.025 where the rule allows 0.02, so the champion stayed. A guard written before any
+result stopped a real-looking gain. Across both bases, targeted mining did not beat a
+matched random control in round 2; on test, the analysis-only mined adapters scored
+0.453 (1B) and 0.720 (3B). Each 3B adapter trained in 202 to 439 s, peaking at 8.4 GB
+allocated (11.8 GB reserved). Rounds 0 to 2 took about 51 GPU-minutes. All 27 verbs
+succeeded, and a final sweep denied all 193 reads by another principal. Training then
+stopped at the owner's request (see "Data before training"); round 3 was never started.
+The public summary is
+[`evidence/llama-3.2-3b-instruct-2026-10-29.json`](../examples/continuous_tuning/evidence/llama-3.2-3b-instruct-2026-10-29.json).
+
+| Base | Round 0 | Round 1 | Round 2 | Round 3 | Round 4 |
+| --- | --- | --- | --- | --- | --- |
+| Llama 3.2 1B | 0.120 | **0.433** promoted | 0.433 kept | **0.507** promoted | 0.507 kept |
+| Llama 3.2 3B | 0.520 | **0.727** promoted | 0.793 kept (schema guard) | not run | not run |
+
+## Data before training
+
+Is there enough data, trace and evaluation to make training worth it? From these runs:
+
+- **Checked rows.** Training families now hold 586 checked rows in the 1B run: lease 219,
+  records 152, access 97, verb discovery 82 and unsupported-operation refusals 36. The
+  held-out families hold none, by design. All are synthetic template draws; there are
+  no real, verified tool-call traces for this task yet.
+- **What paid off.** About 16 rows per training family (2 to 3 per tool) taught the
+  output contract and typed values: +0.31 for the 1B and +0.21 for the 3B, on families
+  never trained on. More rows of the same kind did not help. Argument semantics for an
+  unseen family did not transfer from other families, so family-specific training needs
+  that family's own rows, on the order of 100 checked examples (about 10 per tool).
+- **Holdout size.** The rule needs a paired bootstrap lower bound above zero. With the
+  discordance these runs show (about 18% of rows flip between two close adapters), the
+  150-row test detects a true 5-point gain only about 31% of the time. 80% power needs
+  about 560 rows (450 at 14% discordance), per family if the claim is per family.
+- **What Tessera records.** Task identity and category tags, the brief and input
+  snapshot, worker, timing, receipts, ok or error, the event log, and the worker-reported
+  report and learning block: outcome, what went right and wrong, types, path, usage, and
+  advice. Fingerprints and a permission-filtered observation view come with them.
+- **What a training set still needs.**
+  - outcome labels from acceptance checks, because reported outcomes are not
+    independently verified;
+  - step-level grades for multi-step runs;
+  - stable task-family and template tags;
+  - the trainable pair itself (offered tools, prompt and accepted reply, which reports
+    omit by design);
+  - provenance and consent per run, since execution reports are excluded from training
+    by default.
+- **Cheaper first.** A deterministic shim that decodes a stringified typed argument
+  before strict validation, recorded as a repair rather than a silent coercion, lifts
+  the unchanged 3B from 0.520 to 0.647 on the stored test replies (1B 0.120 to 0.140)
+  with no training. Tessera's memory (recall of verified calls), path-statistics and
+  routing-weight learners can use the same traces now. They need verified outcome labels
+  too, but far fewer of them.
 
 ## Issues found while running
 
@@ -411,8 +476,9 @@ commit.
 
 - One narrow, synthetic task. A gain here says nothing about other tasks, real user
   traffic or a harness's end-to-end success.
-- One base model, one GPU, one seed per configuration; no variance across seeds was
-  measured.
+- Two base models, one GPU, one seed per configuration; no variance across seeds was
+  measured. The 3B ran rounds 0 to 2; training then stopped at the owner's request
+  until there is more checked data (see above).
 - The frozen test is reused across rounds; the per-round fresh holdouts are the guard.
 - Mined and control rows are template draws, so "hard example" means "has the failing
   feature", not "is individually difficult".
