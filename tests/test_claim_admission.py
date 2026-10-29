@@ -8,10 +8,10 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from tessera import QueueConfig, Store
-from tessera.access import ClaimLimiter, ServiceSettings
+from tessera import QueueConfig, Store, TaskSpec
+from tessera.access import ClaimLimiter, Gate, ServiceSettings
 from tessera.claim_admission import AdaptiveClaims
-from tessera.errors import RateLimited
+from tessera.errors import RateLimited, Unauthorized
 from tessera.service import create_app
 
 
@@ -115,3 +115,33 @@ def test_invalid_config_and_explicit_legacy_opt_in(monkeypatch: pytest.MonkeyPat
         AdaptiveClaims(initial=4, maximum=3)
     with pytest.raises(ValueError, match="must be finite"):
         AdaptiveClaims(target=float("nan"))
+
+
+def test_revoked_waiting_worker_cannot_claim(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        store = Store(tmp_path / "revocation.db")
+        store.define_queue(QueueConfig(name="conformance-admission"))
+        task_id = store.enqueue(TaskSpec(queue="conformance-admission", brief={"synthetic": True}))
+        _, grant = store.issue_key("synthetic", queues=["conformance-admission"])
+        gate = Gate(store)
+        limiter = ClaimLimiter(
+            settings=ServiceSettings(claim_initial_concurrency=1, claim_max_concurrency=1)
+        )
+        held = await limiter.admission.acquire("first")
+
+        async def claim() -> None:
+            async with limiter.admit(grant.key_id):
+                gate.recheck(grant)
+                store.claim("conformance-admission", "synthetic", key_id=grant.key_id)
+
+        pending = asyncio.create_task(claim())
+        await asyncio.sleep(0)
+        store.revoke_key(grant.key_id)
+        limiter.admission.release(held)
+        with pytest.raises(Unauthorized, match="expired or revoked"):
+            await pending
+        assert store.task(task_id).state == "ready"
+        assert limiter.admission.active == 0
+        store.close()
+
+    asyncio.run(scenario())

@@ -434,6 +434,7 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
         kinds = grant.kind_filter(body.kinds)
         lease = None
         async with limiter.admit(grant.key_id, grant.is_admin) as permit:
+            await run_in_threadpool(gate.recheck, grant)
             if effects and kinds != []:
                 lease = await run_in_threadpool(
                     store.claim,
