@@ -199,6 +199,22 @@ not become competing noun classifications. Existing run bytes are not rewritten.
 
 Core authorization, atomic capture, anonymous retention and Python/Worker matching need their owning regression suites in addition to these adapter tests. Deployment smoke must target the exact released revision. Legacy worker wrappers do not automatically gain parsed model usage, safe process supervision, trusted telemetry or generalized distillation capability from these APIs.
 
+## Native worker observation, October 29, 2026
+
+[The recorded observation](evidence/native-history-observation.json) covers one
+OpenCode 2.1.2 / Ollama Cloud `kimi-k2.7-code` run with a fresh anonymous session
+and one with a fresh scoped key. Each run made 13 actual MCP tool calls: ordinary
+work and report submission, history list/readback, then exact-input recall under
+a second lease and cancellation. Independent HTTP readback matched the stored
+report. The fresh keyed credential was revoked afterward.
+
+The workers made 30 provider requests in total through a bounded observation
+transport. The deployed fabric made no model requests for these operations. The
+transport did not repair tool payloads; normal permissions remained enabled. Two
+earlier test-driver setup errors stopped before inference and are retained in the
+observation. These are individual passing fixtures, not repeated-run reliability,
+other-client certification or permission to reuse outputs without validation.
+
 ## Category query compatibility
 
 A primary `category_id` (or `category`) and `category:`/`cat:` tags must agree. New conflicting declarations are rejected atomically; legacy conflicts fail closed for category queries. Stable category identifiers retain underscores. Recognized `noun.*` and `verb.*` bare aliases remain accepted. Other bare tags are facets; declare `category:blue` or `category_id: "blue"` for a primary category named blue.
