@@ -104,7 +104,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [deploy/fly/README.md](deploy/fly/README.md) | Fly.io: the Tessera service |
 | [deploy/fly/fly.toml](deploy/fly/fly.toml) | Tessera service on one Fly.io machine with a volume (brief L20), reached through the Cloudflare edge |
 
-## docs/ (25)
+## docs/ (26)
 
 | File | What it is |
 |---|---|
@@ -119,6 +119,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [docs/evidence/native-history-observation.json](docs/evidence/native-history-observation.json) | JSON object: schema_version, observed_date, source_revision, worker_version, harness, provider |
 | [docs/execution-memory.md](docs/execution-memory.md) | Execution reports and permitted recall |
 | [docs/expansion.md](docs/expansion.md) | Seeding & expanding atomic nouns and verbs with Muse / Meta agents |
+| [docs/fine-tuning-workers.md](docs/fine-tuning-workers.md) | Optional fine-tuning workers |
 | [docs/frontier-publication.md](docs/frontier-publication.md) | Frontier publication receipts |
 | [docs/generalizing.md](docs/generalizing.md) | Tessera: generalizing it |
 | [docs/glossary.md](docs/glossary.md) | Tessera: glossary |
@@ -134,10 +135,24 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [docs/work-design-and-evidence.md](docs/work-design-and-evidence.md) | Nouns, verbs and evidence |
 | [docs/work-routing.md](docs/work-routing.md) | Route agent work through nouns and verbs |
 
-## examples/ (5)
+## examples/ (19)
 
 | File | What it is |
 |---|---|
+| [examples/finetuning/__init__.py](examples/finetuning/__init__.py) |  |
+| [examples/finetuning/author.py](examples/finetuning/author.py) | Preview fine-tuning artifact nouns and worker verbs using existing Tessera contracts. |
+| [examples/finetuning/data.py](examples/finetuning/data.py) | Owned synthetic research observations and family-separated dataset manifests. |
+| [examples/finetuning/encoding.py](examples/finetuning/encoding.py) | Completion-only tokenization with explicit fit checks and no truncation. |
+| [examples/finetuning/evidence/smoke-2026-10-29.json](examples/finetuning/evidence/smoke-2026-10-29.json) | JSON object: format, checked_at, verification, scope, runs, not_run |
+| [examples/finetuning/glimmer.py](examples/finetuning/glimmer.py) | Prepare, but do not launch, a pinned official Glimmer QLoRA recipe on an H100 worker. |
+| [examples/finetuning/kaggle.sh](examples/finetuning/kaggle.sh) | Run inside an already authorized Kaggle GPU session; this script starts no notebook or paid job. |
+| [examples/finetuning/local_worker.py](examples/finetuning/local_worker.py) | Run a real tiny training verb through a private, task-owned local Tessera store. |
+| [examples/finetuning/peft_backend.py](examples/finetuning/peft_backend.py) | Optional torch/PEFT backend; never imported by Tessera's service or data authoring. |
+| [examples/finetuning/recipes/llama-1b-qlora.json](examples/finetuning/recipes/llama-1b-qlora.json) | JSON object: version, mode, model_id, revision, license, quantization |
+| [examples/finetuning/recipes/llama-3b-qlora.json](examples/finetuning/recipes/llama-3b-qlora.json) | JSON object: version, mode, model_id, revision, license, quantization |
+| [examples/finetuning/recipes/tiny-smoke.json](examples/finetuning/recipes/tiny-smoke.json) | JSON object: version, mode, model_id, revision, license, quantization |
+| [examples/finetuning/requirements.txt](examples/finetuning/requirements.txt) | Optional worker environment only. |
+| [examples/finetuning/run.py](examples/finetuning/run.py) | Prepare synthetic data or run one explicitly bounded optional worker training job. |
 | [examples/research/collector.json](examples/research/collector.json) | JSON object: version, namespace, queue, output_store, stage, profile |
 | [examples/research/discover.json](examples/research/discover.json) | JSON object: version, namespace, queue, output_store, stage, profile |
 | [examples/research/scan.json](examples/research/scan.json) | JSON object: version, namespace, queue, output_store, stage, profile |
@@ -220,7 +235,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [src/tessera/store.py](src/tessera/store.py) | The in-process Tessera store: the reference implementation of SPEC.md. |
 | [src/tessera/testing.py](src/tessera/testing.py) | Factories the conformance suite loads by name (TESSERABACKENDFACTORY="module:function"). |
 
-## tests/ (42)
+## tests/ (43)
 
 | File | What it is |
 |---|---|
@@ -251,6 +266,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [tests/test_execution_matching.py](tests/test_execution_matching.py) | Execution fingerprints are portable retrieval evidence, not completion proofs. |
 | [tests/test_execution_output_budget.py](tests/test_execution_output_budget.py) | Large historical results are loaded only for selected hits and bounded in recall. |
 | [tests/test_external_access_edge.py](tests/test_external_access_edge.py) | External-agent access through real Worker HTTP/MCP handlers and local SQLite bindings. |
+| [tests/test_finetuning_example.py](tests/test_finetuning_example.py) | Behavioral checks for optional training data, fit rejection, and existing noun/verb contracts. |
 | [tests/test_frontier_publication.py](tests/test_frontier_publication.py) | Publication requires exact, namespace-bound evidence from independent principals. |
 | [tests/test_governance_and_isolation.py](tests/test_governance_and_isolation.py) | Universal 6-field governance envelope, namespace isolation (/ns/{namespace} & X-Namespace), Layer 1 surface o… |
 | [tests/test_guard_hook.py](tests/test_guard_hook.py) | The guard hook blocks protected paths and risky commands, and fails closed. |
