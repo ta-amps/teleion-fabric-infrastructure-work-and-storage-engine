@@ -9,6 +9,8 @@ from collections.abc import Sequence
 from typing import Any
 
 from tessera._base import new_id
+from tessera._frontier_guard import review_proof as frontier_review_proof
+from tessera._frontier_guard import verification_proof as frontier_verification_proof
 from tessera._graph import GraphOps
 from tessera._publication_guard import review_proof
 from tessera.errors import (
@@ -194,6 +196,7 @@ class TaskOps(GraphOps):
         owner_key_id: str | None = None,
     ) -> None:
         """Insert a task: `ready`, or `waiting` on its dependencies while any is unresolved."""
+        self._assert_frontier_governance(producer_surface, visibility_scope)
         deps = list(dict.fromkeys(depends_on))
         if len(deps) > MAX_DEPENDENCIES:
             raise InvalidRequest(f"at most {MAX_DEPENDENCIES} dependencies per task")
@@ -269,8 +272,8 @@ class TaskOps(GraphOps):
             raise InvalidRequest("worker is required")
         ns = self._resolve_ns(namespace)
         effective_key = key_id if key_id is not None else self.current_scope().key_id
-        now = self.clock.now()
         with self._tx() as c:
+            now = self.clock.now()
             config = self._queue_config(c, ns, queue)
             self._reap(c, now, namespace=ns, queue=queue)
             if (
@@ -354,9 +357,9 @@ class TaskOps(GraphOps):
     def heartbeat(self, task_id: str, fencing_token: int, *, namespace: str | None = None) -> Lease:
         """Extend a live lease. A lapsed or superseded lease raises StaleLease."""
         ns = self._resolve_ns(namespace)
-        now = self.clock.now()
         lease: Lease | None = None
         with self._tx() as c:
+            now = self.clock.now()
             row, stale = self._live_lease(c, ns, task_id, fencing_token, now)
             if row is not None:
                 task = self._task_row(c, ns, task_id)
@@ -448,6 +451,8 @@ class TaskOps(GraphOps):
     ) -> Receipt:
         """Store a result once and end the lease. Replaying an idempotency key returns the first
         receipt. A failed result (ok=False) schedules a retry or dead-letters the task."""
+        if not isinstance(ok, bool):
+            raise InvalidRequest("/ok must be a JSON boolean")
         if not idempotency_key:
             raise InvalidRequest("idempotency_key is required")
         try:
@@ -460,9 +465,9 @@ class TaskOps(GraphOps):
         actor_key = (
             completed_by_key if completed_by_key is not None else self.current_scope().key_id
         )
-        now = self.clock.now()
         receipt: Receipt | None = None
         with self._tx() as c:
+            now = self.clock.now()
             prior = c.execute(
                 "SELECT * FROM results WHERE namespace = ? AND idempotency_key = ?",
                 (ns, idempotency_key),
@@ -480,6 +485,10 @@ class TaskOps(GraphOps):
                 effective_completed_by = actor_key if actor_key is not None else row["key_id"]
                 if task["queue"] == "eq03" and ok and effective_completed_by:
                     review_proof(c, ns, task_id, effective_completed_by, output)
+                if task["queue"] == "frontier.verify" and ok:
+                    frontier_verification_proof(c, ns, task_id, effective_completed_by, output)
+                if task["queue"] == "frontier.review" and ok:
+                    frontier_review_proof(c, ns, task_id, effective_completed_by, output)
                 del_cur = c.execute(
                     "DELETE FROM leases WHERE namespace = ? AND task_id = ? AND fencing_token = ?",
                     (ns, task_id, fencing_token),
@@ -571,9 +580,9 @@ class TaskOps(GraphOps):
             if any(not 0 <= j < index for j in child.after):
                 raise InvalidRequest(f"child {index}: 'after' may name only earlier children")
         ns = self._resolve_ns(namespace)
-        now = self.clock.now()
         ids: list[str] | None = None
         with self._tx() as c:
+            now = self.clock.now()
             row, stale = self._live_lease(c, ns, task_id, fencing_token, now)
             if row is not None:
                 task = self._task_row(c, ns, task_id)
@@ -663,9 +672,9 @@ class TaskOps(GraphOps):
         if resume_within is not None and not 0 < resume_within <= MAX_PARK_SECONDS:
             raise InvalidRequest(f"resume_within must be between 0 and {MAX_PARK_SECONDS} seconds")
         ns = self._resolve_ns(namespace)
-        now = self.clock.now()
         view: TaskView | None = None
         with self._tx() as c:
+            now = self.clock.now()
             row, stale = self._live_lease(c, ns, task_id, fencing_token, now)
             if row is not None:
                 task = self._task_row(c, ns, task_id)

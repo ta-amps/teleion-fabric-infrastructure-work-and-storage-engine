@@ -475,7 +475,7 @@ async function callTool(stub, env, ctx, secret, name, args, routeCtx) {
         fencing_token: args.fencing_token,
         output: args.output === undefined ? null : args.output,
         idempotency_key: args.idempotency_key,
-        ok: args.ok ?? true,
+        ok: args.ok === undefined ? true : args.ok,
         error: args.error ?? null,
       });
       return {

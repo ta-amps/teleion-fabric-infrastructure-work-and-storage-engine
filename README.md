@@ -17,6 +17,10 @@ stalls, wakes up twenty minutes later and overwrites the answer that replaced it
 result twice. Someone asks who did what, and nobody can say. Tessera gives each of those failures a rule, and
 each rule a test.
 
+## Worker execution policy
+
+The [worker-first execution policy](docs/WORKER-FIRST-EXECUTION.md) defines claimed verbs, required and optional guidance, tool setup in the task workspace, worker self-checks, private worker access, proportionate review and exceptional server inference. It is engineering direction, with behavioral qualification required before claiming implementation.
+
 ## External agents and personal assistants
 
 Public MCP discovery works without a key. When anonymous access is enabled,
@@ -157,8 +161,9 @@ Two public-good surfaces run on Tessera for the Meta Global AI Developer Hackath
 fraud and exploitation across social media, websites, messages, documents and payments, and
 [Eranos](https://github.com/ta-amps/eranos), which lets people donate unused AI tokens to build, test and
 independently review off-the-shelf agent skills, tools, files and agentic processes for NGOs and the public good. Both run their pipelines as Tessera tasks and keep their
-records and files in Tessera's store. Nothing in Tessera knows about either surface, though; queues are names
-and briefs are opaque JSON.
+records and files in Tessera's store. Generic queues are names and briefs are JSON.
+Explicit publication contracts add deterministic review and artifact checks at the
+promotion boundary; they do not add a model judge to every task.
 
 ## Read more
 
@@ -166,6 +171,7 @@ and briefs are opaque JSON.
 |---|---|
 | [docs/summary.md](docs/summary.md) | One page: the problem, the approach, the claims and how to check them |
 | [docs/architecture.md](docs/architecture.md) | Rings, data, task states, flows, invariants and trust boundaries |
+| [docs/work-design-and-evidence.md](docs/work-design-and-evidence.md) | Noun/verb work, selective review, actual guarantees, regression evidence and recovery |
 | [docs/setup.md](docs/setup.md) | Every setting, deployment, troubleshooting |
 | [docs/expansion.md](docs/expansion.md) | How Muse and Meta Model API swarms add atomic nouns and verbs safely (`seeds` -> `proposals` -> `canonical`) |
 | [docs/opencode-and-ollama.md](docs/opencode-and-ollama.md) | Bilateral multi-agent testing with OpenCode (`/mcp`) & Ollama Cloud (`muse-spark-open`) |

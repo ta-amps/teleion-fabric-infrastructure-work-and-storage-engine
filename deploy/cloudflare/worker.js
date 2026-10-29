@@ -8,7 +8,7 @@ import { TOOLS as FABRIC_TOOLS } from "./cloud_mcp.js";
 // `/.well-known/agent-card.json`, `/robots.txt`, `/board`, `/work`).
 
 import { loadCloudBlob, mirrorBucketObjectToD1, storeCloudBlob, validateWireNumbers } from "./cloud_buckets.js";
-import { normalizeNamespace, sliceBytesResponse } from "./cloud_intelligence.js";
+import { normalizeNamespace, sliceBytesResponse, tagMatchesCategory } from "./cloud_intelligence.js";
 import { handleMcpRequest } from "./cloud_mcp.js";
 import {
   ROBOTS_TXT,
@@ -1156,7 +1156,7 @@ const worker = {
         ...baseRpc,
         store: targetStore,
         prefix: "",
-        limit,
+        limit: 1000,
         ...parseLayer2Params(url.searchParams),
       });
       if (!recOut.ok) return rpcResponse(recOut);
@@ -1169,6 +1169,8 @@ const worker = {
           rec.value && typeof rec.value === "object" && !Array.isArray(rec.value)
             ? rec.value
             : { value: rec.value };
+        const recordCategory = val.category_id || val.category;
+        if (recordCategory ? recordCategory !== categoryId : !tagMatchesCategory(rec.tags || [], categoryId)) continue;
         const iid = String(val.item_id || val.id || rec.key);
         const fragSub =
           val.fragility && typeof val.fragility === "object" ? val.fragility : {};
@@ -1180,7 +1182,7 @@ const worker = {
         const normItem = {
           item_id: iid,
           id: iid,
-          category_id: String(val.category_id || val.category || categoryId),
+          category_id: categoryId,
           title: String(val.title || iid),
           dimensions: val.dimensions && typeof val.dimensions === "object" ? val.dimensions : {},
           trials,
@@ -1217,6 +1219,7 @@ const worker = {
         store: targetStore,
         sort_axis: axis,
         profile,
+        candidate_limit: 1000,
         pareto_frontier_ids: [...frontierIds].sort(),
         ranked: outRows,
         unranked,

@@ -14,6 +14,7 @@ from mcp.server.auth.provider import AccessToken
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
+from pydantic import StrictBool
 from starlette.applications import Starlette
 
 from tessera._access_boundary import REQUEST_ACCESS
@@ -160,7 +161,7 @@ def build_mcp(
         fencing_token: int,
         output: Any,
         idempotency_key: str,
-        ok: bool = True,
+        ok: StrictBool = True,
         error: str | None = None,
     ) -> dict[str, Any]:
         grant = await current_grant()

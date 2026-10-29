@@ -19,6 +19,9 @@ class PrincipalView(BaseModel):
     namespace: str
     key_prefix: str | None = None
     scopes: list[str]
+    queues: list[str]
+    kinds: list[str]
+    effect_classes: list[str]
     labels: dict[str, Any]
     quotas: dict[str, int] | None = None
     quota_reason: str | None = None

@@ -19,7 +19,13 @@ from typing import Any
 
 from tessera.clock import Clock, SystemClock
 from tessera.errors import Forbidden, InvalidRequest, NotFound
-from tessera.models import QueueConfig, TaskView, normalize_namespace, normalize_surface
+from tessera.models import (
+    QueueConfig,
+    TaskView,
+    can_view_governed,
+    normalize_namespace,
+    normalize_surface,
+)
 from tessera.receipts import canonical_json
 
 COUNT_COLUMNS = frozenset({"ready", "leased", "waiting", "done", "dead", "cancelled"})
@@ -212,6 +218,16 @@ class StoreBase:
         if ctx.key_id and not ctx.is_admin and not ctx.surface and "status:verified" in tags:
             raise Forbidden("verification labels require an authorized publisher")
 
+    def _assert_frontier_governance(
+        self, producer: str, visibility: str, *, catalog_verified: bool = False
+    ) -> None:
+        if (
+            (producer == "surface:frontier" or self.current_scope().surface == "surface:frontier")
+            and not catalog_verified
+            and visibility not in {"private", "surface_only"}
+        ):
+            raise Forbidden("Frontier publishes only through its verified catalog")
+
     def _authorize_mutation(self, row: sqlite3.Row | None) -> None:
         """CAS controls version; ownership controls who may change that version."""
         ctx = self.current_scope()
@@ -226,6 +242,25 @@ class StoreBase:
         ):
             return
         raise Forbidden("only the owner or its authorized surface may mutate this resource")
+
+    def _can_read_version(self, row: sqlite3.Row, head: sqlite3.Row) -> bool:
+        """Both the version's original ACL and the current head must permit a read."""
+        ctx = self.current_scope()
+        tags = [*json.loads(row["tags"]), *json.loads(head["tags"])]
+        return all(
+            can_view_governed(
+                visibility_scope=entry["visibility_scope"],
+                producer_surface=entry["producer_surface"],
+                allowed_surfaces=json.loads(entry["allowed_surfaces"]),
+                owner_key_id=entry["owner_key_id"],
+                tags=tags,
+                viewer_surface=ctx.surface,
+                viewer_key_id=ctx.key_id,
+                is_admin=ctx.is_admin,
+                direct_get=True,
+            )
+            for entry in (head, row)
+        )
 
     def _task_visible(self, row: sqlite3.Row) -> bool:
         ctx = self.current_scope()

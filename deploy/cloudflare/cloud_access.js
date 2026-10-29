@@ -197,6 +197,7 @@ export function publicPrincipal(grant) {
   return { principal_kind: grant.principal_kind, principal_id: grant.principal_id || grant.key_id,
     session_id: grant.session_id || null, key_id: grant.principal_kind === "anonymous" ? null : grant.key_id,
     account_id: grant.account_id || null, namespace: grant.namespace || "main", key_prefix: grant.key_prefix || null,
-    scopes: grant.scopes, labels: grant.labels || {}, quotas: grant.principal_kind === "anonymous" ? DEMO_QUOTAS : null,
+    scopes: grant.scopes, queues: grant.queues, kinds: grant.kinds, effect_classes: grant.effect_classes,
+    labels: grant.labels || {}, quotas: grant.principal_kind === "anonymous" ? DEMO_QUOTAS : null,
     quota_reason: grant.principal_kind === "anonymous" ? null : "Operator-configured queue grants and service request limits apply.", expires_at: grant.expires_at };
 }

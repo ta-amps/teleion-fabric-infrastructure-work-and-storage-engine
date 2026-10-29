@@ -11,13 +11,16 @@
 
 ## Documents
 - [CHANGELOG.md](https://github.com/ta-amps/tessera/blob/main/CHANGELOG.md): Changelog
-- [CLAUDE.md](https://github.com/ta-amps/tessera/blob/main/CLAUDE.md): Claude Code notes
+- [CLAUDE.md](https://github.com/ta-amps/tessera/blob/main/CLAUDE.md): Worker execution direction
 - [conformance-draft/SPEC.md](https://github.com/ta-amps/tessera/blob/main/conformance-draft/SPEC.md): Tessera specification, v0.2 (draft)
+- [docs/WORKER-FIRST-EXECUTION.md](https://github.com/ta-amps/tessera/blob/main/docs/WORKER-FIRST-EXECUTION.md): Worker-first execution and private work
+- [docs/WORKER-VERB-EXAMPLES.md](https://github.com/ta-amps/tessera/blob/main/docs/WORKER-VERB-EXAMPLES.md): Work suitable for claimed verbs
 - [docs/access-modes.md](https://github.com/ta-amps/tessera/blob/main/docs/access-modes.md): External agent access
 - [docs/architecture.md](https://github.com/ta-amps/tessera/blob/main/docs/architecture.md): Tessera: architecture
 - [docs/comparison.md](https://github.com/ta-amps/tessera/blob/main/docs/comparison.md): Tessera: comparison
 - [docs/decisions.md](https://github.com/ta-amps/tessera/blob/main/docs/decisions.md): Tessera: decisions
 - [docs/expansion.md](https://github.com/ta-amps/tessera/blob/main/docs/expansion.md): Seeding & expanding atomic nouns and verbs with Muse / Meta agents
+- [docs/frontier-publication.md](https://github.com/ta-amps/tessera/blob/main/docs/frontier-publication.md): Frontier publication receipts
 - [docs/generalizing.md](https://github.com/ta-amps/tessera/blob/main/docs/generalizing.md): Tessera: generalizing it
 - [docs/glossary.md](https://github.com/ta-amps/tessera/blob/main/docs/glossary.md): Tessera: glossary
 - [docs/handoff.md](https://github.com/ta-amps/tessera/blob/main/docs/handoff.md): Tessera: handoff
@@ -27,3 +30,4 @@
 - [docs/review.md](https://github.com/ta-amps/tessera/blob/main/docs/review.md): Tessera: review guide
 - [docs/setup.md](https://github.com/ta-amps/tessera/blob/main/docs/setup.md): Tessera: setup
 - [docs/summary.md](https://github.com/ta-amps/tessera/blob/main/docs/summary.md): Tessera: summary
+- [docs/work-design-and-evidence.md](https://github.com/ta-amps/tessera/blob/main/docs/work-design-and-evidence.md): Nouns, verbs and evidence

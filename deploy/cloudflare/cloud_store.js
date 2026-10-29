@@ -7,6 +7,7 @@ import { initAccess, principalMetadata, requestIdentity, mintAnonymous, seedDemo
 
 import { canonicalSha256, planFragilityRechecks } from "./ontology_engine.js";
 import { reviewProof, publicationProof } from "./cloud_publication.js";
+import { frontierVerificationProof, frontierReviewProof, frontierPublicationProof } from "./cloud_frontier_publication.js";
 import { DurableObject } from "cloudflare:workers";
 import { TESSERA_VERSION } from "./cloud_pages.js";
 import { canonicalJson, receiptHash, sha256Hex } from "./cloud_buckets.js";
@@ -1295,7 +1296,14 @@ export class TesseraCoordinator extends DurableObject {
     if (!this.isPrimary && this.env && this.env.COORDINATOR) {
       const primaryStub = this.env.COORDINATOR.get(this.env.COORDINATOR.idFromName("primary"));
       const shared = await primaryStub.resolveKeyGrant(secret);
-      if (shared) return this._hydrateGrant(shared);
+      if (shared) {
+        // Snapshot authenticated identity metadata, never the secret or its hash.
+        // Namespace-local publication proofs need the completed actors' accounts.
+        // Authorization still resolves through primary on every request.
+        this.ctx.storage.sql.exec("INSERT INTO access_principals(key_id,principal_kind,principal_id,account_id,namespace,key_prefix,labels,quota_tier,last_used_at,purge_at) VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(key_id) DO UPDATE SET principal_kind=excluded.principal_kind,account_id=excluded.account_id,last_used_at=excluded.last_used_at",
+          shared.key_id, shared.principal_kind, shared.principal_id || shared.key_id, shared.account_id || null, shared.namespace || "main", shared.key_prefix || "", JSON.stringify(shared.labels || {}), shared.quota_tier || "standard", Date.now()/1000, shared.purge_at || null);
+        return this._hydrateGrant(shared);
+      }
     }
     throw unauth("the key is unknown, expired or revoked");
   }
@@ -1336,6 +1344,7 @@ export class TesseraCoordinator extends DurableObject {
 
   _requireSurfaceWrite(grant, storeName, surfaceHeader) {
     if (grant.is_admin) return;
+    if (storeName === "frontier.catalog" && (grant.bound_surface !== "frontier" || !grant.queues.includes("frontier.review"))) throw scopeDenied("catalog publication requires the frontier review grant");
     for (const surf of PROTECTED_SURFACES) {
       if (storeName.startsWith(`${surf}.`)) {
         const bound = grant.bound_surface;
@@ -1363,6 +1372,17 @@ export class TesseraCoordinator extends DurableObject {
     if (!row || grant.is_admin || row.owner_key_id === grant.key_id) return;
     if (viewerCtx.surface && row.visibility_scope !== "private" && row.producer_surface === viewerCtx.surface) return;
     throw forbid("only the owner or its authorized surface may mutate this resource");
+  }
+
+  _canReadVersion(row, head, viewerCtx) {
+    // Publishing a head cannot publish older private bytes. Restricting the head
+    // also restricts future history reads; it cannot revoke already copied bytes.
+    const tags = [...parseJsonSafe(row.tags, []), ...parseJsonSafe(head.tags, [])];
+    return [head, row].every(entry => canViewGoverned({
+      ...entry, tags, allowed_surfaces: parseJsonSafe(entry.allowed_surfaces, []),
+      viewer_surface: viewerCtx.surface, viewer_key_id: viewerCtx.key_id,
+      is_admin: viewerCtx.is_admin, direct_get: true,
+    }));
   }
 
   _taskVisible(row, grant, viewerCtx) {
@@ -1747,8 +1767,9 @@ export class TesseraCoordinator extends DurableObject {
         out = { ok: true, status: 200, data: { events: this._all("SELECT seq,ts,type,task_id,fencing_token FROM events WHERE namespace=? AND task_id=? AND seq>? ORDER BY seq LIMIT 100", ns, args.task_id, Number(args.after) || 0) } };
       } else out = await this._rpcCall(secret, action, args);
       if (out.ok && grant.principal_kind === "anonymous" && out.data && typeof out.data === "object") {
-        out.data = { ...out.data, labels: grant.labels, namespace: ns, expires_at: grant.expires_at };
-        if (out.data.lease) out.data.lease = { ...out.data.lease, labels: grant.labels, principal_id: grant.principal_id };
+        out.data = { ...out.data, labels: grant.labels, namespace: ns, session_expires_at: grant.expires_at };
+        if (!Object.hasOwn(out.data, "expires_at")) out.data.expires_at = grant.expires_at;
+        if (out.data.lease) out.data.lease = { ...out.data.lease, labels: grant.labels, principal_id: grant.principal_id, session_expires_at: grant.expires_at };
       }
       if (out.ok && action === "claim" && out.data.lease) {
         out.data.lease.claim_receipt = await sha256Hex(new TextEncoder().encode(canonicalJson({ namespace: ns, task_id: out.data.lease.task_id, fencing_token: out.data.lease.fencing_token, claimed_at: out.data.lease.claimed_at })));
@@ -1766,10 +1787,9 @@ export class TesseraCoordinator extends DurableObject {
     try {
       this.namespace = normalizeNamespace(args?.namespace || "main");
       this.isPrimary = Boolean(args?.isPrimary ?? (this.namespace === "main"));
+      const grant = await this._grantFromSecret(secret);
       const now = Date.now() / 1000;
       if (!this.namespace.startsWith("demo.")) this._ensureNamespaceSeeded(this.namespace, now);
-
-      const grant = await this._grantFromSecret(secret);
       const surfaceHeader = args?.surfaceHeader || args?.header_surface_id || "";
       const viewerCtx = this._viewerCtx(grant, surfaceHeader);
       const defaultGovSurface = viewerCtx.surface || "surface:tessera";
@@ -2114,6 +2134,7 @@ export class TesseraCoordinator extends DurableObject {
 
           if (effects.length > 0 && !(Array.isArray(kinds) && kinds.length === 0)) {
             this.ctx.storage.transactionSync(() => {
+              const now = Date.now() / 1000;
               const config = this._queueConfig(queue);
               this._reap(now, queue);
               if (grant.principal_kind === "anonymous" && this._one("SELECT COUNT(*) n FROM leases WHERE namespace=? AND key_id=? AND expires_at>? AND hard_expires_at>?", this.namespace, grant.key_id, now, now).n >= 1) throw rateLim("one concurrent demo claim allowed", 30);
@@ -2195,6 +2216,7 @@ export class TesseraCoordinator extends DurableObject {
           let lease = null;
           let staleMsg = null;
           this.ctx.storage.transactionSync(() => {
+            const now = Date.now() / 1000;
             const [row, stale] = this._liveLease(taskId, token, now);
             staleMsg = stale;
             if (!row) return;
@@ -2261,7 +2283,8 @@ export class TesseraCoordinator extends DurableObject {
           const taskId = String(args.task_id || "");
           const token = Number(args.fencing_token);
           const idem = String(args.idempotency_key || "");
-          const okFlag = args.ok === undefined ? true : Boolean(args.ok);
+          if (args.ok !== undefined && typeof args.ok !== "boolean") throw badReq("/ok must be a JSON boolean; send false, not a string or number");
+          const okFlag = args.ok === undefined ? true : args.ok;
           const errorText = args.error == null ? null : String(args.error);
           if (!idem) throw badReq("the Idempotency-Key header is required");
           const outputVal = args.output === undefined ? null : args.output;
@@ -2276,6 +2299,7 @@ export class TesseraCoordinator extends DurableObject {
           let receipt = null;
           let staleMsg = null;
           this.ctx.storage.transactionSync(() => {
+            const now = Date.now() / 1000;
             const prior = this._one(
               "SELECT * FROM results WHERE namespace = ? AND idempotency_key = ?",
               this.namespace,
@@ -2304,6 +2328,8 @@ export class TesseraCoordinator extends DurableObject {
             const task = this._taskRow(taskId);
             const config = this._queueConfig(task.queue);
             if (task.queue === "eq03" && okFlag) reviewProof(this, taskId, grant.key_id, outputVal, forbid);
+            if (task.queue === "frontier.verify" && okFlag) frontierVerificationProof(this, taskId, grant.key_id, outputVal, forbid);
+            if (task.queue === "frontier.review" && okFlag) frontierReviewProof(this, taskId, grant.key_id, outputVal, forbid);
             this.ctx.storage.sql.exec(
               "DELETE FROM leases WHERE namespace = ? AND task_id = ? AND fencing_token = ?",
               this.namespace,
@@ -2399,6 +2425,7 @@ export class TesseraCoordinator extends DurableObject {
           let ids = null;
           let staleMsg = null;
           this.ctx.storage.transactionSync(() => {
+            const now = Date.now() / 1000;
             const [row, stale] = this._liveLease(taskId, token, now);
             staleMsg = stale;
             if (!row) return;
@@ -2442,8 +2469,10 @@ export class TesseraCoordinator extends DurableObject {
               const cid = newId("t");
               const prio = child.priority == null ? Number(task.priority) : Number(child.priority);
               const deps = (child.after || []).map((j) => ids[j]);
+              const frontierParent = task.producer_surface === "surface:frontier";
+              if (frontierParent && task.visibility_scope === "private" && child.visibility_scope && child.visibility_scope !== "private") throw forbid("private Frontier children cannot widen visibility");
               const childGov = normalizeGovernance(
-                child,
+                frontierParent ? { visibility_scope: task.visibility_scope, allowed_surfaces: JSON.parse(task.allowed_surfaces), target_cohorts: JSON.parse(task.target_cohorts), tags: JSON.parse(task.tags), ...child } : child,
                 {
                   defaultSurface: task.producer_surface || defaultGovSurface,
                   ownerKeyId: grant.key_id,
@@ -2493,6 +2522,7 @@ export class TesseraCoordinator extends DurableObject {
           let view = null;
           let staleMsg = null;
           this.ctx.storage.transactionSync(() => {
+            const now = Date.now() / 1000;
             const [row, stale] = this._liveLease(taskId, token, now);
             staleMsg = stale;
             if (!row) return;
@@ -2600,6 +2630,7 @@ export class TesseraCoordinator extends DurableObject {
           let job = null;
           let staleMsg = null;
           this.ctx.storage.transactionSync(() => {
+            const now = Date.now() / 1000;
             const [row, stale] = this._liveLease(taskId, token, now);
             staleMsg = stale;
             if (!row) return;
@@ -2715,6 +2746,7 @@ export class TesseraCoordinator extends DurableObject {
           const d1Stmts = [];
           this.ctx.storage.transactionSync(() => {
             for (const w of writes) {
+              frontierPublicationProof(this, w, forbid);
               if (!grant.is_admin) publicationProof(this, w.store, w.value, forbid);
               this._authorizeMutation(this._one("SELECT * FROM record_heads WHERE namespace = ? AND store = ? AND key = ?", this.namespace, w.store, w.key), grant, viewerCtx);
               const expected = w.expected_version === undefined ? null : w.expected_version;
@@ -2727,6 +2759,7 @@ export class TesseraCoordinator extends DurableObject {
                   defaultSurface: defaultGovSurface,
                   ownerKeyId: grant.key_id,
                   extraTags: extractTags(w.value),
+                  frontierCatalogVerified: w.store === "frontier.catalog",
                 },
                 badReq
               );
@@ -2882,21 +2915,7 @@ export class TesseraCoordinator extends DurableObject {
             key
           );
           if (!head) throw notFound(`record ${store}/${key} does not exist`);
-          if (
-            !canViewGoverned({
-              visibility_scope: head.visibility_scope || "public_commons",
-              producer_surface: head.producer_surface || "surface:tessera",
-              allowed_surfaces: parseJsonSafe(head.allowed_surfaces, []),
-              owner_key_id: head.owner_key_id ?? null,
-              tags: parseJsonSafe(head.tags, []),
-              viewer_surface: viewerCtx.surface,
-              viewer_key_id: viewerCtx.key_id,
-              is_admin: viewerCtx.is_admin,
-              direct_get: true,
-            })
-          ) {
-            throw notFound(`record ${store}/${key} does not exist`);
-          }
+          if (!this._canReadVersion(head, head, viewerCtx)) throw notFound(`record ${store}/${key} does not exist`);
           const version = args.version == null ? Number(head.version) : Number(args.version);
           const r = this._one(
             "SELECT * FROM records WHERE namespace = ? AND store = ? AND key = ? AND version = ?",
@@ -2906,6 +2925,7 @@ export class TesseraCoordinator extends DurableObject {
             version
           );
           if (!r) throw notFound(`record ${store}/${key} has no version ${version}`);
+          if (!this._canReadVersion(r, head, viewerCtx)) throw notFound(`record ${store}/${key} does not exist`);
           return { ok: true, status: 200, data: this._recordView(r) };
         }
 
@@ -2920,27 +2940,13 @@ export class TesseraCoordinator extends DurableObject {
             key
           );
           if (!head) throw notFound(`record ${store}/${key} does not exist`);
-          if (
-            !canViewGoverned({
-              visibility_scope: head.visibility_scope || "public_commons",
-              producer_surface: head.producer_surface || "surface:tessera",
-              allowed_surfaces: parseJsonSafe(head.allowed_surfaces, []),
-              owner_key_id: head.owner_key_id ?? null,
-              tags: parseJsonSafe(head.tags, []),
-              viewer_surface: viewerCtx.surface,
-              viewer_key_id: viewerCtx.key_id,
-              is_admin: viewerCtx.is_admin,
-              direct_get: true,
-            })
-          ) {
-            throw notFound(`record ${store}/${key} does not exist`);
-          }
+          if (!this._canReadVersion(head, head, viewerCtx)) throw notFound(`record ${store}/${key} does not exist`);
           const rows = this._all(
             "SELECT * FROM records WHERE namespace = ? AND store = ? AND key = ? ORDER BY version",
             this.namespace,
             store,
             key
-          );
+          ).filter(row => this._canReadVersion(row, head, viewerCtx));
           if (!rows.length) throw notFound(`record ${store}/${key} does not exist`);
           return {
             ok: true,
@@ -3359,21 +3365,7 @@ export class TesseraCoordinator extends DurableObject {
             key
           );
           if (!head) throw notFound(`object ${bucket}/${key} does not exist`);
-          if (
-            !canViewGoverned({
-              visibility_scope: head.visibility_scope || "public_commons",
-              producer_surface: head.producer_surface || "surface:tessera",
-              allowed_surfaces: parseJsonSafe(head.allowed_surfaces, []),
-              owner_key_id: head.owner_key_id ?? null,
-              tags: parseJsonSafe(head.tags, []),
-              viewer_surface: viewerCtx.surface,
-              viewer_key_id: viewerCtx.key_id,
-              is_admin: viewerCtx.is_admin,
-              direct_get: true,
-            })
-          ) {
-            throw notFound(`object ${bucket}/${key} does not exist`);
-          }
+          if (!this._canReadVersion(head, head, viewerCtx)) throw notFound(`object ${bucket}/${key} does not exist`);
           const version = args.version == null ? null : Number(args.version);
           if (version == null) {
             return { ok: true, status: 200, data: this._objectView(head) };
@@ -3386,6 +3378,7 @@ export class TesseraCoordinator extends DurableObject {
             version
           );
           if (!vr) throw notFound(`object ${bucket}/${key} has no version ${version}`);
+          if (!this._canReadVersion(vr, head, viewerCtx)) throw notFound(`object ${bucket}/${key} does not exist`);
           return { ok: true, status: 200, data: this._objectView(vr, vr.created_at) };
         }
 
@@ -3479,27 +3472,13 @@ export class TesseraCoordinator extends DurableObject {
             key
           );
           if (!head) throw notFound(`object ${bucket}/${key} does not exist`);
-          if (
-            !canViewGoverned({
-              visibility_scope: head.visibility_scope || "public_commons",
-              producer_surface: head.producer_surface || "surface:tessera",
-              allowed_surfaces: parseJsonSafe(head.allowed_surfaces, []),
-              owner_key_id: head.owner_key_id ?? null,
-              tags: parseJsonSafe(head.tags, []),
-              viewer_surface: viewerCtx.surface,
-              viewer_key_id: viewerCtx.key_id,
-              is_admin: viewerCtx.is_admin,
-              direct_get: true,
-            })
-          ) {
-            throw notFound(`object ${bucket}/${key} does not exist`);
-          }
+          if (!this._canReadVersion(head, head, viewerCtx)) throw notFound(`object ${bucket}/${key} does not exist`);
           const rows = this._all(
             "SELECT * FROM bucket_object_versions WHERE namespace = ? AND bucket = ? AND key = ? ORDER BY version",
             this.namespace,
             bucket,
             key
-          );
+          ).filter(row => this._canReadVersion(row, head, viewerCtx));
           if (!rows.length) throw notFound(`object ${bucket}/${key} does not exist`);
           return {
             ok: true,

@@ -121,6 +121,10 @@ class Gate:
         """Enforce surface ownership on protected surface stores (`<surface>.*`) and `eq03` on catalog/index."""
         if grant.is_admin:
             return
+        if store_name == "frontier.catalog" and (
+            grant.bound_surface() != "frontier" or "frontier.review" not in grant.queues
+        ):
+            raise ScopeDenied("catalog publication requires the frontier review grant")
         for surf in PROTECTED_SURFACES:
             if store_name.startswith(f"{surf}."):
                 bound = grant.bound_surface()

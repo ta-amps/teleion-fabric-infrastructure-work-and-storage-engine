@@ -15,7 +15,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from tessera._storage import StorageOps, extract_payload_tags
-from tessera.errors import InvalidRequest, NotFound, VersionConflict
+from tessera.errors import Forbidden, InvalidRequest, NotFound, VersionConflict
 from tessera.models import (
     BUCKET_KEY_PATTERN,
     NAME_PATTERN,
@@ -31,6 +31,7 @@ from tessera.models import (
     normalize_surface,
     normalize_surface_list,
     normalize_tags,
+    tag_matches_category,
 )
 from tessera.receipts import canonical_json
 
@@ -56,15 +57,6 @@ def _validate_object_key(key: str) -> None:
         or any(seg in {".", ".."} for seg in key.split("/"))
     ):
         raise InvalidRequest(f"invalid object key {key!r}")
-
-
-def tag_matches_category(tags: Sequence[str], category: str) -> bool:
-    cat = category.strip().lower()
-    if not cat:
-        return True
-    bare = cat[len("category:") :] if cat.startswith("category:") else cat
-    candidates = {cat, bare, f"category:{bare}", f"cat:{bare}"}
-    return any(t.strip().lower() in candidates for t in tags)
 
 
 def matches_layer2_filters(
@@ -239,6 +231,10 @@ class BucketOps(StorageOps):
 
     def define_bucket(self, config: BucketConfig, *, namespace: str | None = None) -> BucketInfo:
         """Create or update a named bucket for versioned content-addressed files."""
+        if self.current_scope().surface == "surface:frontier":
+            raise Forbidden(
+                "Frontier uses versioned records; this backend has no bucket governance"
+            )
         ns = self._resolve_ns(namespace)
         now = self.clock.now()
         with self._tx() as c:
@@ -305,6 +301,7 @@ class BucketOps(StorageOps):
             producer_surface=producer_surface, owner_key_id=owner_key_id
         )
         vis: VisibilityScope = visibility_scope
+        self._assert_frontier_governance(prod, vis)
         allowed = normalize_surface_list(list(allowed_surfaces) if allowed_surfaces else [])
         cohorts = normalize_cohorts(list(target_cohorts) if target_cohorts else ["all"])
         effective_tags = normalize_tags([*(tags or ()), *extract_payload_tags(metadata or {})])
@@ -502,7 +499,6 @@ class BucketOps(StorageOps):
         _validate_bucket_name(bucket)
         _validate_object_key(key)
         ns = self._resolve_ns(namespace)
-        ctx = self.current_scope()
         with self._read() as c:
             head = c.execute(
                 "SELECT * FROM bucket_objects WHERE namespace = ? AND bucket = ? AND key = ?",
@@ -510,10 +506,8 @@ class BucketOps(StorageOps):
             ).fetchone()
             if head is None:
                 raise NotFound(f"object {bucket}/{key} does not exist")
-            head_tags: list[str] = json.loads(head["tags"])
             if version is None:
                 meta = self._object_meta(head, updated_at=float(head["updated_at"]))
-                combined_tags = meta.tags
             else:
                 v_row = c.execute(
                     "SELECT * FROM bucket_object_versions"
@@ -523,18 +517,7 @@ class BucketOps(StorageOps):
                 if v_row is None:
                     raise NotFound(f"object {bucket}/{key} has no version {version}")
                 meta = self._object_meta(v_row, updated_at=float(v_row["created_at"]))
-                combined_tags = normalize_tags([*meta.tags, *head_tags])
-        if not can_view_governed(
-            visibility_scope=meta.visibility_scope,
-            producer_surface=meta.producer_surface,
-            allowed_surfaces=meta.allowed_surfaces,
-            owner_key_id=meta.owner_key_id,
-            tags=combined_tags,
-            viewer_surface=ctx.surface,
-            viewer_key_id=ctx.key_id,
-            is_admin=ctx.is_admin,
-            direct_get=True,
-        ):
+        if not self._can_read_version(head if version is None else v_row, head):
             raise NotFound(f"object {bucket}/{key} does not exist")
         return meta
 
@@ -640,10 +623,9 @@ class BucketOps(StorageOps):
         _validate_bucket_name(bucket)
         _validate_object_key(key)
         ns = self._resolve_ns(namespace)
-        ctx = self.current_scope()
         with self._read() as c:
             head = c.execute(
-                "SELECT tags FROM bucket_objects WHERE namespace = ? AND bucket = ? AND key = ?",
+                "SELECT * FROM bucket_objects WHERE namespace = ? AND bucket = ? AND key = ?",
                 (ns, bucket, key),
             ).fetchone()
             if head is None:
@@ -655,23 +637,11 @@ class BucketOps(StorageOps):
             ).fetchall()
         if not rows:
             raise NotFound(f"object {bucket}/{key} does not exist")
-        head_tags: list[str] = json.loads(head["tags"])
-        visible: list[ObjectMeta] = []
-        for r in rows:
-            meta = self._object_meta(r, updated_at=float(r["created_at"]))
-            combined_tags = normalize_tags([*meta.tags, *head_tags])
-            if can_view_governed(
-                visibility_scope=meta.visibility_scope,
-                producer_surface=meta.producer_surface,
-                allowed_surfaces=meta.allowed_surfaces,
-                owner_key_id=meta.owner_key_id,
-                tags=combined_tags,
-                viewer_surface=ctx.surface,
-                viewer_key_id=ctx.key_id,
-                is_admin=ctx.is_admin,
-                direct_get=True,
-            ):
-                visible.append(meta)
+        visible = [
+            self._object_meta(r, updated_at=float(r["created_at"]))
+            for r in rows
+            if self._can_read_version(r, head)
+        ]
         if not visible:
             raise NotFound(f"object {bucket}/{key} does not exist")
         return visible

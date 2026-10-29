@@ -309,6 +309,13 @@
             ],
             "title": "Account Id"
           },
+          "effect_classes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Effect Classes",
+            "type": "array"
+          },
           "expires_at": {
             "title": "Expires At",
             "type": "number"
@@ -335,6 +342,13 @@
             ],
             "title": "Key Prefix"
           },
+          "kinds": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Kinds",
+            "type": "array"
+          },
           "labels": {
             "additionalProperties": true,
             "title": "Labels",
@@ -360,6 +374,13 @@
             ],
             "title": "Principal Kind",
             "type": "string"
+          },
+          "queues": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Queues",
+            "type": "array"
           },
           "quota_reason": {
             "anyOf": [
@@ -419,6 +440,9 @@
           "principal_id",
           "namespace",
           "scopes",
+          "queues",
+          "kinds",
+          "effect_classes",
           "labels",
           "expires_at",
           "session_token",
@@ -1176,6 +1200,13 @@
             ],
             "title": "Account Id"
           },
+          "effect_classes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Effect Classes",
+            "type": "array"
+          },
           "expires_at": {
             "title": "Expires At",
             "type": "number"
@@ -1202,6 +1233,13 @@
             ],
             "title": "Key Prefix"
           },
+          "kinds": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Kinds",
+            "type": "array"
+          },
           "labels": {
             "additionalProperties": true,
             "title": "Labels",
@@ -1223,6 +1261,13 @@
             ],
             "title": "Principal Kind",
             "type": "string"
+          },
+          "queues": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Queues",
+            "type": "array"
           },
           "quota_reason": {
             "anyOf": [
@@ -1273,6 +1318,9 @@
           "principal_id",
           "namespace",
           "scopes",
+          "queues",
+          "kinds",
+          "effect_classes",
           "labels",
           "expires_at"
         ],

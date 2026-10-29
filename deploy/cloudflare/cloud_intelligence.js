@@ -78,7 +78,7 @@ export function normalizeTags(values, badReq) {
 
 export function normalizeGovernance(
   raw,
-  { defaultSurface = "surface:tessera", ownerKeyId = null, extraTags = [] } = {},
+  { defaultSurface = "surface:tessera", ownerKeyId = null, extraTags = [], frontierCatalogVerified = false } = {},
   badReq
 ) {
   const src = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
@@ -88,11 +88,15 @@ export function normalizeGovernance(
       : normalizeSurface(defaultSurface || "surface:tessera");
   const slug = prodSurf.split(":")[1];
   if (!NAME_RE.test(slug)) throw badReq(`invalid producer_surface '${prodSurf}'`);
+  if (defaultSurface === "surface:frontier" && prodSurf !== "surface:frontier") throw Object.assign(new Error("Frontier cannot relabel staged resources"), { status: 403, code: "forbidden" });
 
   const visScope =
     src.visibility_scope == null ? "public_commons" : String(src.visibility_scope).trim();
   if (!VISIBILITY_SCOPES.has(visScope)) {
     throw badReq(`invalid visibility_scope '${visScope}'`);
+  }
+  if (prodSurf === "surface:frontier" && !frontierCatalogVerified && !["private", "surface_only"].includes(visScope)) {
+    throw Object.assign(new Error("Frontier publishes only through its verified catalog"), { status: 403, code: "forbidden" });
   }
 
   const allowedSurfaces = normalizeSurfaceList(src.allowed_surfaces, badReq);
@@ -137,10 +141,10 @@ export function canViewGoverned({
   const normProd = normalizeSurface(producer_surface);
   const normViewer = viewer_surface ? normalizeSurface(viewer_surface) : null;
   if (tags.includes("status:quarantined")) {
-    if (direct_get) {
-      return Boolean(is_admin || (normViewer != null && normViewer === normProd));
-    }
-    return Boolean(is_admin && include_restricted);
+    const eligible = direct_get
+      ? is_admin || (normViewer != null && normViewer === normProd)
+      : is_admin && include_restricted;
+    if (!eligible) return false;
   }
   if (is_admin) return true;
   if (visibility_scope === "public_commons") return true;
