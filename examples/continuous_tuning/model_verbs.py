@@ -85,7 +85,6 @@ def adapter_dir(ctx: Context, value: dict[str, Any]) -> Path:
 
 def train_one(ctx, brief, rows, recipe, label, out, training_set, init, beat):
     backend = ctx.backend()
-    ctx.environment.update(backend.environment())
     state, _ = pointer(ctx, brief)
     dev = holdout_rows(ctx, state["holdouts"])["dev"][:4]
     probes = [prompt_messages(row, ctx.tools) for row in dev]
@@ -94,6 +93,8 @@ def train_one(ctx, brief, rows, recipe, label, out, training_set, init, beat):
     report = backend.train(
         examples, recipe, out / "adapter", init_adapter=init_path, probes=probes, checkpoint=beat
     )
+    # After training: the first load has verified the weights by then.
+    ctx.environment.update(backend.environment())
     blobs = {}
     for name in report["adapter_files"]:
         beat()

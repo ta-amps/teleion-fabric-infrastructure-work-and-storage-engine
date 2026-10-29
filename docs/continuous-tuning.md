@@ -264,8 +264,8 @@ same, because content-digest keys make identical nouns identical. Serving loads 
 base once and attaches adapters by name (PEFT `load_adapter` and `set_adapter`; vLLM
 and llama.cpp have multi-LoRA equivalents), choosing per request from the specialist's
 champion pointer and falling back to the plain base when the pointer says `base`. A
-rank-16 adapter on every projection of the 1B model is about 45 MB, so many fit beside
-one 2.5 GB base. Swapping a specialist is a pointer change; adding one is a new spec
+rank-16 adapter on every projection is about 45 MB for the 1B model and 97 MB for the
+3B, so many fit beside one 2.5 GB or 6.4 GB base. Swapping a specialist is a pointer change; adding one is a new spec
 noun, not new infrastructure.
 
 Measured on the 1B: one base loaded with three adapter nouns attached by name (the
@@ -302,8 +302,8 @@ run the seed's baseline round.
 ## Reproduce and test
 
 The GPU backend needs a separate worker environment with CUDA torch, Transformers
-and PEFT (the versions used are recorded in every evaluation and adapter noun:
-torch 2.15.0+cu132, transformers 5.22.0, peft 0.21.2, accelerate 1.15.0). Run from a
+and PEFT (the runs used torch 2.15.0+cu132, transformers 5.22.0, peft 0.21.2 and
+accelerate 1.15.0; evaluation and adapter nouns record them from round 3 on). Run from a
 checkout with `PYTHONPATH=src:.`, one `tick` at a time; each writes a create-only tick
 log under `<root>/ticks/`. Then read the curve from the stored nouns:
 
@@ -317,8 +317,9 @@ Without a GPU, `--backend fixture` runs every verb, receipt, report and decision
 CPU with a deterministic stand-in model; its numbers describe plumbing only.
 `tests/test_continuous_tuning.py` runs in `make check` with no ML libraries: the served
 tool snapshot, held-out splits, contamination rejection, strict metrics, mining, the
-pinned rule, a full four-round fixture loop with execution reports and
-other-principal denial, and the seed pack.
+pinned rule, a fixture loop of five rounds, a no-op tick and an evaluation-only round
+with execution reports and other-principal denial, schema augmentation, and the seed
+pack.
 
 ## Measured results
 
@@ -395,10 +396,13 @@ commit.
 
 - A candidate continued from the champion was recorded with only that round's new
   batches, so the trigger before round 4 reported 135 rows not yet trained on when 72
-  were. The decision to run was still right (72 is over 32). Fixed in `9390050` for
-  later ticks; the 1B round-4 decision noun predates the fix.
+  were. The decision to run was still right (72 is over 32). Fixed in `9390050`,
+  which round 4's resumed decision already used.
 - Nouns from rounds 0 to 2 record only Python, platform and Tessera versions; library
-  versions, CUDA, the GPU and verified weights are recorded from round 3 on.
+  versions, CUDA, the GPU and verified weights are recorded from round 3 on. The 3B's
+  first search trial records `weights_verified: false` because the environment was
+  read before that process's first load. The weights were checked at that load, which
+  refuses a mismatch, and later nouns record `true`. Fixed for later ticks.
 - The base tokenizer's chat template appends an assistant header even after an
   assistant turn, so labels end at the first end-of-turn token rather than at the
   rendered end; a test covers this.
