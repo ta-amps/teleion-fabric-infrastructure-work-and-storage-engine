@@ -1261,15 +1261,37 @@ export class TesseraCoordinator extends DurableObject {
       initExecutions(this);
       return;
     }
+    await this.runReaper();
+  }
+
+  // One reaper run: lapse expired leases, wake expired parks, record the run and keep the
+  // alarm chain alive. The alarm, the admin reap verb and the Worker cron all use it.
+  async runReaper() {
     const now = Date.now() / 1000;
+    let reaped = 0;
     this.ctx.storage.transactionSync(() => {
-      this._reap(now);
+      reaped = this._reap(now);
       this.ctx.storage.sql.exec(
         "INSERT INTO meta (key, value) VALUES ('reaper_last_run', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
         String(now)
       );
     });
     await this._scheduleNextAlarm();
+    return { reaped, reaper_last_run: now };
+  }
+
+  // An alarm is only rescheduled by a successful run, and the platform stops retrying a
+  // handler that keeps failing (for example while the storage allowance is exhausted). Check
+  // once per object instance that a run is pending whenever leases or timed waits exist.
+  async _ensureAlarmPending() {
+    if (this.alarmChecked) return;
+    this.alarmChecked = true;
+    try {
+      if ((await this.ctx.storage.getAlarm()) == null) await this._scheduleNextAlarm();
+    } catch (e) {
+      if (!storageQuotaFailure(e)) throw e;
+      this.alarmChecked = false;
+    }
   }
 
   _hydrateGrant(raw) {
@@ -1662,6 +1684,7 @@ export class TesseraCoordinator extends DurableObject {
   }
 
   async publicHealthAndBoard(includeBoardMeta = false, namespace = "main") {
+    await this._ensureAlarmPending();
     const ns = normalizeNamespace(namespace);
     const now = Date.now() / 1000;
     this.namespace = ns;
@@ -1786,6 +1809,7 @@ export class TesseraCoordinator extends DurableObject {
   }
   async rpcCall(secret, action, args = {}) {
     let grant = null, out, permit;
+    await this._ensureAlarmPending();
     const ns = normalizeNamespace(args.namespace || "main");
     this.namespace = ns;
     this.isPrimary = ns === "main";
@@ -1922,15 +1946,7 @@ export class TesseraCoordinator extends DurableObject {
 
         case "reap": {
           if (!grant.is_admin) throw forbid("this needs a key with the admin scope");
-          let reaped = 0;
-          this.ctx.storage.transactionSync(() => {
-            reaped = this._reap(now);
-            this.ctx.storage.sql.exec(
-              "INSERT INTO meta (key, value) VALUES ('reaper_last_run', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
-              String(now)
-            );
-          });
-          await this._scheduleNextAlarm();
+          const { reaped } = await this.runReaper();
           return { ok: true, status: 200, data: { reaped } };
         }
 

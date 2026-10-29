@@ -1487,8 +1487,11 @@ const worker = {
   },
 
   async scheduled(event, env, ctx) {
-    if (String(env.FRAGILITY_PLANNER_ENABLED || "false") !== "true") return;
     const primary = env.COORDINATOR.get(env.COORDINATOR.idFromName("primary"));
+    // Lease reaping is infrastructure. Running it on the cron restarts an alarm chain lost
+    // during a storage outage and keeps reaper_last_run at most one cron interval old.
+    ctx.waitUntil(primary.runReaper());
+    if (String(env.FRAGILITY_PLANNER_ENABLED || "false") !== "true") return;
     ctx.waitUntil(primary.planMaintenance());
   },
 };
