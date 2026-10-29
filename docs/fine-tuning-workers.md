@@ -8,8 +8,10 @@ leases, CAS records and receipts. Nothing adds torch to the server, a second
 scheduler or an automatic model promotion path.
 
 The [worker execution policy](WORKER-FIRST-EXECUTION.md) is a required architecture
-checkpoint for changes here. A project organizes nouns and verbs using existing
-contracts. Independently schedulable training, evaluation and review are verbs;
+checkpoint for changes here. The architecture is nouns, verbs, surfaces and
+infrastructure: Tessera is infrastructure, Eranos and one overview site are the
+only public surfaces, and everything else is nouns and verbs in seed packs, using
+existing contracts. Independently schedulable training, evaluation and review are verbs;
 a deterministic tokenization helper stays a library function. Claiming private or
 management status does not authorize server inference.
 

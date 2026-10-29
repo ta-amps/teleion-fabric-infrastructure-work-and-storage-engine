@@ -6,13 +6,15 @@ claim it, read only permitted context, work under a lease and submit references 
 its results. Repository work is one use of this protocol; research, retrieval,
 compilation, testing, clarification and human decisions can use the same fabric.
 
-Tessera remains the queue and noun store. A Frontier seed/contract pack can supply
+Tessera is infrastructure: it remains the queue and noun store. Eranos and one
+overview site are the only public surfaces, and everything else is nouns and
+verbs in seed packs. A Frontier seed/contract pack can supply
 declarative gap briefs, templates and governed artifact references through the
 existing APIs. An importer creates noun and task records; authorized workers
 perform the verbs. The release catalog references governed Tessera artifacts, so
 the seed repository needs no separate runtime, library database or scheduler.
-Calling Kothar compilation or
-Eranos verification from a worker is an integration pattern unless the particular
+Calling the compiler from the seed pack for composing verified code, or
+Eranos verification, from a worker is an integration pattern unless the particular
 adapter is implemented and tested. Their existence alone does not wire every task
 through them.
 
@@ -130,7 +132,7 @@ For example, a worker can have only:
 Namespaces and surface scopes must come from credential issuance. Query filters,
 cohorts, category tags, a caller-supplied `X-Surface-Id`, and display labels do not
 grant those permissions. Python now matches the Worker: a label such as
-`surface:team_example` or `shamash-worker` cannot create a surface binding.
+`surface:team_example` cannot create a surface binding.
 Operators migrating older Python keys must explicitly reissue the intended scope;
 the service does not silently upgrade their grants.
 
