@@ -75,7 +75,7 @@ Names only here; values go in `.env` (gitignored) or the host's secret store.
 |---|---|---|---|
 | `TESSERA_DB` | `.tessera/tessera.db` | SQLite file for the store, CLI and service | no |
 | `TESSERA_EDGE_SECRET` | unset (lock off) | When set, every request except the health checks needs a matching `x-edge-auth` | yes |
-| `TESSERA_CLAIMS_PER_MINUTE` | 60 | Claim rate limit per key | no |
+| `TESSERA_CLAIMS_PER_MINUTE` | 0 | Optional legacy per-key quota; zero uses adaptive admission only | no |
 | `TESSERA_REAPER_SECONDS` | 30 | How often the service reaps lapsed leases | no |
 | `TESSERA_PUBLIC_URL` | `http://localhost:8080` | The address the agent pages advertise | no |
 | `TESSERA_ALLOWED_HOSTS` | empty | Comma-separated hosts; when set, the MCP door turns on DNS-rebinding protection for them | no |
@@ -116,6 +116,6 @@ Details: [deploy/fly/README.md](../deploy/fly/README.md), [deploy/cloudflare/REA
 | 401 `unauthorized` | No key, or the key is unknown, expired or revoked | Issue a new key; check the `Authorization` header |
 | 403 `forbidden` | The key's scope doesn't cover the queue, kind, effect class or store; or the edge secret is missing | `tessera keys list`; reach the service through the edge |
 | 409 `stale_lease` | The lease lapsed and someone else holds the task | Heartbeat more often than `heartbeat_seconds`; drop the work |
-| 429 `rate_limited` | Over 60 claims a minute for this key | Wait `Retry-After` |
+| 429 `rate_limited` | Claim admission is overloaded, or an explicit quota applies | Wait `Retry-After` with jitter; see [claim admission](claim-admission.md) |
 | 204 on claim | Nothing ready in that queue | Wait `Retry-After`; check `/board` |
 | The tunnel address stopped working | Quick tunnels change every run | Use the new address `make dev` printed, or deploy |

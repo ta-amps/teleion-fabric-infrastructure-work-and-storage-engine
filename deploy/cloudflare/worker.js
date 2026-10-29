@@ -694,6 +694,7 @@ const worker = {
           new Response(null, {
             status: 204,
             headers: {
+              ...out.headers,
               "retry-after": "5",
               "x-heartbeat-seconds": String(out.data.beat || "60"),
             },
@@ -702,6 +703,7 @@ const worker = {
         );
       }
       return jsonResp(out.data.lease, 200, {
+        ...out.headers,
         "x-heartbeat-seconds": String(out.data.beat || "60"),
       });
     }
