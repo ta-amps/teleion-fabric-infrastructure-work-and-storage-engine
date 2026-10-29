@@ -67,7 +67,7 @@ class AdaptiveClaims:
         arrived = self.clock()
         if self.active < self.limit and self.pending == 0:
             return self.start(arrived)
-        if self.pending >= self.max_pending:
+        if self.pending >= self.max_pending and not self.yield_slot_to(principal):
             raise self.pressure("pending queue full")
         loop = asyncio.get_running_loop()
         entry = Pending(arrived, loop.create_future())
@@ -95,6 +95,29 @@ class AdaptiveClaims:
                 self.release(entry.future.result())
             self.drain()
             raise
+
+    def yield_slot_to(self, principal: str) -> bool:
+        """Share a full waiting queue fairly (same rule as the Worker).
+
+        When a principal holding fewer than its share of the pending slots arrives, the
+        principal holding the most (and more than its share) gives up its newest waiter. One
+        principal may still use every slot while nobody else waits; the total never grows.
+        """
+        waiting = len(self.queues) + (0 if principal in self.queues else 1)
+        share = math.ceil(self.max_pending / waiting)
+        if len(self.queues.get(principal, ())) >= share:
+            return False
+        heaviest, most = None, 0
+        for other, queue in self.queues.items():
+            if other != principal and len(queue) > most:
+                heaviest, most = other, len(queue)
+        if heaviest is None or most <= share:
+            return False
+        entry = self.queues[heaviest][-1]
+        self.discard(heaviest, entry)
+        if not entry.future.done():
+            entry.future.set_exception(self.pressure("fair share of waiting slots"))
+        return True
 
     def discard(self, principal: str, entry: Pending) -> bool:
         queue = self.queues.get(principal)

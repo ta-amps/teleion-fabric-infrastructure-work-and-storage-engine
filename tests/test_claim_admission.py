@@ -179,3 +179,33 @@ def test_empty_claim_hints_match_the_worker_and_reset_on_work(tmp_path: Path) ->
         empty = client.post("/v1/tasks/claim", json=claim, headers=headers)
         assert (empty.status_code, empty.headers["retry-after"]) == (204, "5")
     store.close()
+
+
+def test_one_principal_cannot_hold_every_waiting_slot() -> None:
+    async def scenario() -> None:
+        gate = AdaptiveClaims(initial=1, maximum=1, max_pending=4, max_wait=5.0, target=0.5)
+
+        async def outcome(principal: str) -> str:
+            try:
+                gate.release(await gate.acquire(principal))
+            except RateLimited as exc:
+                return exc.detail
+            return "granted"
+
+        held = await gate.acquire("holder")
+        noisy = [asyncio.create_task(outcome("noisy")) for _ in range(4)]
+        await asyncio.sleep(0)
+        assert gate.pending == 4
+        # Alone, a principal may still use every slot; the total never grows.
+        assert "pending queue full" in await outcome("noisy")
+        quiet = asyncio.create_task(outcome("quiet"))
+        await asyncio.sleep(0)
+        assert gate.pending == 4
+        gate.release(held)
+        assert await quiet == "granted"
+        results = await asyncio.gather(*noisy)
+        assert sum(r == "granted" for r in results) == 3
+        assert sum("fair share" in r for r in results) == 1
+        assert gate.pending == 0 and gate.active == 0
+
+    asyncio.run(scenario())

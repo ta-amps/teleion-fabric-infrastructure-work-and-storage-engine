@@ -78,3 +78,22 @@ test("empty-claim hints double while a key finds the queue empty and reset on wo
   assert.equal(idle.empty("main", "q", "k1"), 5);
   assert.equal(idle.empty("main", "q", "k2"), 5);
 });
+
+test("one principal cannot hold every waiting slot while another principal waits", async () => {
+  const gate = new ClaimAdmission({ initial: 1, maximum: 1, maxPending: 4, maxWaitMs: 5000, targetMs: 500 });
+  const held = await gate.acquire("holder");
+  const outcome = promise => promise.then(permit => (permit.release(), "granted"), error => error instanceof ClaimPressure ? error.message : "error");
+  const noisy = Array.from({ length: 4 }, () => outcome(gate.acquire("noisy")));
+  assert.equal(gate.pending, 4);
+  // Alone, a principal may still use every slot; the total never grows.
+  assert.match(await outcome(gate.acquire("noisy")), /pending queue full/);
+  const quiet = outcome(gate.acquire("quiet"));
+  assert.equal(gate.pending, 4);
+  held.release();
+  assert.equal(await quiet, "granted");
+  const results = await Promise.all(noisy);
+  assert.equal(results.filter(r => r === "granted").length, 3);
+  assert.equal(results.filter(r => /fair share/.test(r)).length, 1);
+  assert.equal(gate.pending, 0);
+  assert.equal(gate.active, 0);
+});
