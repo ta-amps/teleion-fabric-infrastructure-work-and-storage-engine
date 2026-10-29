@@ -476,6 +476,7 @@ def mount_work_forms(
                 queue, worker = str(form.get("queue", "")), str(form.get("worker", ""))
                 gate.queue(grant, queue)
                 async with limiter.admit(grant.key_id, grant.is_admin):
+                    await run_in_threadpool(gate.recheck, grant)
                     lease = await run_in_threadpool(
                         store.claim,
                         queue,

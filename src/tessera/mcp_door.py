@@ -137,6 +137,7 @@ def build_mcp(
             return {"lease": None}
         try:
             async with limiter.admit(grant.key_id, grant.is_admin):
+                await run(lambda: gate.recheck(grant), grant)
                 lease = await run(
                     lambda: store.claim(
                         queue,

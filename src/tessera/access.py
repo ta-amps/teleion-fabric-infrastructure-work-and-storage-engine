@@ -119,6 +119,15 @@ class Gate:
             raise Unauthorized("the key is unknown, expired or revoked")
         return grant
 
+    def recheck(self, grant: KeyGrant) -> None:
+        """Admission may wait; a revoked or expired grant must not acquire new work."""
+        try:
+            current = self.store.get_key(grant.key_id)
+        except NotFound:
+            raise Unauthorized("the key is unknown, expired or revoked") from None
+        if current.revoked_at is not None or current.expires_at <= self.store.clock.now():
+            raise Unauthorized("the key is unknown, expired or revoked")
+
     @staticmethod
     def admin(grant: KeyGrant) -> None:
         if not grant.is_admin:

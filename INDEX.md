@@ -104,7 +104,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [deploy/fly/README.md](deploy/fly/README.md) | Fly.io: the Tessera service |
 | [deploy/fly/fly.toml](deploy/fly/fly.toml) | Tessera service on one Fly.io machine with a volume (brief L20), reached through the Cloudflare edge |
 
-## docs/ (24)
+## docs/ (25)
 
 | File | What it is |
 |---|---|
@@ -126,6 +126,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [docs/making-of.md](docs/making-of.md) | The making-of |
 | [docs/opencode-and-ollama.md](docs/opencode-and-ollama.md) | Bilateral swarm testing with OpenCode & Ollama Cloud (muse-spark-open) |
 | [docs/operations.md](docs/operations.md) | Operations |
+| [docs/opportunity-lab.md](docs/opportunity-lab.md) | Opportunity Lab |
 | [docs/research-seeds.md](docs/research-seeds.md) | Research seeds and proposed recurring work |
 | [docs/review.md](docs/review.md) | Tessera: review guide |
 | [docs/setup.md](docs/setup.md) | Tessera: setup |
@@ -133,7 +134,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [docs/work-design-and-evidence.md](docs/work-design-and-evidence.md) | Nouns, verbs and evidence |
 | [docs/work-routing.md](docs/work-routing.md) | Route agent work through nouns and verbs |
 
-## examples/ (4)
+## examples/ (5)
 
 | File | What it is |
 |---|---|
@@ -141,6 +142,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [examples/research/discover.json](examples/research/discover.json) | JSON object: version, namespace, queue, output_store, stage, profile |
 | [examples/research/scan.json](examples/research/scan.json) | JSON object: version, namespace, queue, output_store, stage, profile |
 | [examples/research/schedule.json](examples/research/schedule.json) | JSON object: version, namespace, queue, output_store, stage, profile |
+| [examples/showcase/opportunity-lab.json](examples/showcase/opportunity-lab.json) | Opportunity Lab |
 
 ## harness/ (3)
 
@@ -218,7 +220,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [src/tessera/store.py](src/tessera/store.py) | The in-process Tessera store: the reference implementation of SPEC.md. |
 | [src/tessera/testing.py](src/tessera/testing.py) | Factories the conformance suite loads by name (TESSERABACKENDFACTORY="module:function"). |
 
-## tests/ (41)
+## tests/ (42)
 
 | File | What it is |
 |---|---|
@@ -259,12 +261,13 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [tests/test_phase4_atomicity_and_vectors.py](tests/test_phase4_atomicity_and_vectors.py) | Phase 4 atomicity, migration, T22 gates, L26 receipt vectors, and Edge parity tests. |
 | [tests/test_research_seed.py](tests/test_research_seed.py) | Bounded authoring, pinned inputs and a real local task loop; no provider calls. |
 | [tests/test_service.py](tests/test_service.py) | The HTTP service: keys, scopes, POST-only writes, holders, rate limits, the edge lock, the agent door, the we… |
+| [tests/test_showcase_seed.py](tests/test_showcase_seed.py) | Creative seeds remain bounded and idempotent through actual Store operations. |
 | [tests/test_spec_events.py](tests/test_spec_events.py) | SPEC §5.5 lists every event type, and the code emits only listed types: a new event can't ship without a line… |
 | [tests/test_tools.py](tests/test_tools.py) | The Muse worker keeps its safety flags whatever the brief says, and briefs load in dependency order. |
 | [tests/test_work_routing.py](tests/test_work_routing.py) | Explicit grants, team-private routing and owner-only negative controls. |
 | [tests/workerd_execution_history.mjs](tests/workerd_execution_history.mjs) | Actual Worker handlers and ephemeral SQLite Durable Objects; no provider or cloud access. |
 
-## tools/ (9)
+## tools/ (10)
 
 | File | What it is |
 |---|---|
@@ -275,5 +278,6 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [tools/opencode_bilateral.py](tools/opencode_bilateral.py) | Bilateral multi-agent test harness for Tessera over MCP (/mcp) + HTTP (/v1/), pairing OpenCode (opencode v2.x… |
 | [tools/research_seed.py](tools/research_seed.py) | Prepare one bounded research seed verb; preview is the default. |
 | [tools/seed.py](tools/seed.py) | Seed a Tessera database for Muse agents: the standard queues, one key per agent, and first tasks. |
+| [tools/showcase_seed.py](tools/showcase_seed.py) | Author bounded creative seed nouns and verbs. |
 | [tools/swarm_expander.py](tools/swarm_expander.py) | Run a Muse / Meta Model API swarm worker that seeds, expands, processes, and promotes atomic nouns and verbs… |
 | [tools/team_private_work.py](tools/team_private_work.py) | Local executable work-routing example, using HTTP handlers and temporary state. |

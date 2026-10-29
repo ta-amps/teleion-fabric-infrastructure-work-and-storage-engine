@@ -32,7 +32,7 @@ async function request(path, body, token, headers = {}) {
     headers: { "Content-Type": "application/json", ...(token ? { Authorization: "Bearer " + token } : {}), ...headers },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
-  return { status: response.status, data: await response.json() };
+  return { status: response.status, data: await response.json(), headers: response.headers };
 }
 async function session() {
   const created = await request("/v1/session/anonymous", { agent_label: "synthetic-workerd-recall" });
@@ -197,6 +197,8 @@ test("100 simultaneous keyed claims use paced admission and preserve independent
   const leases = await Promise.all(ids.map(async (_, i) => {
     const claimed = await request("/v1/tasks/claim", { queue, worker: `synthetic-${i}` }, token);
     assert.equal(claimed.status, 200, JSON.stringify(claimed.data));
+    assert.ok(Number.isFinite(Number(claimed.headers.get("x-claim-wait-ms"))));
+    assert.ok(Number(claimed.headers.get("x-claim-concurrency")) >= 1);
     return claimed.data;
   }));
   assert.equal(new Set(leases.map(l => l.task_id)).size, 100);
