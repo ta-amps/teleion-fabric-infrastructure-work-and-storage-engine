@@ -116,6 +116,7 @@ def decide_promotion(ctx: Context, brief: dict[str, Any], deps: dict, beat: Beat
         "evals", "decision", value, tags(brief, f"outcome:{verdict['outcome']}")
     )
     promoted = verdict["outcome"] == "promote_candidate"
+    lineage = training_lineage(state, training_set, adapter)
     new_state = {
         **state,
         "round": brief["round"],
@@ -124,7 +125,7 @@ def decide_promotion(ctx: Context, brief: dict[str, Any], deps: dict, beat: Beat
         "decisions": [*state["decisions"], decision],
         "fresh_holdouts": [*state["fresh_holdouts"], holdout["fresh"]],
         "tuned": state.get("tuned") or selected.get("tuned"),
-        "last_candidate_training_batches": training_set["sources"],
+        "last_candidate_training_batches": lineage,
     }
     if promoted:
         new_state.update(
@@ -134,13 +135,21 @@ def decide_promotion(ctx: Context, brief: dict[str, Any], deps: dict, beat: Beat
                 "label": selected["label"],
             },
             champion_evals={k: holdout["evaluations"]["candidate"][k] for k in ("test", "sanity")},
-            champion_training_batches=[
-                s for s in training_set["sources"] if not s.startswith("replay:")
-            ],
+            champion_training_batches=lineage,
         )
     ref = ctx.fabric.set_pointer(learner, new_state, version)
     what = "Promoted the candidate" if promoted else "Kept the champion"
     return _decision_result(value, decision, ref, f"{what} under the pre-registered rule")
+
+
+def training_lineage(
+    state: dict[str, Any], training_set: dict[str, Any], adapter: dict[str, Any]
+) -> list[str]:
+    """Accepted batches behind an adapter; one continued from the champion inherits its lineage."""
+    own = {source for source in training_set["sources"] if not source.startswith("replay:")}
+    if adapter.get("init_adapter"):
+        own |= set(state.get("champion_training_batches", []))
+    return sorted(own)
 
 
 def _loaded(ctx: Context, evals: dict[str, dict[str, Any]]) -> dict[str, Any]:

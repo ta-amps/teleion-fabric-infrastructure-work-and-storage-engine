@@ -288,6 +288,24 @@ def test_decisions_pin_the_rule_and_training_sets_stay_clean(loop_run: dict) -> 
             item["outcome"] == "promote_candidate"
         )
         assert item["integrity"] and all(item["integrity"].values())
+    from examples.continuous_tuning.fabric import Fabric
+
+    fabric = Fabric(loop_run["root"])
+    try:
+        with fabric.scope():
+            history = fabric.store.record_history("tuning.models", f"champion.{curve['learner']}")
+            initial = [
+                ref["key"]
+                for ref, v in fabric.list("data", "accepted_batch.")
+                if v["origin"] == "initial"
+            ]
+    finally:
+        fabric.close()
+    for version in history:
+        state = version.value
+        if state["champion"]["kind"] == "adapter":
+            # Every strategy trains on the initial rows or continues from a champion that did.
+            assert set(initial) <= set(state["champion_training_batches"]), version.version
 
 
 def test_pack_is_deterministic_offline_and_valid_against_tessera(
@@ -461,3 +479,17 @@ def test_augmented_rows_rename_schemas_and_never_teach_served_names() -> None:
     dev = generate("dev", 80, "dev-a", "frozen_holdout", TOOLS)
     test = generate("test", 150, "test-a", "frozen_holdout", TOOLS)
     assert not any(contamination(rows, dev + test).values())
+
+
+def test_a_continued_champion_inherits_its_parents_training_lineage() -> None:
+    from examples.continuous_tuning.decide import training_lineage
+
+    state = {"champion_training_batches": ["accepted_batch.initial.a", "accepted_batch.mined.b"]}
+    new = {"sources": ["accepted_batch.stream.c", "replay:32"]}
+    continued = training_lineage(state, new, {"init_adapter": {"key": "adapter.x"}})
+    assert continued == [
+        "accepted_batch.initial.a",
+        "accepted_batch.mined.b",
+        "accepted_batch.stream.c",
+    ]
+    assert training_lineage(state, new, {"init_adapter": None}) == ["accepted_batch.stream.c"]
