@@ -26,7 +26,11 @@ from tessera import pages
 from tessera._access_boundary import access_dispatch
 from tessera._access_contract import connect_html
 from tessera._access_routes import mount_access_routes
-from tessera._service_buckets import mount_storage_and_admin_routes, parse_governance_header
+from tessera._service_buckets import (
+    check_claimed_content,
+    mount_storage_and_admin_routes,
+    parse_governance_header,
+)
 from tessera._service_executions import mount_execution_routes
 from tessera._service_intelligence import mount_intelligence_routes, slice_bytes_response
 from tessera._version import __version__
@@ -405,7 +409,9 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
         # A dependent's lease carries its dependencies' outputs, so the key must cover their queues.
         for dep in spec.depends_on:
             gate.queue(grant, store.task(dep).queue)
-        return {"task_id": store.enqueue(spec)}
+        task_id = store.enqueue(spec)
+        limiter.idle.work(store.current_scope().namespace, spec.queue)
+        return {"task_id": task_id}
 
     @app.get("/v1/tasks/{task_id}")
     def task(task_id: str, grant: KeyGrant = key) -> dict[str, Any]:
@@ -448,11 +454,18 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
             "x-claim-wait-ms": str(round(permit.wait_seconds * 1000)),
             "x-claim-concurrency": str(limiter.admission.limit),
         }
+        namespace = store.current_scope().namespace
         if lease is None:
+            retry = limiter.idle.empty(namespace, body.queue, grant.key_id)
             return Response(
                 status_code=204,
-                headers={"retry-after": "5", "x-heartbeat-seconds": beat, **admission_headers},
+                headers={
+                    "retry-after": str(retry),
+                    "x-heartbeat-seconds": beat,
+                    **admission_headers,
+                },
             )
+        limiter.idle.granted(namespace, body.queue, grant.key_id)
         return JSONResponse(
             lease.model_dump(mode="json"),
             headers={"x-heartbeat-seconds": beat, **admission_headers},
@@ -605,6 +618,7 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
         gate.store_scope(grant)
         gov = parse_governance_header(request)
         data = await request.body()
+        check_claimed_content(request, data)
         digest = await run_in_threadpool(lambda: store.put_blob(data, **gov))
         return {"sha256": digest, "size": len(data)}
 

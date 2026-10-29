@@ -94,6 +94,18 @@ class Unavailable(TesseraError):
         self.retry_after = retry_after
 
 
+class StorageQuotaExhausted(Unavailable):
+    """The hosting provider's storage allowance is spent; retry after `reset_at` (UTC)."""
+
+    code = "storage_quota_exhausted"
+
+    def __init__(
+        self, detail: str = "", retry_after: float = 5.0, reset_at: str | None = None
+    ) -> None:
+        super().__init__(detail, retry_after=retry_after)
+        self.reset_at = reset_at
+
+
 BY_CODE: dict[str, type[TesseraError]] = {
     cls.code: cls
     for cls in (
@@ -110,5 +122,6 @@ BY_CODE: dict[str, type[TesseraError]] = {
         InvalidState,
         RateLimited,
         Unavailable,
+        StorageQuotaExhausted,
     )
 }

@@ -3,6 +3,8 @@ Layer 1 surface ownership & quarantine lens, and Layer 2 combinable query filter
 
 from __future__ import annotations
 
+import hashlib
+import json
 from pathlib import Path
 from typing import Any
 
@@ -434,3 +436,34 @@ def test_visibility_quarantine_and_layer2_combinable_filters(tmp_path: Path) -> 
             headers=_auth(herma_key),
         ).json()["scents"]
         assert [c["key"] for c in explicit_cohort] == ["restricted-1"]
+
+
+def test_claimed_content_identity_must_match_uploaded_bytes(tmp_path: Path) -> None:
+    """A governance header may assert sha256/size as an integrity check, never set them."""
+    db_path = tmp_path / "identity.db"
+    store = Store(db_path)
+    admin_key, _ = store.issue_key("admin", queues=["*"], scopes=["admin", "store"])
+    app = create_app(store, ServiceSettings(db_path=str(db_path), reaper_seconds=3600))
+    secret, dummy = b"SYNTHETIC private bytes", b"synthetic other bytes"
+    secret_sha = hashlib.sha256(secret).hexdigest()
+    dummy_sha = hashlib.sha256(dummy).hexdigest()
+
+    def gov(value: dict[str, Any]) -> dict[str, str]:
+        return {**_auth(admin_key), "x-tessera-governance": json.dumps(value)}
+
+    with TestClient(app) as client:
+        assert client.post("/v1/blobs", content=secret, headers=gov({})).status_code == 201
+        for path in ("/v1/blobs", "/v1/buckets/nouns/objects/mine.txt"):
+            if path.startswith("/v1/buckets"):
+                client.post("/v1/buckets/define", headers=_auth(admin_key), json={"name": "nouns"})
+            for claim in ({"sha256": secret_sha}, {"size": len(dummy) + 1}, {"size": "21"}):
+                spoof = client.post(path, content=dummy, headers=gov(claim))
+                assert spoof.status_code == 400, (path, claim, spoof.text)
+                assert spoof.json()["code"] == "invalid_request"
+            honest = client.post(
+                path, content=dummy, headers=gov({"sha256": dummy_sha.upper(), "size": len(dummy)})
+            )
+            assert honest.status_code == 201, honest.text
+            assert honest.json()["sha256"] == dummy_sha
+        obj = client.get("/v1/buckets/nouns/objects/mine.txt", headers=_auth(admin_key))
+        assert obj.status_code == 200 and obj.content == dummy

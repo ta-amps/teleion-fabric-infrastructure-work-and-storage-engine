@@ -1,6 +1,7 @@
 import { agentStartAsset, withAgentStart } from "./agent_start.js";
 import { storageQuotaFailure } from "./storage_quota.js";
-import { accessRoute, accessDescription, ACCESS_TOOLS } from "./cloud_access_routes.js";
+import { namespaceAllowed, publicPrincipal } from "./cloud_access.js";
+import { accessDiscoveryRoute, accessRoute, accessDescription, ACCESS_TOOLS } from "./cloud_access_routes.js";
 import { TOOLS as FABRIC_TOOLS } from "./cloud_mcp.js";
 // Tessera Cloud Worker: 24/7 native cloud execution on Cloudflare Durable Object SQLite + D1
 // (`STORAGE_MODE = "cloud"`, the default) with optional Fly.io origin reverse-proxy fallback
@@ -9,9 +10,9 @@ import { TOOLS as FABRIC_TOOLS } from "./cloud_mcp.js";
 // and the agent door (`/connect`, `/llms.txt`, `/llms-full.txt`, `/favicon.svg`,
 // `/.well-known/agent-card.json`, `/robots.txt`, `/board`, `/work`).
 
-import { loadCloudBlob, mirrorBucketObjectToD1, storeCloudBlob, validateWireNumbers } from "./cloud_buckets.js";
+import { loadCloudBlob, mirrorBucketObjectToD1, sha256Hex, storeCloudBlob, validateWireNumbers } from "./cloud_buckets.js";
 import { normalizeNamespace, sliceBytesResponse, tagMatchesCategory } from "./cloud_intelligence.js";
-import { handleMcpRequest } from "./cloud_mcp.js";
+import { govFields, handleMcpRequest } from "./cloud_mcp.js";
 import {
   ROBOTS_TXT,
   renderAgentCard,
@@ -254,8 +255,12 @@ function parseLayer2Params(searchParams) {
   };
 }
 
+// Only governance fields come from the upload header (the same list MCP accepts).
+// Content identity is computed from the received bytes; a claimed sha256 or size is
+// an integrity assertion that must match exactly, never a value the server stores.
 function parseHeaderGovernance(request, searchParams) {
   let gov = {};
+  const claimed = {};
   const rawGov = request.headers.get("x-tessera-governance");
   if (rawGov) {
     try {
@@ -263,7 +268,8 @@ function parseHeaderGovernance(request, searchParams) {
       if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
         return { error: problem(400, "invalid_request", "x-tessera-governance must be a JSON object") };
       }
-      gov = { ...parsed };
+      gov = govFields(parsed);
+      for (const field of ["sha256", "size"]) if (parsed[field] != null) claimed[field] = parsed[field];
     } catch {
       return { error: problem(400, "invalid_request", "x-tessera-governance is not valid JSON") };
     }
@@ -282,7 +288,17 @@ function parseHeaderGovernance(request, searchParams) {
       ? [...gov.target_cohorts, ...qCohorts]
       : qCohorts;
   }
-  return { gov };
+  return { gov, claimed };
+}
+
+async function contentIdentityMismatch(claimed, bytes) {
+  if (claimed.size != null && (!Number.isSafeInteger(claimed.size) || claimed.size !== bytes.byteLength)) {
+    return problem(400, "invalid_request", "the claimed size does not match the uploaded bytes");
+  }
+  if (claimed.sha256 != null && (typeof claimed.sha256 !== "string" || claimed.sha256.toLowerCase() !== await sha256Hex(bytes))) {
+    return problem(400, "invalid_request", "the claimed sha256 does not match the uploaded bytes");
+  }
+  return null;
 }
 
 async function proxyToOrigin(request, env) {
@@ -352,6 +368,77 @@ function resolveNamespace(url, request) {
   return { namespace, path, isPrimary: namespace === "main" };
 }
 
+// Storage-free discovery: pages, agent instructions, contracts and the agent card. These
+// responses depend only on configuration, never on a principal or a Durable Object.
+function discoveryResponse(path, method, env, publicUrl, repoUrl) {
+  if (method !== "GET" && method !== "HEAD") return null;
+  const anonymousEnabled = env.ANONYMOUS_ACCESS_ENABLED === "true";
+  const access = accessDiscoveryRoute(path, method, publicUrl, anonymousEnabled, jsonResp, htmlResp);
+  if (access) return access;
+  const toolCount = `${FABRIC_TOOLS.length + ACCESS_TOOLS.length} tools`;
+  if (path === "/" || path === "/connect") {
+    return htmlResp(renderConnectHtml(publicUrl, repoUrl));
+  }
+  if (path === "/favicon.svg") {
+    return withSecurity(
+      new Response(renderFaviconSvg(), {
+        status: 200,
+        headers: {
+          "content-type": "image/svg+xml; charset=utf-8",
+          "cache-control": "public, max-age=86400",
+        },
+      }),
+      { noStore: false }
+    );
+  }
+  if (path === "/llms.txt") {
+    return withSecurity(
+      new Response(renderLlmsTxt(publicUrl, repoUrl).replace(/\b26 tools\b/g, toolCount) + "\n\nExternal harnesses and personal assistants: POST /v1/session/anonymous without secrets, then use Authorization: Bearer <session_token> for demo nouns and verbs. See /connect.json. tools/list is public; tool counts and schemas are authoritative there. Keyed production work remains protected.\n", {
+        status: 200,
+        headers: { "content-type": "text/plain; charset=utf-8" },
+      }),
+      { noStore: false }
+    );
+  }
+  if (path === "/llms-full.txt") {
+    return withSecurity(
+      new Response(renderLlmsFullTxt(publicUrl, repoUrl).replace(/\b26 tools\b/g, toolCount) + "\n\n" + JSON.stringify(accessDescription(publicUrl, anonymousEnabled), null, 2), {
+        status: 200,
+        headers: { "content-type": "text/plain; charset=utf-8" },
+      }),
+      { noStore: false }
+    );
+  }
+  if (path === "/.well-known/agent-card.json") {
+    return jsonResp({ ...renderAgentCard(publicUrl, repoUrl), tools: [...FABRIC_TOOLS, ...ACCESS_TOOLS], skills: [...FABRIC_TOOLS, ...ACCESS_TOOLS].map(t => ({ id: t.name, name: t.name, description: t.description })), tool_count: FABRIC_TOOLS.length + ACCESS_TOOLS.length, authentication: { discovery: "none", demo: "tan_ bearer session", keyed: "tsk_ bearer key" }, capabilities: { streaming: "long-poll", tools: true }, access: accessDescription(publicUrl, anonymousEnabled) });
+  }
+  if (path === "/robots.txt") {
+    return withSecurity(
+      new Response(ROBOTS_TXT, {
+        status: 200,
+        headers: { "content-type": "text/plain; charset=utf-8" },
+      }),
+      { noStore: false }
+    );
+  }
+  return null;
+}
+
+// MCP discovery (initialize, ping, tools/list, notifications and explain_access_modes) is
+// answered without storage. A body that is not JSON gets its parse error the same way.
+const STORAGELESS_MCP_METHODS = new Set(["initialize", "ping", "tools/list"]);
+async function mcpNeedsNoStorage(request) {
+  let payload;
+  try {
+    payload = await request.clone().json();
+  } catch {
+    return true;
+  }
+  const messages = Array.isArray(payload) ? payload : [payload];
+  return messages.every((m) => m && typeof m === "object" && (m.id === undefined || STORAGELESS_MCP_METHODS.has(m.method) || (m.method === "tools/call" && m.params?.name === "explain_access_modes")));
+}
+const STORAGELESS_STUB = new Proxy({}, { get: (_target, name) => () => { throw new Error(`storage-free MCP discovery must not call ${String(name)}`); } });
+
 const worker = {
   async fetch(request, env, ctx) {
     if ((env.STORAGE_MODE || "cloud") === "origin") {
@@ -362,9 +449,29 @@ const worker = {
     const nsResolved = resolveNamespace(url, request);
     if (nsResolved.error) return nsResolved.error;
     let { namespace, path, isPrimary } = nsResolved;
+    const method = request.method.toUpperCase();
+    const publicUrl =
+      (env.PUBLIC_URL || `${url.protocol}//${url.host}`).replace(/\/+$/, "") || DEFAULT_PUBLIC_URL;
+    const repoUrl = env.REPO_URL || DEFAULT_REPO_URL;
+    // Discovery needs no storage. Answer it before any Durable Object call, so pages, agent
+    // instructions and MCP tool discovery stay up while the storage allowance is exhausted.
+    const discovery = discoveryResponse(path, method, env, publicUrl, repoUrl);
+    if (discovery) return discovery;
+    if (path === "/mcp" && method === "POST" && (await mcpNeedsNoStorage(request))) {
+      return withSecurity(await handleMcpRequest(request, env, ctx, STORAGELESS_STUB, "", true, namespace), { isWrite: true });
+    }
     const coordBinding = env.COORDINATOR || env.TESSERA_COORDINATOR;
     const primary = coordBinding.get(coordBinding.idFromName("primary"));
     const requestBearer = extractBearer(request);
+    // Unauthenticated public reads of the main namespace need no identity or key lookup.
+    if (!requestBearer && namespace === "main" && (method === "GET" || method === "HEAD")) {
+      if (["/v1/health", "/api/health", "/healthz"].includes(path)) return jsonResp(await primary.publicHealthAndBoard(false, "main"));
+      if (path === "/board") {
+        const info = await primary.publicHealthAndBoard(true, "main");
+        return htmlResp(renderBoardHtml(info.health, info.snapshot, repoUrl));
+      }
+      if (path === "/v1/public/activity" && method === "GET") return jsonResp(await primary.publicActivity());
+    }
     const principal = requestBearer ? await primary.resolveKeyGrant(requestBearer) : null;
     const explicitNamespace = url.pathname.startsWith("/ns/") || request.headers.has("x-namespace") || request.headers.has("x-tessera-namespace");
     if (principal?.principal_kind === "anonymous" && !explicitNamespace) namespace = principal.namespace;
@@ -372,18 +479,33 @@ const worker = {
     const rawStub = coordBinding.get(coordBinding.idFromName(isPrimary ? "primary" : `ns:${namespace}`));
     const identity = await primary.requestIdentity(request.headers.get("cf-connecting-ip"), request.headers.get("user-agent"));
     const meta = { ...identity, request_id: request.headers.get("x-request-id") || crypto.randomUUID(), route: path, bytes_in: Number(request.headers.get("content-length") || 0) };
+    // Authentication and namespace authorization happen here, before any namespace object is
+    // touched: a caller without a valid key, or without a grant for the namespace it named,
+    // neither writes a row nor creates a coordinator object for that name. The coordinator
+    // still re-checks the full grant on every call.
+    const principals = new Map([[requestBearer, principal]]);
+    const principalFor = async (secret) => {
+      if (!principals.has(secret)) principals.set(secret, secret ? await primary.resolveKeyGrant(secret) : null);
+      return principals.get(secret);
+    };
     const stub = {
-      rpcCall: (secret, action, args = {}) => rawStub.rpcCall(secret, action, { ...args, access_meta: meta }),
+      rpcCall: async (secret, action, args = {}, accessFlags = {}) => {
+        const grant = await principalFor(secret);
+        if (!grant) return { ok: false, status: 401, code: "unauthorized", detail: secret ? "the key is unknown, expired or revoked" : "a bearer key is required", extra: {} };
+        const target = normalizeNamespace(args.namespace || "main");
+        if (!namespaceAllowed(grant, target)) {
+          const denied = { ok: false, status: 403, code: "scope_denied", detail: "this principal may not access this namespace", extra: {} };
+          ctx.waitUntil(primary.countAccessEvent(publicPrincipal(grant), action, { namespace: target }, denied, meta));
+          return denied;
+        }
+        return rawStub.rpcCall(secret, action, { ...args, access_meta: { ...meta, ...accessFlags } });
+      },
       publicHealthAndBoard: (...args) => rawStub.publicHealthAndBoard(...args),
       bootstrapOrIssueKey: (secret, bootstrap, body) => primary.bootstrapOrIssueKey(secret, bootstrap, { ...body, access_meta: meta }),
       openAnonymousSession: body => primary.openAnonymousSession(body, meta),
       auditForToken: (secret, args) => primary.auditForToken(secret, args),
     };
-    const method = request.method.toUpperCase();
-    const publicUrl =
-      (env.PUBLIC_URL || `${url.protocol}//${url.host}`).replace(/\/+$/, "") || DEFAULT_PUBLIC_URL;
-    const repoUrl = env.REPO_URL || DEFAULT_REPO_URL;
-    const bearer = extractBearer(request);
+    const bearer = requestBearer;
     const surfaceHeader = (request.headers.get("x-surface-id") || "").trim();
     const baseRpc = { namespace, isPrimary, surfaceHeader };
     if (namespace !== "main" && ["/board", "/healthz", "/v1/health", "/api/health"].includes(path)) {
@@ -424,51 +546,6 @@ const worker = {
     ) {
       const health = await stub.publicHealthAndBoard(false, namespace);
       return jsonResp(health);
-    }
-    if ((path === "/" || path === "/connect") && (method === "GET" || method === "HEAD")) {
-      return htmlResp(renderConnectHtml(publicUrl, repoUrl));
-    }
-    if (path === "/favicon.svg" && (method === "GET" || method === "HEAD")) {
-      return withSecurity(
-        new Response(renderFaviconSvg(), {
-          status: 200,
-          headers: {
-            "content-type": "image/svg+xml; charset=utf-8",
-            "cache-control": "public, max-age=86400",
-          },
-        }),
-        { noStore: false }
-      );
-    }
-    if (path === "/llms.txt" && (method === "GET" || method === "HEAD")) {
-      return withSecurity(
-        new Response(renderLlmsTxt(publicUrl, repoUrl).replace(/\b26 tools\b/g, `${FABRIC_TOOLS.length + ACCESS_TOOLS.length} tools`) + "\n\nExternal harnesses and personal assistants: POST /v1/session/anonymous without secrets, then use Authorization: Bearer <session_token> for demo nouns and verbs. See /connect.json. tools/list is public; tool counts and schemas are authoritative there. Keyed production work remains protected.\n", {
-          status: 200,
-          headers: { "content-type": "text/plain; charset=utf-8" },
-        }),
-        { noStore: false }
-      );
-    }
-    if (path === "/llms-full.txt" && (method === "GET" || method === "HEAD")) {
-      return withSecurity(
-        new Response(renderLlmsFullTxt(publicUrl, repoUrl).replace(/\b26 tools\b/g, `${FABRIC_TOOLS.length + ACCESS_TOOLS.length} tools`) + "\n\n" + JSON.stringify(accessDescription(publicUrl, env.ANONYMOUS_ACCESS_ENABLED === "true"), null, 2), {
-          status: 200,
-          headers: { "content-type": "text/plain; charset=utf-8" },
-        }),
-        { noStore: false }
-      );
-    }
-    if (path === "/.well-known/agent-card.json" && (method === "GET" || method === "HEAD")) {
-      return jsonResp({ ...renderAgentCard(publicUrl, repoUrl), tools: [...FABRIC_TOOLS, ...ACCESS_TOOLS], skills: [...FABRIC_TOOLS, ...ACCESS_TOOLS].map(t => ({ id: t.name, name: t.name, description: t.description })), tool_count: FABRIC_TOOLS.length + ACCESS_TOOLS.length, authentication: { discovery: "none", demo: "tan_ bearer session", keyed: "tsk_ bearer key" }, capabilities: { streaming: "long-poll", tools: true }, access: accessDescription(publicUrl, env.ANONYMOUS_ACCESS_ENABLED === "true") });
-    }
-    if (path === "/robots.txt" && (method === "GET" || method === "HEAD")) {
-      return withSecurity(
-        new Response(ROBOTS_TXT, {
-          status: 200,
-          headers: { "content-type": "text/plain; charset=utf-8" },
-        }),
-        { noStore: false }
-      );
     }
     if (path === "/board" && (method === "GET" || method === "HEAD")) {
       const info = await stub.publicHealthAndBoard(true, namespace);
@@ -697,7 +774,7 @@ const worker = {
             status: 204,
             headers: {
               ...out.headers,
-              "retry-after": "5",
+              "retry-after": String(out.data.retry_after ?? 5),
               "x-heartbeat-seconds": String(out.data.beat || "60"),
             },
           }),
@@ -879,19 +956,22 @@ const worker = {
     if (path === "/v1/blobs" && method === "POST") {
       const authCheck = await stub.rpcCall(bearer, "verifyStoreScope", { ...baseRpc });
       if (!authCheck.ok) return rpcResponse(authCheck);
-      const { gov, error: govErr } = parseHeaderGovernance(request, url.searchParams);
+      const { gov, claimed, error: govErr } = parseHeaderGovernance(request, url.searchParams);
       if (govErr) return govErr;
-      const permit = await stub.rpcCall(bearer, "authorizeBlobWrite", { ...baseRpc, ...gov });
-      if (!permit.ok) return rpcResponse(permit);
       const raw = new Uint8Array(await request.arrayBuffer());
+      const mismatch = await contentIdentityMismatch(claimed, raw);
+      if (mismatch) return mismatch;
+      const permit = await stub.rpcCall(bearer, "authorizeBlobWrite", { ...gov, ...baseRpc });
+      if (!permit.ok) return rpcResponse(permit);
       const stored = await storeCloudBlob(env, raw, Date.now() / 1000, namespace, permit.data.governance);
       if (stored.error) return problem(stored.status || 400, stored.error, stored.detail);
+      // Server-computed identity is spread last so no client field can replace it.
       return rpcResponse(
         await stub.rpcCall(bearer, "recordBlobStored", {
+          ...gov,
           ...baseRpc,
           sha256: stored.sha256,
           size: stored.size,
-          ...gov,
         })
       );
     }
@@ -974,15 +1054,18 @@ const worker = {
             return problem(400, "invalid_request", "x-tessera-metadata is not valid JSON");
           }
         }
-        const { gov, error: govErr } = parseHeaderGovernance(request, url.searchParams);
+        const { gov, claimed, error: govErr } = parseHeaderGovernance(request, url.searchParams);
         if (govErr) return govErr;
         const contentType = request.headers.get("content-type") || "application/octet-stream";
         const rawBytes = new Uint8Array(await request.arrayBuffer());
-        const permit = await stub.rpcCall(bearer, "authorizeObjectWrite", { ...baseRpc, bucket:bucketName, key:objKey, expected_version:expectedVersion, metadata, ...gov });
+        const mismatch = await contentIdentityMismatch(claimed, rawBytes);
+        if (mismatch) return mismatch;
+        const permit = await stub.rpcCall(bearer, "authorizeObjectWrite", { ...gov, ...baseRpc, bucket:bucketName, key:objKey, expected_version:expectedVersion, metadata });
         if (!permit.ok) return rpcResponse(permit);
         const stored = await storeCloudBlob(env, rawBytes, Date.now() / 1000, namespace, permit.data.governance);
         if (stored.error) return problem(stored.status || 400, stored.error, stored.detail);
         const out = await stub.rpcCall(bearer, "putObjectMeta", {
+          ...gov,
           ...baseRpc,
           bucket: bucketName,
           key: objKey,
@@ -991,7 +1074,6 @@ const worker = {
           content_type: contentType,
           metadata,
           expected_version: expectedVersion,
-          ...gov,
         });
         if (!out.ok) return rpcResponse(out);
         ctx.waitUntil(mirrorBucketObjectToD1(env, out.data));
@@ -1425,8 +1507,11 @@ const worker = {
   },
 
   async scheduled(event, env, ctx) {
-    if (String(env.FRAGILITY_PLANNER_ENABLED || "false") !== "true") return;
     const primary = env.COORDINATOR.get(env.COORDINATOR.idFromName("primary"));
+    // Lease reaping is infrastructure. Running it on the cron restarts an alarm chain lost
+    // during a storage outage and keeps reaper_last_run at most one cron interval old.
+    ctx.waitUntil(primary.runReaper());
+    if (String(env.FRAGILITY_PLANNER_ENABLED || "false") !== "true") return;
     ctx.waitUntil(primary.planMaintenance());
   },
 };

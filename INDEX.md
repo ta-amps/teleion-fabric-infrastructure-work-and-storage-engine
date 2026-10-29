@@ -251,7 +251,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [src/tessera/store.py](src/tessera/store.py) | The in-process Tessera store: the reference implementation of SPEC.md. |
 | [src/tessera/testing.py](src/tessera/testing.py) | Factories the conformance suite loads by name (TESSERABACKENDFACTORY="module:function"). |
 
-## tests/ (48)
+## tests/ (53)
 
 | File | What it is |
 |---|---|
@@ -300,8 +300,13 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [tests/test_spec_events.py](tests/test_spec_events.py) | SPEC §5.5 lists every event type, and the code emits only listed types: a new event can't ship without a line… |
 | [tests/test_tools.py](tests/test_tools.py) | The Muse worker keeps its safety flags whatever the brief says, and briefs load in dependency order. |
 | [tests/test_work_routing.py](tests/test_work_routing.py) | Explicit grants, team-private routing and owner-only negative controls. |
+| [tests/workerd_access_writes.mjs](tests/workerd_access_writes.mjs) | Real Worker/SQLite: requests that never authenticate write nothing and create no namespace |
+| [tests/workerd_anonymous_cost.mjs](tests/workerd_anonymous_cost.mjs) | Real Worker/SQLite: anonymous sessions stay available but cost little until used, and one |
+| [tests/workerd_blob_identity.mjs](tests/workerd_blob_identity.mjs) | Real Worker/SQLite: content identity comes from the uploaded bytes, never from a client header. |
 | [tests/workerd_execution_history.mjs](tests/workerd_execution_history.mjs) | Actual Worker handlers and ephemeral SQLite Durable Objects; no provider or cloud access. |
 | [tests/workerd_execution_learning.mjs](tests/workerd_execution_learning.mjs) | Actual Worker and SQLite Durable Objects: learning reports, observations and row costs. |
+| [tests/workerd_reaper.mjs](tests/workerd_reaper.mjs) | Real Worker/SQLite: the lease reaper keeps running in the main namespace even when an alarm |
+| [tests/workerd_storage_exhaustion.mjs](tests/workerd_storage_exhaustion.mjs) | Real Worker/SQLite under a faithful storage-exhaustion simulation: after the provider's daily |
 | [tests/workerd_storage_quota.mjs](tests/workerd_storage_quota.mjs) | Real Worker/SQLite behavior; fixture-only RPC methods never ship in the product. |
 
 ## tools/ (11)

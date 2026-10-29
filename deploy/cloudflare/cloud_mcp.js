@@ -435,7 +435,7 @@ function bytesToB64(bytes) {
   return btoa(s);
 }
 
-function govFields(args) {
+export function govFields(args) {
   const out = {};
   for (const k of [
     "producer_surface",
@@ -497,7 +497,7 @@ async function callTool(stub, env, ctx, secret, name, args, routeCtx) {
         code: r.code,
         extra: r.extra,
         detail: r.detail,
-        data: r.ok ? { lease: r.data.lease } : null,
+        data: r.ok ? (r.data.lease ? { lease: r.data.lease } : { lease: null, retry_after: r.data.retry_after ?? 5 }) : null,
       };
     }
     case "heartbeat": {
@@ -658,11 +658,12 @@ async function callTool(stub, env, ctx, secret, name, args, routeCtx) {
       else return { ok: false, code: "invalid_request", detail: "encoding must be 'utf-8' or 'base64'" };
 
       const nowSec = Date.now() / 1000;
-      const permit = await stub.rpcCall(secret, "authorizeObjectWrite", { ...base, bucket:args.bucket, key:args.key, metadata:args.metadata||{}, expected_version:args.expected_version??null, ...govFields(args) });
+      const permit = await stub.rpcCall(secret, "authorizeObjectWrite", { ...govFields(args), ...base, bucket:args.bucket, key:args.key, metadata:args.metadata||{}, expected_version:args.expected_version??null });
       if (!permit.ok) return permit;
       const stored = await storeCloudBlob(env, bytes, nowSec, routeCtx.namespace, permit.data.governance);
       if (stored.error) return { ok: false, code: stored.error, detail: stored.detail };
       const r = await stub.rpcCall(secret, "putObjectMeta", {
+        ...govFields(args),
         ...base,
         bucket: args.bucket,
         key: args.key,
@@ -672,7 +673,6 @@ async function callTool(stub, env, ctx, secret, name, args, routeCtx) {
         content_type: args.content_type ?? "text/plain; charset=utf-8",
         metadata: args.metadata ?? {},
         expected_version: args.expected_version ?? null,
-        ...govFields(args),
       });
       if (r.ok) ctx.waitUntil(mirrorBucketObjectToD1(env, r.data));
       return {
@@ -908,7 +908,13 @@ export async function handleMcpRequest(
   };
 
   if (Array.isArray(payload)) {
-    const results = (await Promise.all(payload.map(processOne))).filter(Boolean);
+    // One call at a time: each passes the same authentication and claim admission as a
+    // single request, and a batch cannot fan out into unbounded concurrent storage calls.
+    const results = [];
+    for (const msg of payload) {
+      const result = await processOne(msg);
+      if (result) results.push(result);
+    }
     if (!results.length) return new Response(null, { status: 202 });
     return Response.json(results, { headers: { "cache-control": "no-store" } });
   }
