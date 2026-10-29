@@ -26,6 +26,15 @@ class AccessSchemaOps(StoreBase):
           bytes_in INTEGER, bytes_out INTEGER, error_code TEXT, labels TEXT NOT NULL, scopes_used TEXT NOT NULL);
         CREATE INDEX IF NOT EXISTS access_events_owner ON access_events(principal_id,seq);
         CREATE INDEX IF NOT EXISTS access_events_time ON access_events(ts);
+        CREATE TABLE IF NOT EXISTS access_counters (
+          window INTEGER NOT NULL, principal_id TEXT NOT NULL, namespace TEXT NOT NULL,
+          action TEXT NOT NULL, outcome TEXT NOT NULL, principal_kind TEXT NOT NULL,
+          count INTEGER NOT NULL, first_ts REAL NOT NULL, last_ts REAL NOT NULL,
+          PRIMARY KEY (window, principal_id, namespace, action, outcome)) WITHOUT ROWID;
+        CREATE INDEX IF NOT EXISTS access_counters_owner ON access_counters(principal_id, window);
+        CREATE INDEX IF NOT EXISTS access_limits_window ON access_limits(window);
+        CREATE INDEX IF NOT EXISTS access_principals_purge ON access_principals(purge_at)
+          WHERE purge_at IS NOT NULL;
         """)
         with self._tx() as c:
             if "labels" not in {r["name"] for r in c.execute("PRAGMA table_info(results)")}:

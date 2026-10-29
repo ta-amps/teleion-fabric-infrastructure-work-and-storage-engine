@@ -10,13 +10,13 @@ const err = (status, code, detail) => Object.assign(new Error(detail), {status, 
 const missing = () => err(404,'not_found','execution does not exist');
 const bad = detail => err(400,'invalid_request',detail);
 export function initExecutions(c) {
-  for (const sql of [
+  c._ensureDdl([
     `CREATE TABLE IF NOT EXISTS execution_runs(namespace TEXT NOT NULL,run_id TEXT NOT NULL,task_id TEXT NOT NULL,fencing_token INTEGER NOT NULL,receipt_hash TEXT NOT NULL,created_at REAL NOT NULL,expires_at REAL,input_hash TEXT,exact_hash TEXT,shape_hash TEXT,envelope TEXT NOT NULL,PRIMARY KEY(namespace,run_id),UNIQUE(namespace,task_id,fencing_token))`,
     `CREATE INDEX IF NOT EXISTS execution_exact ON execution_runs(namespace,exact_hash)`,
     `CREATE INDEX IF NOT EXISTS execution_input ON execution_runs(namespace,input_hash)`,
     `CREATE INDEX IF NOT EXISTS execution_shape ON execution_runs(namespace,shape_hash)`,
     `CREATE TABLE IF NOT EXISTS execution_bands(namespace TEXT NOT NULL,band TEXT NOT NULL,run_id TEXT NOT NULL,PRIMARY KEY(namespace,band,run_id))`,
-  ]) c.ctx.storage.sql.exec(sql);
+  ]);
   hardenLegacyTombstones(c);
 }
 export function checkedReport(value) {
@@ -80,7 +80,7 @@ function allowed(c,envelope,grant,view) {
   }
   return referencesVisible(c,envelope.report,view);
 }
-function executionView(c,row,grant,view,includeOutput=true) {
+export function executionView(c,row,grant,view,includeOutput=true) {
   const e=JSON.parse(row.envelope);
   if(!allowed(c,e,grant,view)) throw missing();
   const result=c._one((includeOutput?'SELECT *':'SELECT ok')+' FROM results WHERE namespace=? AND task_id=? AND fencing_token=? AND receipt_hash=?',row.namespace,row.task_id,row.fencing_token,row.receipt_hash);

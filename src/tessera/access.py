@@ -14,7 +14,7 @@ from dataclasses import dataclass
 
 from fastapi import Request
 
-from tessera.claim_admission import AdaptiveClaims, Permit
+from tessera.claim_admission import AdaptiveClaims, IdleClaims, Permit
 from tessera.errors import Forbidden, NotFound, RateLimited, ScopeDenied, Unauthorized
 from tessera.grants import PROTECTED_SURFACES, KeyGrant
 from tessera.models import surface_slug
@@ -76,6 +76,7 @@ class ClaimLimiter:
             max_wait=settings.claim_max_wait_seconds,
             target=settings.claim_target_seconds,
         )
+        self.idle = IdleClaims()
 
     @asynccontextmanager
     async def admit(self, key_id: str, is_admin: bool = False) -> AsyncIterator[Permit]:

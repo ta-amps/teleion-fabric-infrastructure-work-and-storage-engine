@@ -199,6 +199,14 @@ not become competing noun classifications. Existing run bytes are not rewritten.
 
 Core authorization, atomic capture, anonymous retention and Python/Worker matching need their owning regression suites in addition to these adapter tests. Deployment smoke must target the exact released revision. Legacy worker wrappers do not automatically gain parsed model usage, safe process supervision, trusted telemetry or generalized distillation capability from these APIs.
 
+## Learning block, observations and learners
+
+An optional `learning` block in the report (outcome, what went right or wrong, next
+steps, ideas, types, path, unknowns and cited advice), the permission-filtered
+observation read `GET /v1/executions` and swappable learners that run as ordinary
+verbs are described in [execution learning](execution-learning.md). They leave this
+recall path, the receipt shape and the submit write cost unchanged.
+
 ## Native worker observation, October 29, 2026
 
 [The recorded observation](evidence/native-history-observation.json) covers one

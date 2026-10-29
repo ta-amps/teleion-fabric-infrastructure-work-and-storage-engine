@@ -45,7 +45,7 @@ export class ClaimAdmission {
   acquire(principal) {
     const arrived = this.clock();
     if (this.active < this.limit && this.pending === 0) return Promise.resolve(this.start(arrived));
-    if (this.pending >= this.maxPending) return Promise.reject(new ClaimPressure("pending queue full", this.retryAfter()));
+    if (this.pending >= this.maxPending && !this.yieldSlotTo(principal)) return Promise.reject(new ClaimPressure("pending queue full", this.retryAfter()));
     return new Promise((resolve, reject) => {
       const entry = { arrived, resolve, reject };
       const queue = this.queues.get(principal) || [];
@@ -64,6 +64,25 @@ export class ClaimAdmission {
       }, this.maxWaitMs);
       this.drain();
     });
+  }
+
+  // A full waiting queue is shared fairly: when a principal holding fewer than its share of the
+  // pending slots arrives, the principal holding the most (and more than its share) gives up
+  // its newest waiter. One principal may still use every slot while nobody else waits; the
+  // total never grows. Returns true when a slot was freed for `principal`.
+  yieldSlotTo(principal) {
+    const share = Math.ceil(this.maxPending / (this.queues.size + (this.queues.has(principal) ? 0 : 1)));
+    if ((this.queues.get(principal)?.length || 0) >= share) return false;
+    let heaviest = null, most = 0;
+    for (const [other, queue] of this.queues) if (other !== principal && queue.length > most) { heaviest = other; most = queue.length; }
+    if (heaviest === null || most <= share) return false;
+    const queue = this.queues.get(heaviest);
+    const entry = queue.pop();
+    if (!queue.length) this.queues.delete(heaviest);
+    this.pending--;
+    clearTimeout(entry.timer);
+    entry.reject(new ClaimPressure("fair share of waiting slots", this.retryAfter()));
+    return true;
   }
 
   start(arrived) {
@@ -107,4 +126,32 @@ export class ClaimAdmission {
       } else entry.resolve(this.start(entry.arrived));
     }
   }
+}
+
+// Idle pacing for empty claims. The Retry-After hint doubles while one key keeps finding a
+// queue empty and resets when that key is granted a lease or the queue receives new work.
+// It reports observed emptiness; it is not a limit, and a worker may long-poll instead.
+export const EMPTY_CLAIM_BASE_SECONDS = 5;
+export const EMPTY_CLAIM_MAX_SECONDS = 60;
+export function emptyClaimRetryAfter(consecutiveEmpty) {
+  const n = Math.max(1, Math.floor(Number(consecutiveEmpty) || 1));
+  return Math.min(EMPTY_CLAIM_MAX_SECONDS, EMPTY_CLAIM_BASE_SECONDS * 2 ** Math.min(n - 1, 16));
+}
+
+export class IdleClaims {
+  constructor(maxQueues = 4096) { this.maxQueues = maxQueues; this.queues = new Map(); }
+  empty(namespace, queue, keyId) {
+    const name = `${namespace}\u0000${queue}`;
+    let keys = this.queues.get(name);
+    if (!keys) {
+      if (this.queues.size >= this.maxQueues) this.queues.clear(); // memory bound; hints restart at the base
+      keys = new Map();
+      this.queues.set(name, keys);
+    }
+    const n = (keys.get(keyId) || 0) + 1;
+    keys.set(keyId, n);
+    return emptyClaimRetryAfter(n);
+  }
+  granted(namespace, queue, keyId) { this.queues.get(`${namespace}\u0000${queue}`)?.delete(keyId); }
+  work(namespace, queue) { this.queues.delete(`${namespace}\u0000${queue}`); }
 }

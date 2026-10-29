@@ -16,6 +16,7 @@ from tessera._version import __version__
 from tessera.errors import (
     BY_CODE,
     RateLimited,
+    StorageQuotaExhausted,
     TesseraError,
     Unavailable,
     VersionConflict,
@@ -77,8 +78,17 @@ def error_from_response(resp: httpx.Response) -> TesseraError:
         return VersionConflict(
             detail, current_version=current if isinstance(current, int) else None
         )
+    # The full server value is kept, even beyond MAX_RETRY_AFTER: a provider storage outage
+    # can last until the next 00:00 UTC, and the caller decides how to wait.
     if cls is RateLimited:
         return RateLimited(detail, retry_after=_retry_after(resp))
+    if cls is StorageQuotaExhausted:
+        reset_at = body.get("reset_at")
+        return StorageQuotaExhausted(
+            detail,
+            retry_after=_retry_after(resp),
+            reset_at=reset_at if isinstance(reset_at, str) else None,
+        )
     if cls is Unavailable:
         return Unavailable(detail, retry_after=_retry_after(resp))
     return cls(detail)
@@ -86,9 +96,17 @@ def error_from_response(resp: httpx.Response) -> TesseraError:
 
 def _retry_after(resp: httpx.Response) -> float:
     try:
-        return min(max(float(resp.headers.get("retry-after", "1")), 0.0), MAX_RETRY_AFTER)
+        return max(float(resp.headers.get("retry-after", "1")), 0.0)
     except ValueError:
         return 1.0
+
+
+def _problem_code(resp: httpx.Response) -> str | None:
+    try:
+        body = resp.json()
+    except ValueError:
+        return None
+    return str(body.get("code")) if isinstance(body, dict) and body.get("code") else None
 
 
 def _filter_params(
@@ -175,8 +193,13 @@ class Client:
                 method, path, json=body, params=params, headers=headers, content=content
             )
             if resp.status_code in (429, 503) and attempt < self._max_retries:
-                time.sleep(_retry_after(resp))
-                continue
+                wait = _retry_after(resp)
+                # Sleep in-process only for short waits. A storage outage or a longer server
+                # hint is raised at once with the full Retry-After instead of being retried
+                # early (and repeatedly) within this call.
+                if wait <= MAX_RETRY_AFTER and _problem_code(resp) != "storage_quota_exhausted":
+                    time.sleep(wait)
+                    continue
             if resp.status_code >= 400:
                 raise error_from_response(resp)
             return resp
@@ -337,6 +360,26 @@ class Client:
             f"/v1/tasks/{quote(task_id, safe='')}/executions",
             params={"after": after, "limit": limit},
             headers=self._ns_headers(namespace),
+        ).json()
+        return result
+
+    def execution_observations(
+        self,
+        queue: str,
+        *,
+        kind: str | None = None,
+        after: str | None = None,
+        limit: int = 50,
+        namespace: str | None = None,
+    ) -> dict[str, Any]:
+        """Bounded observations of permitted runs in one queue; follow next_after to page."""
+        params: dict[str, Any] = {"queue": queue, "limit": limit}
+        if kind is not None:
+            params["kind"] = kind
+        if after is not None:
+            params["after"] = after
+        result: dict[str, Any] = self._call(
+            "GET", "/v1/executions", params=params, headers=self._ns_headers(namespace)
         ).json()
         return result
 

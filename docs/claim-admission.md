@@ -18,7 +18,16 @@ once per target interval. Existing admitted requests finish normally. The
 pending queue and maximum wait protect memory and avoid assigning a lease to a
 request that has already timed out waiting. Only those overload conditions
 produce `429 rate_limited` with `Retry-After`. Clients should honor that response
-and add jitter. Empty queues retain their existing retry guidance.
+and add jitter. Empty claims carry an idle-pacing hint (see
+[storage availability](storage-availability.md#idle-polling)).
+
+A full pending queue is shared fairly (October 29). When a principal holding
+fewer than its share of the pending slots (the pending limit divided by the
+number of waiting principals) arrives, the principal holding the most, and more
+than its share, gives up its newest waiter with `429` and reason `fair share of
+waiting slots`. One principal may still use every slot while nobody else is
+waiting, and the total never grows, so this is not a new per-key quota. Both
+runtimes apply the same rule (`yieldSlotTo` / `yield_slot_to`).
 
 These are resource settings, not advertised throughput guarantees:
 
@@ -42,6 +51,12 @@ observable I/O such as authorization and audit operations; it is not a CPU
 profile or a RAM reading. Pending and in-flight counts are memory-pressure
 proxies. Use deployment metrics and profiling to investigate CPU or memory
 exhaustion. See [Cloudflare's timer documentation](https://developers.cloudflare.com/workers/runtime-apis/performance/).
+A known consequence, found in local workerd review: a claim in the main namespace
+that touches no I/O between admission and release measures about zero elapsed
+time, so the latency average stays under the target and concurrency only grows.
+The adaptive reduction therefore rarely engages there; pending-queue bounds,
+the waiting deadline and the fair share above still apply. This is documented,
+not changed.
 
 Admission state is ephemeral: one controller per Durable Object, or per Python
 service process. Restarting resets scheduling hints, never persisted leases or

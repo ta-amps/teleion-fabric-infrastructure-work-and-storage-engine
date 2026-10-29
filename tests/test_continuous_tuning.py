@@ -34,8 +34,11 @@ from examples.continuous_tuning.promotion import RULE_PATH, decide, load_rule, p
 from examples.continuous_tuning.task import generate, prompt_messages, target_text  # noqa: E402
 from examples.continuous_tuning.templates import SUBSTITUTES  # noqa: E402
 from examples.continuous_tuning.tools import (  # noqa: E402
+    BENCHMARK_TOOLS_SHA256,
     FAMILY_OF,
     FAMILY_SPLIT,
+    SERVED,
+    benchmark_drift,
     export_snapshot,
     load_snapshot,
     load_tools,
@@ -50,17 +53,26 @@ RULE_SHA256 = "7777bed73c9305b74a526dc024bbac2d3c651ff49905412f565970b2ca716dbf"
 TOOLS = load_tools()
 
 
-def test_snapshot_is_the_served_tool_list() -> None:
+def test_served_snapshot_is_the_live_tool_list() -> None:
     if shutil.which("node") is None:
         pytest.skip("node is required to read the hosted tool definitions")
-    live = export_snapshot(ROOT)
-    assert live["tools"] == load_snapshot()["tools"], (
-        "Served tool definitions changed: run `python -m examples.continuous_tuning.cli export-tools` "
-        "and version the benchmark built from them"
+    assert export_snapshot(ROOT)["tools"] == load_snapshot(SERVED)["tools"], (
+        "Served tool definitions changed: run `python -m examples.continuous_tuning.cli export-tools`"
     )
 
 
-def test_python_mcp_door_serves_the_same_tools_and_required_arguments(tmp_path: Path) -> None:
+def test_benchmark_snapshot_is_pinned_and_its_labels_stay_valid_calls() -> None:
+    benchmark = load_snapshot()
+    assert benchmark["tools_sha256"] == BENCHMARK_TOOLS_SHA256
+    drift = benchmark_drift(benchmark, load_snapshot(SERVED))
+    assert drift["removed"] == [] and drift["added"] == [] and drift["schema_changed"] == [], (
+        f"Served schemas moved away from the frozen benchmark {drift}; register a new benchmark version"
+    )
+    # Recorded and allowed: PR #13 rewrote submit's description to mention the learning block.
+    assert set(drift["description_changed"]) <= {"submit"}
+
+
+def test_python_mcp_door_serves_the_hosted_tools_and_required_arguments(tmp_path: Path) -> None:
     pytest.importorskip("mcp")
     from tessera.access import ClaimLimiter, Gate, ServiceSettings
     from tessera.mcp_door import build_mcp
@@ -74,12 +86,15 @@ def test_python_mcp_door_serves_the_same_tools_and_required_arguments(tmp_path: 
         served = {tool.name: tool.input_schema for tool in asyncio.run(server.list_tools())}
     finally:
         store.close()
-    assert set(served) == set(TOOLS)
-    for name, tool in TOOLS.items():
-        hosted = tool["inputSchema"]
-        assert set(hosted.get("required", [])) == set(served[name].get("required", [])), name
+    hosted = load_tools(SERVED)
+    # Known divergence: the Python door also serves execution observations; hosted does not yet.
+    assert set(served) - set(hosted) == {"list_execution_observations"}
+    assert set(hosted) <= set(served)
+    for name, tool in hosted.items():
+        schema = tool["inputSchema"]
+        assert set(schema.get("required", [])) == set(served[name].get("required", [])), name
         # The hosted schemas may add governance fields; the door never adds unknown ones.
-        assert set(served[name].get("properties", {})) <= set(hosted.get("properties", {})), name
+        assert set(served[name].get("properties", {})) <= set(schema.get("properties", {})), name
 
 
 def test_generation_is_deterministic_and_every_label_validates() -> None:

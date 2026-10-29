@@ -59,6 +59,7 @@ MCP_ACTIONS = {
     "recall_execution": "recallExecution",
     "get_execution": "getExecution",
     "list_executions": "listExecutions",
+    "list_execution_observations": "listExecutions",
 }
 PUBLIC_PATHS = {"/v1/health", "/v1/openapi.json", "/v1/public/activity", "/v1/session/anonymous"}
 
@@ -88,6 +89,8 @@ def http_action(path: str, method: str, args: dict[str, Any]) -> str:
         return path.rsplit("/", 1)[1]
     if path == "/v1/executions/recall":
         return "recallExecution"
+    if path == "/v1/executions":
+        return "listExecutions"
     if path.startswith("/v1/executions/"):
         args["run_id"] = path.rsplit("/", 1)[1]
         return "getExecution"

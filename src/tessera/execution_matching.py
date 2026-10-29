@@ -8,6 +8,7 @@ import re
 import struct
 from typing import Any, NoReturn
 
+from tessera.observations import normalize_learning
 from tessera.receipts import canonical_json
 
 MAX_REPORT_BYTES = 32768
@@ -25,6 +26,7 @@ ROOT_FIELDS = {
     "blocks",
     "artifact_refs",
     "embedding",
+    "learning",
 }
 CONTRACT_FIELDS = {
     "input_schema",
@@ -110,7 +112,8 @@ def normalize_report(value: Any) -> dict[str, Any]:
         return {}
     report["version"] = _integer(report.get("version", 1), "report.version", 1, 1)
     for name in ("harness", "model"):
-        if name in report:
+        # A null model is an explicit declaration that the work used no model.
+        if name in report and not (name == "model" and report[name] is None):
             report[name] = _object(report[name], f"report.{name}")
     if "summaries" in report:
         summaries = _object(
@@ -189,6 +192,8 @@ def normalize_report(value: Any) -> dict[str, Any]:
         if not any(normalized):
             _fail("report.embedding.vector", "zero vector is not comparable")
         report["embedding"] = {**emb, "vector": normalized}
+    if "learning" in report:
+        report["learning"] = normalize_learning(report["learning"])
     if len(canonical_json(report).encode("utf-8")) > MAX_REPORT_BYTES:
         _fail("report", "exceeds 32768 canonical UTF-8 bytes")
     return report

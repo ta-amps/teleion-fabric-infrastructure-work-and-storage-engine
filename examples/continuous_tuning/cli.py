@@ -68,7 +68,7 @@ def main(argv: list[str] | None = None) -> int:
     pack = commands.add_parser("pack", help="write the seed pack (deterministic, offline)")
     pack.add_argument("--output", type=Path, default=HERE / "pack")
     tools = commands.add_parser(
-        "export-tools", help="refresh the tool snapshot from the served definitions"
+        "export-tools", help="refresh mcp_tools.served.json; the frozen benchmark never changes"
     )
     tools.add_argument("--repo", type=Path, default=HERE.parents[1])
     args = parser.parse_args(argv)

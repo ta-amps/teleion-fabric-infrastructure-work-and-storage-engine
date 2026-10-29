@@ -36,6 +36,17 @@ uv run python tools/muse_worker.py --worker muse-01  # one Muse Code worker, one
 The service runs the reaper at least once a minute (`reaper_last_run` in health). Locally, claims reap
 their own queue first, and `uv run tessera reap` reaps everything.
 
+On Cloudflare each coordinator object reaps on a Durable Object alarm. A granted claim, a heartbeat, a
+timed park and `POST /v1/admin/reap` schedule it, and each run reschedules itself only while leases or
+timed waits remain, so an idle namespace runs no alarm. The platform stops retrying an alarm handler
+that keeps failing, as it did while the storage allowance was exhausted, which ends the chain. Two
+safeguards (October 29) restart it: the Worker's six-hour cron runs the reaper on the main namespace
+and records `reaper_last_run`, and each object checks once after a cold start that an alarm is pending
+whenever leases or timed waits exist. While main is idle, `reaper_last_run` is therefore at most one
+cron interval old; an older value means the cron itself is not running. Other namespaces have no cron
+entry; their reaping resumes on their next request, alarm or claim on the affected queue.
+`tests/workerd_reaper.mjs` covers both safeguards.
+
 ## Backups and restore (hosted, brief L20)
 
 - SQLite in WAL mode on the machine's volume. Copy it off the machine nightly with SQLite's online

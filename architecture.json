@@ -219,6 +219,46 @@
       ]
     },
     {
+      "id": "observations",
+      "title": "Execution observations and problem fingerprints",
+      "path": [
+        "src/tessera/observations.py",
+        "src/tessera/fingerprints.py",
+        "deploy/cloudflare/execution_observations.js"
+      ],
+      "kind": "library",
+      "domain": "neutral",
+      "role": "Core infrastructure for learning without learning policy: the optional report.learning block check, the bounded execution-observation-v1 view behind GET /v1/executions, and pure exact/MinHash fingerprint functions with shared Python/Worker vectors",
+      "tests": [
+        "tests/test_execution_learning_vectors.py",
+        "tests/test_execution_learning.py",
+        "tests/workerd_execution_learning.mjs"
+      ]
+    },
+    {
+      "id": "learners",
+      "title": "Swappable learners",
+      "path": [
+        "src/tessera/learners/__init__.py",
+        "src/tessera/learners/contract.py",
+        "src/tessera/learners/catalog.py",
+        "src/tessera/learners/runtime.py",
+        "src/tessera/learners/stats.py",
+        "src/tessera/learners/memory.py",
+        "src/tessera/learners/path_statistics.py",
+        "src/tessera/learners/routing.py",
+        "src/tessera/learners/worker.py",
+        "src/tessera/learners/pack.py",
+        "tools/learner.py"
+      ],
+      "kind": "library",
+      "domain": "neutral",
+      "role": "Learner-spec and config nouns, deterministic learner run verbs over the public client contract, the memory (MinHash index and recall), path-statistics and routing-weights learners, and an inert seed-pack export; core never imports it",
+      "tests": [
+        "tests/test_execution_learning.py"
+      ]
+    },
+    {
       "id": "service",
       "title": "HTTP service",
       "path": [
@@ -1075,6 +1115,57 @@
         "tessera.cli"
       ],
       "why": "The store must work on its own, in process, with no web stack"
+    },
+    {
+      "id": "core-never-imports-learners",
+      "package": "tessera",
+      "package_root": "src/tessera",
+      "files": [
+        "src/tessera/store.py",
+        "src/tessera/_base.py",
+        "src/tessera/_tasks.py",
+        "src/tessera/_executions.py",
+        "src/tessera/_execution_capture.py",
+        "src/tessera/execution_matching.py",
+        "src/tessera/observations.py",
+        "src/tessera/fingerprints.py",
+        "src/tessera/models.py",
+        "src/tessera/client.py",
+        "src/tessera/service.py",
+        "src/tessera/_service_executions.py",
+        "src/tessera/_access_boundary.py",
+        "src/tessera/mcp_door.py"
+      ],
+      "must_not_import": [
+        "tessera.learners"
+      ],
+      "why": "Learning policy lives in swappable learners; core keeps capture, the observation read and pure fingerprint functions"
+    },
+    {
+      "id": "learners-use-the-public-contract",
+      "package": "tessera",
+      "package_root": "src/tessera",
+      "files": [
+        "src/tessera/learners"
+      ],
+      "must_not_import": [
+        "sqlite3",
+        "fastapi",
+        "starlette",
+        "uvicorn",
+        "mcp",
+        "anyio",
+        "tessera.Store",
+        "tessera.store",
+        "tessera._base",
+        "tessera._tasks",
+        "tessera._executions",
+        "tessera._execution_capture",
+        "tessera._storage",
+        "tessera.service",
+        "tessera.mcp_door"
+      ],
+      "why": "A learner is a worker-side component: it reads observations and writes nouns through the same client contract as any authorized worker"
     }
   ],
   "claims": [

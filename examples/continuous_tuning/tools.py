@@ -1,9 +1,14 @@
 """Tessera's real MCP tool definitions, their families, and a strict schema checker.
 
-The snapshot `mcp_tools.json` is exactly what the hosted `tools/list` returns
-(`[...TOOLS, ...ACCESS_TOOLS]` in deploy/cloudflare). `export_snapshot` regenerates it
-with Node; tests compare it with the live JavaScript and the Python MCP door. When the
-tool surface changes, the benchmark built from it is a new version, never a silent edit.
+Two snapshots of the hosted `tools/list` (`[...TOOLS, ...ACCESS_TOOLS]` in
+deploy/cloudflare), both written by `export_snapshot` through Node:
+
+- `mcp_tools.json` is the frozen benchmark: the exact definitions every recorded round
+  was prompted and scored with, pinned by digest. It never changes in place.
+- `mcp_tools.served.json` is the current served list; a test compares it with the live
+  JavaScript, and another requires every benchmark tool to keep an identical input
+  schema there, so the benchmark's labels stay valid calls. Description-only changes
+  are reported; a schema change means a new benchmark version.
 """
 
 from __future__ import annotations
@@ -16,6 +21,8 @@ from typing import Any
 from examples.finetuning.data import canonical, digest, file_digest
 
 SNAPSHOT = Path(__file__).with_name("mcp_tools.json")
+SERVED = Path(__file__).with_name("mcp_tools.served.json")
+BENCHMARK_TOOLS_SHA256 = "e6cea83c79f3d77104423b352f9d0656bf101f4edef93af9052f920e452c0472"
 SNAPSHOT_FORMAT = "tessera.continuous-tuning.mcp-tools.v1"
 SOURCES = ("deploy/cloudflare/cloud_mcp.js", "deploy/cloudflare/cloud_access_routes.js")
 EXPORT_SCRIPT = """
@@ -91,7 +98,7 @@ def export_snapshot(repo: Path) -> dict[str, Any]:
     }
 
 
-def write_snapshot(repo: Path, path: Path = SNAPSHOT) -> dict[str, Any]:
+def write_snapshot(repo: Path, path: Path = SERVED) -> dict[str, Any]:
     snapshot = export_snapshot(repo)
     path.write_text(json.dumps(snapshot, indent=1, ensure_ascii=False) + "\n")
     return snapshot
@@ -115,6 +122,21 @@ def load_snapshot(path: Path = SNAPSHOT) -> dict[str, Any]:
 
 def load_tools(path: Path = SNAPSHOT) -> dict[str, dict[str, Any]]:
     return {tool["name"]: tool for tool in load_snapshot(path)["tools"]}
+
+
+def benchmark_drift(benchmark: dict[str, Any], served: dict[str, Any]) -> dict[str, list[str]]:
+    """How the served tools differ from the frozen benchmark's: schema changes break labels."""
+    old = {tool["name"]: tool for tool in benchmark["tools"]}
+    new = {tool["name"]: tool for tool in served["tools"]}
+    shared = sorted(set(old) & set(new))
+    return {
+        "removed": sorted(set(old) - set(new)),
+        "added": sorted(set(new) - set(old)),
+        "schema_changed": [n for n in shared if old[n]["inputSchema"] != new[n]["inputSchema"]],
+        "description_changed": [
+            n for n in shared if old[n]["description"] != new[n]["description"]
+        ],
+    }
 
 
 def tools_in_split(split: str) -> list[str]:

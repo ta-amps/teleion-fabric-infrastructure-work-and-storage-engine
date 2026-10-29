@@ -409,7 +409,9 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
         # A dependent's lease carries its dependencies' outputs, so the key must cover their queues.
         for dep in spec.depends_on:
             gate.queue(grant, store.task(dep).queue)
-        return {"task_id": store.enqueue(spec)}
+        task_id = store.enqueue(spec)
+        limiter.idle.work(store.current_scope().namespace, spec.queue)
+        return {"task_id": task_id}
 
     @app.get("/v1/tasks/{task_id}")
     def task(task_id: str, grant: KeyGrant = key) -> dict[str, Any]:
@@ -452,11 +454,18 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
             "x-claim-wait-ms": str(round(permit.wait_seconds * 1000)),
             "x-claim-concurrency": str(limiter.admission.limit),
         }
+        namespace = store.current_scope().namespace
         if lease is None:
+            retry = limiter.idle.empty(namespace, body.queue, grant.key_id)
             return Response(
                 status_code=204,
-                headers={"retry-after": "5", "x-heartbeat-seconds": beat, **admission_headers},
+                headers={
+                    "retry-after": str(retry),
+                    "x-heartbeat-seconds": beat,
+                    **admission_headers,
+                },
             )
+        limiter.idle.granted(namespace, body.queue, grant.key_id)
         return JSONResponse(
             lease.model_dump(mode="json"),
             headers={"x-heartbeat-seconds": beat, **admission_headers},

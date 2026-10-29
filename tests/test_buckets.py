@@ -207,3 +207,47 @@ def test_http_client_mcp_and_admin_keys_for_buckets(tmp_path: Path) -> None:
             assert get_res["structuredContent"]["content"] == "SYNTHETIC bilateral note"
     finally:
         store.close()
+
+
+def test_client_keeps_storage_outage_retry_guidance(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A provider storage outage is raised at once with the full Retry-After and reset time;
+    short hints are still slept and retried inside the call."""
+    import tessera.client as client_module
+    from tessera.errors import StorageQuotaExhausted, Unavailable
+
+    slept: list[float] = []
+    monkeypatch.setattr(client_module.time, "sleep", slept.append)
+    replies: list[httpx.Response] = []
+    seen: list[str] = []
+
+    def dispatch(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.path)
+        return replies.pop(0)
+
+    problem = {"content-type": "application/problem+json"}
+    quota = {"code": "storage_quota_exhausted", "detail": "allowance spent"}
+    quota |= {"status": 503, "reset_at": "2026-10-30T00:00:00.000Z"}
+    client = Client("http://testserver", key="synthetic", transport=httpx.MockTransport(dispatch))
+    replies.append(httpx.Response(503, json=quota, headers={**problem, "retry-after": "20793"}))
+    with pytest.raises(StorageQuotaExhausted) as raised:
+        client.counts()
+    assert raised.value.retry_after == 20793
+    assert raised.value.reset_at == "2026-10-30T00:00:00.000Z"
+    assert (len(seen), slept) == (1, [])
+
+    replies.append(
+        httpx.Response(503, json={"code": "unavailable"}, headers={"retry-after": "120"})
+    )
+    with pytest.raises(Unavailable) as long_wait:
+        client.counts()
+    assert long_wait.value.retry_after == 120 and slept == []
+
+    replies.extend(
+        [
+            httpx.Response(429, json={"code": "rate_limited"}, headers={"retry-after": "2"}),
+            httpx.Response(200, json={"as_of": 0, "queues": {}}),
+        ]
+    )
+    assert client.counts() == {}
+    assert slept == [2.0]
+    client.close()

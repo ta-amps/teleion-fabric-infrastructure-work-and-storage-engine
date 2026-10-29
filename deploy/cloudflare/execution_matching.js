@@ -1,11 +1,12 @@
 // Bounded execution-report validation and retrieval candidates, never reuse authorization.
 import { canonicalJson, sha256Hex } from "./cloud_buckets.js";
+import { normalize_learning } from "./execution_observations.js";
 
 export const MAX_REPORT_BYTES = 32768;
 export const TEXT_DISTANCE_LIMIT = 24;
 export const VECTOR_COSINE_MIN = 0.85;
 export const TEXT_PROFILE = "execution-text-simhash128-v1";
-const ROOT_FIELDS = new Set(["version", "harness", "model", "summaries", "contract", "usage", "blocks", "artifact_refs", "embedding"]);
+const ROOT_FIELDS = new Set(["version", "harness", "model", "summaries", "contract", "usage", "blocks", "artifact_refs", "embedding", "learning"]);
 const CONTRACT_FIELDS = ["input_schema", "output_schema", "context_hash", "environment_hash", "toolchain_hash"];
 const TOKEN_FIELDS = ["input_tokens", "output_tokens", "total_tokens", "cached_tokens"];
 const BLOCK_KINDS = new Set(["problem", "input", "context", "environment", "solution", "error"]);
@@ -63,7 +64,8 @@ export function normalize_report(value) {
   const report = object(value, "report", ROOT_FIELDS);
   if (!Object.keys(report).length) return {};
   report.version = integer(own(report, "version") ? report.version : 1, "report.version", 1, 1);
-  for (const name of ["harness", "model"]) if (own(report, name)) report[name] = object(report[name], `report.${name}`);
+  // A null model is an explicit declaration that the work used no model.
+  for (const name of ["harness", "model"]) if (own(report, name) && !(name === "model" && report[name] === null)) report[name] = object(report[name], `report.${name}`);
   if (own(report, "summaries")) {
     const summaries = object(report.summaries, "report.summaries", new Set(["problem", "input", "solution"]));
     for (const [key, item] of Object.entries(summaries)) text(item, `report.summaries.${key}`, 4096, true);
@@ -118,6 +120,7 @@ export function normalize_report(value) {
     if (!vector.some(n => n !== 0)) fail("report.embedding.vector", "zero vector is not comparable");
     report.embedding = { ...emb, vector };
   }
+  if (own(report, "learning")) report.learning = normalize_learning(report.learning);
   if (encoder.encode(canonicalJson(report)).length > MAX_REPORT_BYTES) fail("report", "exceeds 32768 canonical UTF-8 bytes");
   return report;
 }
