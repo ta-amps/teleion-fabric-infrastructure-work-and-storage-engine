@@ -106,7 +106,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [deploy/fly/README.md](deploy/fly/README.md) | Fly.io: the Tessera service |
 | [deploy/fly/fly.toml](deploy/fly/fly.toml) | Tessera service on one Fly.io machine with a volume (brief L20), reached through the Cloudflare edge |
 
-## docs/ (28)
+## docs/ (29)
 
 | File | What it is |
 |---|---|
@@ -117,6 +117,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [docs/architecture.md](docs/architecture.md) | Tessera: architecture |
 | [docs/claim-admission.md](docs/claim-admission.md) | Claim admission |
 | [docs/comparison.md](docs/comparison.md) | Tessera: comparison |
+| [docs/continuous-tuning.md](docs/continuous-tuning.md) | Continuous tuning, learning and evaluation |
 | [docs/decisions.md](docs/decisions.md) | Tessera: decisions |
 | [docs/evidence/native-history-observation.json](docs/evidence/native-history-observation.json) | JSON object: schema_version, observed_date, source_revision, worker_version, harness, provider |
 | [docs/execution-learning.md](docs/execution-learning.md) | Execution learning: observations, fingerprints and swappable learners |
@@ -139,7 +140,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [docs/work-design-and-evidence.md](docs/work-design-and-evidence.md) | Nouns, verbs and evidence |
 | [docs/work-routing.md](docs/work-routing.md) | Route agent work through nouns and verbs |
 
-## examples/ (71)
+## examples/ (72)
 
 | File | What it is |
 |---|---|
@@ -150,6 +151,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [examples/continuous_tuning/cli.py](examples/continuous_tuning/cli.py) | Command line surface: tick on demand, show status and the learning curve, build the pack. |
 | [examples/continuous_tuning/dataset.py](examples/continuous_tuning/dataset.py) | Curation: fingerprints, deduplication, contamination checks and dataset manifests. |
 | [examples/continuous_tuning/decide.py](examples/continuous_tuning/decide.py) | The promotion verb: apply the pre-registered rule and move the champion pointer. |
+| [examples/continuous_tuning/evidence/llama-3.2-1b-instruct-2026-10-29.json](examples/continuous_tuning/evidence/llama-3.2-1b-instruct-2026-10-29.json) | JSON object: benchmark_tools_sha256, captured, code, curve, format, hardware |
 | [examples/continuous_tuning/fabric.py](examples/continuous_tuning/fabric.py) | The learner's use of a local Tessera store: principals, private nouns, blobs and claims. |
 | [examples/continuous_tuning/fixture_backend.py](examples/continuous_tuning/fixture_backend.py) | A deterministic, dependency-free stand-in for the model backend (tests and CPU demos). |
 | [examples/continuous_tuning/learner_spec.json](examples/continuous_tuning/learner_spec.json) | JSON object: format, learner, strategy, version, facet, reads |

@@ -20,6 +20,7 @@
 - [docs/architecture.md](https://github.com/ta-amps/tessera/blob/main/docs/architecture.md): Tessera: architecture
 - [docs/claim-admission.md](https://github.com/ta-amps/tessera/blob/main/docs/claim-admission.md): Claim admission
 - [docs/comparison.md](https://github.com/ta-amps/tessera/blob/main/docs/comparison.md): Tessera: comparison
+- [docs/continuous-tuning.md](https://github.com/ta-amps/tessera/blob/main/docs/continuous-tuning.md): Continuous tuning, learning and evaluation
 - [docs/decisions.md](https://github.com/ta-amps/tessera/blob/main/docs/decisions.md): Tessera: decisions
 - [docs/execution-learning.md](https://github.com/ta-amps/tessera/blob/main/docs/execution-learning.md): Execution learning: observations, fingerprints and swappable learners
 - [docs/execution-memory.md](https://github.com/ta-amps/tessera/blob/main/docs/execution-memory.md): Execution reports and permitted recall
