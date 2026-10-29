@@ -21,6 +21,7 @@
 - [docs/claim-admission.md](https://github.com/ta-amps/tessera/blob/main/docs/claim-admission.md): Claim admission
 - [docs/comparison.md](https://github.com/ta-amps/tessera/blob/main/docs/comparison.md): Tessera: comparison
 - [docs/decisions.md](https://github.com/ta-amps/tessera/blob/main/docs/decisions.md): Tessera: decisions
+- [docs/execution-learning.md](https://github.com/ta-amps/tessera/blob/main/docs/execution-learning.md): Execution learning: observations, fingerprints and swappable learners
 - [docs/execution-memory.md](https://github.com/ta-amps/tessera/blob/main/docs/execution-memory.md): Execution reports and permitted recall
 - [docs/expansion.md](https://github.com/ta-amps/tessera/blob/main/docs/expansion.md): Seeding & expanding atomic nouns and verbs with Muse / Meta agents
 - [docs/fine-tuning-workers.md](https://github.com/ta-amps/tessera/blob/main/docs/fine-tuning-workers.md): Optional fine-tuning workers

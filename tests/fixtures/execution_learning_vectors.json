@@ -1,0 +1,2208 @@
+{
+ "fingerprints": [
+  {
+   "brief": {
+    "contract": "tessera.demo.v1",
+    "goal": "Convert an MP4 video into PNG frames at 24 fps",
+    "input_ref": {
+     "key": "k",
+     "store": "s",
+     "version": 1
+    }
+   },
+   "category": "verb.solve_draft",
+   "expected": {
+    "features": [
+     "c:verb.solve_draft",
+     "ti:mp4",
+     "ti:video",
+     "to:image",
+     "to:png",
+     "w:24",
+     "w:clip",
+     "w:convert",
+     "w:extract",
+     "w:fps",
+     "w:frames",
+     "w:mp4",
+     "w:png",
+     "w:video"
+    ],
+    "fingerprints": {
+     "bands": [
+      "m0:3a56464505f728db",
+      "m1:0ea2440c18e588f5",
+      "m2:2ca7680f0de55a68",
+      "m3:0448b56a164b805d"
+     ],
+     "category": "verb.solve_draft",
+     "exact": "90dc445d33c58c5ed5e3fdbb22814f61073e228f763610fbf9755e731d6550d2",
+     "feature_count": 14,
+     "input_type": "{\"contract\":str,\"goal\":str,\"input_ref\":{\"key\":str,\"store\":str,\"version\":int}}",
+     "minhash": "3a56464505f728db0ea2440c18e588f52ca7680f0de55a680448b56a164b805d0c95db12041ad76f092b8ec405490112127580bb058d7a7a0c2f648800e5a2ca0981a76f38fbebe21bcf25151652d6f40622641d17a07bf80e503c7a1b8dedfc12a3135a02e03aa640453d7d15c2d652041e4e272363217b0acb9b3c18a769a2",
+     "phrasing": "1bb90ee638b3020173a52bcfba25f58cec69fb0a729800a9dee7e3cdfaca5bbf",
+     "profile": "execution-learning-v1",
+     "template": "tessera.demo.v1",
+     "text_sources": [
+      "brief",
+      "report"
+     ]
+    },
+    "view": {
+     "shape": {
+      "contract": "str",
+      "goal": "str",
+      "input_ref": "object"
+     },
+     "template": "tessera.demo.v1",
+     "text": {
+      "goal": "Convert an MP4 video into PNG frames at 24 fps"
+     },
+     "type": "{\"contract\":str,\"goal\":str,\"input_ref\":{\"key\":str,\"store\":str,\"version\":int}}"
+    }
+   },
+   "input_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "name": "plain",
+   "report": {
+    "learning": {
+     "types": {
+      "input": "video/mp4",
+      "output": "image/png[]"
+     }
+    },
+    "summaries": {
+     "problem": "Extract PNG frames from an MP4 clip"
+    }
+   }
+  },
+  {
+   "brief": {
+    "contract": "tessera.demo.v1",
+    "goal": "Extract PNG frames from an MP4 clip at 30 fps",
+    "input_ref": {
+     "key": "k",
+     "store": "s",
+     "version": 2
+    }
+   },
+   "category": "verb.solve_draft",
+   "expected": {
+    "features": [
+     "c:verb.solve_draft",
+     "w:30",
+     "w:clip",
+     "w:extract",
+     "w:fps",
+     "w:frames",
+     "w:mp4",
+     "w:png"
+    ],
+    "fingerprints": {
+     "bands": [
+      "m0:32a7399c05f728db",
+      "m1:0ea2440c23ab1801",
+      "m2:49b90a290de55a68",
+      "m3:0448b56a164b805d"
+     ],
+     "category": "verb.solve_draft",
+     "exact": "0d78f3d26b92623be01133387a1e03d5a3c7fe5833cebb8f20019bda6ecc9458",
+     "feature_count": 8,
+     "input_type": "{\"contract\":str,\"goal\":str,\"input_ref\":{\"key\":str,\"store\":str,\"version\":int}}",
+     "minhash": "32a7399c05f728db0ea2440c23ab180149b90a290de55a680448b56a164b805d0c95db120aad196f25f01cfa0549011212db4def0fb400ac0c2f648800e5a2ca0981a76f38fbebe215c0a833025d6eb50191a24d17a07bf8186e2fd11b8dedfc4b61ff3e0781ce9040453d7d15c2d6526ed888c38bb95103072da2e118a769a2",
+     "phrasing": "8ab6055800eb88f8113c3f7ce3e4f0860bedcfbf57afd5808a32d4c549b163bc",
+     "profile": "execution-learning-v1",
+     "template": "tessera.demo.v1",
+     "text_sources": [
+      "brief"
+     ]
+    },
+    "view": {
+     "shape": {
+      "contract": "str",
+      "goal": "str",
+      "input_ref": "object"
+     },
+     "template": "tessera.demo.v1",
+     "text": {
+      "goal": "Extract PNG frames from an MP4 clip at 30 fps"
+     },
+     "type": "{\"contract\":str,\"goal\":str,\"input_ref\":{\"key\":str,\"store\":str,\"version\":int}}"
+    }
+   },
+   "input_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+   "name": "paraphrase",
+   "report": {}
+  },
+  {
+   "brief": {
+    "goal": "Summarize statute cards for wage law"
+   },
+   "category": "verb.solve_draft",
+   "expected": {
+    "features": [
+     "c:verb.solve_draft",
+     "w:cards",
+     "w:law",
+     "w:statute",
+     "w:summarize",
+     "w:wage"
+    ],
+    "fingerprints": {
+     "bands": [
+      "m0:092973097e9ca96d",
+      "m1:9252b52315ec8f8c",
+      "m2:3cdeb067755bb937",
+      "m3:1866673713bfafe9"
+     ],
+     "category": "verb.solve_draft",
+     "exact": null,
+     "feature_count": 6,
+     "input_type": "{\"goal\":str}",
+     "minhash": "092973097e9ca96d9252b52315ec8f8c3cdeb067755bb9371866673713bfafe908a8fe985743bffa8cc280cf33c9c691064b294349a64f286c06ca43169fffc64255270b27ff62994c2257e814134fcf14345f7122dd93e71ef50fd45c847e38151ecf703a1b29671a345b1a11e2eca53d34e64376ae773922842af3614937f5",
+     "phrasing": "8e0938ecaa5a472e6cd496ba70709b67ed95c8a78058ac15d0514df1efdf5163",
+     "profile": "execution-learning-v1",
+     "template": null,
+     "text_sources": [
+      "brief"
+     ]
+    },
+    "view": {
+     "shape": {
+      "goal": "str"
+     },
+     "template": null,
+     "text": {
+      "goal": "Summarize statute cards for wage law"
+     },
+     "type": "{\"goal\":str}"
+    }
+   },
+   "input_digest": null,
+   "name": "unrelated",
+   "report": {}
+  },
+  {
+   "brief": {
+    "Title": "ignored key case",
+    "summary": "A an the IS of to: single c d letters 42 7",
+    "title": "Caf\u00e9 donn\u00e9es \u6570\u636e\u5904\u7406 x \u00e9 \u00dcBER-Stra\u00dfe \ud83e\udde9 puzzle",
+    "\ue000": "x",
+    "\ud83e\udde9": [
+     1,
+     2.5,
+     "s",
+     null,
+     true
+    ]
+   },
+   "category": "noun.case",
+   "expected": {
+    "features": [
+     "c:noun.case",
+     "w:42",
+     "w:caf\u00e9",
+     "w:donn\u00e9es",
+     "w:letters",
+     "w:lines",
+     "w:problem",
+     "w:puzzle",
+     "w:single",
+     "w:stra\u00dfe",
+     "w:tabs",
+     "w:\u00dcber",
+     "w:\u00dcn\u00efc\u00f6d\u00e9",
+     "w:\u00e9",
+     "w:\u6570\u636e\u5904\u7406",
+     "w:\ud83e\udde9"
+    ],
+    "fingerprints": {
+     "bands": [
+      "m0:04ec92ac002a104e",
+      "m1:02d6a1da2cda19c4",
+      "m2:08d70c580a1e41de",
+      "m3:3edcf74d199f74c4"
+     ],
+     "category": "noun.case",
+     "exact": "f26753ef832707ad752d3d2cd22118bab0f3af0ee160d43ec839ea80e34414a3",
+     "feature_count": 16,
+     "input_type": "{\"Title\":str,\"summary\":str,\"title\":str,\"\ue000\":str,\"\ud83e\udde9\":[bool|int|null|num|str]}",
+     "minhash": "04ec92ac002a104e02d6a1da2cda19c408d70c580a1e41de3edcf74d199f74c4027d040b27b40ee6007856550be0cc3702fea19311a6cb7105e41a8321c832cc06eff76a232e087422c440b80818b7e7446d8cfc293399060dfcd0381a66f464168663930e47c5fe138820760e88c943035391cd0a0e995407cdfbf8157a9b9f",
+     "phrasing": "0600e4c416def02dd1846730d3534f360210d5dd7c40f2467d4e634e1fb1e514",
+     "profile": "execution-learning-v1",
+     "template": null,
+     "text_sources": [
+      "brief",
+      "report"
+     ]
+    },
+    "view": {
+     "shape": {
+      "Title": "str",
+      "summary": "str",
+      "title": "str",
+      "\ue000": "str",
+      "\ud83e\udde9": "list"
+     },
+     "template": null,
+     "text": {
+      "summary": "A an the IS of to: single c d letters 42 7",
+      "title": "Caf\u00e9 donn\u00e9es \u6570\u636e\u5904\u7406 x \u00e9 \u00dcBER-Stra\u00dfe \ud83e\udde9 puzzle"
+     },
+     "type": "{\"Title\":str,\"summary\":str,\"title\":str,\"\ue000\":str,\"\ud83e\udde9\":[bool|int|null|num|str]}"
+    }
+   },
+   "input_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+   "name": "unicode_and_order",
+   "report": {
+    "summaries": {
+     "problem": "\u00dcn\u00efc\u00f6d\u00e9 PROBLEM\twith\ttabs\r\nand lines"
+    }
+   }
+  },
+  {
+   "brief": {
+    "contract": "bad\udc00contract",
+    "goal": "good \ud800 bad value",
+    "goal\ud800": "bad key",
+    "title": "kept title"
+   },
+   "category": "verb.ingest",
+   "expected": {
+    "features": [
+     "c:verb.ingest",
+     "w:kept",
+     "w:title"
+    ],
+    "fingerprints": {
+     "bands": [
+      "m0:2ff212ad18097c46",
+      "m1:35dfdcdb01190c69",
+      "m2:4e0e4ef933495ea3",
+      "m3:5b60ca97746f161a"
+     ],
+     "category": "verb.ingest",
+     "exact": null,
+     "feature_count": 3,
+     "input_type": "{\"contract\":str,\"goal\":str,\"title\":str}",
+     "minhash": "2ff212ad18097c4635dfdcdb01190c694e0e4ef933495ea35b60ca97746f161a07558c9911a5fcb94f0700845997580507d3d5f6ae3f461b3c1d906971d950d6674a81953581fa0c6a16c020b2d39585043dda185bc5cb1a41cfa2682c9886dd840b9f3d5c9c8a13c1de2c65698ccf600cd246622985d6bd06706122cae0dcd3",
+     "phrasing": "b6734b7d039130360c2582031acaf46f8203b6d3619bfdf55c0eb0bbd01bbc8f",
+     "profile": "execution-learning-v1",
+     "template": null,
+     "text_sources": [
+      "brief"
+     ]
+    },
+    "view": {
+     "shape": {
+      "contract": "str",
+      "goal": "str",
+      "title": "str"
+     },
+     "template": null,
+     "text": {
+      "title": "kept title"
+     },
+     "type": "{\"contract\":str,\"goal\":str,\"title\":str}"
+    }
+   },
+   "input_digest": null,
+   "name": "lone_surrogate_skipped",
+   "report": {}
+  },
+  {
+   "brief": {
+    "goal": "SYNTHETIC word0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19 word20 word21 word22 word23 word24 word25 word26 word27 word28 word29 word30 word31 word32 word33 word34 word35 word36 word37 word38 word39 word40 word41 word42 word43 word44 word45 word46 word47 word48 word49 word50 word51 word52 word53 word54 word55 word56 word57 word58 word59 word60 word61 word62 word63 word64 word65 word66 word67 word68 word69 word70 word71 word72 word73 word74 word75 word76 word77 word78 word79 word80 word81 word82 word83 word84 word85 word86 word87 word88 word89 word90 word91 word92 word93 word94 word95 word96 word97 word98 word99 word100 word101 word102 word103 word104 word105 word106 word107 word108 word109 word110 word111 word112 word113 word114 word115 word116 word117 word118 word119 word120 word121 word122 word123 word124 word125 word126 word127 word128 word129 word130 word131 word132 word133 word134 word135 word136 word137 word138 word139 word140 word141 word142 word143 word144 word145 word146 word147 word148 word149 word150 word151 word152 word153 word154 word155 word156 word157 word158 word159 word160 word161 word162 word163 word164 word165 word166 word167 word168 word169 word170 word171 word172 word173 word174 word175 word176 word177 word178 word179 word180 word181 word182 word183 word184 word185 word186 word187 word188 word189 word190 word191 word192 word193 word194 word195 word196 word197 word198 word199 word200 word201 word202 word203 word204 word205 word206 word207 word208 word209 word210 word211 word212 word213 word214 word215 word216 word217 word218 word219 word220 word221 word222 word223 word224 word225 word226 word227 word228 word229 word230 word231 word232 word233 word234 word235 word236 word237 word238 word239 word240 word241 word242 word243 word244 word245 word246 word247 word248 word249 word250 word251 word252 word253 word254 word255 word256 word257 word258 word259 word260 word261 word262 word263 word264 word265 word266 word267 word268 word269 word270 word271 word272 word273 word274 word275 word276 word277 word278 word279 word280 word281 word282 word283 word284 word285 word286 word287 word288 word289 word290 word291 word292 word293 word294 word295 word296 word297 word298 word299 word300 word301 word302 word303 word304 word305 word306 word307 word308 word309 word310 word311 word312 word313 word314 word315 word316 word317 word318 word319 word320 word321 word322 word323 word324 word325 word326 word327 word328 word329 word330 word331 word332 word333 word334 word335 word336 word337 word338 word339 word340 word341 word342 word343 word344 word345 word346 word347 word348 word349 word350 word351 word352 word353 word354 word355 word356 word357 word358 word359 word360 word361 word362 word363 word364 word365 word366 word367 word368 word369 word370 word371 word372 word373 word374 word375 word376 word377 word378 word379 word380 word381 word382 word383 word384 word385 word386 word387 word388 word389 word390 word391 word392 word393 word394 word395 word396 word397 word398 word399 word400 word401 word402 word403 word404 word405 word406 word407 word408 word409 word410 word411 word412 word413 word414 word415 word416 word417 word418 word419 word420 word421 word422 word423 word424 word425 word426 word427 word428 word429 word430 word431 word432 word433 word434 word435 word436 word437 word438 word439 word440 word441 word442 word443 word444 word445 word446 word447 word448 word449 word450 word451 word452 word453 word454 word455 word456 word457 word458 word459 word460 word461 word462 word463 word464 word465 word466 word467 word468 word469 word470 word471 word472 word473 word474 word475 word476 word477 word478 word479 word480 word481 word482 word483 word484 word485 word486 word487 word488 word489 word490 word491 word492 word493 word494 word495 word496 word497 word498 word499 word500 word501 word502 word503 word504 word505 word506 word507 word508 word509 word510 word511 word512 word513 word514 word515 word516 word517 word518 word519 word520 word521 word522 word523 word524 word525 word526 word527 word528 word529 word530 word531 word532 word533 word534 word535 word536 word537 word538 word539 word540 word541 word542 word543 word544 word545 word546 word547 word548 word549 word550 word551 word552 word553 word554 word555 word556 word557 word558 word559 word560 word561 word562 word563 word564 word565 word566 word567 word568 word569 word570 word571 word572 word573 word574 word575 word576 word577 word578 word579 word580 word581 word582 word583 word584 word585 word586 word587 word588 word589 word590 word591 word592 word593 word594 word595 word596 word597 word598 word599 word600 word601 word602 word603 word604 word605 word606 word607 word608 word609 word610 word611 word612 word613 word614 word615 word616 word617 word618 word619 word620 word621 word622 word623 word624 word625 word626 word627 word628 word629 word630 word631 word632 word633 word634 word635 word636 word637 word638 word639 word640 word641 word642 word643 word644 word645 word646 word647 word648 word649 word650 word651 word652 word653 word654 word655 word656 word657 word658 word659 word660 word661 word662 word663 word664 word665 word666 word667 word668 word669 word670 word671 word672 word673 word674 word675 word676 word677 word678 word679 word680 word681 word682 word683 word684 word685 word686 word687 word688 word689 word690 word691 word692 word693 word694 word695 word696 word697 word698 word699",
+    "problem": "never reached because the budget is spent",
+    "title": "TTTTTTTTTT"
+   },
+   "category": "verb.ingest",
+   "expected": {
+    "features": [
+     "c:verb.ingest",
+     "w:synthetic",
+     "w:tttttttttt",
+     "w:word0",
+     "w:word1",
+     "w:word10",
+     "w:word100",
+     "w:word101",
+     "w:word102",
+     "w:word103",
+     "w:word104",
+     "w:word105",
+     "w:word106",
+     "w:word107",
+     "w:word108",
+     "w:word109",
+     "w:word11",
+     "w:word110",
+     "w:word111",
+     "w:word112",
+     "w:word113",
+     "w:word114",
+     "w:word115",
+     "w:word116",
+     "w:word117",
+     "w:word118",
+     "w:word119",
+     "w:word12",
+     "w:word120",
+     "w:word121",
+     "w:word122",
+     "w:word123",
+     "w:word124",
+     "w:word125",
+     "w:word126",
+     "w:word127",
+     "w:word128",
+     "w:word129",
+     "w:word13",
+     "w:word130",
+     "w:word131",
+     "w:word132",
+     "w:word133",
+     "w:word134",
+     "w:word135",
+     "w:word136",
+     "w:word137",
+     "w:word138",
+     "w:word139",
+     "w:word14",
+     "w:word140",
+     "w:word141",
+     "w:word142",
+     "w:word143",
+     "w:word144",
+     "w:word145",
+     "w:word146",
+     "w:word147",
+     "w:word148",
+     "w:word149",
+     "w:word15",
+     "w:word150",
+     "w:word151",
+     "w:word152",
+     "w:word153",
+     "w:word154",
+     "w:word155",
+     "w:word156",
+     "w:word157",
+     "w:word158",
+     "w:word159",
+     "w:word16",
+     "w:word160",
+     "w:word161",
+     "w:word162",
+     "w:word163",
+     "w:word164",
+     "w:word165",
+     "w:word166",
+     "w:word167",
+     "w:word168",
+     "w:word169",
+     "w:word17",
+     "w:word170",
+     "w:word171",
+     "w:word172",
+     "w:word173",
+     "w:word174",
+     "w:word175",
+     "w:word176",
+     "w:word177",
+     "w:word178",
+     "w:word179",
+     "w:word18",
+     "w:word180",
+     "w:word181",
+     "w:word182",
+     "w:word183",
+     "w:word184",
+     "w:word185",
+     "w:word186",
+     "w:word187",
+     "w:word188",
+     "w:word189",
+     "w:word19",
+     "w:word190",
+     "w:word191",
+     "w:word192",
+     "w:word193",
+     "w:word194",
+     "w:word195",
+     "w:word196",
+     "w:word197",
+     "w:word198",
+     "w:word199",
+     "w:word2",
+     "w:word20",
+     "w:word200",
+     "w:word201",
+     "w:word202",
+     "w:word203",
+     "w:word204",
+     "w:word205",
+     "w:word206",
+     "w:word207",
+     "w:word208",
+     "w:word209",
+     "w:word21",
+     "w:word210",
+     "w:word211",
+     "w:word212",
+     "w:word213",
+     "w:word214",
+     "w:word215",
+     "w:word216",
+     "w:word217",
+     "w:word218",
+     "w:word219",
+     "w:word22",
+     "w:word220",
+     "w:word221",
+     "w:word222",
+     "w:word223",
+     "w:word224",
+     "w:word225",
+     "w:word226",
+     "w:word227",
+     "w:word228",
+     "w:word229",
+     "w:word23",
+     "w:word230",
+     "w:word231",
+     "w:word232",
+     "w:word233",
+     "w:word234",
+     "w:word235",
+     "w:word236",
+     "w:word237",
+     "w:word238",
+     "w:word239",
+     "w:word24",
+     "w:word240",
+     "w:word241",
+     "w:word242",
+     "w:word243",
+     "w:word244",
+     "w:word245",
+     "w:word246",
+     "w:word247",
+     "w:word248",
+     "w:word249",
+     "w:word25",
+     "w:word250",
+     "w:word251",
+     "w:word252",
+     "w:word253",
+     "w:word254",
+     "w:word255",
+     "w:word256",
+     "w:word257",
+     "w:word258",
+     "w:word259",
+     "w:word26",
+     "w:word260",
+     "w:word261",
+     "w:word262",
+     "w:word263",
+     "w:word264",
+     "w:word265",
+     "w:word266",
+     "w:word267",
+     "w:word268",
+     "w:word269",
+     "w:word27",
+     "w:word270",
+     "w:word271",
+     "w:word272",
+     "w:word273",
+     "w:word274",
+     "w:word275",
+     "w:word276",
+     "w:word277",
+     "w:word278",
+     "w:word279",
+     "w:word28",
+     "w:word280",
+     "w:word281",
+     "w:word282",
+     "w:word283",
+     "w:word284",
+     "w:word285",
+     "w:word286",
+     "w:word287",
+     "w:word288",
+     "w:word289",
+     "w:word29",
+     "w:word290",
+     "w:word291",
+     "w:word292",
+     "w:word293",
+     "w:word294",
+     "w:word295",
+     "w:word296",
+     "w:word297",
+     "w:word298",
+     "w:word299",
+     "w:word3",
+     "w:word30",
+     "w:word300",
+     "w:word301",
+     "w:word302",
+     "w:word303",
+     "w:word304",
+     "w:word305",
+     "w:word306",
+     "w:word307",
+     "w:word308",
+     "w:word309",
+     "w:word31",
+     "w:word310",
+     "w:word311",
+     "w:word312",
+     "w:word313",
+     "w:word314",
+     "w:word315",
+     "w:word316",
+     "w:word317",
+     "w:word318",
+     "w:word319",
+     "w:word32",
+     "w:word320",
+     "w:word321",
+     "w:word322",
+     "w:word323",
+     "w:word324",
+     "w:word325",
+     "w:word326",
+     "w:word327",
+     "w:word328",
+     "w:word329",
+     "w:word33",
+     "w:word330",
+     "w:word331",
+     "w:word332",
+     "w:word333",
+     "w:word334",
+     "w:word335",
+     "w:word336",
+     "w:word337",
+     "w:word338",
+     "w:word339",
+     "w:word34",
+     "w:word340",
+     "w:word341",
+     "w:word342",
+     "w:word343",
+     "w:word344",
+     "w:word345",
+     "w:word346",
+     "w:word347",
+     "w:word348",
+     "w:word349",
+     "w:word35",
+     "w:word350",
+     "w:word351",
+     "w:word352",
+     "w:word353",
+     "w:word354",
+     "w:word355",
+     "w:word356",
+     "w:word357",
+     "w:word358",
+     "w:word359",
+     "w:word36",
+     "w:word360",
+     "w:word361",
+     "w:word362",
+     "w:word363",
+     "w:word364",
+     "w:word365",
+     "w:word366",
+     "w:word367",
+     "w:word368",
+     "w:word369",
+     "w:word37",
+     "w:word370",
+     "w:word371",
+     "w:word372",
+     "w:word373",
+     "w:word374",
+     "w:word375",
+     "w:word376",
+     "w:word377",
+     "w:word378",
+     "w:word379",
+     "w:word38",
+     "w:word380",
+     "w:word381",
+     "w:word382",
+     "w:word383",
+     "w:word384",
+     "w:word385",
+     "w:word386",
+     "w:word387",
+     "w:word388",
+     "w:word389",
+     "w:word39",
+     "w:word390",
+     "w:word391",
+     "w:word392",
+     "w:word393",
+     "w:word394",
+     "w:word395",
+     "w:word396",
+     "w:word397",
+     "w:word398",
+     "w:word399",
+     "w:word4",
+     "w:word40",
+     "w:word400",
+     "w:word401",
+     "w:word402",
+     "w:word403",
+     "w:word404",
+     "w:word405",
+     "w:word406",
+     "w:word407",
+     "w:word408",
+     "w:word409",
+     "w:word41",
+     "w:word410",
+     "w:word411",
+     "w:word412",
+     "w:word413",
+     "w:word414",
+     "w:word415",
+     "w:word416",
+     "w:word417",
+     "w:word418",
+     "w:word419",
+     "w:word42",
+     "w:word420",
+     "w:word421",
+     "w:word422",
+     "w:word423",
+     "w:word424",
+     "w:word425",
+     "w:word426",
+     "w:word427",
+     "w:word428",
+     "w:word429",
+     "w:word43",
+     "w:word430",
+     "w:word431",
+     "w:word432",
+     "w:word433",
+     "w:word434",
+     "w:word435",
+     "w:word436",
+     "w:word437",
+     "w:word438",
+     "w:word439",
+     "w:word44",
+     "w:word440",
+     "w:word441",
+     "w:word442",
+     "w:word443",
+     "w:word444",
+     "w:word445",
+     "w:word446",
+     "w:word447",
+     "w:word448",
+     "w:word449",
+     "w:word45",
+     "w:word450",
+     "w:word451",
+     "w:word452",
+     "w:word453",
+     "w:word454",
+     "w:word455",
+     "w:word456",
+     "w:word457",
+     "w:word458",
+     "w:word459",
+     "w:word46",
+     "w:word460",
+     "w:word461",
+     "w:word462",
+     "w:word463",
+     "w:word464",
+     "w:word465",
+     "w:word466",
+     "w:word467",
+     "w:word468",
+     "w:word469",
+     "w:word47",
+     "w:word470",
+     "w:word471",
+     "w:word472",
+     "w:word473",
+     "w:word474",
+     "w:word475",
+     "w:word476",
+     "w:word477",
+     "w:word478",
+     "w:word479",
+     "w:word48",
+     "w:word480",
+     "w:word481",
+     "w:word482",
+     "w:word483",
+     "w:word484",
+     "w:word485",
+     "w:word486",
+     "w:word487",
+     "w:word488",
+     "w:word489",
+     "w:word49",
+     "w:word490",
+     "w:word491",
+     "w:word492",
+     "w:word493",
+     "w:word494",
+     "w:word495",
+     "w:word496",
+     "w:word497",
+     "w:word498",
+     "w:word499",
+     "w:word5",
+     "w:word50",
+     "w:word500",
+     "w:word501",
+     "w:word502",
+     "w:word503",
+     "w:word504",
+     "w:word505",
+     "w:word506",
+     "w:word507",
+     "w:word508",
+     "w:word509",
+     "w:word51",
+     "w:word52",
+     "w:word53",
+     "w:word54",
+     "w:word55",
+     "w:word56",
+     "w:word57",
+     "w:word58",
+     "w:word59",
+     "w:word6",
+     "w:word60",
+     "w:word61",
+     "w:word62",
+     "w:word63",
+     "w:word64",
+     "w:word65",
+     "w:word66",
+     "w:word67",
+     "w:word68",
+     "w:word69",
+     "w:word7",
+     "w:word70",
+     "w:word71",
+     "w:word72",
+     "w:word73",
+     "w:word74",
+     "w:word75",
+     "w:word76",
+     "w:word77",
+     "w:word78",
+     "w:word79",
+     "w:word8",
+     "w:word80",
+     "w:word81",
+     "w:word82",
+     "w:word83",
+     "w:word84",
+     "w:word85",
+     "w:word86",
+     "w:word87",
+     "w:word88",
+     "w:word89",
+     "w:word9",
+     "w:word90",
+     "w:word91",
+     "w:word92",
+     "w:word93",
+     "w:word94",
+     "w:word95",
+     "w:word96",
+     "w:word97",
+     "w:word98",
+     "w:word99"
+    ],
+    "fingerprints": {
+     "bands": [
+      "m0:016fba3000ebd6bb",
+      "m1:0119181c0060695d",
+      "m2:004b13d7000741ab",
+      "m3:000673510070009f"
+     ],
+     "category": "verb.ingest",
+     "exact": "06b9e202aa0afd973756c3eb9d14afe64870698cd3c6846b3cadfb404f8ee5b2",
+     "feature_count": 513,
+     "input_type": "{\"goal\":str,\"problem\":str,\"title\":str}",
+     "minhash": "016fba3000ebd6bb0119181c0060695d004b13d7000741ab000673510070009f01a2ffec009a6ff700bfc358002742f8003f369c00743ff9005651400006863b013e67b30016378e000c082c001eaa090045b80d010d1006002a20e900095e6e007f480d002e221d010f1b9c0028c4e6002bdc2c001e0c3c015cd4b700901513",
+     "phrasing": "0dc02c673d422ee8524779ebc1438f5cc516bf3466b04a5a98cd23a4eef1b933",
+     "profile": "execution-learning-v1",
+     "template": null,
+     "text_sources": [
+      "brief",
+      "report"
+     ]
+    },
+    "view": {
+     "shape": {
+      "goal": "str",
+      "problem": "str",
+      "title": "str"
+     },
+     "template": null,
+     "text": {
+      "goal": "SYNTHETIC word0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19 word20 word21 word22 word23 word24 word25 word26 word27 word28 word29 word30 word31 word32 word33 word34 word35 word36 word37 word38 word39 word40 word41 word42 word43 word44 word45 word46 word47 word48 word49 word50 word51 word52 word53 word54 word55 word56 word57 word58 word59 word60 word61 word62 word63 word64 word65 word66 word67 word68 word69 word70 word71 word72 word73 word74 word75 word76 word77 word78 word79 word80 word81 word82 word83 word84 word85 word86 word87 word88 word89 word90 word91 word92 word93 word94 word95 word96 word97 word98 word99 word100 word101 word102 word103 word104 word105 word106 word107 word108 word109 word110 word111 word112 word113 word114 word115 word116 word117 word118 word119 word120 word121 word122 word123 word124 word125 word126 word127 word128 word129 word130 word131 word132 word133 word134 word135 word136 word137 word138 word139 word140 word141 word142 word143 word144 word145 word146 word147 word148 word149 word150 word151 word152 word153 word154 word155 word156 word157 word158 word159 word160 word161 word162 word163 word164 word165 word166 word167 word168 word169 word170 word171 word172 word173 word174 word175 word176 word177 word178 word179 word180 word181 word182 word183 word184 word185 word186 word187 word188 word189 word190 word191 word192 word193 word194 word195 word196 word197 word198 word199 word200 word201 word202 word203 word204 word205 word206 word207 word208 word209 word210 word211 word212 word213 word214 word215 word216 word217 word218 word219 word220 word221 word222 word223 word224 word225 word226 word227 word228 word229 word230 word231 word232 word233 word234 word235 word236 word237 word238 word239 word240 word241 word242 word243 word244 word245 word246 word247 word248 word249 word250 word251 word252 word253 word254 word255 word256 word257 word258 word259 word260 word261 word262 word263 word264 word265 word266 word267 word268 word269 word270 word271 word272 word273 word274 word275 word276 word277 word278 word279 word280 word281 word282 word283 word284 word285 word286 word287 word288 word289 word290 word291 word292 word293 word294 word295 word296 word297 word298 word299 word300 word301 word302 word303 word304 word305 word306 word307 word308 word309 word310 word311 word312 word313 word314 word315 word316 word317 word318 word319 word320 word321 word322 word323 word324 word325 word326 word327 word328 word329 word330 word331 word332 word333 word334 word335 word336 word337 word338 word339 word340 word341 word342 word343 word344 word345 word346 word347 word348 word349 word350 word351 word352 word353 word354 word355 word356 word357 word358 word359 word360 word361 word362 word363 word364 word365 word366 word367 word368 word369 word370 word371 word372 word373 word374 word375 word376 word377 word378 word379 word380 word381 word382 word383 word384 word385 word386 word387 word388 word389 word390 word391 word392 word393 word394 word395 word396 word397 word398 word399 word400 word401 word402 word403 word404 word405 word406 word407 word408 word409 word410 word411 word412 word413 word414 word415 word416 word417 word418 word419 word420 word421 word422 word423 word424 word425 word426 word427 word428 word429 word430 word431 word432 word433 word434 word435 word436 word437 word438 word439 word440 word441 word442 word443 word444 word445 word446 word447 word448 word449 word450 word451 word452 word453 word454 word455 word456 word457 word458 word459 word460 word461 word462 word463 word464 word465 word466 word467 word468 word469 word470 word471 word472 word473 word474 word475 word476 word477 word478 word479 word480 word481 word482 word483 word484 word485 word486 word487 word488 word489 word490 word491 word492 word493 word494 word495 word496 word497 word498 word499 word500 word501 word502 word503 word504 word505 word506 word507 word508 word509 word510 word511 word512 word513 word514 word515 word516 word517 word518 word519 word520 word521 word522 wo",
+      "title": "TTTTTTTTTT"
+     },
+     "type": "{\"goal\":str,\"problem\":str,\"title\":str}"
+    }
+   },
+   "input_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+   "name": "long_text_budget",
+   "report": {
+    "summaries": {
+     "problem": "extra0 extra1 extra2 extra3 extra4 extra5 extra6 extra7 extra8 extra9 extra10 extra11 extra12 extra13 extra14 extra15 extra16 extra17 extra18 extra19 extra20 extra21 extra22 extra23 extra24 extra25 extra26 extra27 extra28 extra29 extra30 extra31 extra32 extra33 extra34 extra35 extra36 extra37 extra38 extra39 extra40 extra41 extra42 extra43 extra44 extra45 extra46 extra47 extra48 extra49 extra50 extra51 extra52 extra53 extra54 extra55 extra56 extra57 extra58 extra59 extra60 extra61 extra62 extra63 extra64 extra65 extra66 extra67 extra68 extra69 extra70 extra71 extra72 extra73 extra74 extra75 extra76 extra77 extra78 extra79 extra80 extra81 extra82 extra83 extra84 extra85 extra86 extra87 extra88 extra89 extra90 extra91 extra92 extra93 extra94 extra95 extra96 extra97 extra98 extra99"
+    }
+   }
+  },
+  {
+   "brief": {
+    "f": 1.0,
+    "g": 2.5,
+    "h": 1e+300,
+    "k00": 0,
+    "k01": 1,
+    "k02": 2,
+    "k03": 3,
+    "k04": 4,
+    "k05": 5,
+    "k06": 6,
+    "k07": 7,
+    "k08": 8,
+    "k09": 9,
+    "k10": 10,
+    "k11": 11,
+    "k12": 12,
+    "k13": 13,
+    "k14": 14,
+    "k15": 15,
+    "k16": 16,
+    "k17": 17,
+    "k18": 18,
+    "k19": 19,
+    "k20": 20,
+    "k21": 21,
+    "k22": 22,
+    "k23": 23,
+    "k24": 24,
+    "k25": 25,
+    "k26": 26,
+    "k27": 27,
+    "k28": 28,
+    "k29": 29,
+    "k30": 30,
+    "k31": 31,
+    "k32": 32,
+    "k33": 33,
+    "k34": 34,
+    "k35": 35,
+    "k36": 36,
+    "k37": 37,
+    "k38": 38,
+    "k39": 39,
+    "list": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15,
+     16,
+     17,
+     18,
+     19,
+     "x",
+     {
+      "y": [
+       1
+      ]
+     }
+    ],
+    "nested": {
+     "a": {
+      "b": {
+       "c": {
+        "d": {
+         "e": 1
+        }
+       }
+      }
+     }
+    },
+    "z": -0.0
+   },
+   "category": "task",
+   "expected": {
+    "features": [
+     "c:task"
+    ],
+    "fingerprints": {
+     "bands": [],
+     "category": "task",
+     "exact": "c9bac6635c88bb4e83626ec3af9b77bfc3396e9d5c7700c88091b889c22c8d6f",
+     "feature_count": 1,
+     "input_type": "{\"f\":int,\"g\":num,\"h\":int,\"k00\":int,\"k01\":int,\"k02\":int,\"k03\":int,\"k04\":int,\"k05\":int,\"k06\":int,\"k07\":int,\"k08\":int,\"k09\":int,\"k10\":int,\"k11\":int,\"k12\":int,\"k13\":int,\"k14\":int,\"k15\":int,\"k16\":int,\"k17\":int,\"k18\":int,\"k19\":int,\"k20\":int,\"k21\":int,\"k22\":int,\"k23\":int,\"k24\":int,\"k25\":int,\"k26\":int,\"k27\":int,\"k28\":int,...}",
+     "minhash": "a61a58015e124382b557369d816ec7046184efeb9722fc4baeef320095fa065e8e3e27f546d60b4160ae0eef26d7b8f2db9f16096a47c3b2fedff93174c5d4d9e4253ad714c341cb9203c710f36ad886a3554abc145918603df67dad0a14e2d19caed6c111414614408fd0a958a6a2d46dab96fab32c15313570a8dc53da7448",
+     "phrasing": null,
+     "profile": "execution-learning-v1",
+     "template": null,
+     "text_sources": []
+    },
+    "view": {
+     "shape": {
+      "f": "int",
+      "g": "num",
+      "h": "int",
+      "k00": "int",
+      "k01": "int",
+      "k02": "int",
+      "k03": "int",
+      "k04": "int",
+      "k05": "int",
+      "k06": "int",
+      "k07": "int",
+      "k08": "int",
+      "k09": "int",
+      "k10": "int",
+      "k11": "int",
+      "k12": "int",
+      "k13": "int",
+      "k14": "int",
+      "k15": "int",
+      "k16": "int",
+      "k17": "int",
+      "k18": "int",
+      "k19": "int",
+      "k20": "int",
+      "k21": "int",
+      "k22": "int",
+      "k23": "int",
+      "k24": "int",
+      "k25": "int",
+      "k26": "int",
+      "k27": "int",
+      "k28": "int"
+     },
+     "template": null,
+     "text": {},
+     "type": "{\"f\":int,\"g\":num,\"h\":int,\"k00\":int,\"k01\":int,\"k02\":int,\"k03\":int,\"k04\":int,\"k05\":int,\"k06\":int,\"k07\":int,\"k08\":int,\"k09\":int,\"k10\":int,\"k11\":int,\"k12\":int,\"k13\":int,\"k14\":int,\"k15\":int,\"k16\":int,\"k17\":int,\"k18\":int,\"k19\":int,\"k20\":int,\"k21\":int,\"k22\":int,\"k23\":int,\"k24\":int,\"k25\":int,\"k26\":int,\"k27\":int,\"k28\":int,...}"
+    }
+   },
+   "input_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+   "name": "many_keys_and_types",
+   "report": {}
+  },
+  {
+   "brief": {
+    "key-0key-0key-0key-0key-0key-0key-0key-0key-0key-0key-0key-0": {
+     "inner": [
+      0
+     ]
+    },
+    "key-10key-10key-10key-10key-10key-10key-10key-10key-10key-10key-10key-10": {
+     "inner": [
+      10
+     ]
+    },
+    "key-11key-11key-11key-11key-11key-11key-11key-11key-11key-11key-11key-11": {
+     "inner": [
+      11
+     ]
+    },
+    "key-12key-12key-12key-12key-12key-12key-12key-12key-12key-12key-12key-12": {
+     "inner": [
+      12
+     ]
+    },
+    "key-13key-13key-13key-13key-13key-13key-13key-13key-13key-13key-13key-13": {
+     "inner": [
+      13
+     ]
+    },
+    "key-14key-14key-14key-14key-14key-14key-14key-14key-14key-14key-14key-14": {
+     "inner": [
+      14
+     ]
+    },
+    "key-15key-15key-15key-15key-15key-15key-15key-15key-15key-15key-15key-15": {
+     "inner": [
+      15
+     ]
+    },
+    "key-16key-16key-16key-16key-16key-16key-16key-16key-16key-16key-16key-16": {
+     "inner": [
+      16
+     ]
+    },
+    "key-17key-17key-17key-17key-17key-17key-17key-17key-17key-17key-17key-17": {
+     "inner": [
+      17
+     ]
+    },
+    "key-18key-18key-18key-18key-18key-18key-18key-18key-18key-18key-18key-18": {
+     "inner": [
+      18
+     ]
+    },
+    "key-19key-19key-19key-19key-19key-19key-19key-19key-19key-19key-19key-19": {
+     "inner": [
+      19
+     ]
+    },
+    "key-1key-1key-1key-1key-1key-1key-1key-1key-1key-1key-1key-1": {
+     "inner": [
+      1
+     ]
+    },
+    "key-2key-2key-2key-2key-2key-2key-2key-2key-2key-2key-2key-2": {
+     "inner": [
+      2
+     ]
+    },
+    "key-3key-3key-3key-3key-3key-3key-3key-3key-3key-3key-3key-3": {
+     "inner": [
+      3
+     ]
+    },
+    "key-4key-4key-4key-4key-4key-4key-4key-4key-4key-4key-4key-4": {
+     "inner": [
+      4
+     ]
+    },
+    "key-5key-5key-5key-5key-5key-5key-5key-5key-5key-5key-5key-5": {
+     "inner": [
+      5
+     ]
+    },
+    "key-6key-6key-6key-6key-6key-6key-6key-6key-6key-6key-6key-6": {
+     "inner": [
+      6
+     ]
+    },
+    "key-7key-7key-7key-7key-7key-7key-7key-7key-7key-7key-7key-7": {
+     "inner": [
+      7
+     ]
+    },
+    "key-8key-8key-8key-8key-8key-8key-8key-8key-8key-8key-8key-8": {
+     "inner": [
+      8
+     ]
+    },
+    "key-9key-9key-9key-9key-9key-9key-9key-9key-9key-9key-9key-9": {
+     "inner": [
+      9
+     ]
+    }
+   },
+   "category": "task",
+   "expected": {
+    "features": [
+     "c:task"
+    ],
+    "fingerprints": {
+     "bands": [],
+     "category": "task",
+     "exact": "96320dc038a444e0872feae3b143970a07280a34de05be5860a4419bf389d33d",
+     "feature_count": 1,
+     "input_type": "sha256:b58837a1fbb611841a896987d711f8437c4ba7e2fc99a1479f98b59f689aafdf",
+     "minhash": "a61a58015e124382b557369d816ec7046184efeb9722fc4baeef320095fa065e8e3e27f546d60b4160ae0eef26d7b8f2db9f16096a47c3b2fedff93174c5d4d9e4253ad714c341cb9203c710f36ad886a3554abc145918603df67dad0a14e2d19caed6c111414614408fd0a958a6a2d46dab96fab32c15313570a8dc53da7448",
+     "phrasing": null,
+     "profile": "execution-learning-v1",
+     "template": null,
+     "text_sources": []
+    },
+    "view": {
+     "shape": {
+      "key-0key-0key-0key-0key-0key-0key-0key-0key-0key-0key-0key-0": "object",
+      "key-10key-10key-10key-10key-10key-10key-10key-10key-10key-10key-10key-10": "object",
+      "key-11key-11key-11key-11key-11key-11key-11key-11key-11key-11key-11key-11": "object",
+      "key-12key-12key-12key-12key-12key-12key-12key-12key-12key-12key-12key-12": "object",
+      "key-13key-13key-13key-13key-13key-13key-13key-13key-13key-13key-13key-13": "object",
+      "key-14key-14key-14key-14key-14key-14key-14key-14key-14key-14key-14key-14": "object",
+      "key-15key-15key-15key-15key-15key-15key-15key-15key-15key-15key-15key-15": "object",
+      "key-16key-16key-16key-16key-16key-16key-16key-16key-16key-16key-16key-16": "object",
+      "key-17key-17key-17key-17key-17key-17key-17key-17key-17key-17key-17key-17": "object",
+      "key-18key-18key-18key-18key-18key-18key-18key-18key-18key-18key-18key-18": "object",
+      "key-19key-19key-19key-19key-19key-19key-19key-19key-19key-19key-19key-19": "object",
+      "key-1key-1key-1key-1key-1key-1key-1key-1key-1key-1key-1key-1": "object",
+      "key-2key-2key-2key-2key-2key-2key-2key-2key-2key-2key-2key-2": "object",
+      "key-3key-3key-3key-3key-3key-3key-3key-3key-3key-3key-3key-3": "object",
+      "key-4key-4key-4key-4key-4key-4key-4key-4key-4key-4key-4key-4": "object",
+      "key-5key-5key-5key-5key-5key-5key-5key-5key-5key-5key-5key-5": "object",
+      "key-6key-6key-6key-6key-6key-6key-6key-6key-6key-6key-6key-6": "object",
+      "key-7key-7key-7key-7key-7key-7key-7key-7key-7key-7key-7key-7": "object",
+      "key-8key-8key-8key-8key-8key-8key-8key-8key-8key-8key-8key-8": "object",
+      "key-9key-9key-9key-9key-9key-9key-9key-9key-9key-9key-9key-9": "object"
+     },
+     "template": null,
+     "text": {},
+     "type": "sha256:b58837a1fbb611841a896987d711f8437c4ba7e2fc99a1479f98b59f689aafdf"
+    }
+   },
+   "input_digest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+   "name": "long_keys_hashed_type",
+   "report": {}
+  },
+  {
+   "brief": {},
+   "category": "task",
+   "expected": {
+    "features": [
+     "c:task"
+    ],
+    "fingerprints": {
+     "bands": [],
+     "category": "task",
+     "exact": null,
+     "feature_count": 1,
+     "input_type": "{}",
+     "minhash": "a61a58015e124382b557369d816ec7046184efeb9722fc4baeef320095fa065e8e3e27f546d60b4160ae0eef26d7b8f2db9f16096a47c3b2fedff93174c5d4d9e4253ad714c341cb9203c710f36ad886a3554abc145918603df67dad0a14e2d19caed6c111414614408fd0a958a6a2d46dab96fab32c15313570a8dc53da7448",
+     "phrasing": null,
+     "profile": "execution-learning-v1",
+     "template": null,
+     "text_sources": []
+    },
+    "view": {
+     "shape": {},
+     "template": null,
+     "text": {},
+     "type": "{}"
+    }
+   },
+   "input_digest": null,
+   "name": "empty_brief",
+   "report": {}
+  },
+  {
+   "brief": {
+    "contract": "ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "question": "   "
+   },
+   "category": "task",
+   "expected": {
+    "features": [
+     "c:task"
+    ],
+    "fingerprints": {
+     "bands": [],
+     "category": "task",
+     "exact": null,
+     "feature_count": 1,
+     "input_type": "{\"contract\":str,\"question\":str}",
+     "minhash": "a61a58015e124382b557369d816ec7046184efeb9722fc4baeef320095fa065e8e3e27f546d60b4160ae0eef26d7b8f2db9f16096a47c3b2fedff93174c5d4d9e4253ad714c341cb9203c710f36ad886a3554abc145918603df67dad0a14e2d19caed6c111414614408fd0a958a6a2d46dab96fab32c15313570a8dc53da7448",
+     "phrasing": null,
+     "profile": "execution-learning-v1",
+     "template": null,
+     "text_sources": []
+    },
+    "view": {
+     "shape": {
+      "contract": "str",
+      "question": "str"
+     },
+     "template": null,
+     "text": {
+      "question": "   "
+     },
+     "type": "{\"contract\":str,\"question\":str}"
+    }
+   },
+   "input_digest": null,
+   "name": "contract_too_long",
+   "report": {
+    "summaries": {
+     "problem": ""
+    }
+   }
+  }
+ ],
+ "learning_invalid": [
+  {
+   "message": "report.learning: must be an object",
+   "value": []
+  },
+  {
+   "message": "report.learning: unknown fields",
+   "value": {
+    "x": 1
+   }
+  },
+  {
+   "message": "report.learning.outcome: must be one of succeeded, partial, failed, blocked, no_change",
+   "value": {
+    "outcome": "great"
+   }
+  },
+  {
+   "message": "report.learning.outcome: must be one of succeeded, partial, failed, blocked, no_change",
+   "value": {
+    "outcome": [
+     "succeeded"
+    ]
+   }
+  },
+  {
+   "message": "report.learning.went_right: must be an array of at most 8 strings",
+   "value": {
+    "went_right": "string"
+   }
+  },
+  {
+   "message": "report.learning.went_wrong: must be an array of at most 8 strings",
+   "value": {
+    "went_wrong": [
+     "x",
+     "x",
+     "x",
+     "x",
+     "x",
+     "x",
+     "x",
+     "x",
+     "x"
+    ]
+   }
+  },
+  {
+   "message": "report.learning.next_steps[0]: must be a nonempty string",
+   "value": {
+    "next_steps": [
+     ""
+    ]
+   }
+  },
+  {
+   "message": "report.learning.next_steps[0]: must be a nonempty string",
+   "value": {
+    "next_steps": [
+     "   \t"
+    ]
+   }
+  },
+  {
+   "message": "report.learning.ideas[0]: exceeds 512 UTF-8 bytes",
+   "value": {
+    "ideas": [
+     "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    ]
+   }
+  },
+  {
+   "message": "report.learning.types.input: must be a nonempty string",
+   "value": {
+    "types": {
+     "input": 1
+    }
+   }
+  },
+  {
+   "message": "report.learning.types: unknown fields",
+   "value": {
+    "types": {
+     "other": "x"
+    }
+   }
+  },
+  {
+   "message": "report.learning.types: must be an object",
+   "value": {
+    "types": []
+   }
+  },
+  {
+   "message": "report.learning.path.shim: must be a nonempty string",
+   "value": {
+    "path": {
+     "shim": ""
+    }
+   }
+  },
+  {
+   "message": "report.learning.path: unknown fields",
+   "value": {
+    "path": {
+     "tool": "x"
+    }
+   }
+  },
+  {
+   "message": "report.learning.reasoning_summary: exceeds 2048 UTF-8 bytes",
+   "value": {
+    "reasoning_summary": "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9"
+   }
+  },
+  {
+   "message": "report.learning.unknowns: must be an array of at most 16 entries",
+   "value": {
+    "unknowns": "x"
+   }
+  },
+  {
+   "message": "report.learning.unknowns: must be an array of at most 16 entries",
+   "value": {
+    "unknowns": [
+     {
+      "field": "f",
+      "reason": "r"
+     },
+     {
+      "field": "f",
+      "reason": "r"
+     },
+     {
+      "field": "f",
+      "reason": "r"
+     },
+     {
+      "field": "f",
+      "reason": "r"
+     },
+     {
+      "field": "f",
+      "reason": "r"
+     },
+     {
+      "field": "f",
+      "reason": "r"
+     },
+     {
+      "field": "f",
+      "reason": "r"
+     },
+     {
+      "field": "f",
+      "reason": "r"
+     },
+     {
+      "field": "f",
+      "reason": "r"
+     },
+     {
+      "field": "f",
+      "reason": "r"
+     },
+     {
+      "field": "f",
+      "reason": "r"
+     },
+     {
+      "field": "f",
+      "reason": "r"
+     },
+     {
+      "field": "f",
+      "reason": "r"
+     },
+     {
+      "field": "f",
+      "reason": "r"
+     },
+     {
+      "field": "f",
+      "reason": "r"
+     },
+     {
+      "field": "f",
+      "reason": "r"
+     },
+     {
+      "field": "f",
+      "reason": "r"
+     }
+    ]
+   }
+  },
+  {
+   "message": "report.learning.unknowns[0].reason: must be a nonempty string",
+   "value": {
+    "unknowns": [
+     {
+      "field": "cost"
+     }
+    ]
+   }
+  },
+  {
+   "message": "report.learning.duration_seconds: null requires a matching learning.unknowns entry",
+   "value": {
+    "duration_seconds": null
+   }
+  },
+  {
+   "message": "report.learning.cost: null requires a matching learning.unknowns entry",
+   "value": {
+    "cost": null,
+    "unknowns": [
+     {
+      "field": "duration_seconds",
+      "reason": "r"
+     }
+    ]
+   }
+  },
+  {
+   "message": "report.learning.duration_seconds: must be a finite number from 0 to 1000000000",
+   "value": {
+    "duration_seconds": -1
+   }
+  },
+  {
+   "message": "report.learning.duration_seconds: must be a finite number from 0 to 1000000000",
+   "value": {
+    "duration_seconds": true
+   }
+  },
+  {
+   "message": "report.learning.duration_seconds: must be a finite number from 0 to 1000000000",
+   "value": {
+    "duration_seconds": 1000000000000.0
+   }
+  },
+  {
+   "message": "report.learning.cost.currency: must be a three-letter uppercase code",
+   "value": {
+    "cost": {
+     "amount": 1,
+     "currency": "usd",
+     "source": "x"
+    }
+   }
+  },
+  {
+   "message": "report.learning.cost.source: must be a nonempty string",
+   "value": {
+    "cost": {
+     "amount": 1,
+     "currency": "USD"
+    }
+   }
+  },
+  {
+   "message": "report.learning.cost.amount: must be a finite number from 0 to 1000000000",
+   "value": {
+    "cost": {
+     "amount": -0.5,
+     "currency": "USD",
+     "source": "x"
+    }
+   }
+  },
+  {
+   "message": "report.learning.cost: must be an object",
+   "value": {
+    "cost": "free"
+   }
+  },
+  {
+   "message": "report.learning.advice: must be an array of at most 8 entries",
+   "value": {
+    "advice": {}
+   }
+  },
+  {
+   "message": "report.learning.advice[0].version: must be a positive safe integer",
+   "value": {
+    "advice": [
+     {
+      "key": "k",
+      "learner": "m",
+      "record_version": 1,
+      "store": "x",
+      "strategy": "s",
+      "version": 0
+     }
+    ]
+   }
+  },
+  {
+   "message": "report.learning.advice[0]: unknown fields",
+   "value": {
+    "advice": [
+     {
+      "extra": 1,
+      "key": "k",
+      "learner": "m",
+      "record_version": 1,
+      "store": "x",
+      "strategy": "s",
+      "version": 1
+     }
+    ]
+   }
+  },
+  {
+   "message": "report.learning.advice[0].version: must be a positive safe integer",
+   "value": {
+    "advice": [
+     {
+      "key": "k",
+      "learner": "m",
+      "record_version": 1,
+      "store": "x",
+      "strategy": "s",
+      "version": 1.5
+     }
+    ]
+   }
+  }
+ ],
+ "learning_valid": [
+  {
+   "normalized": {},
+   "value": {}
+  },
+  {
+   "normalized": {
+    "ideas": [
+     "i",
+     "i",
+     "i",
+     "i",
+     "i",
+     "i",
+     "i",
+     "i"
+    ],
+    "next_steps": [
+     "n"
+    ],
+    "outcome": "succeeded",
+    "went_right": [
+     "fast check"
+    ],
+    "went_wrong": []
+   },
+   "value": {
+    "ideas": [
+     "i",
+     "i",
+     "i",
+     "i",
+     "i",
+     "i",
+     "i",
+     "i"
+    ],
+    "next_steps": [
+     "n"
+    ],
+    "outcome": "succeeded",
+    "went_right": [
+     "fast check"
+    ],
+    "went_wrong": []
+   }
+  },
+  {
+   "normalized": {
+    "path": {
+     "method": "ffmpeg",
+     "shim": "json-repair"
+    },
+    "reasoning_summary": "short summary",
+    "types": {
+     "input": "video/mp4",
+     "output": "image/png[]"
+    }
+   },
+   "value": {
+    "path": {
+     "method": "ffmpeg",
+     "shim": "json-repair"
+    },
+    "reasoning_summary": "short summary",
+    "types": {
+     "input": "video/mp4",
+     "output": "image/png[]"
+    }
+   }
+  },
+  {
+   "normalized": {
+    "cost": null,
+    "duration_seconds": null,
+    "unknowns": [
+     {
+      "field": "duration_seconds",
+      "reason": "not timed"
+     },
+     {
+      "field": "cost",
+      "reason": "not metered"
+     }
+    ]
+   },
+   "value": {
+    "cost": null,
+    "duration_seconds": null,
+    "unknowns": [
+     {
+      "field": "duration_seconds",
+      "reason": "not timed"
+     },
+     {
+      "field": "cost",
+      "reason": "not metered"
+     }
+    ]
+   }
+  },
+  {
+   "normalized": {
+    "cost": {
+     "amount": 0.02,
+     "currency": "USD",
+     "source": "provider invoice line"
+    },
+    "duration_seconds": 12.5
+   },
+   "value": {
+    "cost": {
+     "amount": 0.02,
+     "currency": "USD",
+     "source": "provider invoice line"
+    },
+    "duration_seconds": 12.5
+   }
+  },
+  {
+   "normalized": {
+    "advice": [
+     {
+      "key": "memory:minhash-lsh:v1:q:head",
+      "learner": "memory",
+      "record_version": 3,
+      "store": "learn.memory",
+      "strategy": "minhash-lsh",
+      "version": 1
+     }
+    ]
+   },
+   "value": {
+    "advice": [
+     {
+      "key": "memory:minhash-lsh:v1:q:head",
+      "learner": "memory",
+      "record_version": 3,
+      "store": "learn.memory",
+      "strategy": "minhash-lsh",
+      "version": 1
+     }
+    ]
+   }
+  },
+  {
+   "normalized": {
+    "advice": [
+     {
+      "key": "k",
+      "learner": "m",
+      "record_version": 2,
+      "store": "x",
+      "strategy": "s",
+      "version": 1.0
+     }
+    ],
+    "duration_seconds": 0
+   },
+   "value": {
+    "advice": [
+     {
+      "key": "k",
+      "learner": "m",
+      "record_version": 2,
+      "store": "x",
+      "strategy": "s",
+      "version": 1.0
+     }
+    ],
+    "duration_seconds": 0
+   }
+  }
+ ],
+ "observations": [
+  {
+   "category": "verb.solve_draft",
+   "envelope": {
+    "created_at": 1793000000.25,
+    "evidence": {
+     "server_duration_seconds": 1.5
+    },
+    "fencing_token": 2,
+    "fingerprints": {
+     "input_hash": "4444444444444444444444444444444444444444444444444444444444444444"
+    },
+    "input_snapshot": {
+     "brief": {
+      "contract": "tessera.demo.v1",
+      "goal": "Convert an MP4 video into PNG frames at 24 fps",
+      "input_ref": {
+       "key": "k",
+       "store": "s",
+       "version": 1
+      }
+     },
+     "dependencies_and_children": [],
+     "effect_class": "write-internal",
+     "inputs": [],
+     "kind": "verb.solve_draft"
+    },
+    "queue": "conformance-learn",
+    "receipt_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+    "report": {
+     "harness": {
+      "name": "synthetic-harness"
+     },
+     "learning": {
+      "outcome": "succeeded"
+     },
+     "model": null,
+     "summaries": {
+      "problem": "SYNTHETIC frames",
+      "solution": "done"
+     },
+     "usage": {
+      "input_tokens": 10,
+      "output_tokens": 5,
+      "source": "fixture"
+     },
+     "version": 1
+    },
+    "report_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+    "run_id": "run_1111111111111111111111111111111111111111111111111111111111111111",
+    "tags": [
+     "category:noun.eval_run",
+     "status:worker_reported"
+    ],
+    "task_id": "t_synthetic",
+    "trust": {
+     "telemetry": "worker_reported"
+    }
+   },
+   "error": null,
+   "observation": {
+    "brief": {
+     "shape": {
+      "contract": "str",
+      "goal": "str",
+      "input_ref": "object"
+     },
+     "template": "tessera.demo.v1",
+     "text": {
+      "goal": "Convert an MP4 video into PNG frames at 24 fps"
+     },
+     "type": "{\"contract\":str,\"goal\":str,\"input_ref\":{\"key\":str,\"store\":str,\"version\":int}}"
+    },
+    "category": "verb.solve_draft",
+    "created_at": 1793000000.25,
+    "error": null,
+    "fencing_token": 2,
+    "input": {
+     "digest": "4444444444444444444444444444444444444444444444444444444444444444"
+    },
+    "observation": "execution-observation-v1",
+    "observed": {
+     "retried": true,
+     "server_duration_seconds": 1.5
+    },
+    "ok": true,
+    "queue": "conformance-learn",
+    "receipt_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+    "report": {
+     "harness": "synthetic-harness",
+     "learning": {
+      "outcome": "succeeded"
+     },
+     "model": "none",
+     "problem": "SYNTHETIC frames",
+     "solution": "done",
+     "total_tokens": 15,
+     "usage_source": "fixture"
+    },
+    "report_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+    "run_id": "run_1111111111111111111111111111111111111111111111111111111111111111",
+    "state_after": "done",
+    "tags": [
+     "category:noun.eval_run",
+     "status:worker_reported"
+    ],
+    "task_id": "t_synthetic",
+    "trust": {
+     "telemetry": "worker_reported"
+    }
+   },
+   "ok": true,
+   "state_after": "done"
+  },
+  {
+   "category": "verb.solve_draft",
+   "envelope": {
+    "created_at": 1793000000.25,
+    "evidence": {
+     "server_duration_seconds": 1.5
+    },
+    "fencing_token": 1,
+    "fingerprints": {
+     "input_hash": null
+    },
+    "input_snapshot": {
+     "unavailable": "input snapshot exceeds 128 KiB; exact matching disabled"
+    },
+    "queue": "conformance-learn",
+    "receipt_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+    "report": {
+     "model": {
+      "provider": "not-used"
+     },
+     "usage": {
+      "source": "fixture",
+      "total_tokens": 7
+     },
+     "version": 1
+    },
+    "report_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+    "run_id": "run_1111111111111111111111111111111111111111111111111111111111111111",
+    "tags": [
+     "category:noun.eval_run",
+     "status:worker_reported"
+    ],
+    "task_id": "t_synthetic",
+    "trust": {
+     "telemetry": "worker_reported"
+    }
+   },
+   "error": null,
+   "observation": {
+    "brief": null,
+    "category": "verb.solve_draft",
+    "created_at": 1793000000.25,
+    "error": null,
+    "fencing_token": 1,
+    "input": {
+     "digest": null
+    },
+    "observation": "execution-observation-v1",
+    "observed": {
+     "retried": false,
+     "server_duration_seconds": 1.5
+    },
+    "ok": true,
+    "queue": "conformance-learn",
+    "receipt_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+    "report": {
+     "harness": null,
+     "learning": {},
+     "model": "not-used",
+     "problem": null,
+     "solution": null,
+     "total_tokens": 7,
+     "usage_source": "fixture"
+    },
+    "report_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+    "run_id": "run_1111111111111111111111111111111111111111111111111111111111111111",
+    "state_after": "done",
+    "tags": [
+     "category:noun.eval_run",
+     "status:worker_reported"
+    ],
+    "task_id": "t_synthetic",
+    "trust": {
+     "telemetry": "worker_reported"
+    }
+   },
+   "ok": true,
+   "state_after": "done"
+  },
+  {
+   "category": "task",
+   "envelope": {
+    "created_at": 1793000000.25,
+    "evidence": {
+     "server_duration_seconds": 1.5
+    },
+    "fencing_token": 2,
+    "fingerprints": {
+     "input_hash": "4444444444444444444444444444444444444444444444444444444444444444"
+    },
+    "input_snapshot": {
+     "brief": {
+      "contract": "tessera.demo.v1",
+      "goal": "Convert an MP4 video into PNG frames at 24 fps",
+      "input_ref": {
+       "key": "k",
+       "store": "s",
+       "version": 1
+      }
+     },
+     "dependencies_and_children": [],
+     "effect_class": "write-internal",
+     "inputs": [],
+     "kind": "verb.solve_draft"
+    },
+    "queue": "conformance-learn",
+    "receipt_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+    "report": {},
+    "report_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+    "run_id": "run_1111111111111111111111111111111111111111111111111111111111111111",
+    "tags": [],
+    "task_id": "t_synthetic",
+    "trust": {
+     "telemetry": "worker_reported"
+    }
+   },
+   "error": "EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE\nsecond line",
+   "observation": {
+    "brief": {
+     "shape": {
+      "contract": "str",
+      "goal": "str",
+      "input_ref": "object"
+     },
+     "template": "tessera.demo.v1",
+     "text": {
+      "goal": "Convert an MP4 video into PNG frames at 24 fps"
+     },
+     "type": "{\"contract\":str,\"goal\":str,\"input_ref\":{\"key\":str,\"store\":str,\"version\":int}}"
+    },
+    "category": "task",
+    "created_at": 1793000000.25,
+    "error": "EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE",
+    "fencing_token": 2,
+    "input": {
+     "digest": "4444444444444444444444444444444444444444444444444444444444444444"
+    },
+    "observation": "execution-observation-v1",
+    "observed": {
+     "retried": true,
+     "server_duration_seconds": 1.5
+    },
+    "ok": false,
+    "queue": "conformance-learn",
+    "receipt_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+    "report": {
+     "harness": null,
+     "learning": {},
+     "model": null,
+     "problem": null,
+     "solution": null,
+     "total_tokens": null,
+     "usage_source": null
+    },
+    "report_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+    "run_id": "run_1111111111111111111111111111111111111111111111111111111111111111",
+    "state_after": "dead",
+    "tags": [],
+    "task_id": "t_synthetic",
+    "trust": {
+     "telemetry": "worker_reported"
+    }
+   },
+   "ok": false,
+   "state_after": "dead"
+  }
+ ],
+ "profile": "execution-learning-v1",
+ "reports": [
+  {
+   "normalized": {
+    "model": null,
+    "version": 1
+   },
+   "report": {
+    "model": null
+   }
+  },
+  {
+   "normalized": {
+    "learning": {
+     "outcome": "partial"
+    },
+    "summaries": {
+     "problem": "p"
+    },
+    "version": 1
+   },
+   "report": {
+    "learning": {
+     "outcome": "partial"
+    },
+    "summaries": {
+     "problem": "p"
+    }
+   }
+  }
+ ],
+ "similarities": [
+  {
+   "a": "plain",
+   "b": "paraphrase",
+   "similarity": 0.5
+  },
+  {
+   "a": "plain",
+   "b": "unrelated",
+   "similarity": 0.0
+  },
+  {
+   "a": "paraphrase",
+   "b": "unrelated",
+   "similarity": 0.0
+  },
+  {
+   "a": "plain",
+   "b": "plain",
+   "similarity": 1.0
+  }
+ ],
+ "tokens": [
+  {
+   "text": "",
+   "tokens": []
+  },
+  {
+   "text": "A",
+   "tokens": []
+  },
+  {
+   "text": "ab AB aB",
+   "tokens": [
+    "ab"
+   ]
+  },
+  {
+   "text": "x \u00e9 \u6570",
+   "tokens": [
+    "\u00e9",
+    "\u6570"
+   ]
+  },
+  {
+   "text": "don't-stop_me now!",
+   "tokens": [
+    "don",
+    "stop",
+    "me",
+    "now"
+   ]
+  },
+  {
+   "text": "MP4->PNG[] 24fps",
+   "tokens": [
+    "mp4",
+    "png",
+    "24fps"
+   ]
+  },
+  {
+   "text": "\ud83e\udde9\ud83e\udde9 emoji",
+   "tokens": [
+    "\ud83e\udde9\ud83e\udde9",
+    "emoji"
+   ]
+  },
+  {
+   "text": "the and of",
+   "tokens": []
+  }
+ ],
+ "type_signatures": [
+  {
+   "signature": "null",
+   "value": null
+  },
+  {
+   "signature": "bool",
+   "value": true
+  },
+  {
+   "signature": "int",
+   "value": 1
+  },
+  {
+   "signature": "int",
+   "value": 1.0
+  },
+  {
+   "signature": "num",
+   "value": 2.5
+  },
+  {
+   "signature": "str",
+   "value": "s"
+  },
+  {
+   "signature": "[]",
+   "value": []
+  },
+  {
+   "signature": "[int|null|num|str]",
+   "value": [
+    1,
+    "a",
+    1.5,
+    null
+   ]
+  },
+  {
+   "signature": "{\"a\":[{}],\"b\":int}",
+   "value": {
+    "a": [
+     {}
+    ],
+    "b": 1
+   }
+  },
+  {
+   "signature": "{\"a\":{\"b\":{\"c\":any}}}",
+   "value": {
+    "a": {
+     "b": {
+      "c": {
+       "d": {
+        "e": 1
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "signature": "{\"a\":int,\"\ue000\":int,\"\ud83e\udde9\":int}",
+   "value": {
+    "a": 3,
+    "\ue000": 2,
+    "\ud83e\udde9": 1
+   }
+  }
+ ]
+}
