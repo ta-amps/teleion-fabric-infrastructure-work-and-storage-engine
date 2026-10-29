@@ -140,3 +140,38 @@ class AdaptiveClaims:
                 self.limit = min(self.maximum, self.limit + 1)
                 self.last_adjustment = now
         self.drain()
+
+
+# Idle pacing for empty claims, identical to the Worker. The Retry-After hint doubles while
+# one key keeps finding a queue empty and resets when that key is granted a lease or the
+# queue receives new work. It reports observed emptiness; it is not a limit.
+EMPTY_CLAIM_BASE_SECONDS = 5
+EMPTY_CLAIM_MAX_SECONDS = 60
+
+
+def empty_claim_retry_after(consecutive_empty: int) -> int:
+    n = max(1, int(consecutive_empty))
+    return min(EMPTY_CLAIM_MAX_SECONDS, EMPTY_CLAIM_BASE_SECONDS << min(n - 1, 16))
+
+
+class IdleClaims:
+    """Per namespace, queue and key count of consecutive empty claims (process memory)."""
+
+    def __init__(self, max_queues: int = 4096) -> None:
+        self.max_queues = max_queues
+        self.queues: dict[tuple[str, str], dict[str, int]] = {}
+
+    def empty(self, namespace: str, queue: str, key_id: str) -> int:
+        keys = self.queues.get((namespace, queue))
+        if keys is None:
+            if len(self.queues) >= self.max_queues:
+                self.queues.clear()  # memory bound; hints restart at the base
+            keys = self.queues[(namespace, queue)] = {}
+        keys[key_id] = keys.get(key_id, 0) + 1
+        return empty_claim_retry_after(keys[key_id])
+
+    def granted(self, namespace: str, queue: str, key_id: str) -> None:
+        self.queues.get((namespace, queue), {}).pop(key_id, None)
+
+    def work(self, namespace: str, queue: str) -> None:
+        self.queues.pop((namespace, queue), None)

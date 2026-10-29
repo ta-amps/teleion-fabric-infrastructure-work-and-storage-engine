@@ -60,7 +60,7 @@ const MAX_CHILDREN = 100;
 const MAX_DEPENDENCIES = 100;
 const MAX_DEPTH = 4;
 const MAX_PARK_SECONDS = 2_592_000;
-import { ClaimAdmission, ClaimPressure, claimAdmissionOptions } from "./claim_admission.js";
+import { ClaimAdmission, ClaimPressure, IdleClaims, claimAdmissionOptions } from "./claim_admission.js";
 import { LAST_USED_WRITE_INTERVAL_SECONDS, storageQuotaFailure } from "./storage_quota.js";
 
 class StoreErr extends Error {
@@ -450,6 +450,7 @@ export class TesseraCoordinator extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
     this.claimAdmission = new ClaimAdmission(claimAdmissionOptions(env));
+    this.idleClaims = new IdleClaims();
     this.namespace = "main";
     this.isPrimary = true;
     this.seededNamespaces = new Set();
@@ -1839,6 +1840,11 @@ export class TesseraCoordinator extends DurableObject {
         if (!Object.hasOwn(out.data, "expires_at")) out.data.expires_at = grant.expires_at;
         if (out.data.lease) out.data.lease = { ...out.data.lease, labels: grant.labels, principal_id: grant.principal_id, session_expires_at: grant.expires_at };
       }
+      if (out.ok && action === "claim") {
+        if (out.data.lease) this.idleClaims.granted(ns, String(args.queue || ""), grant.key_id);
+        else out.data.retry_after = this.idleClaims.empty(ns, String(args.queue || ""), grant.key_id);
+      }
+      if (out.ok && action === "enqueue") this.idleClaims.work(ns, String(args.queue || ""));
       if (out.ok && action === "claim" && out.data.lease) {
         out.data.lease.claim_receipt = await sha256Hex(new TextEncoder().encode(canonicalJson({ namespace: ns, task_id: out.data.lease.task_id, fencing_token: out.data.lease.fencing_token, claimed_at: out.data.lease.claimed_at })));
       }

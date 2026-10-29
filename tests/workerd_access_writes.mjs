@@ -144,3 +144,37 @@ test("an MCP batch runs each call through authentication and admission in order"
   assert.deepEqual(batch.data.map(m => m.id), [0, 1, 2]);
   assert.ok(batch.data.every(m => m.result.isError === false), JSON.stringify(batch.data).slice(0, 400));
 });
+
+test("idle polling gets a growing Retry-After hint that resets when work arrives", async () => {
+  const { request, primary, admin, issue } = await setup();
+  assert.equal((await request("/v1/queues/define", { name: "conformance-idle" }, admin.key)).status, 200);
+  const worker = await issue({ label: "synthetic-idle", queues: ["conformance-idle"], scopes: ["verbs:claim", "verbs:submit", "nouns:read"] }, admin.key);
+  const claim = () => request("/v1/tasks/claim", { queue: "conformance-idle", worker: "synthetic-idle" }, worker.key);
+  assert.equal((await request("/v1/counts", undefined, worker.key)).status, 200);
+  const rows = await primary.testAuditRows();
+  const hints = [];
+  for (let i = 0; i < 6; i++) { const r = await claim(); assert.equal(r.status, 204); hints.push(r.headers.get("retry-after")); }
+  assert.deepEqual(hints, ["5", "10", "20", "40", "60", "60"]);
+  const tool = await request("/mcp", { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "claim", arguments: { queue: "conformance-idle", worker: "synthetic-idle" } } }, worker.key);
+  assert.deepEqual(tool.data.result.structuredContent, { lease: null, retry_after: 60 });
+  assert.equal(await primary.testAuditRows(), rows);
+  assert.equal((await request("/v1/tasks", { queue: "conformance-idle", brief: { synthetic: true }, idempotency_key: "idle-1" }, admin.key)).status, 201);
+  assert.equal((await claim()).status, 200);
+  const after = await claim();
+  assert.equal(after.status, 204);
+  assert.equal(after.headers.get("retry-after"), "5");
+});
+
+test("a long-poll for claim events is audited once per request", async () => {
+  const { request, primary, admin } = await setup();
+  assert.equal((await request("/v1/queues/define", { name: "conformance-poll" }, admin.key)).status, 200);
+  const task = await request("/v1/tasks", { queue: "conformance-poll", brief: { synthetic: true }, idempotency_key: "poll-1" }, admin.key);
+  assert.equal(task.status, 201);
+  const rows = await primary.testAuditRows();
+  const started = Date.now();
+  const poll = await request(`/v1/claims/${task.data.task_id}/events?after=999999&wait=2`, undefined, admin.key);
+  assert.equal(poll.status, 200);
+  assert.deepEqual(poll.data.events, []);
+  assert.ok(Date.now() - started >= 1500, "the request must actually have long-polled");
+  assert.equal(await primary.testAuditRows(), rows + 1);
+});

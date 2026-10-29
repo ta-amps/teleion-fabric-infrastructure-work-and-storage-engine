@@ -774,7 +774,7 @@ const worker = {
             status: 204,
             headers: {
               ...out.headers,
-              "retry-after": "5",
+              "retry-after": String(out.data.retry_after ?? 5),
               "x-heartbeat-seconds": String(out.data.beat || "60"),
             },
           }),

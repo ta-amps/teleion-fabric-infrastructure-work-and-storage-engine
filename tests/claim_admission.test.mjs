@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ClaimAdmission, ClaimPressure, claimAdmissionOptions } from "../deploy/cloudflare/claim_admission.js";
+import { ClaimAdmission, ClaimPressure, IdleClaims, claimAdmissionOptions, emptyClaimRetryAfter } from "../deploy/cloudflare/claim_admission.js";
 
 test("healthy keyed traffic has no claims-per-minute ceiling", async () => {
   const gate = new ClaimAdmission({}, () => 0);
@@ -63,4 +63,18 @@ test("configuration rejects zero, negative, nonfinite and inverted resource boun
     assert.throws(() => claimAdmissionOptions({ CLAIM_MAX_PENDING: value }));
   }
   assert.throws(() => claimAdmissionOptions({ CLAIM_INITIAL_CONCURRENCY: "4", CLAIM_MAX_CONCURRENCY: "3" }));
+});
+
+test("empty-claim hints double while a key finds the queue empty and reset on work", () => {
+  assert.deepEqual([1, 2, 3, 4, 5, 6, 50].map(emptyClaimRetryAfter), [5, 10, 20, 40, 60, 60, 60]);
+  const idle = new IdleClaims();
+  assert.deepEqual([1, 2, 3].map(() => idle.empty("main", "q", "k1")), [5, 10, 20]);
+  assert.equal(idle.empty("main", "q", "k2"), 5); // each key paces itself
+  assert.equal(idle.empty("other", "q", "k1"), 5); // and each namespace
+  idle.granted("main", "q", "k1");
+  assert.equal(idle.empty("main", "q", "k1"), 5);
+  idle.empty("main", "q", "k1");
+  idle.work("main", "q");
+  assert.equal(idle.empty("main", "q", "k1"), 5);
+  assert.equal(idle.empty("main", "q", "k2"), 5);
 });

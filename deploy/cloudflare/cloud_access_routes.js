@@ -60,9 +60,10 @@ export async function accessRoute(request, env, { path, url, bearer, primary, st
     const args = { ...baseRpc, task_id: decodeURIComponent(events[1]), after: Number(url.searchParams.get("after")) || 0 };
     const wait = Math.max(0, Math.min(Number(url.searchParams.get("wait")) || 0, 15));
     const until = Date.now() + wait * 1000;
-    let out;
+    let out, checks = 0;
     do {
-      out = await stub.rpcCall(bearer, "claimEvents", args);
+      // One audited check per request; later checks of the same long-poll are not recorded.
+      out = await stub.rpcCall(bearer, "claimEvents", args, checks++ ? { repeat: true } : {});
       if (!out.ok || out.data.events.length || Date.now() >= until || request.signal.aborted) break;
       await new Promise(resolve => setTimeout(resolve, 750));
     } while (Date.now() <= until);

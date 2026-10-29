@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from tessera import QueueConfig, Store, TaskSpec
 from tessera.access import ClaimLimiter, Gate, ServiceSettings
-from tessera.claim_admission import AdaptiveClaims
+from tessera.claim_admission import AdaptiveClaims, IdleClaims, empty_claim_retry_after
 from tessera.errors import RateLimited, Unauthorized
 from tessera.service import create_app
 
@@ -145,3 +145,37 @@ def test_revoked_waiting_worker_cannot_claim(tmp_path: Path) -> None:
         store.close()
 
     asyncio.run(scenario())
+
+
+def test_empty_claim_hints_match_the_worker_and_reset_on_work(tmp_path: Path) -> None:
+    assert [empty_claim_retry_after(n) for n in (1, 2, 3, 4, 5, 6, 50)] == [
+        5,
+        10,
+        20,
+        40,
+        60,
+        60,
+        60,
+    ]
+    idle = IdleClaims()
+    assert [idle.empty("main", "q", "k1") for _ in range(3)] == [5, 10, 20]
+    assert idle.empty("main", "q", "k2") == 5
+    store = Store(tmp_path / "idle.db")
+    store.define_queue(QueueConfig(name="conformance-idle"))
+    key, _ = store.issue_key("synthetic", queues=["conformance-idle"])
+    headers = {"authorization": f"Bearer {key}"}
+    claim = {"queue": "conformance-idle", "worker": "synthetic"}
+    with TestClient(create_app(store, ServiceSettings())) as client:
+        hints = [client.post("/v1/tasks/claim", json=claim, headers=headers) for _ in range(4)]
+        assert [(r.status_code, r.headers["retry-after"]) for r in hints] == [
+            (204, "5"),
+            (204, "10"),
+            (204, "20"),
+            (204, "40"),
+        ]
+        task = {"queue": "conformance-idle", "brief": {"synthetic": True}}
+        assert client.post("/v1/tasks", json=task, headers=headers).status_code == 201
+        assert client.post("/v1/tasks/claim", json=claim, headers=headers).status_code == 200
+        empty = client.post("/v1/tasks/claim", json=claim, headers=headers)
+        assert (empty.status_code, empty.headers["retry-after"]) == (204, "5")
+    store.close()

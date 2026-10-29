@@ -87,6 +87,24 @@ rows) before authentication failed.
 
 `tests/workerd_access_writes.mjs` and `tests/test_access_modes.py` cover these rules.
 
+## Idle polling
+
+An empty claim used to write a full audit row (four rows with its indexes, and a later delete)
+and always answered `Retry-After: 5`, so one idle worker cost about 17,000 audit rows a day, and
+each 750 ms check inside a claim-events long-poll wrote another row.
+
+- Empty claims are counted, not written one row each (see above).
+- The `Retry-After` hint on an empty claim now reflects observed emptiness: it doubles from 5 to
+  a 60-second ceiling while the same key keeps finding the same queue empty (5, 10, 20, 40, 60)
+  and restarts at 5 when that key is granted a lease or the queue receives an enqueue. MCP
+  returns the same value as `retry_after` beside `lease: null`. Both runtimes share the rule
+  (`claim_admission.js`, `claim_admission.py`); the state lives in process or object memory and
+  restarts at 5 after a restart. It is a hint, not a limit: a worker may poll sooner or use the
+  long-poll. Readiness that does not come from an enqueue (a lapsed lease, a retry backoff
+  ending, a resume) is noticed at the next poll, at most 60 seconds later.
+- `GET /v1/claims/<task>/events?wait=N` is audited once per request; the later checks inside
+  the same long-poll are not recorded. The Python service already audited once per request.
+
 ## Local measurements and remaining work
 
 The actual-workerd tests warm one authenticated key and make five ordinary

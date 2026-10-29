@@ -495,7 +495,7 @@ async function callTool(stub, env, ctx, secret, name, args, routeCtx) {
         code: r.code,
         extra: r.extra,
         detail: r.detail,
-        data: r.ok ? { lease: r.data.lease } : null,
+        data: r.ok ? (r.data.lease ? { lease: r.data.lease } : { lease: null, retry_after: r.data.retry_after ?? 5 }) : null,
       };
     }
     case "heartbeat": {
