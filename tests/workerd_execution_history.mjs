@@ -170,3 +170,48 @@ test("workerd execution nouns retain quarantine and facets with one primary noun
   const tasks = await rpc(token, "list_verbs", { queue: "conformance-runtime", status: "done" });
   assert.ok(tasks.verbs.find(task => task.task_id === lease.task_id).tags.includes("category:verb.solve_draft"));
 });
+
+test("100 simultaneous keyed claims use paced admission and preserve independent alternatives", async () => {
+  const admin = await request("/v1/admin/keys", {
+    label: "synthetic-admission-admin", queues: ["*"], scopes: ["admin", "store"],
+    effect_classes: ["read", "write-internal"],
+  }, undefined, { "X-Bootstrap-Secret": "synthetic-workerd-bootstrap" });
+  assert.equal(admin.status, 201);
+  const issued = await request("/v1/admin/keys", {
+    label: "synthetic-swarm", queues: ["conformance-admission"], scopes: ["store"],
+    effect_classes: ["read", "write-internal"],
+  }, admin.data.key);
+  assert.equal(issued.status, 201);
+  const token = issued.data.key, queue = "conformance-admission";
+  await request("/v1/queues/define", { name: queue }, admin.data.key);
+  const ids = [];
+  for (let i = 0; i < 100; i++) {
+    const task = await request("/v1/tasks", {
+      queue, kind: "verb.solve_draft", effect_class: "write-internal",
+      brief: { synthetic: true, shared_brief: "same-problem", attempt_index: i },
+      visibility_scope: "private", idempotency_key: `alternative:${i}`,
+    }, token);
+    assert.equal(task.status, 201);
+    ids.push(task.data.task_id);
+  }
+  const leases = await Promise.all(ids.map(async (_, i) => {
+    const claimed = await request("/v1/tasks/claim", { queue, worker: `synthetic-${i}` }, token);
+    assert.equal(claimed.status, 200, JSON.stringify(claimed.data));
+    return claimed.data;
+  }));
+  assert.equal(new Set(leases.map(l => l.task_id)).size, 100);
+  assert.deepEqual(new Set(leases.map(l => l.task_id)), new Set(ids));
+  const completions = await Promise.all(leases.map(async lease => {
+    assert.equal((await request("/v1/tasks/heartbeat", fence(lease), token)).status, 200);
+    const output = { synthetic: true, solution: `candidate-${lease.brief.attempt_index}` };
+    const result = await rpc(token, "submit", {
+      ...fence(lease), output, idempotency_key: `finish:${lease.task_id}`,
+    });
+    const replay = await rpc(token, "submit", {
+      ...fence(lease), output, idempotency_key: `finish:${lease.task_id}`,
+    });
+    assert.equal(result.receipt.receipt_hash, replay.receipt.receipt_hash);
+    return result.receipt.receipt_hash;
+  }));
+  assert.equal(new Set(completions).size, 100);
+});

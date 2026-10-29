@@ -9,7 +9,6 @@ import asyncio
 import hmac
 import json
 import re
-import time
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager, suppress
 from http import HTTPStatus
@@ -181,7 +180,7 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
     settings = settings or ServiceSettings.from_env()
     store = store or Store(settings.db_path)
     gate = Gate(store)
-    limiter = ClaimLimiter(settings.claims_per_minute)
+    limiter = ClaimLimiter(settings.claims_per_minute, settings)
 
     from tessera.mcp_door import build_mcp  # imported here: the MCP SDK is an optional extra
 
@@ -426,28 +425,37 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
             204: {"description": "No eligible task is ready; Retry-After gives the retry interval."}
         },
     )
-    def claim(body: ClaimBody, grant: KeyGrant = key) -> Response:
+    async def claim(body: ClaimBody, grant: KeyGrant = key) -> Response:
         gate.queue(grant, body.queue)
-        if not grant.is_admin:
-            wait = limiter.retry_after(grant.key_id, time.monotonic())
-            if wait is not None:
-                raise RateLimited(
-                    f"over {settings.claims_per_minute} claims a minute", retry_after=wait
-                )
-        config = next((q for q in store.queues() if q.name == body.queue), None)
+        configs = await run_in_threadpool(store.queues)
+        config = next((q for q in configs if q.name == body.queue), None)
         beat = str(config.heartbeat_seconds) if config else "60"
         effects = grant.effect_filter(body.effect_classes)
         kinds = grant.kind_filter(body.kinds)
         lease = None
-        if effects and kinds != []:
-            lease = store.claim(
-                body.queue, body.worker, kinds=kinds, effect_classes=effects, key_id=grant.key_id
-            )
+        async with limiter.admit(grant.key_id, grant.is_admin) as permit:
+            if effects and kinds != []:
+                lease = await run_in_threadpool(
+                    store.claim,
+                    body.queue,
+                    body.worker,
+                    kinds=kinds,
+                    effect_classes=effects,
+                    key_id=grant.key_id,
+                )
+        admission_headers = {
+            "x-claim-wait-ms": str(round(permit.wait_seconds * 1000)),
+            "x-claim-concurrency": str(limiter.admission.limit),
+        }
         if lease is None:
             return Response(
-                status_code=204, headers={"retry-after": "5", "x-heartbeat-seconds": beat}
+                status_code=204,
+                headers={"retry-after": "5", "x-heartbeat-seconds": beat, **admission_headers},
             )
-        return JSONResponse(lease.model_dump(mode="json"), headers={"x-heartbeat-seconds": beat})
+        return JSONResponse(
+            lease.model_dump(mode="json"),
+            headers={"x-heartbeat-seconds": beat, **admission_headers},
+        )
 
     @app.post("/v1/tasks/heartbeat", response_model=Lease)
     def heartbeat(body: LeaseRef, grant: KeyGrant = key) -> dict[str, Any]:

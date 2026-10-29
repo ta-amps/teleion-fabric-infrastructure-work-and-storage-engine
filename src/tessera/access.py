@@ -6,12 +6,16 @@ from __future__ import annotations
 
 import os
 import threading
+import time
 from collections import defaultdict, deque
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
 from fastapi import Request
 
-from tessera.errors import Forbidden, NotFound, ScopeDenied, Unauthorized
+from tessera.claim_admission import AdaptiveClaims, Permit
+from tessera.errors import Forbidden, NotFound, RateLimited, ScopeDenied, Unauthorized
 from tessera.grants import PROTECTED_SURFACES, KeyGrant
 from tessera.models import surface_slug
 from tessera.store import Store
@@ -21,7 +25,12 @@ from tessera.store import Store
 class ServiceSettings:
     db_path: str = ".tessera/tessera.db"
     edge_secret: str | None = None
-    claims_per_minute: int = 60
+    claims_per_minute: int = 0  # Positive values explicitly opt into the legacy quota.
+    claim_initial_concurrency: int = 32
+    claim_max_concurrency: int = 1024
+    claim_max_pending: int = 2048
+    claim_max_wait_seconds: float = 10.0
+    claim_target_seconds: float = 0.5
     reaper_seconds: float = 30.0
     public_url: str = "http://localhost:8080"
     allowed_hosts: tuple[str, ...] = ()
@@ -36,7 +45,12 @@ class ServiceSettings:
             == "true",
             db_path=env.get("TESSERA_DB", ".tessera/tessera.db"),
             edge_secret=env.get("TESSERA_EDGE_SECRET") or None,
-            claims_per_minute=int(env.get("TESSERA_CLAIMS_PER_MINUTE", "60")),
+            claims_per_minute=int(env.get("TESSERA_CLAIMS_PER_MINUTE", "0")),
+            claim_initial_concurrency=int(env.get("TESSERA_CLAIM_INITIAL_CONCURRENCY", "32")),
+            claim_max_concurrency=int(env.get("TESSERA_CLAIM_MAX_CONCURRENCY", "1024")),
+            claim_max_pending=int(env.get("TESSERA_CLAIM_MAX_PENDING", "2048")),
+            claim_max_wait_seconds=float(env.get("TESSERA_CLAIM_MAX_WAIT_SECONDS", "10")),
+            claim_target_seconds=float(env.get("TESSERA_CLAIM_TARGET_SECONDS", "0.5")),
             reaper_seconds=float(env.get("TESSERA_REAPER_SECONDS", "30")),
             public_url=env.get("TESSERA_PUBLIC_URL", "http://localhost:8080").rstrip("/"),
             allowed_hosts=tuple(
@@ -46,14 +60,36 @@ class ServiceSettings:
 
 
 class ClaimLimiter:
-    """At most `per_minute` claims per key in any rolling minute (admin keys are exempt)."""
+    """Shared adaptive admission with an optional, explicitly configured legacy quota."""
 
-    def __init__(self, per_minute: int) -> None:
+    def __init__(self, per_minute: int = 0, settings: ServiceSettings | None = None) -> None:
+        if per_minute < 0:
+            raise ValueError("claims_per_minute must be nonnegative")
         self.per_minute = per_minute
         self._hits: dict[str, deque[float]] = defaultdict(deque)
         self._lock = threading.Lock()
+        settings = settings or ServiceSettings()
+        self.admission = AdaptiveClaims(
+            initial=settings.claim_initial_concurrency,
+            maximum=settings.claim_max_concurrency,
+            max_pending=settings.claim_max_pending,
+            max_wait=settings.claim_max_wait_seconds,
+            target=settings.claim_target_seconds,
+        )
+
+    @asynccontextmanager
+    async def admit(self, key_id: str, is_admin: bool = False) -> AsyncIterator[Permit]:
+        if not is_admin and (wait := self.retry_after(key_id, time.monotonic())) is not None:
+            raise RateLimited(f"over {self.per_minute} claims a minute", retry_after=wait)
+        permit = await self.admission.acquire(key_id)
+        try:
+            yield permit
+        finally:
+            self.admission.release(permit)
 
     def retry_after(self, key_id: str, now: float) -> float | None:
+        if self.per_minute == 0:
+            return None
         with self._lock:
             hits = self._hits[key_id]
             while hits and hits[0] <= now - 60:

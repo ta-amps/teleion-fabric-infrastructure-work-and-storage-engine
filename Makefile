@@ -17,7 +17,7 @@ help: ## List the targets
 setup: ## Install Python 3.12 and every dependency with uv
 	uv sync --all-groups --all-extras
 
-check: agent-start-check lint types test public lock-check index-check architecture openapi-check ## Lint, types, unit tests, leak scan; run before every commit
+check: claim-admission-check agent-start-check lint types test public lock-check index-check architecture openapi-check ## Lint, types, unit tests, leak scan; run before every commit
 
 lint: ## ruff lint and format check
 	uv run ruff check .
@@ -89,3 +89,7 @@ openapi-check: ## Generated access schema must match the HTTP route/model contra
 .PHONY: agent-start-check
 agent-start-check: ## Check public agent onboarding instructions and HTTP boundaries
 	node --test tests/agent_start.test.mjs
+
+.PHONY: claim-admission-check
+claim-admission-check: ## Adaptive pacing, fair waiting, recovery and bounded overload
+	node --test tests/claim_admission.test.mjs

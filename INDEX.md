@@ -73,7 +73,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [conformance-draft/test_storage.py](conformance-draft/test_storage.py) | ST01 to ST04: atomic storage. |
 | [conformance-draft/test_task_graph.py](conformance-draft/test_task_graph.py) | Task graphs every backend must meet (SPEC §5.2 and §5.6): dependencies (fan-in), children that run in waves,… |
 
-## deploy/ (25)
+## deploy/ (26)
 
 | File | What it is |
 |---|---|
@@ -82,6 +82,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [deploy/cloudflare/README.md](deploy/cloudflare/README.md) | Cloudflare: the Tessera cloud runtime and edge |
 | [deploy/cloudflare/access_openapi.json](deploy/cloudflare/access_openapi.json) | JSON object: components, info, openapi, paths |
 | [deploy/cloudflare/agent_start.js](deploy/cloudflare/agent_start.js) | Versioned onboarding instructions. |
+| [deploy/cloudflare/claim_admission.js](deploy/cloudflare/claim_admission.js) | Ephemeral scheduling hints, never lease or authorization authority. |
 | [deploy/cloudflare/cloud_access.js](deploy/cloudflare/cloud_access.js) | Persistent principal metadata, anonymous limits and redacted access receipts. |
 | [deploy/cloudflare/cloud_access_routes.js](deploy/cloudflare/cloud_access_routes.js) |  |
 | [deploy/cloudflare/cloud_buckets.js](deploy/cloudflare/cloud_buckets.js) | Persistent cloud blob & bucket storage engine + canonical JSON receipt hashing for Tessera Cloud. |
@@ -103,7 +104,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [deploy/fly/README.md](deploy/fly/README.md) | Fly.io: the Tessera service |
 | [deploy/fly/fly.toml](deploy/fly/fly.toml) | Tessera service on one Fly.io machine with a volume (brief L20), reached through the Cloudflare edge |
 
-## docs/ (23)
+## docs/ (24)
 
 | File | What it is |
 |---|---|
@@ -112,6 +113,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [docs/access-modes.md](docs/access-modes.md) | External agent access |
 | [docs/agent-start.md](docs/agent-start.md) | Start an agent from a website |
 | [docs/architecture.md](docs/architecture.md) | Tessera: architecture |
+| [docs/claim-admission.md](docs/claim-admission.md) | Claim admission |
 | [docs/comparison.md](docs/comparison.md) | Tessera: comparison |
 | [docs/decisions.md](docs/decisions.md) | Tessera: decisions |
 | [docs/evidence/native-history-observation.json](docs/evidence/native-history-observation.json) | JSON object: schema_version, observed_date, source_revision, worker_version, harness, provider |
@@ -160,7 +162,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [scripts/dev_stack.sh](scripts/dev_stack.sh) | Run Tessera on this machine behind the real Cloudflare edge code (wrangler dev), with the origin |
 | [scripts/suite_http_local.py](scripts/suite_http_local.py) | Run the whole conformance suite over HTTP against a real tessera serve process on this machine. |
 
-## src/ (50)
+## src/ (51)
 
 | File | What it is |
 |---|---|
@@ -194,6 +196,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [src/tessera/access.py](src/tessera/access.py) | What every door shares: the service settings, the claim rate limiter, reading the bearer key, and the Gate th… |
 | [src/tessera/backend.py](src/tessera/backend.py) | The contract every Tessera backend meets: the in-process Store, the HTTP Client, and any adapter an app puts… |
 | [src/tessera/bridge.py](src/tessera/bridge.py) | Reusable Surface Bridge wrapper for stateless product frontends and services. |
+| [src/tessera/claim_admission.py](src/tessera/claim_admission.py) | Async, process-local claim pacing; leases and access rules remain in the Store. |
 | [src/tessera/cli.py](src/tessera/cli.py) | tessera: drive the in-process store on a SQLite file from a shell. |
 | [src/tessera/client.py](src/tessera/client.py) | HTTP client for a Tessera service (SPEC §7). |
 | [src/tessera/clock.py](src/tessera/clock.py) | Time source for leases and backoff. |
@@ -215,11 +218,12 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [src/tessera/store.py](src/tessera/store.py) | The in-process Tessera store: the reference implementation of SPEC.md. |
 | [src/tessera/testing.py](src/tessera/testing.py) | Factories the conformance suite loads by name (TESSERABACKENDFACTORY="module:function"). |
 
-## tests/ (39)
+## tests/ (41)
 
 | File | What it is |
 |---|---|
 | [tests/agent_start.test.mjs](tests/agent_start.test.mjs) |  |
+| [tests/claim_admission.test.mjs](tests/claim_admission.test.mjs) |  |
 | [tests/edge_access_harness.mjs](tests/edge_access_harness.mjs) | No remote HTTP, credentials, or persistent production data: real Worker handlers, synthetic SQLite. |
 | [tests/edge_access_loader.mjs](tests/edge_access_loader.mjs) | Minimal Cloudflare DurableObject class for deterministic Node SQLite tests. |
 | [tests/edge_access_publication.mjs](tests/edge_access_publication.mjs) | Storage-level approvals bind an authenticated draft, reviewer, receipt, and exact catalog value. |
@@ -236,6 +240,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [tests/test_buckets.py](tests/test_buckets.py) | Tests for queryable noun stores, persistent named file buckets, external blobdir, and MCP tools. |
 | [tests/test_category_queries.py](tests/test_category_queries.py) | Category projections agree before bounded scans, without granting visibility. |
 | [tests/test_check_public.py](tests/test_check_public.py) | checkpublic finds secrets and private names, masks them, and honours the allow marker. |
+| [tests/test_claim_admission.py](tests/test_claim_admission.py) | Real async cancellation, fairness, resource bounds and HTTP default admission. |
 | [tests/test_core_boundaries.py](tests/test_core_boundaries.py) | Privacy over version history, strict outcomes, deadline boundaries and category plans. |
 | [tests/test_dead_letter_privacy.py](tests/test_dead_letter_privacy.py) | Failure diagnostics remain private even when the source verb was shared. |
 | [tests/test_execution_adapters.py](tests/test_execution_adapters.py) | HTTP client framing and real local MCP execution-report flow, without inference. |
