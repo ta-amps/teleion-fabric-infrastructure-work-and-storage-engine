@@ -177,6 +177,24 @@ The worker can return `no_reusable_artifact` when the source evidence is insuffi
 
 ## Verification and remaining boundaries
 
+Run `npm ci` with Node 22 or newer, then `make test-worker`, for the pinned
+Miniflare/workerd regression gate. This is separate from `make check`; CI runs
+both. `tests/workerd_execution_history.mjs` uses the actual bundled Worker,
+ephemeral SQLite Durable Objects and local D1 with outbound requests prohibited.
+It checks full-contract recall with eight SimHash bands, deduplicated matches,
+incomplete contracts, empty candidate branches and noun classification with
+quarantine retained. It makes no provider calls and does not certify a native
+model harness or deployed service.
+
+A local workerd reproduction found that eleven `UNION ALL` branches in recall
+exceeded the runtime's compound-select limit, while the Node SQLite fixture
+accepted them. The band probes now share one indexed `IN` query, keeping at most
+four branches without changing candidate priorities, limits or authorization.
+The Node fixtures remain useful for state inspection, but do not replace this
+runtime-specific gate. New execution nouns have one primary `noun.eval_run`
+category; source-task categories remain in the internal source snapshot and do
+not become competing noun classifications. Existing run bytes are not rewritten.
+
 `tests/test_execution_adapters.py` covers client framing, a local real MCP report/recall/readback flow and the Cloudflare MCP argument adapter. The adapter fixture is not a live Worker or model run. `tests/test_execution_distillation.py` checks dry-run isolation, immutable source pinning, bounded request types and a real local Store capture/read/enqueue/claim fixture. It deliberately does not generate, execute, publish or independently admit a new code artifact.
 
 Core authorization, atomic capture, anonymous retention and Python/Worker matching need their owning regression suites in addition to these adapter tests. Deployment smoke must target the exact released revision. Legacy worker wrappers do not automatically gain parsed model usage, safe process supervision, trusted telemetry or generalized distillation capability from these APIs.

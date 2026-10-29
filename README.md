@@ -94,6 +94,7 @@ address, `cloudflared`.
 git clone https://github.com/ta-amps/tessera.git && cd tessera
 make setup                 # Python 3.12 and the dependencies
 make check                 # lint, strict types, tests, leak scan, architecture check
+npm ci && make test-worker  # pinned local workerd/SQLite regressions; Node 22 or newer
 make dev TUNNEL=1          # the service behind the real Cloudflare edge code, plus a temporary https address
 make seed                  # in a second terminal: queues, seed nouns, one key per agent, the first tasks
 make expand-demo           # run the 4-stage seed -> proposals -> canonical swarm expansion loop

@@ -1,6 +1,7 @@
 // Execution nouns are immutable result evidence, never generic CAS rows or an alternate queue.
 import { canonicalJson, sha256Hex } from './cloud_buckets.js';
 import { normalize_report, fingerprints, compare } from './execution_matching.js';
+import { categoryFromTag } from './cloud_intelligence.js';
 const LIMIT = 500;
 const GOV = ['id','queue','producer_surface','visibility_scope','allowed_surfaces','target_cohorts','tags','owner_key_id'];
 const enc = new TextEncoder();
@@ -65,7 +66,8 @@ export function validatePrepared(c,prepared,task,view) {
 export function captureExecution(c,p,task,lease,receiptHash,now,labels) {
   const expiry=c._one("SELECT purge_at FROM access_principals WHERE key_id=? AND principal_kind='anonymous'",lease.key_id);
   const expiresAt=expiry?.purge_at ?? null;
-  const envelope={run_id:p.runId,record_kind:'execution_run',category_id:'noun.eval_run',namespace:p.ns,task_id:task.id,queue:task.queue,fencing_token:lease.fencing_token,receipt_hash:receiptHash,created_at:now,expires_at:expiresAt,producer_surface:task.producer_surface,visibility_scope:task.visibility_scope,allowed_surfaces:JSON.parse(task.allowed_surfaces),target_cohorts:JSON.parse(task.target_cohorts),tags:[...JSON.parse(task.tags).filter(t=>t!=='status:verified'),'category:noun.eval_run','status:worker_reported'],missing_measurements:Object.fromEntries(['harness','model','usage','embedding'].filter(k=>!Object.hasOwn(p.report,k)).map(k=>[k,{value:null,reason:'worker did not report this field'}])),input_snapshot:p.captured.value,source_governance:p.captured.sources,evidence:{worker:lease.worker,key_id:lease.key_id,claimed_at:lease.claimed_at,server_duration_seconds:Math.max(0,now-lease.claimed_at)},report:p.report,report_sha256:p.reportHash,fingerprints:p.fp,labels,trust:{submission:'server_receipted',telemetry:'worker_reported',correctness:'not_independently_verified',reuse_requires_validation:true}};
+  const tags=[...new Set([...JSON.parse(task.tags).filter(t=>t!=='status:verified' && !categoryFromTag(t)), 'category:noun.eval_run','status:worker_reported'])];
+  const envelope={run_id:p.runId,record_kind:'execution_run',category_id:'noun.eval_run',namespace:p.ns,task_id:task.id,queue:task.queue,fencing_token:lease.fencing_token,receipt_hash:receiptHash,created_at:now,expires_at:expiresAt,producer_surface:task.producer_surface,visibility_scope:task.visibility_scope,allowed_surfaces:JSON.parse(task.allowed_surfaces),target_cohorts:JSON.parse(task.target_cohorts),tags,missing_measurements:Object.fromEntries(['harness','model','usage','embedding'].filter(k=>!Object.hasOwn(p.report,k)).map(k=>[k,{value:null,reason:'worker did not report this field'}])),input_snapshot:p.captured.value,source_governance:p.captured.sources,evidence:{worker:lease.worker,key_id:lease.key_id,claimed_at:lease.claimed_at,server_duration_seconds:Math.max(0,now-lease.claimed_at)},report:p.report,report_sha256:p.reportHash,fingerprints:p.fp,labels,trust:{submission:'server_receipted',telemetry:'worker_reported',correctness:'not_independently_verified',reuse_requires_validation:true}};
   c.ctx.storage.sql.exec('INSERT INTO execution_runs(namespace,run_id,task_id,fencing_token,receipt_hash,created_at,expires_at,input_hash,exact_hash,shape_hash,envelope) VALUES (?,?,?,?,?,?,?,?,?,?,?)',p.ns,p.runId,task.id,lease.fencing_token,receiptHash,now,expiresAt,p.fp.input_hash,p.fp.exact_hash,p.fp.shape_hash,canonicalJson(envelope));
   for(const band of p.fp.bands) c.ctx.storage.sql.exec('INSERT INTO execution_bands(namespace,band,run_id) VALUES (?,?,?)',p.ns,band,p.runId);
 }
@@ -118,7 +120,11 @@ export async function recallExecution(c,args,grant,view) {
   ['exact_hash','input_hash','shape_hash'].forEach((field,priority)=>{
     if(fp[field]) { queries.push(`SELECT run_id,${priority} AS priority FROM execution_runs WHERE namespace=? AND ${field}=?`); params.push(ns,fp[field]); }
   });
-  for(const band of fp.bands) {queries.push('SELECT run_id,3 AS priority FROM execution_bands WHERE namespace=? AND band=?');params.push(ns,band);}
+  // One indexed band lookup keeps the compound query within the Workers SQLite limit.
+  if(fp.bands.length) {
+    queries.push('SELECT run_id,3 AS priority FROM execution_bands WHERE namespace=? AND band IN ('+fp.bands.map(()=>'?').join(',')+')');
+    params.push(ns,...fp.bands);
+  }
   const rows=queries.length ? c._all('SELECT r.run_id FROM execution_runs r JOIN (SELECT run_id,MIN(priority) priority FROM ('+queries.join(' UNION ALL ')+') GROUP BY run_id) x ON x.run_id=r.run_id WHERE r.namespace=? AND (r.expires_at IS NULL OR r.expires_at>?) ORDER BY x.priority,r.created_at DESC,r.run_id LIMIT ?',...params,ns,Date.now()/1000,LIMIT+1) : [];
   const matches=[];let considered=0;
   for(const candidate of rows.slice(0,LIMIT)) {

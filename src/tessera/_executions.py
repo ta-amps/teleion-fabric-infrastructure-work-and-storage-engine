@@ -186,11 +186,14 @@ class ExecutionOps(StoreBase):
                         f"SELECT run_id,{priority} AS priority FROM execution_runs WHERE namespace=? AND {field}=?"  # noqa: S608
                     )
                     args.extend((ns, fp[field]))
-            for band in fp["bands"]:
+            if fp["bands"]:
+                placeholders = ",".join("?" for _ in fp["bands"])
                 queries.append(
-                    "SELECT run_id,3 AS priority FROM execution_bands WHERE namespace=? AND band=?"
+                    "SELECT run_id,3 AS priority FROM execution_bands WHERE namespace=? AND band IN ("  # noqa: S608
+                    + placeholders
+                    + ")"
                 )
-                args.extend((ns, band))
+                args.extend((ns, *fp["bands"]))
             rows = []
             if queries:
                 sql = (

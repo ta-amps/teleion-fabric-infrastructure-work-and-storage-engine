@@ -10,6 +10,7 @@ from typing import Any
 from tessera._base import StoreBase
 from tessera.errors import InvalidRequest
 from tessera.execution_matching import fingerprints, normalize_report
+from tessera.models import category_from_tag
 from tessera.receipts import canonical_json
 
 MAX_SNAPSHOT_BYTES = 131072
@@ -152,7 +153,11 @@ def capture_execution(
         "visibility_scope": task["visibility_scope"],
         "allowed_surfaces": json.loads(task["allowed_surfaces"]),
         "target_cohorts": json.loads(task["target_cohorts"]),
-        "tags": [tag for tag in json.loads(task["tags"]) if tag != "status:verified"]
+        "tags": [
+            tag
+            for tag in json.loads(task["tags"])
+            if tag != "status:verified" and category_from_tag(tag) is None
+        ]
         + ["category:noun.eval_run", "status:worker_reported"],
         "missing_measurements": {
             name: {"value": None, "reason": "worker did not report this field"}

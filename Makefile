@@ -9,7 +9,7 @@ FACTORY_store := tessera.testing:create_store_backend
 FACTORY_http := tessera.testing:create_http_backend
 FACTORY_empty := tessera.testing:create_empty_backend
 
-.PHONY: openapi-check help setup check lint types test suite suite-stub suite-http-local public lock-suite clean serve dev seed expand-demo bilateral-demo index index-check architecture
+.PHONY: openapi-check help setup check lint types test test-worker suite suite-stub suite-http-local public lock-suite clean serve dev seed expand-demo bilateral-demo index index-check architecture
 
 help: ## List the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-12s %s\n", $$1, $$2}'
@@ -28,6 +28,9 @@ types: ## mypy strict on src/tessera
 
 test: ## Unit tests and the conformance suite on the in-process store
 	uv run pytest -q
+
+test-worker: ## Actual local workerd/SQLite HTTP and MCP regression tests (npm ci first)
+	npm run test:worker
 
 suite: ## Conformance suite on one backend: make suite BACKEND=store|http
 	TESSERA_BACKEND_FACTORY=$(FACTORY_$(BACKEND)) uv run pytest -q $(SUITE)

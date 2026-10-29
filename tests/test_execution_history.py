@@ -93,6 +93,7 @@ class MemoryHarness:
         brief: dict[str, Any] | None = None,
         queue: str = QUEUE,
         depends_on: list[str] | None = None,
+        tags: list[str] | None = None,
     ) -> dict[str, Any]:
         response = self.request(
             actor,
@@ -104,6 +105,7 @@ class MemoryHarness:
                 "brief": brief or {"synthetic": True, "input": [1, 2]},
                 "visibility_scope": visibility,
                 "depends_on": depends_on or [],
+                "tags": tags or [],
             },
         )
         assert response.status_code == 201, response.text
@@ -225,6 +227,38 @@ def test_http_success_recall_and_immutable_report_replay(memory: MemoryHarness) 
     assert event["resource_id"] == recalled["run_id"]
     assert event["resource_type"] == "noun"
     assert event["receipt_id"] == recalled["receipt_hash"]
+
+
+@pytest.mark.parametrize(
+    "source_category", ["category:verb.solve_draft", "cat:verb.solve_draft", "verb.solve_draft"]
+)
+def test_execution_category_preserves_source_scope_without_inheriting_verb_type(
+    memory: MemoryHarness,
+    source_category: str,
+) -> None:
+    actor = memory.actor()
+    tags = [
+        source_category,
+        "status:quarantined",
+        "status:verified",
+        "topic:arithmetic",
+    ]
+    lease = memory.claim(actor, "typed-source", visibility="private", tags=tags)
+    assert memory.submit(actor, lease).status_code == 200
+    response = memory.request(actor, "GET", "/v1/executions/" + memory.run_id("typed-source"))
+    assert response.status_code == 200, response.text
+    run = response.json()
+    assert run["category_id"] == "noun.eval_run"
+    assert set(run["tags"]) == {
+        "category:noun.eval_run",
+        "status:quarantined",
+        "status:worker_reported",
+        "topic:arithmetic",
+    }
+    source = memory.request(actor, "GET", "/v1/tasks/typed-source").json()
+    assert set(source["tags"]) == set(tags)
+    peer = memory.actor()
+    assert memory.request(peer, "GET", "/v1/executions/" + run["run_id"]).status_code == 404
 
 
 def test_stale_lease_neither_captures_nor_recalls(memory: MemoryHarness) -> None:

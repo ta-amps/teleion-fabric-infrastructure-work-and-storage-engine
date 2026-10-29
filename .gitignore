@@ -35,3 +35,4 @@ dist/
 
 # Local Wrangler state from `wrangler dev`
 .wrangler/
+node_modules/
