@@ -17,7 +17,7 @@ help: ## List the targets
 setup: ## Install Python 3.12 and every dependency with uv
 	uv sync --all-groups --all-extras
 
-check: lint types test public lock-check index-check architecture openapi-check ## Lint, types, unit tests, leak scan; run before every commit
+check: agent-start-check lint types test public lock-check index-check architecture openapi-check ## Lint, types, unit tests, leak scan; run before every commit
 
 lint: ## ruff lint and format check
 	uv run ruff check .
@@ -85,3 +85,7 @@ architecture: ## architecture.json must match the code: paths, tests, layering r
 
 openapi-check: ## Generated access schema must match the HTTP route/model contract
 	uv run python scripts/build_access_openapi.py --check
+
+.PHONY: agent-start-check
+agent-start-check: ## Check public agent onboarding instructions and HTTP boundaries
+	node --test tests/agent_start.test.mjs

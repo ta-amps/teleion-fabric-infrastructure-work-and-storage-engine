@@ -73,7 +73,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [conformance-draft/test_storage.py](conformance-draft/test_storage.py) | ST01 to ST04: atomic storage. |
 | [conformance-draft/test_task_graph.py](conformance-draft/test_task_graph.py) | Task graphs every backend must meet (SPEC §5.2 and §5.6): dependencies (fan-in), children that run in waves,… |
 
-## deploy/ (24)
+## deploy/ (25)
 
 | File | What it is |
 |---|---|
@@ -81,6 +81,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [deploy/bootstrap-hosting.sh](deploy/bootstrap-hosting.sh) | One-time hosting setup for one service on Fly.io behind a Cloudflare Worker: the Fly app and its |
 | [deploy/cloudflare/README.md](deploy/cloudflare/README.md) | Cloudflare: the Tessera cloud runtime and edge |
 | [deploy/cloudflare/access_openapi.json](deploy/cloudflare/access_openapi.json) | JSON object: components, info, openapi, paths |
+| [deploy/cloudflare/agent_start.js](deploy/cloudflare/agent_start.js) | Versioned onboarding instructions. |
 | [deploy/cloudflare/cloud_access.js](deploy/cloudflare/cloud_access.js) | Persistent principal metadata, anonymous limits and redacted access receipts. |
 | [deploy/cloudflare/cloud_access_routes.js](deploy/cloudflare/cloud_access_routes.js) |  |
 | [deploy/cloudflare/cloud_buckets.js](deploy/cloudflare/cloud_buckets.js) | Persistent cloud blob & bucket storage engine + canonical JSON receipt hashing for Tessera Cloud. |
@@ -102,13 +103,14 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [deploy/fly/README.md](deploy/fly/README.md) | Fly.io: the Tessera service |
 | [deploy/fly/fly.toml](deploy/fly/fly.toml) | Tessera service on one Fly.io machine with a volume (brief L20), reached through the Cloudflare edge |
 
-## docs/ (22)
+## docs/ (23)
 
 | File | What it is |
 |---|---|
 | [docs/WORKER-FIRST-EXECUTION.md](docs/WORKER-FIRST-EXECUTION.md) | Worker-first execution and private work |
 | [docs/WORKER-VERB-EXAMPLES.md](docs/WORKER-VERB-EXAMPLES.md) | Work suitable for claimed verbs |
 | [docs/access-modes.md](docs/access-modes.md) | External agent access |
+| [docs/agent-start.md](docs/agent-start.md) | Start an agent from a website |
 | [docs/architecture.md](docs/architecture.md) | Tessera: architecture |
 | [docs/comparison.md](docs/comparison.md) | Tessera: comparison |
 | [docs/decisions.md](docs/decisions.md) | Tessera: decisions |
@@ -213,10 +215,11 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [src/tessera/store.py](src/tessera/store.py) | The in-process Tessera store: the reference implementation of SPEC.md. |
 | [src/tessera/testing.py](src/tessera/testing.py) | Factories the conformance suite loads by name (TESSERABACKENDFACTORY="module:function"). |
 
-## tests/ (38)
+## tests/ (39)
 
 | File | What it is |
 |---|---|
+| [tests/agent_start.test.mjs](tests/agent_start.test.mjs) |  |
 | [tests/edge_access_harness.mjs](tests/edge_access_harness.mjs) | No remote HTTP, credentials, or persistent production data: real Worker handlers, synthetic SQLite. |
 | [tests/edge_access_loader.mjs](tests/edge_access_loader.mjs) | Minimal Cloudflare DurableObject class for deterministic Node SQLite tests. |
 | [tests/edge_access_publication.mjs](tests/edge_access_publication.mjs) | Storage-level approvals bind an authenticated draft, reviewer, receipt, and exact catalog value. |
