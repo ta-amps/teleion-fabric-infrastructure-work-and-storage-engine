@@ -137,11 +137,12 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [docs/work-design-and-evidence.md](docs/work-design-and-evidence.md) | Nouns, verbs and evidence |
 | [docs/work-routing.md](docs/work-routing.md) | Route agent work through nouns and verbs |
 
-## examples/ (68)
+## examples/ (69)
 
 | File | What it is |
 |---|---|
 | [examples/continuous_tuning/__init__.py](examples/continuous_tuning/__init__.py) | Continuous tuning, evaluation and hard-example mining as Tessera nouns and verbs. |
+| [examples/continuous_tuning/augment.py](examples/continuous_tuning/augment.py) | Schema-perturbation augmentation: teach reading the offered schema, not memorizing names. |
 | [examples/continuous_tuning/backend_hf.py](examples/continuous_tuning/backend_hf.py) | Optional torch/Transformers/PEFT worker backend; never imported by Tessera's service. |
 | [examples/continuous_tuning/catalog.py](examples/continuous_tuning/catalog.py) | Verb templates and the execution report every verb submits. |
 | [examples/continuous_tuning/cli.py](examples/continuous_tuning/cli.py) | Command line surface: tick on demand, show status and the learning curve, build the pack. |
@@ -158,13 +159,13 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [examples/continuous_tuning/pack/manifest.json](examples/continuous_tuning/pack/manifest.json) | JSON object: base_model_license, categories, does_not, evaluation, files, format |
 | [examples/continuous_tuning/pack/records/base_model.35f7440ce8870ef2.json](examples/continuous_tuning/pack/records/base_model.35f7440ce8870ef2.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
 | [examples/continuous_tuning/pack/records/base_model.a7110b742efbc097.json](examples/continuous_tuning/pack/records/base_model.a7110b742efbc097.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
-| [examples/continuous_tuning/pack/records/learner_spec.e4aef3be52d54c33.json](examples/continuous_tuning/pack/records/learner_spec.e4aef3be52d54c33.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
-| [examples/continuous_tuning/pack/records/pack_index.5e9d7b9bd6232aaf.json](examples/continuous_tuning/pack/records/pack_index.5e9d7b9bd6232aaf.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
+| [examples/continuous_tuning/pack/records/learner_spec.181a502321e41691.json](examples/continuous_tuning/pack/records/learner_spec.181a502321e41691.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
+| [examples/continuous_tuning/pack/records/pack_index.b464536539667b57.json](examples/continuous_tuning/pack/records/pack_index.b464536539667b57.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
 | [examples/continuous_tuning/pack/records/promotion_rule.520abffa83ef6080.json](examples/continuous_tuning/pack/records/promotion_rule.520abffa83ef6080.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
 | [examples/continuous_tuning/pack/records/search_space.099ed35b5dcc4f07.json](examples/continuous_tuning/pack/records/search_space.099ed35b5dcc4f07.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
 | [examples/continuous_tuning/pack/records/tool_snapshot.04b90e2ce2e7b3b0.json](examples/continuous_tuning/pack/records/tool_snapshot.04b90e2ce2e7b3b0.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
 | [examples/continuous_tuning/pack/records/training_recipe.c538f95f751732b8.json](examples/continuous_tuning/pack/records/training_recipe.c538f95f751732b8.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
-| [examples/continuous_tuning/pack/records/trigger.600bb4e1b4c8659d.json](examples/continuous_tuning/pack/records/trigger.600bb4e1b4c8659d.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
+| [examples/continuous_tuning/pack/records/trigger.06b5614255fea258.json](examples/continuous_tuning/pack/records/trigger.06b5614255fea258.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
 | [examples/continuous_tuning/pack/records/verb_template.090e0a551bfb3b91.json](examples/continuous_tuning/pack/records/verb_template.090e0a551bfb3b91.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
 | [examples/continuous_tuning/pack/records/verb_template.0dfc5a4aaf86364a.json](examples/continuous_tuning/pack/records/verb_template.0dfc5a4aaf86364a.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
 | [examples/continuous_tuning/pack/records/verb_template.0eca35dba157fbe0.json](examples/continuous_tuning/pack/records/verb_template.0eca35dba157fbe0.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |

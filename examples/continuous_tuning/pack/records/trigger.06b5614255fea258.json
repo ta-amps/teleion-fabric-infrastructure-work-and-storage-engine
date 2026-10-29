@@ -1,7 +1,7 @@
 {
  "allowed_surfaces": [],
  "expected_version": 0,
- "key": "trigger.600bb4e1b4c8659d73d738a1f63b842ea9832e27004323fd7d3db5995d874a96",
+ "key": "trigger.06b5614255fea258362a8c7fd9d502f3eae35cccce6e3ad5d5de476691f1d804",
  "namespace": "conformance-tuning",
  "store": "tuning.specs",
  "tags": [
@@ -17,6 +17,9 @@
  "value": {
   "activation": "none",
   "category_id": "noun.code_node",
+  "changes": [
+   "v2: allows a fourth training round for the schema_augment comparison; the conditions are unchanged."
+  ],
   "conditions": [
    {
     "then": "baseline round: freeze holdouts, evaluate the unchanged base",
@@ -51,14 +54,14 @@
    "determinism": 1,
    "evidence_grounding": 1,
    "safety_compliance": 1,
-   "token_efficiency": 0.982468,
+   "token_efficiency": 0.980728,
    "verification_tier": "deterministic_gate"
   },
   "evaluated_by": "the tick verb, claimed by an authorized worker",
   "format": "tessera.continuous-tuning.trigger.v1",
   "interval_hours": 24,
   "max_rounds_per_tick": 1,
-  "max_training_rounds": 3,
+  "max_training_rounds": 4,
   "min_new_accepted_rows": 32,
   "pack": "continuous-tuning.tool-call-specialist",
   "relations": [],
@@ -70,7 +73,7 @@
   },
   "spdx_license": "MIT",
   "trigger_id": "tool-call-specialist.retrain-or-evaluate",
-  "version": 1
+  "version": 2
  },
  "visibility_scope": "private"
 }

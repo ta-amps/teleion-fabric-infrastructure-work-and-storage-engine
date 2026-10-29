@@ -2,22 +2,66 @@
   "format": "tessera.continuous-tuning.learner-spec.v1",
   "learner": "tool-call-specialist",
   "strategy": "lora-sft-hard-example-mining",
-  "version": 1,
+  "version": 2,
   "facet": "Typed tool calls for the Tessera noun and verb fabric: pick the right served tool and give every argument its schema type, or refuse with a fixed reason",
   "reads": [
-    {"noun": "tool snapshot", "store": "tuning.specs", "category": "noun.mcp_server"},
-    {"noun": "base model", "store": "tuning.specs", "category": "noun.model_spec"},
-    {"noun": "recipe and search space", "store": "tuning.specs", "category": "noun.code_node"},
-    {"noun": "accepted example batches", "store": "tuning.data", "category": "noun.benchmark_suite"},
-    {"noun": "frozen and fresh holdouts", "store": "tuning.data", "category": "noun.benchmark_suite"},
-    {"noun": "champion pointer", "store": "tuning.models", "category": "noun.model_spec"},
-    {"noun": "champion and base evaluation runs", "store": "tuning.evals", "category": "noun.eval_run"}
+    {
+      "noun": "tool snapshot",
+      "store": "tuning.specs",
+      "category": "noun.mcp_server"
+    },
+    {
+      "noun": "base model",
+      "store": "tuning.specs",
+      "category": "noun.model_spec"
+    },
+    {
+      "noun": "recipe and search space",
+      "store": "tuning.specs",
+      "category": "noun.code_node"
+    },
+    {
+      "noun": "accepted example batches",
+      "store": "tuning.data",
+      "category": "noun.benchmark_suite"
+    },
+    {
+      "noun": "frozen and fresh holdouts",
+      "store": "tuning.data",
+      "category": "noun.benchmark_suite"
+    },
+    {
+      "noun": "champion pointer",
+      "store": "tuning.models",
+      "category": "noun.model_spec"
+    },
+    {
+      "noun": "champion and base evaluation runs",
+      "store": "tuning.evals",
+      "category": "noun.eval_run"
+    }
   ],
   "writes": [
-    {"noun": "example batches, accepted batches, training sets, fresh holdouts", "store": "tuning.data", "versioning": "create-only; key is role plus content digest"},
-    {"noun": "adapters (unadmitted candidates)", "store": "tuning.models", "versioning": "create-only; adapter bytes in private chunked blobs"},
-    {"noun": "evaluation runs, selections, promotion decisions", "store": "tuning.evals", "versioning": "create-only"},
-    {"noun": "champion pointer", "store": "tuning.models", "versioning": "the single mutable key, compare-and-set; record history keeps every version"}
+    {
+      "noun": "example batches, accepted batches, training sets, fresh holdouts",
+      "store": "tuning.data",
+      "versioning": "create-only; key is role plus content digest"
+    },
+    {
+      "noun": "adapters (unadmitted candidates)",
+      "store": "tuning.models",
+      "versioning": "create-only; adapter bytes in private chunked blobs"
+    },
+    {
+      "noun": "evaluation runs, selections, promotion decisions",
+      "store": "tuning.evals",
+      "versioning": "create-only"
+    },
+    {
+      "noun": "champion pointer",
+      "store": "tuning.models",
+      "versioning": "the single mutable key, compare-and-set; record history keeps every version"
+    }
   ],
   "trigger": "trigger.json",
   "budget": {
@@ -51,20 +95,100 @@
     "fresh_holdout": 48
   },
   "strategies": {
-    "1": [{"id": "lr_search", "search": "lr3", "train_on": ["initial"], "init": "base"}],
+    "1": [
+      {
+        "id": "lr_search",
+        "search": "lr3",
+        "train_on": [
+          "initial"
+        ],
+        "init": "base"
+      }
+    ],
     "2": [
-      {"id": "mined", "train_on": ["initial", "stream", "mined"], "init": "base"},
-      {"id": "random_control", "train_on": ["initial", "stream", "control"], "init": "base"}
+      {
+        "id": "mined",
+        "train_on": [
+          "initial",
+          "stream",
+          "mined"
+        ],
+        "init": "base"
+      },
+      {
+        "id": "random_control",
+        "train_on": [
+          "initial",
+          "stream",
+          "control"
+        ],
+        "init": "base"
+      }
     ],
     "default": [
-      {"id": "mined", "train_on": ["initial", "stream", "mined"], "init": "base"},
-      {"id": "continue_champion", "train_on": "new_since_champion", "replay": 32, "init": "champion"}
+      {
+        "id": "mined",
+        "train_on": [
+          "initial",
+          "stream",
+          "mined"
+        ],
+        "init": "base"
+      },
+      {
+        "id": "continue_champion",
+        "train_on": "new_since_champion",
+        "replay": 32,
+        "init": "champion"
+      }
+    ],
+    "4": [
+      {
+        "id": "mined",
+        "train_on": [
+          "initial",
+          "stream",
+          "mined"
+        ],
+        "init": "base"
+      },
+      {
+        "id": "schema_augment",
+        "train_on": [
+          "initial",
+          "stream",
+          "mined",
+          "augmented"
+        ],
+        "init": "base",
+        "generate": [
+          {
+            "name": "augmented",
+            "kind": "augmented",
+            "count": 96,
+            "origin": "augmented"
+          }
+        ]
+      }
     ]
   },
-  "verbs": ["tick", "generate_examples", "curate_dataset", "tune_hyperparameters", "train_adapter", "evaluate", "decide_promotion", "mine_hard_examples"],
+  "verbs": [
+    "tick",
+    "generate_examples",
+    "curate_dataset",
+    "tune_hyperparameters",
+    "train_adapter",
+    "evaluate",
+    "decide_promotion",
+    "mine_hard_examples"
+  ],
   "limits": [
     "Synthetic, owned data from repository templates; labels are computed, never model-written",
     "No provider outputs, Muse API outputs, private histories or execution reports are training data",
     "Adapters stay private nouns; promotion moves only a local pointer"
+  ],
+  "changes": [
+    "v2, registered on 2026-10-29 after round 2's decision and before round 4 ran: adds round 4, which compares more data (mined) with the same data plus 96 schema-perturbed rows (schema_augment). Rounds 1 to 3 and the promotion rule are unchanged.",
+    "Motivation from dev failures only: after round 1 the adapter put request text into the wrong argument of unseen tools (query into category or tag) and swapped look-alike tools, and more rows of the same kind did not move dev in round 2."
   ]
 }

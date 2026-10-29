@@ -223,30 +223,24 @@ def loop_run(tmp_path_factory: pytest.TempPathFactory) -> dict:
     root = tmp_path_factory.mktemp("tuning")
     spec = json.loads((HERE / "learner_spec.json").read_bytes())
     backend = FixtureBackend(TOOLS, spec["data_plan"])
-    # Five ticks a few minutes apart, then one more a day later: an evaluation-only round.
-    times = [1_900_000_000 + 1000 * i for i in range(5)] + [1_900_000_000 + 4000 + 90_000]
+    # Rounds 0 to 4 a few minutes apart, a no-op, then one tick a day later: evaluation only.
+    times = [1_900_000_000 + 1000 * i for i in range(6)] + [1_900_000_000 + 5000 + 90_000]
     ticks = [tick(root, BASE, lambda: backend, now=lambda t=t: float(t)) for t in times]
     return {"root": root, "ticks": ticks}
 
 
 def test_loop_runs_rounds_as_claimed_verbs_with_execution_reports(loop_run: dict) -> None:
     ticks = loop_run["ticks"]
-    assert [t["round"] for t in ticks] == [0, 1, 2, 3, 3, 3]
-    assert all(v["ok"] for t in ticks[:4] for v in t["verbs"])
-    assert ticks[4]["verbs"][0]["status"] == "no_op" and len(ticks[4]["verbs"]) == 1
-    monitor = [v["stage"] for v in ticks[5]["verbs"]]
-    assert monitor == [
-        "tick",
-        "generate_examples",
-        "curate_dataset",
-        "evaluate",
-        "decide_promotion",
-    ]
-    assert (
-        all(v["ok"] for v in ticks[5]["verbs"])
-        and ticks[5]["verbs"][0]["summary"]["kind"] == "monitor"
-    )
-    assert ticks[5]["pointer_version"] == ticks[4]["pointer_version"] + 1
+    assert [t["round"] for t in ticks] == [0, 1, 2, 3, 4, 4, 4]
+    assert all(v["ok"] for t in ticks[:5] for v in t["verbs"])
+    assert ticks[5]["verbs"][0]["status"] == "no_op" and len(ticks[5]["verbs"]) == 1
+    first = [v["step"] for v in ticks[4]["verbs"][1:4]]
+    assert first == ["generate_for_round", "accept_for_round", "training_sets"]
+    monitor = [v["stage"] for v in ticks[6]["verbs"]]
+    stages = ["tick", "generate_examples", "curate_dataset", "evaluate", "decide_promotion"]
+    assert monitor == stages and all(v["ok"] for v in ticks[6]["verbs"])
+    assert ticks[6]["verbs"][0]["summary"]["kind"] == "monitor"
+    assert ticks[6]["pointer_version"] == ticks[5]["pointer_version"] + 1
     stages = {v["stage"] for t in ticks for v in t["verbs"]}
     assert stages == {"tick", "generate_examples", "curate_dataset", "tune_hyperparameters", "train_adapter", "evaluate", "decide_promotion", "mine_hard_examples"}  # fmt: skip
     store = Store(loop_run["root"] / "fabric.db")
@@ -274,7 +268,7 @@ def test_loop_runs_rounds_as_claimed_verbs_with_execution_reports(loop_run: dict
 
 
 def test_other_principal_reads_no_private_noun_blob_or_execution(loop_run: dict) -> None:
-    for item in loop_run["ticks"][:4]:
+    for item in loop_run["ticks"][:5]:
         privacy = item["privacy"]
         assert privacy["leaked"] == [] and privacy["denied"] == privacy["probes"] > 0
         assert (
@@ -286,7 +280,7 @@ def test_decisions_pin_the_rule_and_training_sets_stay_clean(loop_run: dict) -> 
     from examples.continuous_tuning.report import learning_curve
 
     curve = learning_curve(loop_run["root"], BASE)
-    assert [r["round"] for r in curve["rounds"]] == [0, 1, 2, 3]
+    assert [r["round"] for r in curve["rounds"]] == [0, 1, 2, 3, 4]
     for item in curve["rounds"][1:]:
         assert not any(item["contamination"].values())
         assert item["outcome"] in ("promote_candidate", "keep_champion")
@@ -438,3 +432,32 @@ def test_report_carries_the_learning_block_only_where_the_store_accepts_it(
     future = catalog.execution_report("evaluate", **common)
     assert future["learning"] == learning and future["model"] is None
     assert learning["unknowns"][0]["field"] == "cost" and learning["duration_seconds"] == 1.5
+
+
+def test_augmented_rows_rename_schemas_and_never_teach_served_names() -> None:
+    from examples.continuous_tuning.augment import check_aliases, generate_augmented
+
+    check_aliases(TOOLS)
+    rows = generate_augmented(60, "aug-check", TOOLS)
+    assert rows == generate_augmented(60, "aug-check", TOOLS)
+    served = set(TOOLS) | {
+        p for t in TOOLS.values() for p in t["inputSchema"].get("properties", {})
+    }
+    for row in rows:
+        assert (
+            set(row["offered"]) == set(row["tool_overrides"]) and not set(row["offered"]) & served
+        )
+        if row["tool"]:
+            assert FAMILY_SPLIT[FAMILY_OF[row["tool"]]] == "train"
+        target = row["target"]
+        if "refusal" not in target:
+            schema = row["tool_overrides"][target["tool"]]["inputSchema"]
+            assert not validate(target["arguments"], schema)
+            assert not set(target["arguments"]) & served
+        prompt = prompt_messages(row, TOOLS)[0]["content"]
+        assert all(f'"name":"{name}"' in prompt for name in row["offered"])
+        expected = {"refusal": target["refusal"]} if "refusal" in target else target
+        assert json.loads(target_text(row, TOOLS)) == expected
+    dev = generate("dev", 80, "dev-a", "frozen_holdout", TOOLS)
+    test = generate("test", 150, "test-a", "frozen_holdout", TOOLS)
+    assert not any(contamination(rows, dev + test).values())

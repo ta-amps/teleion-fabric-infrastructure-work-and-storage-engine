@@ -136,14 +136,33 @@ def plan(kind: str, round_id: int, spec: dict[str, Any], now: float) -> list[dic
             step("record", "decide_promotion", {"mode": "monitor"}, ["holdout_eval"]),
         ]
     strategies = spec["strategies"].get(str(round_id), spec["strategies"]["default"])
-    steps = [
+    # A strategy may declare rows it needs drawn and accepted before its training set.
+    needed = [
+        {**g, "batch": f"{g['name']}-r{round_id}"}
+        for s in strategies
+        for g in s.get("generate", [])
+    ]
+    steps, before = [], []
+    if needed:
+        sources = {"generate_for_round": [g["name"] for g in needed]}
+        steps += [
+            step("generate_for_round", "generate_examples", {"batches": needed}, []),
+            step(
+                "accept_for_round",
+                "curate_dataset",
+                {"mode": "accept", "sources": sources},
+                ["generate_for_round"],
+            ),
+        ]
+        before = ["accept_for_round"]
+    steps.append(
         step(
             "training_sets",
             "curate_dataset",
             {"mode": "training_sets", "strategies": strategies},
-            [],
+            before,
         )
-    ]
+    )
     if strategies[0].get("search"):
         selection = "search"
         steps.append(

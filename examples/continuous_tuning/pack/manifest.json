@@ -30,12 +30,12 @@
    "sha256": "ee19407b6a5c7cc513aeb5f531387b88095bf817f68089841193325170f6e2fc"
   },
   {
-   "path": "records/learner_spec.e4aef3be52d54c33.json",
-   "sha256": "0f3d0ef6d8b5eeaad0bf93390d63bb22d192ed759fe6f21c1b2356b3645e7143"
+   "path": "records/learner_spec.181a502321e41691.json",
+   "sha256": "2563332e83703a1d117a61696af69dd37862a6cde243e85cdca2fc658e8cfc9d"
   },
   {
-   "path": "records/pack_index.5e9d7b9bd6232aaf.json",
-   "sha256": "a62d94f4d65a1c9cf6b14dfe921ba88d08911faf0304772be1a5a971bbb2ba21"
+   "path": "records/pack_index.b464536539667b57.json",
+   "sha256": "4f74738f3ff34f5893bb351615759c787f3ba091a5f82e6aa9aa4578f926b8e9"
   },
   {
    "path": "records/promotion_rule.520abffa83ef6080.json",
@@ -54,8 +54,8 @@
    "sha256": "354fee3143f194caf49a71b1028923463dfdb4b80b0a55fd75b31fe36029ae97"
   },
   {
-   "path": "records/trigger.600bb4e1b4c8659d.json",
-   "sha256": "d3f337157ba989e13eecccfbac37e4712b806de9d49a945ccad1f38f3ed885b4"
+   "path": "records/trigger.06b5614255fea258.json",
+   "sha256": "b5e0c95149da6d6310681681a9edc3b8f84ff1c61ece4e86d9d1b4b9b12b49d7"
   },
   {
    "path": "records/verb_template.090e0a551bfb3b91.json",
@@ -95,11 +95,11 @@
   },
   {
    "path": "tasks/tick.llama-3.2-1b-instruct.json",
-   "sha256": "45809b075888216517f8d277a8cf1ca68fd6dc98f4b58cb61e3ca1454450e497"
+   "sha256": "9c790be9c5bbdd66b379ac45f8c58193efe792b66429a4f0f2f59e3e41ea9884"
   },
   {
    "path": "tasks/tick.llama-3.2-3b-instruct.json",
-   "sha256": "f4a5f479e8b25a77ae611fa8c36223d9d253f992f14d8240c358dc23a5369964"
+   "sha256": "566dc9fc09a0e4547ccc21181556e66231ef9aba2f9ea5984a4749b11a310ae2"
   }
  ],
  "format": "tessera.continuous-tuning.seed-pack.v1",

@@ -1,7 +1,7 @@
 {
  "allowed_surfaces": [],
  "expected_version": 0,
- "key": "learner_spec.e4aef3be52d54c33a4592cdc4a49d0659d7c1b446f247d3ca2894e3a92b2f2bc",
+ "key": "learner_spec.181a502321e41691e2d5436affed8e4322e7fd0086ac6056a1a070088d9cc3d3",
  "namespace": "conformance-tuning",
  "store": "tuning.specs",
  "tags": [
@@ -27,6 +27,10 @@
    "spending": "none; this learner never authorizes spending"
   },
   "category_id": "noun.code_node",
+  "changes": [
+   "v2, registered on 2026-10-29 after round 2's decision and before round 4 ran: adds round 4, which compares more data (mined) with the same data plus 96 schema-perturbed rows (schema_augment). Rounds 1 to 3 and the promotion rule are unchanged.",
+   "Motivation from dev failures only: after round 1 the adapter put request text into the wrong argument of unseen tools (query into category or tag) and swapped look-alike tools, and more rows of the same kind did not move dev in round 2."
+  ],
   "consumers": [
    "workers that read this learner's champion pointer before typed tool calls",
    "the learner's next round, which compares against the champion",
@@ -53,7 +57,7 @@
    "determinism": 1,
    "evidence_grounding": 1,
    "safety_compliance": 1,
-   "token_efficiency": 0.904114,
+   "token_efficiency": 0.892715,
    "verification_tier": "deterministic_gate"
   },
   "evaluation": {
@@ -131,7 +135,7 @@
     "note": "uses trigger",
     "relation": "requires_noun",
     "target_category": "noun.code_node",
-    "target_id": "trigger.600bb4e1b4c8659d73d738a1f63b842ea9832e27004323fd7d3db5995d874a96"
+    "target_id": "trigger.06b5614255fea258362a8c7fd9d502f3eae35cccce6e3ad5d5de476691f1d804"
    },
    {
     "note": "uses rule",
@@ -239,6 +243,35 @@
      ]
     }
    ],
+   "4": [
+    {
+     "id": "mined",
+     "init": "base",
+     "train_on": [
+      "initial",
+      "stream",
+      "mined"
+     ]
+    },
+    {
+     "generate": [
+      {
+       "count": 96,
+       "kind": "augmented",
+       "name": "augmented",
+       "origin": "augmented"
+      }
+     ],
+     "id": "schema_augment",
+     "init": "base",
+     "train_on": [
+      "initial",
+      "stream",
+      "mined",
+      "augmented"
+     ]
+    }
+   ],
    "default": [
     {
      "id": "mined",
@@ -269,7 +302,7 @@
    "decide_promotion",
    "mine_hard_examples"
   ],
-  "version": 1,
+  "version": 2,
   "writes": [
    {
     "noun": "example batches, accepted batches, training sets, fresh holdouts",

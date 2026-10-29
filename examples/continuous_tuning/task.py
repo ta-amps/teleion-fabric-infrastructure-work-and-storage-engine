@@ -411,7 +411,9 @@ def generate_targeted(
 
 
 def prompt_messages(row: dict[str, Any], tools: dict[str, Any]) -> list[dict[str, str]]:
-    system = INSTRUCTION + "\n\nAVAILABLE TOOLS:\n" + render_tools(row["offered"], tools)
+    # Augmented training rows carry renamed tool variants; evaluation rows never do.
+    offered = {**tools, **row.get("tool_overrides", {})}
+    system = INSTRUCTION + "\n\nAVAILABLE TOOLS:\n" + render_tools(row["offered"], offered)
     return [{"role": "system", "content": system}, {"role": "user", "content": row["request"]}]
 
 
@@ -419,6 +421,7 @@ def target_text(row: dict[str, Any], tools: dict[str, Any]) -> str:
     target = row["target"]
     if "refusal" in target:
         return json.dumps({"refusal": target["refusal"]})
-    order = list(tools[target["tool"]]["inputSchema"].get("properties", {}))
+    schema = {**tools, **row.get("tool_overrides", {})}[target["tool"]]["inputSchema"]
+    order = list(schema.get("properties", {}))
     arguments = dict(sorted(target["arguments"].items(), key=lambda item: order.index(item[0])))
     return json.dumps({"tool": target["tool"], "arguments": arguments}, ensure_ascii=False)

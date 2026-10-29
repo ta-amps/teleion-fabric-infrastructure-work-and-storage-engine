@@ -23,9 +23,9 @@
     "version": 1
    },
    "learner_spec": {
-    "key": "learner_spec.e4aef3be52d54c33a4592cdc4a49d0659d7c1b446f247d3ca2894e3a92b2f2bc",
+    "key": "learner_spec.181a502321e41691e2d5436affed8e4322e7fd0086ac6056a1a070088d9cc3d3",
     "store": "tuning.specs",
-    "value_sha256": "e4aef3be52d54c33a4592cdc4a49d0659d7c1b446f247d3ca2894e3a92b2f2bc",
+    "value_sha256": "181a502321e41691e2d5436affed8e4322e7fd0086ac6056a1a070088d9cc3d3",
     "version": 1
    },
    "recipe": {
@@ -53,9 +53,9 @@
     "version": 1
    },
    "trigger": {
-    "key": "trigger.600bb4e1b4c8659d73d738a1f63b842ea9832e27004323fd7d3db5995d874a96",
+    "key": "trigger.06b5614255fea258362a8c7fd9d502f3eae35cccce6e3ad5d5de476691f1d804",
     "store": "tuning.specs",
-    "value_sha256": "600bb4e1b4c8659d73d738a1f63b842ea9832e27004323fd7d3db5995d874a96",
+    "value_sha256": "06b5614255fea258362a8c7fd9d502f3eae35cccce6e3ad5d5de476691f1d804",
     "version": 1
    }
   },
@@ -63,7 +63,7 @@
   "step": "tick"
  },
  "effect_class": "write-internal",
- "idempotency_key": "continuous-tuning-seed:83893b4402c9de178b5e11774b5c297c0ea68f6dcd934a8450912176401da140",
+ "idempotency_key": "continuous-tuning-seed:6acb07e5c6598272c09ecfab1a171449a278c1fe2c1af04da9833edd84f80526",
  "kind": "verb.decompose_dag",
  "namespace": "conformance-tuning",
  "queue": "conformance-tuning",

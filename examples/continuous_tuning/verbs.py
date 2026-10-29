@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .augment import generate_augmented
 from .dataset import accept, contamination, fingerprint_sets, jsonl, manifest, read_jsonl
 from .fabric import Fabric
 from .mining import mine
@@ -112,6 +113,8 @@ def generate_examples(ctx: Context, brief: dict[str, Any], deps: dict, beat: Bea
         beat()
         if spec.get("kind") == "sanity":
             rows = sanity_rows(spec["count"], spec["batch"])
+        elif spec.get("kind") == "augmented":
+            rows = generate_augmented(spec["count"], spec["batch"], ctx.tools)
         elif spec.get("kind") == "fresh":
             prior = fingerprint_sets(evaluation_rows(ctx, state)) if state else None
             pool = generate(

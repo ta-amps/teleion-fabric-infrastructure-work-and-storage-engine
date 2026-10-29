@@ -19,7 +19,7 @@ from .templates import VOCAB
 from .tools import FAMILY_SPLIT
 
 DATASET_FORMAT = "tessera.continuous-tuning.dataset.v1"
-TRAINING_ORIGINS = ("initial", "stream", "mined", "control")
+TRAINING_ORIGINS = ("initial", "stream", "mined", "control", "augmented")
 EVAL_ORIGINS = ("frozen_holdout", "fresh_holdout", "sanity")
 _VALUES = sorted({value for values in VOCAB.values() for value in values}, key=len, reverse=True)
 _MASKS = [
