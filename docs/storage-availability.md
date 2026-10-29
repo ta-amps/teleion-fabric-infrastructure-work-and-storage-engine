@@ -27,8 +27,9 @@ changes a plan or provisions more namespaces to evade a provider allowance.
 
 `access_principals.last_used_at` is an approximate profile observation. Its write
 is coalesced within a 60-second interval. It is **not** the activity log, a grant
-cache, a key expiry clock or a claim throttle. Every action still has its ordinary
-audit event and timestamp, including namespace-to-primary audit projection.
+cache, a key expiry clock or a claim throttle. Every successful action still has its
+ordinary audit event and timestamp, including namespace-to-primary audit projection;
+since October 29 denied, failed and no-op requests are counted instead (see below).
 
 All existing authorization resolutions remain in place: current key scope,
 expiry and revocation are checked again, including after a claim waits. A changed
@@ -164,10 +165,60 @@ available task. The revoked claimant receives `401` and the task remains ready.
 The runtime suite also tests constructor and in-RPC quota exceptions, UTC reset
 arithmetic and ordinary error preservation.
 
-The source audit also found repeated schema checks at cold start, an existing
-`INSERT OR IGNORE` salt attempt, and four retention-cleanup DELETE statements on
-every audit call. Existing completed migration markers already skip historical
-tombstone migration. These observations do not quantify their production row
-cost or prove that cold starts caused the incident. This change leaves schema,
-retention, audit and alarm behavior intact. Further optimization needs measured
-row counts and tests that preserve security, retention and receipts.
+### Rows per request before and after the October 29 hardening
+
+Measured in local workerd (Miniflare 5.20261023.1-beta) by summing each SQL cursor's
+`rowsWritten` and `rowsRead` across the coordinator objects, on `main` at `5545851` and on branch
+`t/hardening-20261029` with the same scenario script. D1 blob bytes and Cloudflare billing are not
+included; this is a local measurement, not a production usage total. Index entries count as rows.
+
+| Request (warm objects unless noted) | Rows written, main | Rows written, branch |
+| --- | ---: | ---: |
+| First storage request to a new database (creates the schema) | 101 | 106 |
+| Discovery: `/robots.txt`, `/`, agent card, MCP `tools/list` | 0 (object called) | 0 (no object call) |
+| MCP `tools/list` with a key, first call | 1 | 0 |
+| Keyed read in main (`GET /v1/counts`) | 4 | 4 |
+| Keyed read in a namespace | 8 | 8 |
+| Keyed namespace health (`verifyKey`) | 8 | 0 |
+| First keyed request to a new namespace object | 213 | 218 |
+| Enqueue / granted claim / heartbeat | 13 / 13 / 10 | 13 / 13 / 10 |
+| Empty claim (`204`) | 4, plus a later delete | 0 (one counter row a minute) |
+| Record write, version 1 / version 2 | 14 / 14 | 14 / 14 |
+| Blob upload (three RPCs) | 19 | 11 |
+| Submit | 20 | 20 |
+| Claim-events long-poll, `wait=3` | 16 | 4 |
+| Keyed lifecycle (the eleven requests above, enqueue to long-poll) | 123 | 99 |
+| Anonymous session minted and never used | 209 | 18 |
+| Anonymous session minted, then first claim | 229 | 238 |
+| Anonymous lifecycle (mint, claim, heartbeat, record, submit, counts) | 303 | 312 |
+
+Rows read: a keyed read with 1,000 anonymous principals and limit rows read 3,040 rows on main
+(retention scans) and 36 on the branch. `GET /v1/health` with 500 public tasks reads 502 rows on
+main on every call; on the branch the first call reads 501 and repeats within the snapshot
+interval read none. A cold start of an existing object reads more on the branch (293 rather than
+207 rows for the primary, 341 rather than 256 for a namespace) because it inspects
+`sqlite_master` before deciding which DDL to run; a cold start writes nothing on either.
+
+With every write-capable statement refused after a warm start, `robots.txt`, `/v1/health`,
+`/board` and the agent card answered `503` on main and `200` on the branch. A keyed read still
+answers `503` on the branch, because a successful read keeps its audit row and that write is
+refused; see the decision noted below.
+
+An idle worker that polls an empty queue every 5 seconds wrote about 86,000 rows a day on main
+(about 17,000 audit rows plus their index entries and later deletes). On the branch its polls
+write nothing; its counter writes about one row and one index entry a minute, about 2,900 rows a
+day, and the `Retry-After` hint asks it to poll once a minute once the queue stays empty.
+
+### Remaining work and decisions
+
+- **Successful reads keep a per-action audit row** (4 rows in main, 8 in a namespace, including
+  the projection to the primary object). Existing tests require read provenance, for example
+  that reading an execution record names its run. Aggregating reads would cut a polling
+  dashboard's cost and let keyed reads keep working while writes are refused, but it removes the
+  per-read resource trail. This is an owner decision and is not changed here.
+- A used anonymous session still pays its whole namespace schema (about 200 rows) and every
+  anonymous request updates its durable quota row.
+- Health refreshes remain proportional to public tasks (see above).
+- Counters not yet written are lost when an object is evicted (at most about a minute's worth).
+- Raw blob privacy is still set by the first uploader in a namespace; see the
+  [review findings log](review.md#findings-log).

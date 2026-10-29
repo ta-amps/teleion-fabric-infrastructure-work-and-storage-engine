@@ -499,12 +499,17 @@ export class TesseraCoordinator extends DurableObject {
   // write-capable statement after its daily allowance is spent, even a CREATE ... IF NOT
   // EXISTS that would change nothing. Run only the DDL whose table or index is missing.
   _ensureDdl(statements) {
-    const names = new Set(this._all("SELECT name FROM sqlite_master WHERE type IN ('table', 'index')").map((r) => r.name));
+    // One sqlite_master scan per object instance; names created here are added to it.
+    const names = this.schemaNames || (this.schemaNames = new Set(this._all("SELECT name FROM sqlite_master WHERE type IN ('table', 'index')").map((r) => r.name)));
+    const pattern = /^\s*CREATE\s+(?:UNIQUE\s+)?(?:TABLE|INDEX)\s+IF\s+NOT\s+EXISTS\s+([A-Za-z0-9_]+)/i;
     const missing = statements.filter((stmt) => {
-      const m = /^\s*CREATE\s+(?:UNIQUE\s+)?(?:TABLE|INDEX)\s+IF\s+NOT\s+EXISTS\s+([A-Za-z0-9_]+)/i.exec(stmt);
+      const m = pattern.exec(stmt);
       return !m || !names.has(m[1]);
     });
-    if (missing.length) this.ctx.storage.transactionSync(() => { for (const stmt of missing) this.ctx.storage.sql.exec(stmt); });
+    if (missing.length) {
+      this.ctx.storage.transactionSync(() => { for (const stmt of missing) this.ctx.storage.sql.exec(stmt); });
+      for (const stmt of missing) { const m = pattern.exec(stmt); if (m) names.add(m[1]); }
+    }
     return missing.length;
   }
 
@@ -1261,6 +1266,7 @@ export class TesseraCoordinator extends DurableObject {
     if (purge && Number(purge.value) <= Date.now()/1000) {
       await this.ctx.storage.deleteAll();
       this.seededNamespaces.clear();
+      this.schemaNames = null;
       this._ensureSchemaV3();
       initAccess(this);
       initExecutions(this);
