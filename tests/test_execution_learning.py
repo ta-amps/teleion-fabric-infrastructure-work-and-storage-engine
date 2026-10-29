@@ -448,6 +448,32 @@ def test_learner_specs_config_and_run_pins(harness: Harness) -> None:
         load_run(api, tampered)
 
 
+def test_brief_cannot_widen_the_pinned_spec_visibility(harness: Harness) -> None:
+    api = harness.client(harness.key([SOURCE, LEARNERS]))
+    harness.work(api, GOALS[0], ok=False)
+    learner = spec("memory", "minhash-lsh", 1)
+    assert learner.consumers.visibility_scope == "private"
+    pin = harness.pin(api, learner)
+    assert harness.learn(api, memory_request(pin), learner)["output"]["outcome"] == "updated"
+    head = api.get_record("learn.memory", memory.head_key(SOURCE))
+    assert head.visibility_scope == "private"
+
+    # A brief asking for wider visibility than its pinned spec is refused before any read or write.
+    task = run_spec(memory_request(pin, state_version=head.version), learner)
+    forged = {**learner.consumers.model_dump(), "visibility_scope": "public_commons"}
+    task = task.model_copy(update={"brief": {**task.brief, "consumers": forged}})
+    api.enqueue(task, idempotency_key=task.idempotency_key or "")
+    lease = api.claim(LEARNERS, "synthetic-learner")
+    assert lease is not None and lease.task_id == task.task_id
+    with pytest.raises(ValueError, match="consumers"):
+        load_run(api, lease)
+    after = api.get_record("learn.memory", memory.head_key(SOURCE))
+    assert (after.version, after.visibility_scope) == (head.version, "private")
+    stranger = harness.client(harness.key([SOURCE]))
+    with pytest.raises((Forbidden, NotFound)):
+        stranger.get_record("learn.memory", memory.head_key(SOURCE))
+
+
 def test_seed_pack_export_is_deterministic_and_inert(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
