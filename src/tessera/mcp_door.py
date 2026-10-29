@@ -4,7 +4,6 @@ Agents that speak MCP connect to {public_url}/mcp with `Authorization: Bearer <k
 
 from __future__ import annotations
 
-import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Annotated, Any, TypeVar
 
@@ -132,18 +131,26 @@ def build_mcp(
     ) -> dict[str, Any]:
         grant = await current_grant()
         await run(lambda: gate.queue(grant, queue), grant)
-        if not grant.is_admin and (wait := limiter.retry_after(grant.key_id, time.monotonic())):
-            raise ToolError(f"{RateLimited.code}: retry after {wait:.0f} s")
         effects = grant.effect_filter(effect_classes)
         allowed_kinds = grant.kind_filter(kinds)
         if not effects or allowed_kinds == []:
             return {"lease": None}
-        lease = await run(
-            lambda: store.claim(
-                queue, worker, kinds=allowed_kinds, effect_classes=effects, key_id=grant.key_id
-            ),
-            grant,
-        )
+        try:
+            async with limiter.admit(grant.key_id, grant.is_admin):
+                lease = await run(
+                    lambda: store.claim(
+                        queue,
+                        worker,
+                        kinds=allowed_kinds,
+                        effect_classes=effects,
+                        key_id=grant.key_id,
+                    ),
+                    grant,
+                )
+        except RateLimited as exc:
+            raise ToolError(
+                f"{exc.code}: {exc.detail}; retry after {exc.retry_after:.0f} s"
+            ) from exc
         return {"lease": None if lease is None else lease.model_dump(mode="json")}
 
     @server.tool(

@@ -525,7 +525,7 @@ references.
 |---|---|---|
 | Internet to edge | TLS; cookies stripped; writes never cached | `deploy/cloudflare/worker.js` |
 | Edge to origin | With `TESSERA_EDGE_SECRET` set, every request except the health checks must carry a matching `x-edge-auth` (constant-time compare), else 403 | `service.py`, tested by `test_the_edge_lock` |
-| Caller to service | Bearer key required; scoped to queues (globs), kinds, effect classes and `admin` or `store`; 60 claims a minute per key; writes are POST-only | `service.py`, `_keys.py`, tests T01, T02 and the service tests |
+| Caller to service | Bearer key required; scoped to queues (globs), kinds, effect classes and `admin` or `store`; [adaptive claim admission](claim-admission.md); writes are POST-only | `service.py`, `_keys.py`, tests T01, T02 and the service tests |
 | Lease holder to task | Heartbeat, submit, split and park need the claiming key and the current fencing token; split never widens the effect class | `_tasks.py`, `service.py` |
 | Parker to resumer | The key that parked a task may not resume it; every resume records its key | `_tasks.py`, `service.py` |
 | Service to model provider | None: Tessera holds no model key and makes no model call | by construction; `MODEL_API_KEY` is only for workers |
@@ -802,8 +802,12 @@ nothing. Bodies are JSON. Successful bodies are the models in `src/tessera/model
 - **Keys**: random, at least 32 bytes; stored only as SHA-256; scoped to queues, kinds, effect classes
   and scopes (`admin`, `store`); expire after 14 days; revocable; issued from the command line.
   No key may hold the `public` effect class without a fresh, single-use approval token from Taylor.
-- **Limits**: 60 claims a minute per key, then 429 with `Retry-After`. Throttled and empty answers
-  carry `Retry-After` plus the queue's heartbeat interval.
+- **Claim admission**: healthy keyed workers have no default claims-per-minute quota. New claims
+  may wait under contention; admission concurrency adapts to observed service latency. Bounded
+  pending work and waiting deadlines protect resources. Overload returns 429 with `Retry-After`;
+  empty answers also carry `Retry-After`. Lease heartbeats and submissions bypass claim admission.
+  Anonymous demo quotas and authorization rules remain separate. An operator may explicitly
+  configure a legacy per-key quota on the Python service; it is disabled by default.
 - **MCP**: tools `queues`, `claim`, `heartbeat`, `submit`, `split`, `park` and `resume` with typed input
   and output schemas, behind the same keys. Tool results carry the same JSON as the HTTP bodies.
 - **Hygiene**: no key, token or credential appears in any response, page or log. CORS allows only
@@ -951,7 +955,7 @@ Names only here; values go in `.env` (gitignored) or the host's secret store.
 |---|---|---|---|
 | `TESSERA_DB` | `.tessera/tessera.db` | SQLite file for the store, CLI and service | no |
 | `TESSERA_EDGE_SECRET` | unset (lock off) | When set, every request except the health checks needs a matching `x-edge-auth` | yes |
-| `TESSERA_CLAIMS_PER_MINUTE` | 60 | Claim rate limit per key | no |
+| `TESSERA_CLAIMS_PER_MINUTE` | 0 | Optional legacy per-key quota; zero uses adaptive admission only | no |
 | `TESSERA_REAPER_SECONDS` | 30 | How often the service reaps lapsed leases | no |
 | `TESSERA_PUBLIC_URL` | `http://localhost:8080` | The address the agent pages advertise | no |
 | `TESSERA_ALLOWED_HOSTS` | empty | Comma-separated hosts; when set, the MCP door turns on DNS-rebinding protection for them | no |
@@ -992,7 +996,7 @@ Details: [deploy/fly/README.md](../deploy/fly/README.md), [deploy/cloudflare/REA
 | 401 `unauthorized` | No key, or the key is unknown, expired or revoked | Issue a new key; check the `Authorization` header |
 | 403 `forbidden` | The key's scope doesn't cover the queue, kind, effect class or store; or the edge secret is missing | `tessera keys list`; reach the service through the edge |
 | 409 `stale_lease` | The lease lapsed and someone else holds the task | Heartbeat more often than `heartbeat_seconds`; drop the work |
-| 429 `rate_limited` | Over 60 claims a minute for this key | Wait `Retry-After` |
+| 429 `rate_limited` | Claim admission is overloaded, or an explicit quota applies | Wait `Retry-After` with jitter; see [claim admission](claim-admission.md) |
 | 204 on claim | Nothing ready in that queue | Wait `Retry-After`; check `/board` |
 | The tunnel address stopped working | Quick tunnels change every run | Use the new address `make dev` printed, or deploy |
 

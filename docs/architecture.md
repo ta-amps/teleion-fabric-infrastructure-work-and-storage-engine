@@ -238,7 +238,7 @@ references.
 |---|---|---|
 | Internet to edge | TLS; cookies stripped; writes never cached | `deploy/cloudflare/worker.js` |
 | Edge to origin | With `TESSERA_EDGE_SECRET` set, every request except the health checks must carry a matching `x-edge-auth` (constant-time compare), else 403 | `service.py`, tested by `test_the_edge_lock` |
-| Caller to service | Bearer key required; scoped to queues (globs), kinds, effect classes and `admin` or `store`; 60 claims a minute per key; writes are POST-only | `service.py`, `_keys.py`, tests T01, T02 and the service tests |
+| Caller to service | Bearer key required; scoped to queues (globs), kinds, effect classes and `admin` or `store`; [adaptive claim admission](claim-admission.md); writes are POST-only | `service.py`, `_keys.py`, tests T01, T02 and the service tests |
 | Lease holder to task | Heartbeat, submit, split and park need the claiming key and the current fencing token; split never widens the effect class | `_tasks.py`, `service.py` |
 | Parker to resumer | The key that parked a task may not resume it; every resume records its key | `_tasks.py`, `service.py` |
 | Service to model provider | None: Tessera holds no model key and makes no model call | by construction; `MODEL_API_KEY` is only for workers |

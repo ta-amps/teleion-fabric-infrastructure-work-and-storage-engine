@@ -59,7 +59,7 @@ const MAX_CHILDREN = 100;
 const MAX_DEPENDENCIES = 100;
 const MAX_DEPTH = 4;
 const MAX_PARK_SECONDS = 2_592_000;
-const CLAIMS_PER_MINUTE = 60;
+import { ClaimAdmission, ClaimPressure, claimAdmissionOptions } from "./claim_admission.js";
 
 class StoreErr extends Error {
   constructor(status, code, detail, extra = {}) {
@@ -437,7 +437,7 @@ const DEFAULT_BUCKETS = [
 export class TesseraCoordinator extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
-    this.claimHits = new Map();
+    this.claimAdmission = new ClaimAdmission(claimAdmissionOptions(env));
     this.namespace = "main";
     this.isPrimary = true;
     this.seededNamespaces = new Set();
@@ -1413,19 +1413,6 @@ export class TesseraCoordinator extends DurableObject {
     }
   }
 
-  _checkClaimLimit(keyId) {
-    const now = Date.now() / 1000;
-    const hits = this.claimHits.get(keyId) || [];
-    while (hits.length && hits[0] <= now - 60) hits.shift();
-    if (hits.length >= CLAIMS_PER_MINUTE) {
-      this.claimHits.set(keyId, hits);
-      return Math.max(1.0, 60 - (now - hits[0]));
-    }
-    hits.push(now);
-    this.claimHits.set(keyId, hits);
-    return null;
-  }
-
   _mirrorToD1(stmts) {
     if (!this.isPrimary || !this.env.FABRIC_DB || !stmts.length) return;
     this.ctx.waitUntil(
@@ -1752,13 +1739,18 @@ export class TesseraCoordinator extends DurableObject {
     } catch (e) { return this._errOut(e); }
   }
   async rpcCall(secret, action, args = {}) {
-    let grant = null, out;
+    let grant = null, out, permit;
     const ns = normalizeNamespace(args.namespace || "main");
     this.namespace = ns;
     this.isPrimary = ns === "main";
     try {
       grant = await this._grantFromSecret(secret);
       args = enforceAccess(this, grant, action, { ...args, namespace: ns });
+      if (action === "claim") {
+        this._requireQueue(grant, String(args.queue || ""));
+        if (!String(args.worker || "")) throw badReq("worker is required");
+        permit = await this.claimAdmission.acquire(grant.key_id);
+      }
       if (action === "me") out = { ok: true, status: 200, data: publicPrincipal(grant) };
       else if (action === "listVerbs") {
         const rows=this._all("SELECT * FROM tasks WHERE namespace=? AND (?='' OR queue=?) AND (?='' OR state=?) ORDER BY created_at,id LIMIT 1000",ns,args.queue||"",args.queue||"",args.status||"ready",args.status||"ready");
@@ -1779,13 +1771,18 @@ export class TesseraCoordinator extends DurableObject {
       if (out.ok && action === "claim" && out.data.lease) {
         out.data.lease.claim_receipt = await sha256Hex(new TextEncoder().encode(canonicalJson({ namespace: ns, task_id: out.data.lease.task_id, fencing_token: out.data.lease.fencing_token, claimed_at: out.data.lease.claimed_at })));
       }
-    } catch (e) { out = this._errOut(e); }
-    audit(this, grant, action, args, out, args.access_meta || {});
-    if (ns !== "main" && this.env.COORDINATOR) {
-      const primary = this.env.COORDINATOR.get(this.env.COORDINATOR.idFromName("primary"));
-      await primary.recordAccessEvent(grant ? publicPrincipal(grant) : null, action, args, out, args.access_meta || {});
+    } catch (e) { out = this._errOut(e instanceof ClaimPressure ? rateLim(e.message, e.retryAfter) : e); }
+    try {
+      audit(this, grant, action, args, out, args.access_meta || {});
+      if (ns !== "main" && this.env.COORDINATOR) {
+        const primary = this.env.COORDINATOR.get(this.env.COORDINATOR.idFromName("primary"));
+        await primary.recordAccessEvent(grant ? publicPrincipal(grant) : null, action, args, out, args.access_meta || {});
+      }
+      if (permit) out.headers = { ...out.headers, "x-claim-wait-ms": String(permit.waitMs), "x-claim-concurrency": String(this.claimAdmission.limit) };
+      return out;
+    } finally {
+      permit?.release();
     }
-    return out;
   }
 
   async _rpcCall(secret, action, args = {}) {
@@ -2121,12 +2118,6 @@ export class TesseraCoordinator extends DurableObject {
           const worker = String(args.worker || "");
           if (!worker) throw badReq("worker is required");
           this._requireQueue(grant, queue);
-          if (!grant.is_admin) {
-            const wait = this._checkClaimLimit(grant.key_id);
-            if (wait != null) {
-              throw rateLim(`over ${CLAIMS_PER_MINUTE} claims a minute`, wait);
-            }
-          }
           const qRow = this._one(
             "SELECT heartbeat_seconds FROM queues WHERE namespace = ? AND name = ?",
             this.namespace,

@@ -231,8 +231,12 @@ nothing. Bodies are JSON. Successful bodies are the models in `src/tessera/model
 - **Keys**: random, at least 32 bytes; stored only as SHA-256; scoped to queues, kinds, effect classes
   and scopes (`admin`, `store`); expire after 14 days; revocable; issued from the command line.
   No key may hold the `public` effect class without a fresh, single-use approval token from Taylor.
-- **Limits**: 60 claims a minute per key, then 429 with `Retry-After`. Throttled and empty answers
-  carry `Retry-After` plus the queue's heartbeat interval.
+- **Claim admission**: healthy keyed workers have no default claims-per-minute quota. New claims
+  may wait under contention; admission concurrency adapts to observed service latency. Bounded
+  pending work and waiting deadlines protect resources. Overload returns 429 with `Retry-After`;
+  empty answers also carry `Retry-After`. Lease heartbeats and submissions bypass claim admission.
+  Anonymous demo quotas and authorization rules remain separate. An operator may explicitly
+  configure a legacy per-key quota on the Python service; it is disabled by default.
 - **MCP**: tools `queues`, `claim`, `heartbeat`, `submit`, `split`, `park` and `resume` with typed input
   and output schemas, behind the same keys. Tool results carry the same JSON as the HTTP bodies.
 - **Hygiene**: no key, token or credential appears in any response, page or log. CORS allows only

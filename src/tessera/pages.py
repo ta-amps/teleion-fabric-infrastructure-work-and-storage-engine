@@ -13,9 +13,10 @@ from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
+from starlette.concurrency import run_in_threadpool
 
 from tessera._version import __version__
-from tessera.errors import InvalidRequest, RateLimited, TesseraError
+from tessera.errors import InvalidRequest, TesseraError
 from tessera.models import Health
 
 if TYPE_CHECKING:
@@ -474,17 +475,15 @@ def mount_work_forms(
             ):
                 queue, worker = str(form.get("queue", "")), str(form.get("worker", ""))
                 gate.queue(grant, queue)
-                if not grant.is_admin and (
-                    wait := limiter.retry_after(grant.key_id, time.monotonic())
-                ):
-                    raise RateLimited(f"retry after {wait:.0f} s", retry_after=wait)
-                lease = store.claim(
-                    queue,
-                    worker,
-                    kinds=grant.kind_filter(None),
-                    effect_classes=grant.effect_filter(None),
-                    key_id=grant.key_id,
-                )
+                async with limiter.admit(grant.key_id, grant.is_admin):
+                    lease = await run_in_threadpool(
+                        store.claim,
+                        queue,
+                        worker,
+                        kinds=grant.kind_filter(None),
+                        effect_classes=grant.effect_filter(None),
+                        key_id=grant.key_id,
+                    )
         except TesseraError as exc:
             return failed(exc)
         request.state.access_result = {"lease": lease.model_dump(mode="json") if lease else None}

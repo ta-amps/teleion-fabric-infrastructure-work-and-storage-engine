@@ -18,6 +18,7 @@
 - [docs/access-modes.md](https://github.com/ta-amps/tessera/blob/main/docs/access-modes.md): External agent access
 - [docs/agent-start.md](https://github.com/ta-amps/tessera/blob/main/docs/agent-start.md): Start an agent from a website
 - [docs/architecture.md](https://github.com/ta-amps/tessera/blob/main/docs/architecture.md): Tessera: architecture
+- [docs/claim-admission.md](https://github.com/ta-amps/tessera/blob/main/docs/claim-admission.md): Claim admission
 - [docs/comparison.md](https://github.com/ta-amps/tessera/blob/main/docs/comparison.md): Tessera: comparison
 - [docs/decisions.md](https://github.com/ta-amps/tessera/blob/main/docs/decisions.md): Tessera: decisions
 - [docs/execution-memory.md](https://github.com/ta-amps/tessera/blob/main/docs/execution-memory.md): Execution reports and permitted recall
