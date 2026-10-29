@@ -45,6 +45,7 @@ class HFBackend:
         self.eos_ids = list(base["eos_token_ids"])
         self.template = dict(base.get("chat_template_kwargs", {}))
         self.dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+        self.weights_verified = False
 
     def verify_weights(self) -> bool:
         names = self.base.get("weights", ["model.safetensors"])
@@ -61,6 +62,7 @@ class HFBackend:
             "versions": {name: importlib.metadata.version(name) for name in names},
             "cuda": torch.version.cuda,
             "hardware": hardware,
+            "weights_verified": self.weights_verified,
         }
 
     def reset_peak(self) -> None:
@@ -104,6 +106,11 @@ class HFBackend:
         from peft import PeftModel
         from transformers import AutoModelForCausalLM
 
+        if not self.weights_verified:
+            # Once per worker process: the bytes must be the ones the base-model noun pins.
+            if not self.verify_weights():
+                raise ValueError("base weights differ from the pinned base-model noun")
+            self.weights_verified = True
         model = AutoModelForCausalLM.from_pretrained(
             self.path, local_files_only=True, dtype=self.dtype
         ).to(self.device)

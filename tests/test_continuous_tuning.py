@@ -408,3 +408,33 @@ def test_completion_encoder_cuts_labels_at_end_of_turn() -> None:
     assert labels[-1] == 9 and "".join(chr(t) for t in labels[:-1]) == target
     with pytest.raises(ValueError, match="no truncation"):
         backend.encode(prompt_messages(row, TOOLS), target, 10)
+
+
+def test_report_carries_the_learning_block_only_where_the_store_accepts_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from examples.continuous_tuning import catalog
+
+    from tessera.execution_matching import normalize_report
+
+    learning = catalog.learning_block(
+        outcome="succeeded", went_right=["ok"], went_wrong=[], next_steps=["next"],
+        types=("in", "out"), method="evaluate", duration=1.5, advice=[],
+    )  # fmt: skip
+    common = {
+        "problem": "p", "given": "g", "solution": "s", "learning": learning, "refs": [],
+        "model": None, "usage": catalog.no_model_usage(), "context": {}, "environment": {}, "toolchain": {},
+    }  # fmt: skip
+    current = catalog.execution_report("evaluate", **common)
+    assert normalize_report(current) == current  # accepted unchanged by this store
+    supported = catalog.store_supports()
+    assert ("learning" in current) == supported["learning"]
+    if not supported["null_model"]:
+        assert current["model"] == {
+            "used": False,
+            "reason": "deterministic verb; no model was invoked",
+        }
+    monkeypatch.setattr(catalog, "store_supports", lambda: {"learning": True, "null_model": True})
+    future = catalog.execution_report("evaluate", **common)
+    assert future["learning"] == learning and future["model"] is None
+    assert learning["unknowns"][0]["field"] == "cost" and learning["duration_seconds"] == 1.5

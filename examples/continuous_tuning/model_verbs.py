@@ -85,6 +85,7 @@ def adapter_dir(ctx: Context, value: dict[str, Any]) -> Path:
 
 def train_one(ctx, brief, rows, recipe, label, out, training_set, init, beat):
     backend = ctx.backend()
+    ctx.environment.update(backend.environment())
     state, _ = pointer(ctx, brief)
     dev = holdout_rows(ctx, state["holdouts"])["dev"][:4]
     probes = [prompt_messages(row, ctx.tools) for row in dev]
@@ -131,6 +132,7 @@ def evaluate_sets(ctx, brief, label, adapter, sets, beat):
     backend = ctx.backend()
     value = ctx.fabric.read(adapter) if adapter else None
     model = backend.load(adapter_dir(ctx, value) if value else None)
+    ctx.environment.update(backend.environment())
     settings = dict(ctx.specs["recipe"]["evaluation"])
     runtime = ctx.specs["base_model"].get("runtime", {})
     settings["batch_size"] = runtime.get("eval_batch_size", settings["batch_size"])
