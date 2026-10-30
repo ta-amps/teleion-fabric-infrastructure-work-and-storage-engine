@@ -308,7 +308,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [src/tessera/store.py](src/tessera/store.py) | The in-process Tessera store: the reference implementation of SPEC.md. |
 | [src/tessera/testing.py](src/tessera/testing.py) | Factories the conformance suite loads by name (TESSERABACKENDFACTORY="module:function"). |
 
-## tests/ (68)
+## tests/ (69)
 
 | File | What it is |
 |---|---|
@@ -365,6 +365,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [tests/test_spec_events.py](tests/test_spec_events.py) | SPEC §5.5 lists every event type, and the code emits only listed types: a new event can't ship without a line… |
 | [tests/test_tools.py](tests/test_tools.py) | The Muse worker keeps its safety flags whatever the brief says, and briefs load in dependency order. |
 | [tests/test_work_routing.py](tests/test_work_routing.py) | Explicit grants, team-private routing and owner-only negative controls. |
+| [tests/workerd_access_descriptions.mjs](tests/workerd_access_descriptions.mjs) | Real Worker: every published access description (connect.json, the agent card, llms-full.txt, |
 | [tests/workerd_access_parity.mjs](tests/workerd_access_parity.mjs) | Real Worker/SQLite: the access cases in tests/fixtures/accessparity.json, which |
 | [tests/workerd_access_writes.mjs](tests/workerd_access_writes.mjs) | Real Worker/SQLite: requests that never authenticate write nothing and create no namespace |
 | [tests/workerd_agent_tool_listings.mjs](tests/workerd_agent_tool_listings.mjs) | Real Worker: every agent-facing tool listing matches what MCP tools/list serves. |

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+Access follow-ups after the re-review:
+
+- Every access description agrees with the switches (F-054). On the Worker the agent card, `llms-full.txt`, MCP `explain_access_modes` and the MCP sign-in hint said `requester.enabled: false` while `/connect.json` said `true`, because they built the description without the requester switch; the Python connect page did the same. All of them now read both switches from one place.
+- An expired demo or requester namespace now really shrinks (F-050). Its purge alarm deleted everything and then rebuilt the whole schema at once, so each purged object kept about 320 KB (74 tables and indexes) forever. The purge now deletes the object's storage and its alarm and leaves it empty (4 KB in local measurement); the schema comes back only if the namespace is used again.
+- An untagged split child now carries its parent's tags with its own `kind:` tag, in both implementations; a build child of a request had been tagged `kind:request`.
+- A research output can cite public contact details. The wider personal-data screen had refused any anonymous submission quoting a public agency's phone number or street address. A phone number or address that appears in a cited source quote (a `quote` field of at least 20 characters), or in text repeating it, now passes; email addresses, identity, card and IBAN numbers never do, and requester inputs keep refusing all of them. An IBAN must now carry at least ten digits, so bill names such as "AB12 RENT CAPS" are no longer read as one.
+
 Review fixes for open verbs and requester keys, with the same cases run against both implementations from `tests/fixtures/access_parity.json`:
 
 - Governance tags come only from a producer's explicit tags. The Worker had added tags found in a brief (`tags`, `metadata_tags`, `kind` and similar fields), so a requester could open its own request verb to anonymous sessions by writing `open:anonymous` into the brief. Brief-derived tags now never carry `open:`, `status:`, `origin:`, `untrusted:` or `demo:`, and a request verb's governance is fixed after normalization. Split children on the Worker now inherit their parent's owner, surface, visibility and (unless they name their own) tags, as they do in Python; a child may not set the rest.

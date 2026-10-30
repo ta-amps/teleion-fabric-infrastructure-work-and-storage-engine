@@ -37,6 +37,9 @@ function doContext(pending) {
       async getAlarm() {
         return alarm;
       },
+      async deleteAlarm() {
+        alarm = null;
+      },
       async deleteAll() {
         for (const row of db
           .prepare(

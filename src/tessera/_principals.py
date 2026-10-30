@@ -33,18 +33,20 @@ DEMO_QUOTAS = {
 }
 ANON_LABELS: dict[str, Any] = {"origin": "anonymous", "demo": True, "untrusted": True}
 # A limited deterministic screen for common personal and payment data (same rules as the Worker):
-# email addresses outside the example domains, identity and payment card numbers, phone numbers,
-# street addresses and IBANs. It is not a claim that all personal data can be detected.
-_PERSONAL_ANY_CASE = re.compile(r"@(?!example\.(?:com|org|net)\b)[a-z0-9.-]+\.[a-z]{2,}", re.I)
-_PERSONAL_EXACT = re.compile(
-    r"\b\d{3}-\d{2}-\d{4}\b"
-    r"|\b(?:\d[ -]?){13,19}\b"
-    r"|(?<![\w+])(?:\+\d{1,3}[ .-]?)?(?:\(\d{3}\)[ .-]?|\d{3}[ .-])\d{3}[ .-]\d{4}(?![\w-])"
+# email addresses outside the example domains, identity and payment card numbers, IBANs, phone
+# numbers and street addresses. It is not a claim that all personal data can be detected.
+_EMAIL = re.compile(r"@(?!example\.(?:com|org|net)\b)[a-z0-9.-]+\.[a-z]{2,}", re.I)
+_IDENTITY = re.compile(r"\b\d{3}-\d{2}-\d{4}\b|\b(?:\d[ -]?){13,19}\b")
+# An IBAN carries at least ten digits, so a bill name such as "AB12 RENT CAPS" is not one.
+_IBAN = re.compile(r"\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,4})?\b")
+_CONTACT = re.compile(
+    r"(?<![\w+])(?:\+\d{1,3}[ .-]?)?(?:\(\d{3}\)[ .-]?|\d{3}[ .-])\d{3}[ .-]\d{4}(?![\w-])"
     r"|(?<![\w+])\+\d{1,3}(?:[ .-]?\d{2,4}){2,5}(?![\w-])"
     r"|\b\d{1,5}\s+(?:[A-Z][a-z]+\s+){1,3}"
     r"(?:Street|St|Avenue|Ave|Road|Rd|Lane|Ln|Drive|Dr|Boulevard|Blvd|Court|Ct|Way|Place|Pl)\b"
-    r"|\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,4})?\b"
 )
+# A quote of at least this many characters counts as a cited source quote.
+MIN_CITED_QUOTE = 20
 # Every field an action stores is screened and counted, ids, keys and tags included.
 STORED_FIELDS: dict[str, tuple[str, ...]] = {
     "putRecords": ("writes", "store", "store_name", "key", "value", "tags"),
@@ -53,8 +55,40 @@ STORED_FIELDS: dict[str, tuple[str, ...]] = {
 }
 
 
+def _identity_or_payment(text: str) -> bool:
+    return bool(
+        _EMAIL.search(text)
+        or _IDENTITY.search(text)
+        or any(sum(ch.isdigit() for ch in m.group(0)) >= 10 for m in _IBAN.finditer(text))
+    )
+
+
 def has_personal_data(text: str) -> bool:
-    return bool(_PERSONAL_ANY_CASE.search(text) or _PERSONAL_EXACT.search(text))
+    return _identity_or_payment(text) or bool(_CONTACT.search(text))
+
+
+def _cited_quotes(value: Any) -> list[str]:
+    """Every string under a `quote` key, at any depth, long enough to be a cited source quote."""
+    if isinstance(value, dict):
+        found = [v for k, v in value.items() if k == "quote" and isinstance(v, str)]
+        return [q for q in found if len(q.strip()) >= MIN_CITED_QUOTE] + [
+            q for v in value.values() for q in _cited_quotes(v)
+        ]
+    if isinstance(value, list):
+        return [q for item in value for q in _cited_quotes(item)]
+    return []
+
+
+def submission_has_personal_data(encoded: str, output: Any) -> bool:
+    """Research outputs may cite public contact details: a phone number or street address that
+    appears in a cited source quote (or in text repeating that quote) passes. Email addresses,
+    identity, card and IBAN numbers never do, and request inputs get no such allowance. The quote
+    itself is checked against its source by the verb's reviewer, not here."""
+    quotes = sorted(set(_cited_quotes(output)), key=len, reverse=True)
+    text = encoded
+    for quote in quotes:
+        text = text.replace(json.dumps(quote, ensure_ascii=False)[1:-1], " ")
+    return has_personal_data(text) or any(_identity_or_payment(q) for q in quotes)
 
 
 def stored_payload(action: str, args: dict[str, Any]) -> str:
@@ -455,7 +489,12 @@ class PrincipalOps(AccessSchemaOps):
             if not isinstance(write, dict) or not str(write.get("store", "")).startswith("demo."):
                 raise ScopeDenied("demo store required")
         encoded = stored_payload(action, args)
-        if action in WRITE_ACTIONS and has_personal_data(encoded):
+        screened = (
+            submission_has_personal_data(encoded, args.get("output"))
+            if action == "submit"
+            else has_personal_data(encoded)
+        )
+        if action in WRITE_ACTIONS and screened:
             raise InvalidRequest(
                 "demo payloads must not contain personal or payment data; use example.com"
             )

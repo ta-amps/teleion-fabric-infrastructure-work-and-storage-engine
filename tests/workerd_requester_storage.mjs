@@ -28,11 +28,16 @@ export class FixtureCoordinator extends TesseraCoordinator {
     const count = table => this._one(\`SELECT COUNT(*) n FROM \${table} WHERE key_id=?\`, keyId).n;
     return { keys: count("keys"), principals: count("access_principals"), profiles: this._one("SELECT COUNT(*) n FROM requester_profiles").n };
   }
-  // Test-only: run a namespace object's purge alarm as if its key had expired.
+  // Test-only: run a namespace object's purge alarm as if its key had expired, then report what
+  // the object still holds (after the reviewer's purge_size probe, F-050).
   async testPurgeNow() {
     this.ctx.storage.sql.exec("INSERT OR REPLACE INTO meta(key,value) VALUES ('demo_purge_at',?)", String(Date.now() / 1000 - 1));
     await this.alarm();
-    return this._one("SELECT COUNT(*) n FROM records").n;
+    return this.testStorage();
+  }
+  async testStorage() {
+    const tables = this.ctx.storage.sql.exec("SELECT COUNT(*) n FROM sqlite_master WHERE type IN ('table','index')").one().n;
+    return { size: this.ctx.storage.sql.databaseSize, tables, alarm: await this.ctx.storage.getAlarm() };
   }
   testRecordCount() { return this._one("SELECT COUNT(*) n FROM records").n; }
 }
@@ -105,8 +110,47 @@ test("an expired requester key, its profile and its namespace are purged", async
   const left = await named("primary").testExpire(org.key_id);
   assert.deepEqual({ keys: left.keys, principals: left.principals, profiles: left.profiles }, { keys: 0, principals: 0, profiles: 0 });
   assert.equal((await request("/v1/me", undefined, org.key)).status, 401);
-  assert.equal(await space.testPurgeNow(), 0);
+  const purged = await space.testPurgeNow();
+  assert.equal(purged.tables, 0);
+  assert.equal(purged.alarm, null);
 });
+
+// An expired namespace keeps (almost) nothing after its purge, and works again if it is used again.
+const NEAR_ZERO = 16384; // bytes: an empty SQLite database, not a schema of 70-odd tables
+for (const kind of ["requester", "demo"]) {
+  test(`a purged ${kind} namespace keeps almost no storage and works again on next use`, async () => {
+    const { request, named } = await setup();
+    let token, namespace, use;
+    if (kind === "requester") {
+      const org = (await request("/v1/session/requester", { profile: PROFILE })).data;
+      token = org.key; namespace = org.namespace;
+      use = async () => {
+        const profile = await request("/v1/stores/org.profile/records/profile", undefined, token);
+        assert.equal(profile.status, 200, JSON.stringify(profile.data));
+        assert.equal(profile.data.value.display_name, "Synthetic Food Bank");
+      };
+    } else {
+      const session = (await request("/v1/session/anonymous", { agent_label: "purge-check" })).data;
+      token = session.session_token; namespace = session.namespace;
+      use = async () => {
+        const verbs = await request("/v1/verbs?queue=demo.ping", undefined, token);
+        assert.equal(verbs.status, 200, JSON.stringify(verbs.data));
+        assert.equal(verbs.data.verbs.length, 1);
+      };
+    }
+    await use();
+    const space = named(`ns:${namespace}`);
+    const before = await space.testStorage();
+    const purged = await space.testPurgeNow();
+    assert.ok(before.size > 100000 && before.tables > 50, JSON.stringify(before));
+    assert.ok(purged.size <= NEAR_ZERO, `after the purge the object still holds ${purged.size} bytes`);
+    assert.equal(purged.tables, 0);
+    assert.equal(purged.alarm, null);
+    await use(); // the schema and the seeded nouns and verbs come back on next use
+    const again = await space.testStorage();
+    assert.ok(again.tables > 50 && again.alarm !== null, JSON.stringify(again));
+  });
+}
 
 test("connect.json says whether requester sign-up is enabled", async () => {
   const { request } = await setup();

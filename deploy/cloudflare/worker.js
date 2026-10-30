@@ -1,7 +1,7 @@
 import { agentStartAsset, withAgentStart } from "./agent_start.js";
 import { storageQuotaFailure } from "./storage_quota.js";
 import { namespaceReachable, publicPrincipal } from "./cloud_access.js";
-import { accessDiscoveryRoute, accessRoute, accessDescription } from "./cloud_access_routes.js";
+import { accessDiscoveryRoute, accessRoute, accessDescriptionFor } from "./cloud_access_routes.js";
 // Tessera Cloud Worker: 24/7 native cloud execution on Cloudflare Durable Object SQLite + D1
 // (`STORAGE_MODE = "cloud"`, the default) with optional Fly.io origin reverse-proxy fallback
 // (`STORAGE_MODE = "origin"`). Serves all Tessera Spec v0.2 HTTP routes (`/v1/*` and
@@ -371,8 +371,7 @@ function resolveNamespace(url, request) {
 // responses depend only on configuration, never on a principal or a Durable Object.
 function discoveryResponse(path, method, env, publicUrl, repoUrl) {
   if (method !== "GET" && method !== "HEAD") return null;
-  const anonymousEnabled = env.ANONYMOUS_ACCESS_ENABLED === "true";
-  const access = accessDiscoveryRoute(path, method, publicUrl, anonymousEnabled, jsonResp, htmlResp, env.REQUESTER_SIGNUP_ENABLED === "true");
+  const access = accessDiscoveryRoute(path, method, publicUrl, env, jsonResp, htmlResp);
   if (access) return access;
   if (path === "/" || path === "/connect") {
     return htmlResp(renderConnectHtml(publicUrl, repoUrl, MCP_TOOLS));
@@ -400,7 +399,7 @@ function discoveryResponse(path, method, env, publicUrl, repoUrl) {
   }
   if (path === "/llms-full.txt") {
     return withSecurity(
-      new Response(renderLlmsFullTxt(publicUrl, repoUrl, MCP_TOOLS) + "\n\n" + JSON.stringify(accessDescription(publicUrl, anonymousEnabled), null, 2), {
+      new Response(renderLlmsFullTxt(publicUrl, repoUrl, MCP_TOOLS) + "\n\n" + JSON.stringify(accessDescriptionFor(publicUrl, env), null, 2), {
         status: 200,
         headers: { "content-type": "text/plain; charset=utf-8" },
       }),
@@ -408,7 +407,7 @@ function discoveryResponse(path, method, env, publicUrl, repoUrl) {
     );
   }
   if (path === "/.well-known/agent-card.json") {
-    return jsonResp({ ...renderAgentCard(publicUrl, repoUrl, MCP_TOOLS), authentication: { discovery: "none", demo: "tan_ bearer session", keyed: "tsk_ bearer key" }, capabilities: { streaming: "long-poll", tools: true }, access: accessDescription(publicUrl, anonymousEnabled) });
+    return jsonResp({ ...renderAgentCard(publicUrl, repoUrl, MCP_TOOLS), authentication: { discovery: "none", demo: "tan_ bearer session", keyed: "tsk_ bearer key" }, capabilities: { streaming: "long-poll", tools: true }, access: accessDescriptionFor(publicUrl, env) });
   }
   if (path === "/robots.txt") {
     return withSecurity(

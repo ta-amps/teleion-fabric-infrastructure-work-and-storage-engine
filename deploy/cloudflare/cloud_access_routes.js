@@ -14,7 +14,13 @@ export const ACCESS_TOOLS = [
   { name: "claim_events", description: "Read monotonic events for a task this principal may view; HTTP also supports bounded long-poll.", inputSchema: { type: "object", required: ["task_id"], properties: { task_id: { type: "string" }, after: { type: "integer", minimum: 0 } }, additionalProperties: false } },
 ];
 
-export function accessDescription(url, enabled = true, requesterEnabled = false) {
+// Every published access description reads both switches from the same environment, so the
+// connect page, connect.json, the agent card, llms-full.txt and MCP always agree (F-054).
+export function accessDescriptionFor(url, env) {
+  return accessDescription(url, env.ANONYMOUS_ACCESS_ENABLED === "true", env.REQUESTER_SIGNUP_ENABLED === "true");
+}
+
+export function accessDescription(url, enabled, requesterEnabled) {
   return { service: "Tessera", mcp_url: `${url}/mcp`, transport: "streamable-http", streaming: "long-poll",
     anonymous: { enabled, endpoint: `${url}/v1/session/anonymous`, method: "POST", token_prefix: "tan_", quotas: DEMO_QUOTAS, labels: ANON_LABELS,
       namespace: "Server assigned demo.<principal_id>; bearer routes automatically", persistence: "Session-private synthetic records, removed after 24 hours", supported_clients: ["coding harness", "personal assistant", "HTTP client", "MCP client"], open_verbs: openVerbsDescription() },
@@ -30,9 +36,9 @@ export function renderAccessHtml(url) {
 }
 
 // Storage-free access discovery; the Worker serves it before any Durable Object call.
-export function accessDiscoveryRoute(path, method, publicUrl, anonymousEnabled, jsonResp, htmlResp, requesterEnabled = false) {
+export function accessDiscoveryRoute(path, method, publicUrl, env, jsonResp, htmlResp) {
   if (path === "/v1/openapi.json" && method === "GET") return jsonResp({ ...ACCESS_OPENAPI, servers: [{ url: publicUrl }] });
-  if (path === "/connect.json" && method === "GET") return jsonResp(accessDescription(publicUrl, anonymousEnabled, requesterEnabled));
+  if (path === "/connect.json" && method === "GET") return jsonResp(accessDescriptionFor(publicUrl, env));
   if ((path === "/connect" || path === "/") && method === "GET") return htmlResp(renderAccessHtml(publicUrl), 200, { "content-security-policy": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'" });
   return null;
 }

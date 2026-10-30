@@ -1174,6 +1174,405 @@
           }
         }
       ]
+    },
+    {
+      "id": "B-split-children-get-their-kind",
+      "finding": "B (Low, re-review)",
+      "title": "An untagged split child inherits its parent's tags with its own kind: tag",
+      "steps": [
+        {
+          "signup": "org"
+        },
+        {
+          "key": "classifier",
+          "grant": {
+            "queues": [
+              "eq01",
+              "eq02"
+            ],
+            "scopes": [
+              "store",
+              "surface:eranos"
+            ],
+            "effect_classes": [
+              "read",
+              "write-internal"
+            ]
+          }
+        },
+        {
+          "as": "org",
+          "method": "POST",
+          "path": "/ns/main/v1/tasks",
+          "status": 201,
+          "body": {
+            "queue": "eq01",
+            "kind": "request",
+            "task_id": "rq-{org.principal_id}-split",
+            "brief": {
+              "job": "SYNTHETIC"
+            }
+          }
+        },
+        {
+          "as": "classifier",
+          "method": "POST",
+          "path": "/v1/tasks/claim",
+          "status": 200,
+          "save": "lease",
+          "body": {
+            "queue": "eq01",
+            "worker": "classifier",
+            "kinds": [
+              "request"
+            ]
+          }
+        },
+        {
+          "as": "classifier",
+          "method": "POST",
+          "path": "/v1/tasks/split",
+          "status": 200,
+          "save": "split",
+          "body": {
+            "task_id": "rq-{org.principal_id}-split",
+            "fencing_token": "{lease.fencing_token}",
+            "children": [
+              {
+                "queue": "eq02",
+                "kind": "build",
+                "brief": {
+                  "part": 2
+                }
+              },
+              {
+                "brief": {
+                  "part": 3
+                }
+              },
+              {
+                "queue": "eq02",
+                "kind": "research",
+                "brief": {
+                  "part": 4
+                },
+                "tags": [
+                  "part:4",
+                  "kind:research"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "as": "admin",
+          "method": "GET",
+          "path": "/v1/tasks/{split.children.0}",
+          "status": 200,
+          "expect": {
+            "equals": {
+              "kind": "build",
+              "tags": [
+                "origin:requester",
+                "untrusted:true",
+                "kind:build"
+              ]
+            }
+          }
+        },
+        {
+          "as": "admin",
+          "method": "GET",
+          "path": "/v1/tasks/{split.children.1}",
+          "status": 200,
+          "expect": {
+            "equals": {
+              "kind": "request",
+              "tags": [
+                "origin:requester",
+                "untrusted:true",
+                "kind:request"
+              ]
+            }
+          }
+        },
+        {
+          "as": "admin",
+          "method": "GET",
+          "path": "/v1/tasks/{split.children.2}",
+          "status": 200,
+          "expect": {
+            "equals": {
+              "kind": "research",
+              "tags": [
+                "part:4",
+                "kind:research"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "E-cited-public-contact-details",
+      "finding": "E (Low, re-review)",
+      "title": "A research output may repeat a public phone number or address from a cited quote; nothing else changes",
+      "steps": [
+        {
+          "session": "anon"
+        },
+        {
+          "as": "admin",
+          "method": "POST",
+          "path": "/v1/tasks",
+          "status": 201,
+          "body": {
+            "queue": "eq02",
+            "task_id": "research-1",
+            "kind": "research",
+            "effect_class": "write-internal",
+            "brief": {
+              "title": "SYNTHETIC public research"
+            },
+            "tags": [
+              "status:quarantined",
+              "open:anonymous"
+            ],
+            "producer_surface": "surface:eranos",
+            "visibility_scope": "surface_only"
+          }
+        },
+        {
+          "as": "admin",
+          "method": "POST",
+          "path": "/v1/tasks",
+          "status": 201,
+          "body": {
+            "queue": "eq02",
+            "task_id": "research-2",
+            "kind": "research",
+            "effect_class": "write-internal",
+            "brief": {
+              "title": "SYNTHETIC public research"
+            },
+            "tags": [
+              "status:quarantined",
+              "open:anonymous"
+            ],
+            "producer_surface": "surface:eranos",
+            "visibility_scope": "surface_only"
+          }
+        },
+        {
+          "as": "admin",
+          "method": "POST",
+          "path": "/v1/tasks",
+          "status": 201,
+          "body": {
+            "queue": "eq02",
+            "task_id": "research-3",
+            "kind": "research",
+            "effect_class": "write-internal",
+            "brief": {
+              "title": "SYNTHETIC public research"
+            },
+            "tags": [
+              "status:quarantined",
+              "open:anonymous"
+            ],
+            "producer_surface": "surface:eranos",
+            "visibility_scope": "surface_only"
+          }
+        },
+        {
+          "as": "anon",
+          "method": "POST",
+          "path": "/ns/main/v1/tasks/claim",
+          "status": 200,
+          "save": "l1",
+          "body": {
+            "queue": "eq02",
+            "worker": "volunteer"
+          }
+        },
+        {
+          "as": "anon",
+          "method": "POST",
+          "path": "/ns/main/v1/tasks/submit",
+          "status": 200,
+          "headers": {
+            "Idempotency-Key": "cited"
+          },
+          "body": {
+            "task_id": "{l1.task_id}",
+            "fencing_token": "{l1.fencing_token}",
+            "output": {
+              "report": {
+                "claims": [
+                  {
+                    "id": "C1",
+                    "text": "Call the housing agency at (212) 555-0100 or visit 111 Centre Street.",
+                    "citations": [
+                      {
+                        "source": "S1",
+                        "quote": "Call the housing agency at (212) 555-0100 or visit 111 Centre Street."
+                      }
+                    ]
+                  }
+                ],
+                "summary": "One cited point. Call the housing agency at (212) 555-0100 or visit 111 Centre Street."
+              }
+            }
+          }
+        },
+        {
+          "as": "anon",
+          "method": "POST",
+          "path": "/ns/main/v1/tasks/claim",
+          "status": 200,
+          "save": "l2",
+          "body": {
+            "queue": "eq02",
+            "worker": "volunteer"
+          }
+        },
+        {
+          "as": "anon",
+          "method": "POST",
+          "path": "/ns/main/v1/tasks/submit",
+          "status": 400,
+          "headers": {
+            "Idempotency-Key": "uncited"
+          },
+          "body": {
+            "task_id": "{l2.task_id}",
+            "fencing_token": "{l2.fencing_token}",
+            "output": {
+              "report": {
+                "summary": "Call (212) 555-0100 or visit 111 Centre Street."
+              }
+            }
+          }
+        },
+        {
+          "as": "anon",
+          "method": "POST",
+          "path": "/ns/main/v1/tasks/submit",
+          "status": 400,
+          "headers": {
+            "Idempotency-Key": "short-quote"
+          },
+          "body": {
+            "task_id": "{l2.task_id}",
+            "fencing_token": "{l2.fencing_token}",
+            "output": {
+              "report": {
+                "claims": [
+                  {
+                    "citations": [
+                      {
+                        "quote": "(212) 555-0100"
+                      }
+                    ]
+                  }
+                ],
+                "summary": "(212) 555-0100"
+              }
+            }
+          }
+        },
+        {
+          "as": "anon",
+          "method": "POST",
+          "path": "/ns/main/v1/tasks/submit",
+          "status": 200,
+          "headers": {
+            "Idempotency-Key": "clean"
+          },
+          "body": {
+            "task_id": "{l2.task_id}",
+            "fencing_token": "{l2.fencing_token}",
+            "output": {
+              "report": {
+                "summary": "SYNTHETIC: no contact details."
+              }
+            }
+          }
+        },
+        {
+          "as": "anon",
+          "method": "POST",
+          "path": "/ns/main/v1/tasks/claim",
+          "status": 200,
+          "save": "l3",
+          "body": {
+            "queue": "eq02",
+            "worker": "volunteer"
+          }
+        },
+        {
+          "as": "anon",
+          "method": "POST",
+          "path": "/ns/main/v1/tasks/submit",
+          "status": 400,
+          "headers": {
+            "Idempotency-Key": "email-quote"
+          },
+          "body": {
+            "task_id": "{l3.task_id}",
+            "fencing_token": "{l3.fencing_token}",
+            "output": {
+              "report": {
+                "claims": [
+                  {
+                    "citations": [
+                      {
+                        "quote": "Write to the clerk at clerk@agency.gov today."
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "as": "anon",
+          "method": "POST",
+          "path": "/ns/main/v1/tasks/submit",
+          "status": 200,
+          "headers": {
+            "Idempotency-Key": "bill-name"
+          },
+          "body": {
+            "task_id": "{l3.task_id}",
+            "fencing_token": "{l3.fencing_token}",
+            "output": {
+              "report": {
+                "summary": "SYNTHETIC summary of AB12 RENT CAPS for tenants."
+              }
+            }
+          }
+        },
+        {
+          "signup": "org"
+        },
+        {
+          "as": "org",
+          "method": "POST",
+          "path": "/ns/main/v1/tasks",
+          "status": 400,
+          "body": {
+            "queue": "eq01",
+            "kind": "request",
+            "task_id": "rq-{org.principal_id}-quote",
+            "brief": {
+              "job": "SYNTHETIC",
+              "quote": "Call the housing agency at (212) 555-0100 or visit 111 Centre Street."
+            }
+          }
+        }
+      ]
     }
   ]
 }

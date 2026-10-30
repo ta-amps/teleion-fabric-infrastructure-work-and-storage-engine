@@ -468,11 +468,20 @@ export class TesseraCoordinator extends DurableObject {
     this.namespace = "main";
     this.isPrimary = true;
     this.seededNamespaces = new Set();
+    this.schemaReady = false;
     ctx.blockConcurrencyWhile(async () => {
-      this._ensureSchemaV3();
-      initAccess(this);
-      initExecutions(this);
+      this._ensureSchema();
     });
+  }
+
+  // The schema is created when an object starts and, after an expiry purge, again only when the
+  // namespace is next used: a purged namespace keeps no tables until then (F-050).
+  _ensureSchema() {
+    if (this.schemaReady) return;
+    this._ensureSchemaV3();
+    initAccess(this);
+    initExecutions(this);
+    this.schemaReady = true;
   }
 
   _all(query, ...params) {
@@ -1295,16 +1304,22 @@ export class TesseraCoordinator extends DurableObject {
   }
 
   async alarm() {
+    if (!this.schemaReady) return; // purged and not used since: nothing to reap
     const purge = this._one("SELECT value FROM meta WHERE key='demo_purge_at'");
     if (purge && Number(purge.value) <= Date.now()/1000) {
+      // An expired demo or requester namespace: delete everything, its alarm included, and leave
+      // it empty. Rebuilding the schema here kept about 320 KB per namespace forever.
+      await this.ctx.storage.deleteAlarm();
       await this.ctx.storage.deleteAll();
+      this.schemaReady = false;
       this.seededNamespaces.clear();
       this.schemaNames = null;
       this.healthCache.clear();
       this.demoSeeded = null;
-      this._ensureSchemaV3();
-      initAccess(this);
-      initExecutions(this);
+      this.requesterSeeded = null;
+      this.accessCounters?.clear();
+      this.accessRetainedAt = null;
+      this.alarmChecked = false;
       return;
     }
     await this.runReaper();
@@ -1756,6 +1771,7 @@ export class TesseraCoordinator extends DurableObject {
   // instead of one per request. `time` is when the snapshot was taken. A scan reads only
   // small task columns and finds expired leases with one query instead of one per task.
   async publicHealthAndBoard(includeBoardMeta = false, namespace = "main") {
+    this._ensureSchema();
     await this._ensureAlarmPending();
     const ns = normalizeNamespace(namespace);
     const now = Date.now() / 1000;
@@ -1910,6 +1926,7 @@ export class TesseraCoordinator extends DurableObject {
   }
   async rpcCall(secret, action, args = {}) {
     let grant = null, out, permit;
+    this._ensureSchema();
     await this._ensureAlarmPending();
     const ns = normalizeNamespace(args.namespace || "main");
     this.namespace = ns;
@@ -2686,7 +2703,8 @@ export class TesseraCoordinator extends DurableObject {
                 visibility_scope: task.visibility_scope,
                 allowed_surfaces: JSON.parse(task.allowed_surfaces),
                 target_cohorts: JSON.parse(task.target_cohorts),
-                tags: childTags.length ? childTags : JSON.parse(task.tags),
+                // Untagged, it takes its parent's tags, any kind:<x> naming its own kind.
+                tags: childTags.length ? childTags : [...new Set(JSON.parse(task.tags).map((t) => (t.startsWith("kind:") ? `kind:${child.kind || task.kind}` : t)))],
                 owner_key_id: task.owner_key_id,
               };
               this._insertTask(
