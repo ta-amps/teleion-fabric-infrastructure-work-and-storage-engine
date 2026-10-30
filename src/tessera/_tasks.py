@@ -33,6 +33,7 @@ from tessera.models import (
     DEFAULT_PRIORITY,
     EFFECT_RANK,
     MAX_DEPENDENCIES,
+    MAX_IDEMPOTENCY_KEY,
     MAX_PARK_SECONDS,
     TERMINAL_STATES,
     ChildResult,
@@ -150,6 +151,8 @@ class TaskOps(GraphOps):
             owner_key_id=spec.owner_key_id,
         )
         idem = (spec.idempotency_key or "").strip() or None
+        if idem is not None and len(idem) > MAX_IDEMPOTENCY_KEY:
+            raise InvalidRequest(f"idempotency_key is over {MAX_IDEMPOTENCY_KEY} characters")
         now = self.clock.now()
         with self._tx() as c:
             self._queue_config(c, ns, spec.queue)
@@ -519,6 +522,8 @@ class TaskOps(GraphOps):
             raise InvalidRequest("/ok must be a JSON boolean")
         if not idempotency_key:
             raise InvalidRequest("idempotency_key is required")
+        if len(idempotency_key) > MAX_IDEMPOTENCY_KEY:
+            raise InvalidRequest(f"idempotency_key is over {MAX_IDEMPOTENCY_KEY} characters")
         if self.current_scope().anonymous and has_personal_data(idempotency_key):
             raise InvalidRequest("idempotency keys must not contain personal data")
         try:

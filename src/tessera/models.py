@@ -252,6 +252,7 @@ class _GovernedModel(_Model):
 
 
 DEFAULT_PRIORITY = 50  # A task's priority when its producer names none; requests always get it.
+MAX_IDEMPOTENCY_KEY = 256  # characters, for enqueue and submit, from a body or a header
 
 
 class QueueConfig(_Model):
@@ -271,7 +272,7 @@ class TaskSpec(_GovernedModel):
     queue: str = Field(pattern=NAME_PATTERN)
     brief: dict[str, Any]
     task_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")
-    idempotency_key: str | None = Field(default=None, max_length=256)
+    idempotency_key: str | None = Field(default=None, max_length=MAX_IDEMPOTENCY_KEY)
     kind: str = Field(default="task", pattern=NAME_PATTERN)
     effect_class: EffectClass = "write-internal"
     priority: int = Field(default=DEFAULT_PRIORITY, ge=0, le=100)

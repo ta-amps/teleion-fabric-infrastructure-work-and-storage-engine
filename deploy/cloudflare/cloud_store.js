@@ -1,5 +1,5 @@
 import { initExecutions, checkedReport, prepareExecution, validatePrepared, captureExecution, recallExecution, getExecution, listExecutions } from "./cloud_executions.js";
-import { initAccess, principalMetadata, requestIdentity, mintAnonymous, mintRequester, seedDemo, ensureDemoSeeded, enforceAccess, chargeAccess, claimCaps, checkClaimCaps, chargeClaimCaps, audit, auditMode, countAccess, ownAudit, publicActivity, publicPrincipal, requesterVerbGovernance, CLOSED_TO_ANONYMOUS, filesRequests, openToAnonymous, usesOpenVerbs } from "./cloud_access.js";
+import { initAccess, principalMetadata, requestIdentity, mintAnonymous, mintRequester, seedDemo, ensureDemoSeeded, ensureRequesterSeeded, enforceAccess, chargeAccess, claimCaps, checkClaimCaps, chargeClaimCaps, audit, auditMode, countAccess, ownAudit, publicActivity, publicPrincipal, requesterVerbGovernance, CLOSED_TO_ANONYMOUS, filesRequests, openToAnonymous, usesOpenVerbs } from "./cloud_access.js";
 // TesseraCoordinator: single-writer SQLite Durable Object (`new_sqlite_classes`) implementing
 // 100% of Tessera Spec v0.2 (queues, 5 verbs, dependencies, waves, park/resume, model jobs,
 // counts, events, scoped keys, queryable CAS records, persistent named file buckets,
@@ -37,6 +37,7 @@ import {
 export { canonicalJson, receiptHash };
 
 const NAME_RE = /^[a-z0-9][a-z0-9_.-]{0,63}$/;
+const MAX_IDEMPOTENCY_KEY = 256; // characters, as models.MAX_IDEMPOTENCY_KEY
 const INHERITED_GOVERNANCE = ["producer_surface", "visibility_scope", "allowed_surfaces", "target_cohorts", "owner_key_id"];
 const TASK_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/;
 const RECORD_KEY_RE = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$/;
@@ -1887,6 +1888,10 @@ export class TesseraCoordinator extends DurableObject {
     const out = await this._primary().chargeAccessFor(who, charge);
     if (!out.ok) throw Object.assign(new Error(out.detail), { status: out.status, code: out.code, detail: out.detail, extra: out.extra || {} });
   }
+  async requesterProfile(principalId) {
+    const row = this._one("SELECT profile FROM requester_profiles WHERE principal_id=?", principalId);
+    return row ? JSON.parse(row.profile) : null;
+  }
   async chargeAccessFor(who, charge) {
     try { chargeAccess(this, who, charge); return { ok: true }; } catch (e) { return this._errOut(e); }
   }
@@ -1915,6 +1920,7 @@ export class TesseraCoordinator extends DurableObject {
       args = checked;
       if (charge) await this._chargeAccess(grant, charge);
       await ensureDemoSeeded(this, grant, ns);
+      await ensureRequesterSeeded(this, grant, ns);
       this.namespace = ns;
       this.isPrimary = ns === "main";
       if (action === "claim") {
@@ -2167,6 +2173,7 @@ export class TesseraCoordinator extends DurableObject {
             args.idempotency_key != null && String(args.idempotency_key).trim()
               ? String(args.idempotency_key).trim()
               : null;
+          if (cleanIdem != null && cleanIdem.length > MAX_IDEMPOTENCY_KEY) throw badReq(`idempotency_key is over ${MAX_IDEMPOTENCY_KEY} characters`);
 
           this._requireQueue(grant, queue);
           this._requireEffect(grant, effectClass);
@@ -2480,6 +2487,7 @@ export class TesseraCoordinator extends DurableObject {
           const okFlag = args.ok === undefined ? true : args.ok;
           const errorText = args.error == null ? null : String(args.error);
           if (!idem) throw badReq("the Idempotency-Key header is required");
+          if (idem.length > MAX_IDEMPOTENCY_KEY) throw badReq(`idempotency_key is over ${MAX_IDEMPOTENCY_KEY} characters`);
           const outputVal = args.output === undefined ? null : args.output;
           const outputText = canonicalJson(outputVal);
           if (new TextEncoder().encode(outputText).byteLength > MAX_OUTPUT_BYTES) {

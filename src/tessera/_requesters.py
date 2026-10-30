@@ -115,6 +115,30 @@ class RequesterOps:
         principal_id = "r_" + secrets.token_hex(16)
         namespace = "org." + principal_id
         labels = {**REQUESTER_LABELS, "display_name": clean["display_name"]}
+        try:
+            return self._mint_requester(clean, principal_id, namespace, labels)
+        except Exception:
+            # Keep the key and the spent sign-up allowance only if the profile was stored too.
+            with store._tx() as c:
+                c.execute(
+                    "DELETE FROM keys WHERE key_id IN"
+                    " (SELECT key_id FROM access_principals WHERE principal_id=?)",
+                    (principal_id,),
+                )
+                c.execute("DELETE FROM access_principals WHERE principal_id=?", (principal_id,))
+                for subject in (f"signup:{ip_hash}", "signup:global"):
+                    c.execute(
+                        "UPDATE access_limits SET requests=MAX(requests-1,0)"
+                        " WHERE subject=? AND window=?",
+                        (subject, window),
+                    )
+            raise
+
+    def _mint_requester(
+        self, clean: dict[str, Any], principal_id: str, namespace: str, labels: dict[str, Any]
+    ) -> dict[str, Any]:
+        store = cast("Store", self)
+        now = store.clock.now()
         secret, grant = store.issue_key(
             clean["display_name"],
             queues=[REQUEST_QUEUE],
@@ -128,6 +152,8 @@ class RequesterOps:
             principal_id=principal_id,
             namespace=namespace,
             labels=labels,
+            # The key's own namespace goes with it when it expires (purge_expired_principals).
+            purge_at=now + REQUESTER_QUOTAS["key_days"] * 86400,
         )
         grant = store.principal_metadata(grant)
         with store.scope_context(

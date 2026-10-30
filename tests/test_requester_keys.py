@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from tessera import ChildSpec, QueueConfig, Store
+from tessera import ChildSpec, InvalidRequest, QueueConfig, Store
 from tessera.access import ServiceSettings
 from tessera.clock import FakeClock
 from tessera.service import create_app
@@ -257,3 +257,50 @@ def test_a_payload_namespace_never_redirects_a_write(
         "/ns/victim-ns/v1/tasks", json={**queued, "namespace": "victim-ns"}, headers=auth(admin)
     )
     assert named.status_code == 201, named.text
+
+
+def test_an_expired_requester_key_and_its_namespace_are_purged(
+    fabric: tuple[TestClient, Store, str],
+) -> None:
+    """Finding 3: requester keys and their own namespaces do not outlive the key."""
+    client, store, _ = fabric
+    org = sign_up(client)
+    h = auth(org["key"])
+    note = {"value": {"job": "SYNTHETIC"}, "expected_version": 0}
+    assert (
+        client.post("/v1/stores/org.requests/records/r1", json=note, headers=h).status_code == 200
+    )
+    filed = client.post("/ns/main/v1/tasks", json=request_verb(org, "kept"), headers=h)
+    assert filed.status_code == 201, filed.text
+    assert store.purge_expired_principals() == 0
+    assert isinstance(store.clock, FakeClock)
+    store.clock.advance(31 * 86400)
+    assert store.purge_expired_principals() == 1
+    assert org["key_id"] not in {g.key_id for g in store.list_keys()}
+    with store.scope_context(namespace=org["namespace"]):
+        assert store.stores() == []
+    # The request verb it filed is shared work in main and stays.
+    assert store.task(tid(org, "kept")).queue == "eq01"
+    assert client.get("/v1/me", headers=h).status_code == 401
+
+
+def test_a_failed_sign_up_leaves_no_key_and_spends_no_allowance(
+    fabric: tuple[TestClient, Store, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Finding 15: the key and the sign-up allowance are kept only with the profile."""
+    client, store, _ = fabric
+    keys_before = {g.key_id for g in store.list_keys()}
+
+    def refuse(*_: Any, **__: Any) -> None:
+        raise InvalidRequest("SYNTHETIC storage failure")
+
+    with monkeypatch.context() as patched:
+        patched.setattr(store, "put_records", refuse)
+        failed = client.post("/v1/session/requester", json={"profile": PROFILE})
+    assert failed.status_code == 400
+    assert {g.key_id for g in store.list_keys()} == keys_before
+    # The refused attempt spent nothing: three sign-ups from this address still succeed.
+    for name in ("Org One", "Org Two", "Org Three"):
+        sign_up(client, display_name=name)
+    blocked = client.post("/v1/session/requester", json={"profile": PROFILE})
+    assert blocked.status_code == 429

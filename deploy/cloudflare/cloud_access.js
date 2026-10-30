@@ -26,8 +26,8 @@ export function openToAnonymous(queue, tags, effectClass) {
 export function usesOpenVerbs(grant, ns) {
   return grant?.principal_kind === "anonymous" && ns === OPEN_VERB_NAMESPACE && grant.namespace !== ns;
 }
-export function requesterDescription() {
-  return { namespace: "Server assigned org.<principal_id>; the key writes nouns only in its own org. stores there",
+export function requesterDescription(enabled = false) {
+  return { enabled, namespace: "Server assigned org.<principal_id>; the key writes nouns only in its own org. stores there",
     files: `${REQUEST_KIND} verbs in ${REQUEST_QUEUE} of the shared namespace (X-Namespace: main), readable by ${REQUEST_SURFACES.join(", ")}`,
     reads: "its own nouns and the request verbs it filed, nothing else",
     profile: "display_name, organization_type and causes only; no personal data",
@@ -129,6 +129,8 @@ export function initAccess(c) {
     `CREATE INDEX IF NOT EXISTS access_counters_owner ON access_counters(principal_id, window)`,
     `CREATE INDEX IF NOT EXISTS access_limits_window ON access_limits(window)`,
     `CREATE INDEX IF NOT EXISTS access_principals_purge ON access_principals(purge_at) WHERE purge_at IS NOT NULL`,
+    // A requester's profile waits here, with its key, until the key first uses its own namespace.
+    `CREATE TABLE IF NOT EXISTS requester_profiles (principal_id TEXT PRIMARY KEY, profile TEXT NOT NULL, created_at REAL NOT NULL)`,
   ];
   // Read first: an existing object's cold start executes no write-capable statement.
   c._ensureDdl(statements);
@@ -278,10 +280,13 @@ export function retainAccess(c, now = Date.now() / 1000, { force = false } = {})
   const oldLimits = c._all("SELECT subject, window FROM access_limits WHERE window < ? LIMIT ?", Math.floor(now / 3600) - 24, RETENTION_BATCH);
   for (const r of oldLimits) sql.exec("DELETE FROM access_limits WHERE subject=? AND window=?", r.subject, r.window);
   deleted += oldLimits.length;
-  const expired = c._all("SELECT key_id FROM access_principals WHERE purge_at < ? AND principal_kind='anonymous' LIMIT ?", now, RETENTION_BATCH);
+  // Expired anonymous sessions and requester keys go; their own namespace objects purge themselves
+  // at the same time (the 'demo_purge_at' alarm set when they were first used).
+  const expired = c._all("SELECT key_id, principal_id FROM access_principals WHERE purge_at < ? AND principal_kind IN ('anonymous','requester') LIMIT ?", now, RETENTION_BATCH);
   for (const r of expired) {
     sql.exec("DELETE FROM keys WHERE key_id=?", r.key_id);
     sql.exec("DELETE FROM access_principals WHERE key_id=?", r.key_id);
+    sql.exec("DELETE FROM requester_profiles WHERE principal_id=?", r.principal_id);
   }
   return deleted + expired.length;
 }
@@ -342,10 +347,41 @@ export async function mintRequester(c, body, meta) {
     c.ctx.storage.sql.exec("INSERT INTO keys(key_id,key_hash,label,queues,kinds,effect_classes,scopes,created_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?)",
       keyId, digest, profile.display_name, JSON.stringify(grant.queues), JSON.stringify(grant.kinds), JSON.stringify(grant.effect_classes), JSON.stringify(scopes), now, grant.expires_at);
     c.ctx.storage.sql.exec("INSERT INTO access_principals(key_id,principal_kind,principal_id,account_id,namespace,key_prefix,labels,quota_tier,last_used_at,purge_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
-      keyId, "requester", principalId, grant.account_id, namespace, token.slice(0, 8), JSON.stringify(labels), "requester", now, null);
+      keyId, "requester", principalId, grant.account_id, namespace, token.slice(0, 8), JSON.stringify(labels), "requester", now, grant.expires_at);
+    // The profile is stored with the key, in this transaction: no namespace object exists until the
+    // key first uses its namespace (ensureRequesterSeeded), and a failed sign-up leaves nothing.
+    c.ctx.storage.sql.exec("INSERT INTO requester_profiles(principal_id,profile,created_at) VALUES (?,?,?)", principalId, JSON.stringify(profile), now);
     audit(c, grant, "mint_requester", { namespace }, { ok: true, status: 201, data: {} }, meta);
   });
   return { key: token, ...publicPrincipal(grant), profile };
+}
+
+// On a requester key's first call into its own namespace, that namespace object is created with the
+// profile noun, and set to purge itself when the key expires (like a demo namespace).
+export function seedRequester(c, grant, profile, purgeAt) {
+  c.namespace = grant.namespace;
+  c.isPrimary = false;
+  const now = Date.now() / 1000;
+  c.ctx.storage.transactionSync(() => {
+    if (profile) {
+      const tags = ["kind:organization_profile", "origin:requester", "untrusted:true"];
+      const value = canonicalJson({ schema_version: 1, ...profile });
+      c.ctx.storage.sql.exec("INSERT OR IGNORE INTO record_heads(namespace,store,key,version,producer_surface,visibility_scope,allowed_surfaces,target_cohorts,tags,owner_key_id) VALUES (?,?,'profile',1,'surface:tessera','private','[]','[\"all\"]',?,?)", grant.namespace, `${REQUESTER_STORE_PREFIX}profile`, JSON.stringify(tags), grant.key_id);
+      c.ctx.storage.sql.exec("INSERT OR IGNORE INTO records(namespace,store,key,version,value,created_at,producer_surface,visibility_scope,allowed_surfaces,target_cohorts,tags,owner_key_id) VALUES (?,?,'profile',1,?,?,'surface:tessera','private','[]','[\"all\"]',?,?)", grant.namespace, `${REQUESTER_STORE_PREFIX}profile`, value, now, JSON.stringify(tags), grant.key_id);
+      c._syncNounTags("record", `${REQUESTER_STORE_PREFIX}profile`, "profile", tags);
+    }
+    c.ctx.storage.sql.exec("INSERT OR REPLACE INTO meta(key,value) VALUES ('demo_purge_at',?)", String(purgeAt));
+  });
+  return c.ctx.storage.setAlarm(purgeAt * 1000);
+}
+
+export async function ensureRequesterSeeded(c, grant, ns) {
+  if (grant.principal_kind !== "requester" || ns !== grant.namespace || c.requesterSeeded === ns) return;
+  if (!c._one("SELECT value FROM meta WHERE key='demo_purge_at'")) {
+    const profile = c.env.COORDINATOR ? await c._primary().requesterProfile(grant.principal_id) : null;
+    await seedRequester(c, grant, profile, Number(grant.expires_at));
+  }
+  c.requesterSeeded = ns;
 }
 
 export function seedDemo(c, grant, purgeAt) {

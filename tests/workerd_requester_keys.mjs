@@ -115,9 +115,10 @@ test("personal data, filed requests and sign-ups are capped", async () => {
   assert.equal((await signUp({ display_name: "Fourth Org" })).status, 429);
 });
 
-test("sign-up is off unless enabled", async () => {
-  const { signUp } = await setup("false");
+test("sign-up is off unless enabled, and connect.json says so", async () => {
+  const { request, signUp } = await setup("false");
   assert.equal((await signUp()).status, 503);
+  assert.equal((await request("/connect.json")).data.requester.enabled, false);
 });
 
 test("a requester follows its request but not the children a worker split it into", async () => {

@@ -308,7 +308,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [src/tessera/store.py](src/tessera/store.py) | The in-process Tessera store: the reference implementation of SPEC.md. |
 | [src/tessera/testing.py](src/tessera/testing.py) | Factories the conformance suite loads by name (TESSERABACKENDFACTORY="module:function"). |
 
-## tests/ (65)
+## tests/ (66)
 
 | File | What it is |
 |---|---|
@@ -375,6 +375,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [tests/workerd_open_verbs.mjs](tests/workerd_open_verbs.mjs) | Real Worker/SQLite: a tracked anonymous session claims, heartbeats and submits only verbs whose |
 | [tests/workerd_reaper.mjs](tests/workerd_reaper.mjs) | Real Worker/SQLite: the lease reaper keeps running in the main namespace even when an alarm |
 | [tests/workerd_requester_keys.mjs](tests/workerd_requester_keys.mjs) | Real Worker/SQLite: a self-serve requester key writes nouns only in its own org.<id> namespace, |
+| [tests/workerd_requester_storage.mjs](tests/workerd_requester_storage.mjs) | Real Worker/SQLite with persisted objects: a requester sign-up writes only the primary object; the |
 | [tests/workerd_storage_exhaustion.mjs](tests/workerd_storage_exhaustion.mjs) | Real Worker/SQLite under a faithful storage-exhaustion simulation: after the provider's daily |
 | [tests/workerd_storage_quota.mjs](tests/workerd_storage_quota.mjs) | Real Worker/SQLite behavior; fixture-only RPC methods never ship in the product. |
 

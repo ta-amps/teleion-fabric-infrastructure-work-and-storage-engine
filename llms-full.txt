@@ -1132,7 +1132,11 @@ Organizations that ask for work sign up without an operator. Set
 Python service. `POST /v1/session/requester` takes a profile (`display_name`,
 `organization_type`, up to eight short `causes`; no personal data) and returns an ordinary key,
 shown once and stored only as a hash. The profile becomes the `org.profile/profile` noun in the
-key's own `org.<principal_id>` namespace.
+key's own `org.<principal_id>` namespace. The key, its profile and the spent sign-up allowance are
+written together, so a failed sign-up leaves nothing behind; on the Worker the namespace object is
+created by the key's first call there, never by the sign-up itself. When the key expires after 30
+days, the key, its profile and its own namespace are purged; the request verbs it filed are shared
+work and stay.
 
 The key's scope is fixed and narrow, deny by default:
 
@@ -1148,7 +1152,8 @@ contains. A requester's own task ids and idempotency keys must start with `rq-<p
 (or be left to the service), so organizations neither collide nor learn which other ids exist. Every stored field is screened for common personal and payment data (email addresses, identity
 and card numbers, phone numbers, street addresses and IBANs), ids, keys and tags included. Limits: 3
 sign-ups per IP hash and 100 in all each hour, 5 request verbs and 300 requests per key each hour,
-32 KiB per request and 256 KiB of nouns per key. This uses the existing key, principal, audit and
+32 KiB per request and 256 KiB of stored bytes per key (every stored field counts), and
+idempotency keys of at most 256 characters (as for every key). This uses the existing key, principal, audit and
 limit machinery; there is no separate account table or password.
 
 ## A complete HTTP loop

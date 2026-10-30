@@ -372,7 +372,7 @@ function resolveNamespace(url, request) {
 function discoveryResponse(path, method, env, publicUrl, repoUrl) {
   if (method !== "GET" && method !== "HEAD") return null;
   const anonymousEnabled = env.ANONYMOUS_ACCESS_ENABLED === "true";
-  const access = accessDiscoveryRoute(path, method, publicUrl, anonymousEnabled, jsonResp, htmlResp);
+  const access = accessDiscoveryRoute(path, method, publicUrl, anonymousEnabled, jsonResp, htmlResp, env.REQUESTER_SIGNUP_ENABLED === "true");
   if (access) return access;
   if (path === "/" || path === "/connect") {
     return htmlResp(renderConnectHtml(publicUrl, repoUrl, MCP_TOOLS));
