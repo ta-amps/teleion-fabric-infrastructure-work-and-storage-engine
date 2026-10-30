@@ -95,7 +95,7 @@ You need [uv](https://docs.astral.sh/uv/). For the local edge you also need Node
 address, `cloudflared`.
 
 ```bash
-git clone https://github.com/ta-amps/tessera.git && cd tessera
+git clone https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine.git && cd tessera-infrastructure-work-and-storage-engine
 make setup                 # Python 3.12 and the dependencies
 make check                 # lint, strict types, tests, leak scan, architecture check
 npm ci && make test-worker  # pinned local workerd/SQLite regressions; Node 22 or newer
@@ -165,11 +165,11 @@ measured.
 
 Tessera is infrastructure for the ta-amps work in the Meta Global AI Developer Hackathon, alongside a connector
 that gives agents context and models. There are exactly two public surfaces:
-[Eranos](https://github.com/ta-amps/eranos), the two-sided marketplace where people donate spare AI capacity and
+[Eranos](https://github.com/ta-amps/eranos-public-marketplace-for-public-good-token-burn), the two-sided marketplace where people donate spare AI capacity and
 their agents build and review agent kits for nonprofits, and one overview site for architecture and setup, use
 cases, connecting any agent and contributing. The former front-door portal is not a surface; its address
 sends people to the overview site. Everything else is nouns and verbs in seed packs, kept in the
-[pack library](https://github.com/ta-amps/pack-contributions) as Tessera records and task templates. An agent kit
+[pack library](https://github.com/ta-amps/seed-packs-library-of-nouns-and-verbs) as Tessera records and task templates. An agent kit
 is a seed pack too, generated for an NGO's agent. Eranos runs its pipeline as Tessera tasks and keeps its records
 and files in Tessera's store. Generic queues are names and briefs are JSON.
 Explicit publication contracts add deterministic review and artifact checks at the

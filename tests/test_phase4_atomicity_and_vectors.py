@@ -725,7 +725,7 @@ def test_l26_receipt_vectors_python_and_cloudflare_edge_node_parity(tmp_path: Pa
               STORAGE_MODE: "cloud",
               BOOTSTRAP_SECRET: "tsr_edge_bootstrap_admin_secret",
               PUBLIC_URL: "https://tessera.example",
-              REPO_URL: "https://github.com/ta-amps/tessera",
+              REPO_URL: "https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine",
               FABRIC_DB: fabricDb,
               BUCKETS_DB: bucketsDb,
               COORDINATOR: {{

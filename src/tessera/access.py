@@ -35,7 +35,7 @@ class ServiceSettings:
     public_url: str = "http://localhost:8080"
     allowed_hosts: tuple[str, ...] = ()
     anonymous_access_enabled: bool = False
-    repo_url: str = "https://github.com/ta-amps/tessera"
+    repo_url: str = "https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine"
 
     @classmethod
     def from_env(cls) -> ServiceSettings:

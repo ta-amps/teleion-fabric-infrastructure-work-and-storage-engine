@@ -195,7 +195,7 @@ import {
 if (TESSERA_VERSION !== "0.2.0") throw new Error("bad version: " + TESSERA_VERSION);
 const fav = renderFaviconSvg();
 if (!fav.includes("<svg")) throw new Error("missing svg in favicon");
-const connect = renderConnectHtml("https://example.test", "https://github.com/ta-amps/tessera");
+const connect = renderConnectHtml("https://example.test", "https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine");
 if (!connect.includes("26 tools") || connect.includes("25 tools")) throw new Error("tool count mismatch");
 if (!connect.includes("<header class='site-hdr'>") || !connect.includes("<footer class='site-ftr'>")) {
   throw new Error("missing semantic chrome");
@@ -218,8 +218,8 @@ for (const heading of ["Live Verb Queues", "Task Dependency &amp; Split Wave DAG
   if (!board.includes(heading)) throw new Error("missing heading: " + heading);
 }
 if (board.toLowerCase().includes("<form")) throw new Error("board must not contain forms");
-const llms = renderLlmsTxt("https://example.test", "https://github.com/ta-amps/tessera");
-const llmsFull = renderLlmsFullTxt("https://example.test", "https://github.com/ta-amps/tessera");
+const llms = renderLlmsTxt("https://example.test", "https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine");
+const llmsFull = renderLlmsFullTxt("https://example.test", "https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine");
 if (!llms.includes("26 tools") || !llmsFull.includes("0.2.0")) throw new Error("llms text mismatch");
 """
     res = subprocess.run(
