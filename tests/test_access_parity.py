@@ -120,8 +120,9 @@ def run_step(
     headers = {**fill(step.get("headers", {}), saved)}
     if who != "none":
         headers["Authorization"] = "Bearer " + saved[who]["token"]
-    path = fill(step["path"], saved)
-    for _ in range(step.get("repeat", 1)):
+    for index in range(step.get("repeat", 1)):
+        saved["rep"] = {"i": index}
+        path = fill(step["path"], saved)
         if step["method"] == "GET":
             response = client.get(path, headers=headers)
         elif "raw" in step:  # exactly these bytes, with this Content-Type or none

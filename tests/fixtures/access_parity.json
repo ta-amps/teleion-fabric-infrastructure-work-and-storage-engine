@@ -2157,6 +2157,169 @@
           }
         }
       ]
+    },
+    {
+      "id": "H-14-open-verbs-behind-1000-hidden",
+      "finding": "H-14 (hunt)",
+      "title": "Open verbs stay reachable behind more than 1,000 hidden ones, page by page",
+      "steps": [
+        {
+          "session": "anon"
+        },
+        {
+          "as": "admin",
+          "method": "POST",
+          "path": "/v1/tasks",
+          "status": 201,
+          "body": {
+            "queue": "eq02",
+            "task_id": "open-a",
+            "kind": "draft",
+            "effect_class": "write-internal",
+            "brief": {
+              "title": "SYNTHETIC"
+            },
+            "tags": [
+              "open:anonymous"
+            ],
+            "producer_surface": "surface:eranos",
+            "visibility_scope": "surface_only"
+          }
+        },
+        {
+          "as": "admin",
+          "method": "POST",
+          "path": "/v1/tasks",
+          "status": 201,
+          "repeat": 1050,
+          "body": {
+            "queue": "eq02",
+            "task_id": "hidden-{rep.i}",
+            "kind": "draft",
+            "effect_class": "write-internal",
+            "brief": {
+              "title": "SYNTHETIC"
+            },
+            "tags": [
+              "status:quarantined"
+            ],
+            "producer_surface": "surface:eranos",
+            "visibility_scope": "surface_only"
+          }
+        },
+        {
+          "as": "admin",
+          "method": "POST",
+          "path": "/v1/tasks",
+          "status": 201,
+          "body": {
+            "queue": "eq02",
+            "task_id": "open-b",
+            "kind": "draft",
+            "effect_class": "write-internal",
+            "brief": {
+              "title": "SYNTHETIC"
+            },
+            "tags": [
+              "open:anonymous"
+            ],
+            "producer_surface": "surface:eranos",
+            "visibility_scope": "surface_only"
+          }
+        },
+        {
+          "as": "anon",
+          "method": "GET",
+          "path": "/ns/main/v1/verbs",
+          "status": 200,
+          "expect": {
+            "equals": {
+              "verbs.*.task_id": [
+                "open-a",
+                "open-b"
+              ],
+              "next": null
+            }
+          }
+        },
+        {
+          "as": "anon",
+          "method": "GET",
+          "path": "/ns/main/v1/verbs?queue=eq02",
+          "status": 200,
+          "expect": {
+            "equals": {
+              "verbs.*.task_id": [
+                "open-a",
+                "open-b"
+              ]
+            }
+          }
+        },
+        {
+          "as": "anon",
+          "method": "GET",
+          "path": "/ns/main/v1/verbs?queue=eq02&limit=1",
+          "status": 200,
+          "save": "page1",
+          "expect": {
+            "equals": {
+              "verbs.*.task_id": [
+                "open-a"
+              ]
+            }
+          }
+        },
+        {
+          "as": "anon",
+          "method": "GET",
+          "path": "/ns/main/v1/verbs?queue=eq02&limit=1&after={page1.next}",
+          "status": 200,
+          "save": "page2",
+          "expect": {
+            "equals": {
+              "verbs.*.task_id": [
+                "open-b"
+              ]
+            }
+          }
+        },
+        {
+          "as": "anon",
+          "method": "GET",
+          "path": "/ns/main/v1/verbs?queue=eq02&limit=1&after={page2.next}",
+          "status": 200,
+          "expect": {
+            "equals": {
+              "verbs": [],
+              "next": null
+            }
+          }
+        },
+        {
+          "as": "anon",
+          "method": "GET",
+          "path": "/ns/main/v1/verbs?limit=abc",
+          "status": 400
+        },
+        {
+          "as": "anon",
+          "method": "GET",
+          "path": "/ns/main/v1/verbs?after=nonsense",
+          "status": 400
+        },
+        {
+          "as": "admin",
+          "method": "GET",
+          "path": "/v1/verbs?queue=eq02&status=all&limit=500",
+          "status": 200,
+          "expect": {
+            "equals": {
+              "verbs.#": 200
+            }
+          }
+        }
+      ]
     }
   ]
 }

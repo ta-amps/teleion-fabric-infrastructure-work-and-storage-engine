@@ -57,7 +57,7 @@ export async function accessRoute(request, env, { path, url, bearer, primary, st
     // the requester's own namespace object is created by the key's first call there.
     return rpcResponse(await primary.openRequesterSession(body, meta));
   }
-  if (path === "/v1/verbs" && method === "GET") return rpcResponse(await stub.rpcCall(bearer, "listVerbs", { ...baseRpc, queue: url.searchParams.get("queue"), status: url.searchParams.get("status"), limit: url.searchParams.get("limit") }));
+  if (path === "/v1/verbs" && method === "GET") return rpcResponse(await stub.rpcCall(bearer, "listVerbs", { ...baseRpc, queue: url.searchParams.get("queue"), status: url.searchParams.get("status"), limit: url.searchParams.get("limit"), after: url.searchParams.get("after") }));
   if (path === "/v1/me" && method === "GET") return rpcResponse(await stub.rpcCall(bearer, "me", baseRpc));
   if (["/v1/me/audit", "/v1/admin/audit"].includes(path) && method === "GET") return rpcResponse(await primary.auditForToken(bearer, { admin: path.includes("/admin/"), after: url.searchParams.get("after"), limit: url.searchParams.get("limit") }));
   if (path === "/v1/public/activity" && method === "GET") return jsonResp(await primary.publicActivity());

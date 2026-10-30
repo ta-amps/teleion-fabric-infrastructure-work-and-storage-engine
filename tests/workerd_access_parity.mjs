@@ -107,9 +107,10 @@ async function runStep({ request, saved }, step, where) {
     return;
   }
   const token = step.as === "none" ? undefined : saved[step.as].token;
-  const path = fill(step.path, saved);
-  let response;
+  let response, path;
   for (let i = 0; i < (step.repeat || 1); i++) {
+    saved.rep = { i };
+    path = fill(step.path, saved);
     const raw = "raw" in step ? { text: step.raw, contentType: step.content_type || null } : undefined;
     response = await request(step.method, path, fill(step.body || {}, saved), token, fill(step.headers || {}, saved), raw);
     assert.equal(response.status, step.status, `${where}: ${path} ${JSON.stringify(response.data)?.slice(0, 400)}`);

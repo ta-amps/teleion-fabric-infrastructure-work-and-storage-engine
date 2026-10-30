@@ -38,6 +38,8 @@ export { canonicalJson, receiptHash };
 
 const NAME_RE = /^[a-z0-9][a-z0-9_.-]{0,63}$/;
 const MAX_IDEMPOTENCY_KEY = 256; // characters, as models.MAX_IDEMPOTENCY_KEY
+const VERB_PAGE_MAX = 200; // as _access_routes.VERB_PAGE_MAX
+const VERB_SCAN_BUDGET = 10000; // rows one verb listing reads at most, as in Python
 const INHERITED_GOVERNANCE = ["producer_surface", "visibility_scope", "allowed_surfaces", "target_cohorts", "owner_key_id"];
 const TASK_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/;
 const RECORD_KEY_RE = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$/;
@@ -1469,6 +1471,40 @@ export class TesseraCoordinator extends DurableObject {
     }
   }
 
+  // Visible verbs, oldest first, `limit` at a time; `next` goes back as `after`. Hidden rows never
+  // hide visible ones: the scan pages through rows until the page fills or VERB_SCAN_BUDGET rows
+  // are read, and `next` resumes where it stopped (H-14; same rule as _access_routes.list_verbs).
+  _listVerbs(grant, ns, args) {
+    const status = args.status == null || args.status === "" ? "ready" : String(args.status);
+    if (!["ready", "leased", "waiting", "done", "dead", "cancelled", "all"].includes(status)) throw badReq("invalid verb status");
+    const requested = args.limit == null || args.limit === "" ? 100 : Number(args.limit);
+    if (!Number.isInteger(requested)) throw badReq("limit must be an integer");
+    const limit = Math.max(1, Math.min(requested, VERB_PAGE_MAX));
+    let cursor = null;
+    if (args.after != null && args.after !== "") {
+      const text = String(args.after), split = text.indexOf("|");
+      const created = split > 0 ? Number(text.slice(0, split)) : NaN, id = split > 0 ? text.slice(split + 1) : "";
+      if (!Number.isFinite(created) || !id) throw badReq("invalid verb cursor");
+      cursor = [created, id];
+    }
+    const view = this._viewerCtx(grant, args.surfaceHeader);
+    const queue = args.queue || "", verbs = [];
+    let scanned = 0, next = null;
+    while (next === null && scanned < VERB_SCAN_BUDGET) {
+      const page = Math.min(500, VERB_SCAN_BUDGET - scanned);
+      const rows = this._all(`SELECT * FROM tasks WHERE namespace=? AND (?='' OR queue=?) AND (?='all' OR state=?)${cursor ? " AND (created_at > ? OR (created_at = ? AND id > ?))" : ""} ORDER BY created_at,id LIMIT ?`,
+        ns, queue, queue, status, status, ...(cursor ? [cursor[0], cursor[0], cursor[1]] : []), page);
+      for (const r of rows) {
+        scanned++;
+        cursor = [Number(r.created_at), r.id];
+        if (this._taskVisible(r, grant, view) && this._mayUseQueue(grant, r.queue)) verbs.push(this._viewerTaskView(grant, this._taskView(r.id)));
+        if (verbs.length >= limit || scanned >= VERB_SCAN_BUDGET) { next = `${cursor[0]}|${cursor[1]}`; break; }
+      }
+      if (rows.length < page) break;
+    }
+    return { verbs, next };
+  }
+
   // An anonymous viewer never sees which keys own, parked or deduplicated a verb.
   _viewerTaskView(grant, view) {
     return grant.principal_kind === "anonymous" ? { ...view, owner_key_id: null, parked_by: null, idempotency_key: null } : view;
@@ -1946,11 +1982,7 @@ export class TesseraCoordinator extends DurableObject {
         permit = await this.claimAdmission.acquire(grant.key_id);
       }
       if (action === "me") out = { ok: true, status: 200, data: publicPrincipal(grant) };
-      else if (action === "listVerbs") {
-        const rows=this._all("SELECT * FROM tasks WHERE namespace=? AND (?='' OR queue=?) AND (?='' OR state=?) ORDER BY created_at,id LIMIT 1000",ns,args.queue||"",args.queue||"",args.status||"ready",args.status||"ready");
-        const view=this._viewerCtx(grant,args.surfaceHeader);
-        out={ok:true,status:200,data:{verbs:rows.filter(r=>this._taskVisible(r,grant,view)&&this._mayUseQueue(grant,r.queue)).slice(0,Math.max(1,Math.min(Number(args.limit)||50,100))).map(r=>this._viewerTaskView(grant,this._taskView(r.id)))}};
-      }
+      else if (action === "listVerbs") out = { ok: true, status: 200, data: this._listVerbs(grant, ns, args) };
       else if (action === "claimEvents") {
         const row = this._taskRow(String(args.task_id));
         this._requireQueue(grant, row.queue);

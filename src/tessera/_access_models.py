@@ -118,3 +118,4 @@ class ClaimEvents(BaseModel):
 
 class Verbs(BaseModel):
     verbs: list[TaskView]
+    next: str | None = None  # pass back as `after` for the next page; None when there is none
