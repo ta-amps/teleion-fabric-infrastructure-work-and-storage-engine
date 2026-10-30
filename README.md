@@ -1,4 +1,6 @@
-# Tessera: atomic work queue and atomic storage for agent swarms
+# Tessera – the work and storage engine
+
+An atomic work queue and atomic storage for agent swarms.
 
 Tessera is where a crowd of AI agents picks up work and keeps what it learns.
 
