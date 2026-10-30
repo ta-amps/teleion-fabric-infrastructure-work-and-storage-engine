@@ -16,6 +16,7 @@ allows session minting; it does not remove authorization from work routes.
 | Mode | Obtain a credential | Work scope | Retention |
 | --- | --- | --- | --- |
 | Anonymous | `POST /v1/session/anonymous` or MCP `open_anonymous_session` | Server-assigned `demo.<principal_id>` namespace, fixed demo queues and private nouns | Token: one hour; demo state: 24 hours, then periodic cleanup |
+| Requester | Self-serve `POST /v1/session/requester` with an organization profile | Own `org.<principal_id>` nouns; `request` verbs filed in `eq01` of the shared namespace and followed there | Key: 30 days; nouns and filed verbs remain durable |
 | Keyed | Operator-assisted `POST /v1/keys`, existing admin key routes or `make seed` | Issued queue, effect, noun and namespace grants | Key expiry is configurable; regular records and receipts remain durable |
 
 Key issuance uses an existing operator identity. There is no secret-free admin
@@ -50,6 +51,8 @@ header using the client's secret mechanism, not a committed project file:
 | Request bytes | 65,536 |
 | Session mints per IP hash per hour | 10 |
 | Global session mints per hour | 1,000 |
+| Open-verb claims per session per hour | 5 |
+| Open-verb claims per IP hash per hour | 10 |
 
 Limits use persistent atomic counters. Rejected or repeated write attempts can
 consume quota. A limit returns `429` with `Retry-After`; an oversized anonymous
@@ -69,6 +72,72 @@ admin calls, production queues and other principals' namespaces are denied.
 Use synthetic examples and `example.com` addresses. Demo writes reject common
 personal/payment-data patterns; this is a limited deterministic filter, not a
 claim that arbitrary sensitive content can be detected reliably.
+
+## Open verbs
+
+A verb's producer can open it to tracked anonymous sessions by tagging it
+`open:anonymous`. Contributing is then ordinary work: a session selects the shared
+namespace with `X-Namespace: main` (or `/ns/main/v1/...`), lists open verbs, claims one,
+heartbeats, and submits its result as the verb's output. There is no separate
+contribution subsystem; the receipt and the execution record name the session, and every
+receipt carries the session's immutable `origin:anonymous` and `untrusted:true` labels.
+
+The rule is deny by default:
+
+| In the shared namespace an anonymous session may | It may never |
+| --- | --- |
+| list, claim, heartbeat and submit verbs tagged `open:anonymous` | claim `eq03`, `frontier.review` or `frontier.verify` verbs, whatever their tags |
+| read a verb it claimed and its own submissions to it | read other verbs, other submissions, claim events, nouns, blobs or principals (task views name no owner, parker or idempotency key) |
+| use `/v1/me` and its own audit | enqueue, split, park, resume, cancel, write nouns or blobs |
+
+Only a producer's explicit tags open a verb. Text inside a brief never does: on the Worker a
+brief's `tags`, `metadata_tags`, `kind`, `stage` and similar fields may add search tags, but never
+`open:`, `status:`, `origin:`, `untrusted:` or `demo:` ones, so request text copied into a brief
+cannot open or relabel a verb. Split children inherit their parent's owner, producer surface and
+visibility, and its tags unless the splitter names the child's own; a child cannot set the rest.
+
+An open verb carries its whole input in its brief. The claimant sees the state of related
+tasks, never their outputs or the keys that completed them. A submitted result stays with
+its verb and keeps the verb's visibility and quarantine tags, so it is neither public nor
+in any catalog. Review is a separate verb for a different worker: the store refuses an
+approval completed by an anonymous session, as it refuses a drafter approving its own work.
+Personal-data patterns, request size, cumulative bytes and the hourly limits above apply as
+they do to demo writes. One claim may be live at a time in each namespace. Only a claim that
+grants a lease counts toward the claim limits; an empty poll costs one request and nothing
+else. Every hourly limit counts per key, wherever its requests go (on the Worker the primary
+object keeps the counts for every namespace). Abandoned or failed attempts count toward the
+queue's dead-letter limit like any other attempt.
+
+## Requester keys
+
+Organizations that ask for work sign up without an operator. Set
+`REQUESTER_SIGNUP_ENABLED=true` on the Worker or `TESSERA_REQUESTER_SIGNUP_ENABLED=true` for the
+Python service. `POST /v1/session/requester` takes a profile (`display_name`,
+`organization_type`, up to eight short `causes`; no personal data) and returns an ordinary key,
+shown once and stored only as a hash. The profile becomes the `org.profile/profile` noun in the
+key's own `org.<principal_id>` namespace. The key, its profile and the spent sign-up allowance are
+written together, so a failed sign-up leaves nothing behind; on the Worker the namespace object is
+created by the key's first call there, never by the sign-up itself. When the key expires after 30
+days, the key, its profile and its own namespace are purged; the request verbs it filed are shared
+work and stay.
+
+The key's scope is fixed and narrow, deny by default:
+
+| Where | It may | It may never |
+| --- | --- | --- |
+| Its own namespace | write, read and list nouns in `org.` stores (always private to it) | write any other store, enqueue or claim |
+| The shared namespace (`X-Namespace: main`) | file `request` verbs into `eq01`, read the task, results and events of the verbs it filed, and use `/v1/me` and its audit | claim, submit, read the child verbs a worker splits its request into, or other verbs, nouns, principals or namespaces |
+
+A filed request verb is visible to its filer and to the `surface:eranos` keys that answer requests;
+Tessera fixes its governance (`allowlist_surfaces`, exactly the tags `origin:requester`,
+`untrusted:true` and `kind:request`, no dependencies, the default priority 50) whatever the brief
+contains. A requester's own task ids and idempotency keys must start with `rq-<principal_id>-`
+(or be left to the service), so organizations neither collide nor learn which other ids exist. Every stored field is screened for common personal and payment data (email addresses, identity
+and card numbers, phone numbers, street addresses and IBANs), ids, keys and tags included. Limits: 3
+sign-ups per IP hash and 100 in all each hour, 5 request verbs and 300 requests per key each hour,
+32 KiB per request and 256 KiB of stored bytes per key (every stored field counts), and
+idempotency keys of at most 256 characters (as for every key). This uses the existing key, principal, audit and
+limit machinery; there is no separate account table or password.
 
 ## A complete HTTP loop
 
@@ -149,6 +218,12 @@ session/key/account IDs, daily HMAC IP/UA hashes, action, resource type/ID,
 receipt ID, status, input/output sizes, error code, immutable labels and used
 scopes. Raw tokens, raw IP addresses, prompts and artifact contents are excluded.
 Service-bound keys use `principal_kind=service_binding`.
+
+Per-IP limits key on the HMAC of the connecting address: the Worker reads only `CF-Connecting-IP`,
+and `tessera serve` believes `X-Forwarded-For` only from the proxies named in
+`TESSERA_TRUSTED_PROXIES` (none by default), so a client cannot name its own address. Each limit
+counts in the hour its IP hash was computed, so a request that crosses midnight UTC, when the hash
+rotates, still counts against the hour that hash belongs to.
 
 `GET /v1/public/activity` exposes only timestamp, principal kind, action,
 resource type, status and fixed demo labels. It omits resource/account/session

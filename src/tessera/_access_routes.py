@@ -19,6 +19,7 @@ from tessera._access_models import (
     KeyList,
     PrincipalView,
     PublicActivity,
+    RequesterKey,
     Verbs,
 )
 from tessera._principals import public_principal
@@ -32,6 +33,18 @@ from tessera.store import Store
 class AnonymousBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     agent_label: str = Field(default="", max_length=64)
+
+
+class RequesterProfile(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    display_name: str = Field(min_length=2, max_length=80)
+    organization_type: str = Field(min_length=3, max_length=120)
+    causes: list[str] = Field(default_factory=list, max_length=8)
+
+
+class RequesterBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    profile: RequesterProfile
 
 
 class AccountKeyBody(IssueKeyBody):
@@ -68,8 +81,9 @@ def list_verbs(
     verbs = []
     with store._read() as c:
         for row in c.execute(sql, params):
-            if (grant.is_admin or grant.allows_queue(row["queue"])) and store._task_visible(row):
-                verbs.append(store._task_view(c, ns, row["id"]).model_dump(mode="json"))
+            if grant.may_use_queue(row["queue"], ns) and store._task_visible(row):
+                view = store._viewer_task_view(store._task_view(c, ns, row["id"]))
+                verbs.append(view.model_dump(mode="json"))
                 if len(verbs) >= max(1, min(limit, 200)):
                     break
     return {"verbs": verbs}
@@ -86,7 +100,11 @@ def mount_access_routes(
 
     @app.get("/connect.json")
     def connect_json() -> dict[str, Any]:
-        return access_description(settings.public_url, settings.anonymous_access_enabled)
+        return access_description(
+            settings.public_url,
+            settings.anonymous_access_enabled,
+            settings.requester_signup_enabled,
+        )
 
     @app.get("/connect.js", include_in_schema=False)
     def connect_script() -> Response:
@@ -97,7 +115,18 @@ def mount_access_routes(
         if not settings.anonymous_access_enabled:
             raise Unavailable("anonymous sessions are not enabled")
         meta = request.state.access_meta
-        return store.open_anonymous_session(body.agent_label, ip_hash=meta["ip_hash"])
+        return store.open_anonymous_session(
+            body.agent_label, ip_hash=meta["ip_hash"], ip_window=meta.get("ip_window")
+        )
+
+    @app.post("/v1/session/requester", status_code=201, response_model=RequesterKey)
+    def open_requester(body: RequesterBody, request: Request) -> dict[str, Any]:
+        if not settings.requester_signup_enabled:
+            raise Unavailable("requester sign-up is not enabled")
+        meta = request.state.access_meta
+        return store.open_requester_session(
+            body.profile.model_dump(), ip_hash=meta["ip_hash"], ip_window=meta.get("ip_window")
+        )
 
     @app.get("/v1/verbs", response_model=Verbs)
     def verbs(

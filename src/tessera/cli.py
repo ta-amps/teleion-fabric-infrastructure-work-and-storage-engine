@@ -324,12 +324,15 @@ def _serve(args: argparse.Namespace) -> int:
 
     settings = ServiceSettings.from_env()
     settings = ServiceSettings(**{**settings.__dict__, "db_path": args.db})
+    trusted = list(settings.trusted_proxies)
     uvicorn.run(
         create_app(Store(args.db), settings),
         host=args.host,
         port=args.port,
-        proxy_headers=True,
-        forwarded_allow_ips="*",
+        # Forwarded addresses only from the proxies named in TESSERA_TRUSTED_PROXIES; otherwise a
+        # client could name any address and reset the per-IP limits with each request.
+        proxy_headers=bool(trusted),
+        forwarded_allow_ips=trusted or None,
         log_level="info",
     )
     return 0

@@ -360,6 +360,14 @@ export function extractTags(obj) {
   return [...new Set(out)];
 }
 
+// Governance tags decide who may see, claim or trust a verb: open:, status:, origin:, untrusted:
+// and demo:. A verb gets them only from the caller's explicit tags, which the access rules check,
+// never from text inside its brief (same rule as src/tessera, where briefs add no tags).
+export const GOVERNANCE_TAG_RE = /^\s*(?:open|status|origin|untrusted|demo)\s*:/i;
+export function briefTags(brief) {
+  return extractTags(brief).filter(tag => !GOVERNANCE_TAG_RE.test(tag));
+}
+
 function parseJsonSafe(raw, fallback) {
   try {
     return raw == null ? fallback : JSON.parse(raw);

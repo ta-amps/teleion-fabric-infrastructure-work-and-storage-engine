@@ -20,6 +20,7 @@ from typing import Any
 from tessera._legacy_privacy import harden_task_tombstones
 from tessera.clock import Clock, SystemClock
 from tessera.errors import Forbidden, InvalidRequest, NotFound
+from tessera.grants import OPEN_VERB_NAMESPACE, open_to_anonymous
 from tessera.models import (
     QueueConfig,
     TaskView,
@@ -103,6 +104,9 @@ class ScopeContext:
     is_admin: bool = False
     anonymous: bool = False
     labels: dict[str, Any] | None = None
+    requester: bool = False
+    ip_hash: str | None = None
+    ip_window: int | None = None
 
 
 _DEFAULT_SCOPE = ScopeContext()
@@ -158,6 +162,9 @@ class StoreBase:
         is_admin: bool | None = None,
         anonymous: bool | None = None,
         labels: dict[str, Any] | None = None,
+        requester: bool | None = None,
+        ip_hash: str | None = None,
+        ip_window: int | None = None,
     ) -> Iterator[ScopeContext]:
         prev = self.current_scope()
         updated = ScopeContext(
@@ -171,6 +178,9 @@ class StoreBase:
             is_admin=is_admin if is_admin is not None else prev.is_admin,
             anonymous=anonymous if anonymous is not None else prev.anonymous,
             labels=labels if labels is not None else prev.labels,
+            requester=requester if requester is not None else prev.requester,
+            ip_hash=ip_hash if ip_hash is not None else prev.ip_hash,
+            ip_window=ip_window if ip_window is not None else prev.ip_window,
         )
         token = _SCOPE_CTX.set(updated)
         try:
@@ -187,6 +197,9 @@ class StoreBase:
             return normalized
         if model_ns is not None and model_ns != "main":
             norm_model = normalize_namespace(model_ns)
+            if self.current_scope().key_id and norm_model != ctx_ns:
+                # A key is authorized for the request's namespace, never one named in a payload.
+                raise Forbidden("payload namespace must match the authenticated request namespace")
             if ctx_ns != "main" and norm_model != ctx_ns:
                 raise InvalidRequest(
                     f"namespace '{norm_model}' in payload conflicts with request namespace '{ctx_ns}'"
@@ -270,6 +283,13 @@ class StoreBase:
         if ctx.is_admin:
             return True
         tags = json.loads(row["tags"])
+        if ctx.requester and ctx.namespace == OPEN_VERB_NAMESPACE:
+            # A requester follows the request verbs it filed, and sees nothing else there.
+            return bool(row["owner_key_id"] == ctx.key_id)
+        if ctx.anonymous and ctx.namespace == OPEN_VERB_NAMESPACE:
+            # Deny by default: outside its own namespace an anonymous session sees only verbs
+            # whose producer opened them, and never review or publication verbs.
+            return open_to_anonymous(row["queue"], tags, row["effect_class"])
         if "status:quarantined" in tags and ctx.surface != row["producer_surface"]:
             return False
         if row["visibility_scope"] == "private":
@@ -589,6 +609,14 @@ class StoreBase:
             target_cohorts=json.loads(row["target_cohorts"]),
             tags=json.loads(row["tags"]),
             owner_key_id=row["owner_key_id"],
+        )
+
+    def _viewer_task_view(self, view: TaskView) -> TaskView:
+        """An anonymous viewer never sees which keys own, parked or deduplicated a verb."""
+        if not self.current_scope().anonymous:
+            return view
+        return view.model_copy(
+            update={"owner_key_id": None, "parked_by": None, "idempotency_key": None}
         )
 
     def _jitter(self) -> float:

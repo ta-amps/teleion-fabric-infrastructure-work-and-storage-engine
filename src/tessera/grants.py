@@ -19,6 +19,33 @@ SCOPES = frozenset(
 PROTECTED_SURFACES: tuple[str, ...] = ("shamash", "eranos", "herma", "kothar", "kinema")
 _SURFACE_SCOPE_RE = re.compile(rf"^surface:({SURFACE_ID_PATTERN[1:-1]})$")
 
+# Open verbs. A verb's producer may open it to tracked anonymous sessions by tagging it
+# `open:anonymous`. Such sessions may then claim, heartbeat and submit it in the shared namespace.
+# Review, approval and publication verbs stay closed whatever their tags say, and an open verb's
+# effect class stays within the anonymous grant. Nothing else in the shared namespace opens.
+OPEN_VERB_TAG = "open:anonymous"
+OPEN_VERB_NAMESPACE = "main"
+CLOSED_TO_ANONYMOUS: frozenset[str] = frozenset({"eq03", "frontier.review", "frontier.verify"})
+OPEN_VERB_EFFECTS: frozenset[str] = frozenset({"read", "write-internal"})
+
+
+# Requester keys. A self-serve sign-up mints a key that writes nouns only in its own `org.<id>`
+# namespace and files request verbs into one request queue of the shared namespace, readable by the
+# surfaces that answer requests. It reads its own request verbs there and nothing else.
+REQUEST_QUEUE = "eq01"
+REQUEST_KIND = "request"
+REQUEST_SURFACES: tuple[str, ...] = ("surface:eranos",)
+REQUESTER_STORE_PREFIX = "org."
+
+
+def open_to_anonymous(queue: str, tags: Sequence[str], effect_class: str) -> bool:
+    """True when a verb's producer opened it and it is not a review or publication verb."""
+    return (
+        OPEN_VERB_TAG in tags
+        and queue not in CLOSED_TO_ANONYMOUS
+        and effect_class in OPEN_VERB_EFFECTS
+    )
+
 
 def is_valid_scope(scope: str) -> bool:
     return (
@@ -56,6 +83,14 @@ class KeyGrant(_Model):
     def anonymous(self) -> bool:
         return self.principal_kind == "anonymous"
 
+    @property
+    def requester(self) -> bool:
+        return self.principal_kind == "requester"
+
+    def files_requests(self, namespace: str) -> bool:
+        """A requester outside its own namespace may only file and follow its request verbs."""
+        return self.requester and namespace == OPEN_VERB_NAMESPACE != self.namespace
+
     def allows_namespace(self, namespace: str) -> bool:
         scopes = [s for s in self.scopes if s.startswith("namespace:")]
         return self.is_admin or (
@@ -74,7 +109,7 @@ class KeyGrant(_Model):
 
     def bound_surface(self) -> str | None:
         """Surface authorization comes only from an explicit authenticated scope."""
-        if self.anonymous:
+        if self.anonymous or self.requester:
             return None
         for s in self.scopes:
             m = _SURFACE_SCOPE_RE.fullmatch(s)
@@ -84,6 +119,16 @@ class KeyGrant(_Model):
 
     def allows_queue(self, queue: str) -> bool:
         return any(fnmatchcase(queue, pattern) for pattern in self.queues)
+
+    def uses_open_verbs(self, namespace: str) -> bool:
+        """An anonymous session outside its own namespace may only touch open verbs there."""
+        return self.anonymous and namespace == OPEN_VERB_NAMESPACE != self.namespace
+
+    def may_use_queue(self, queue: str, namespace: str) -> bool:
+        """Queue authority; for open verbs the task's own tags decide which verbs are visible."""
+        if self.is_admin or self.allows_queue(queue):
+            return True
+        return self.uses_open_verbs(namespace) and queue not in CLOSED_TO_ANONYMOUS
 
     def kind_filter(self, requested: Sequence[str] | None) -> list[str] | None:
         """Kinds a claim may take: the request's, narrowed to the key's (None means any)."""

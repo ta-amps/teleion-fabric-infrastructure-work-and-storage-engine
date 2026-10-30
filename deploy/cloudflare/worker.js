@@ -1,6 +1,6 @@
 import { agentStartAsset, withAgentStart } from "./agent_start.js";
 import { storageQuotaFailure } from "./storage_quota.js";
-import { namespaceAllowed, publicPrincipal } from "./cloud_access.js";
+import { namespaceReachable, publicPrincipal } from "./cloud_access.js";
 import { accessDiscoveryRoute, accessRoute, accessDescription } from "./cloud_access_routes.js";
 // Tessera Cloud Worker: 24/7 native cloud execution on Cloudflare Durable Object SQLite + D1
 // (`STORAGE_MODE = "cloud"`, the default) with optional Fly.io origin reverse-proxy fallback
@@ -372,7 +372,7 @@ function resolveNamespace(url, request) {
 function discoveryResponse(path, method, env, publicUrl, repoUrl) {
   if (method !== "GET" && method !== "HEAD") return null;
   const anonymousEnabled = env.ANONYMOUS_ACCESS_ENABLED === "true";
-  const access = accessDiscoveryRoute(path, method, publicUrl, anonymousEnabled, jsonResp, htmlResp);
+  const access = accessDiscoveryRoute(path, method, publicUrl, anonymousEnabled, jsonResp, htmlResp, env.REQUESTER_SIGNUP_ENABLED === "true");
   if (access) return access;
   if (path === "/" || path === "/connect") {
     return htmlResp(renderConnectHtml(publicUrl, repoUrl, MCP_TOOLS));
@@ -472,7 +472,7 @@ const worker = {
     }
     const principal = requestBearer ? await primary.resolveKeyGrant(requestBearer) : null;
     const explicitNamespace = url.pathname.startsWith("/ns/") || request.headers.has("x-namespace") || request.headers.has("x-tessera-namespace");
-    if (principal?.principal_kind === "anonymous" && !explicitNamespace) namespace = principal.namespace;
+    if (["anonymous", "requester"].includes(principal?.principal_kind) && !explicitNamespace) namespace = principal.namespace;
     isPrimary = namespace === "main";
     const rawStub = coordBinding.get(coordBinding.idFromName(isPrimary ? "primary" : `ns:${namespace}`));
     const identity = await primary.requestIdentity(request.headers.get("cf-connecting-ip"), request.headers.get("user-agent"));
@@ -491,7 +491,7 @@ const worker = {
         const grant = await principalFor(secret);
         if (!grant) return { ok: false, status: 401, code: "unauthorized", detail: secret ? "the key is unknown, expired or revoked" : "a bearer key is required", extra: {} };
         const target = normalizeNamespace(args.namespace || "main");
-        if (!namespaceAllowed(grant, target)) {
+        if (!namespaceReachable(grant, target)) {
           const denied = { ok: false, status: 403, code: "scope_denied", detail: "this principal may not access this namespace", extra: {} };
           ctx.waitUntil(primary.countAccessEvent(publicPrincipal(grant), action, { namespace: target }, denied, meta));
           return denied;
@@ -510,7 +510,8 @@ const worker = {
       const access = await stub.rpcCall(bearer, "verifyKey", baseRpc);
       if (!access.ok) return rpcResponse(access);
     }
-    const accessResponse = await accessRoute(request, env, { path, url, bearer, primary, stub, baseRpc, meta, publicUrl, rpcResponse, jsonResp, htmlResp, readJsonBody });
+    const namespaceStub = ns => coordBinding.get(coordBinding.idFromName(ns === "main" ? "primary" : `ns:${ns}`));
+    const accessResponse = await accessRoute(request, env, { path, url, bearer, primary, stub, baseRpc, meta, publicUrl, rpcResponse, jsonResp, htmlResp, readJsonBody, namespaceStub });
     if (accessResponse) return accessResponse;
 
 

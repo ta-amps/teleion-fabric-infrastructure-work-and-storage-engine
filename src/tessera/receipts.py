@@ -56,9 +56,13 @@ def blob_hash(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def anonymous_labels(tags: list[str], labels: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Derive immutable provenance from persisted governance, never the submitted output."""
-    if "origin:anonymous" not in tags:
+def anonymous_labels(
+    tags: list[str], labels: dict[str, Any] | None = None, *, actor_anonymous: bool = False
+) -> dict[str, Any]:
+    """Derive immutable provenance from persisted governance or the authenticated actor, never
+    the submitted output. An anonymous session's work on an open verb is labeled like its demo
+    work, whoever produced the verb."""
+    if "origin:anonymous" not in tags and not actor_anonymous:
         return {}
     out: dict[str, Any] = {"origin": "anonymous", "demo": True, "untrusted": True}
     if labels and labels.get("agent_label"):

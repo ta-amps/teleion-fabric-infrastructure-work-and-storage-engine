@@ -11,7 +11,7 @@ from tessera.models import Event, TaskView
 
 
 class PrincipalView(BaseModel):
-    principal_kind: Literal["anonymous", "keyed", "service_binding"]
+    principal_kind: Literal["anonymous", "keyed", "service_binding", "requester"]
     principal_id: str
     session_id: str | None = None
     key_id: str | None = None
@@ -34,6 +34,11 @@ class AnonymousSession(PrincipalView):
     )
     persisted: bool
     retention_expires_at: float
+
+
+class RequesterKey(PrincipalView):
+    key: str = Field(description="Shown once; only its hash is stored. Send it as a bearer key.")
+    profile: dict[str, Any]
 
 
 class AccessEvent(BaseModel):

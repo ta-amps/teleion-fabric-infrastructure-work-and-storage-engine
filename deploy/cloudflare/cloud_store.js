@@ -1,5 +1,5 @@
 import { initExecutions, checkedReport, prepareExecution, validatePrepared, captureExecution, recallExecution, getExecution, listExecutions } from "./cloud_executions.js";
-import { initAccess, principalMetadata, requestIdentity, mintAnonymous, seedDemo, ensureDemoSeeded, enforceAccess, audit, auditMode, countAccess, ownAudit, publicActivity, publicPrincipal } from "./cloud_access.js";
+import { initAccess, principalMetadata, requestIdentity, mintAnonymous, mintRequester, seedDemo, ensureDemoSeeded, ensureRequesterSeeded, enforceAccess, chargeAccess, claimCaps, checkClaimCaps, chargeClaimCaps, audit, auditMode, countAccess, ownAudit, publicActivity, publicPrincipal, requesterVerbGovernance, CLOSED_TO_ANONYMOUS, filesRequests, openToAnonymous, usesOpenVerbs } from "./cloud_access.js";
 // TesseraCoordinator: single-writer SQLite Durable Object (`new_sqlite_classes`) implementing
 // 100% of Tessera Spec v0.2 (queues, 5 verbs, dependencies, waves, park/resume, model jobs,
 // counts, events, scoped keys, queryable CAS records, persistent named file buckets,
@@ -14,6 +14,7 @@ import { TESSERA_VERSION } from "./cloud_pages.js";
 import { canonicalJson, receiptHash, sha256Hex } from "./cloud_buckets.js";
 import {
   PROTECTED_SURFACES,
+  briefTags,
   canViewGoverned,
   canonicalCategoryTags,
   extractTags,
@@ -24,6 +25,7 @@ import {
   normalizeGovernance,
   normalizeNamespace,
   normalizeSurface,
+  normalizeTags,
   nounFilterSql,
   pollFeed,
   publishFeed,
@@ -35,6 +37,8 @@ import {
 export { canonicalJson, receiptHash };
 
 const NAME_RE = /^[a-z0-9][a-z0-9_.-]{0,63}$/;
+const MAX_IDEMPOTENCY_KEY = 256; // characters, as models.MAX_IDEMPOTENCY_KEY
+const INHERITED_GOVERNANCE = ["producer_surface", "visibility_scope", "allowed_surfaces", "target_cohorts", "owner_key_id"];
 const TASK_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/;
 const RECORD_KEY_RE = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$/;
 const OBJECT_KEY_RE = /^[A-Za-z0-9][A-Za-z0-9_./:-]{0,511}$/;
@@ -1438,10 +1442,27 @@ export class TesseraCoordinator extends DurableObject {
     };
   }
 
+  // Outside its own namespace an anonymous session reaches only verbs whose producer opened them;
+  // task visibility and enforceAccess decide which ones (same rule as KeyGrant.may_use_queue).
+  _mayUseQueue(grant, queue) {
+    return grant.is_admin || grant.allowsQueue(queue) || (usesOpenVerbs(grant, this.namespace) && !CLOSED_TO_ANONYMOUS.has(queue));
+  }
+
   _requireQueue(grant, queue) {
-    if (!(grant.is_admin || grant.allowsQueue(queue))) {
+    if (!this._mayUseQueue(grant, queue)) {
       throw forbid(`this key may not use queue '${queue}'`);
     }
+  }
+
+  // An anonymous viewer never sees which keys own, parked or deduplicated a verb.
+  _viewerTaskView(grant, view) {
+    return grant.principal_kind === "anonymous" ? { ...view, owner_key_id: null, parked_by: null, idempotency_key: null } : view;
+  }
+
+  // An open verb carries its whole input in its brief; its anonymous claimant sees the state of
+  // related tasks, never their outputs or the keys that completed them.
+  _leaseResults(grant, results) {
+    return usesOpenVerbs(grant, this.namespace) ? results.map(r => ({ ...r, output: null, completed_by_key: null })) : results;
   }
 
   _requireEffect(grant, effectClass) {
@@ -1502,6 +1523,10 @@ export class TesseraCoordinator extends DurableObject {
   _taskVisible(row, grant, viewerCtx) {
     if (grant.is_admin) return true;
     const tags = parseJsonSafe(row.tags, []);
+    // Deny by default: outside its own namespace an anonymous session sees only opened verbs,
+    // and a requester sees only the request verbs it filed.
+    if (usesOpenVerbs(grant, this.namespace)) return openToAnonymous(row.queue, tags, row.effect_class);
+    if (filesRequests(grant, this.namespace)) return row.owner_key_id === grant.key_id;
     if (tags.includes("status:quarantined") && viewerCtx.surface !== row.producer_surface) return false;
     if (row.visibility_scope === "private") return row.owner_key_id === grant.key_id;
     if (row.visibility_scope === "surface_only") return Boolean(viewerCtx.surface && viewerCtx.surface === row.producer_surface);
@@ -1850,7 +1875,29 @@ export class TesseraCoordinator extends DurableObject {
     try { return { ok: true, status: 201, data: await mintAnonymous(this, body, meta) }; }
     catch (e) { return this._errOut(e); }
   }
+  async openRequesterSession(body, meta) {
+    try { return { ok: true, status: 201, data: await mintRequester(this, body, meta) }; }
+    catch (e) { return this._errOut(e); }
+  }
   async seedDemo(grant, purgeAt) { return seedDemo(this, grant, purgeAt); }
+  // Per-key limits live in the primary object, so a key's namespaces share one allowance.
+  _primary() { return this.env.COORDINATOR.get(this.env.COORDINATOR.idFromName("primary")); }
+  async _chargeAccess(grant, charge) {
+    const who = { key_id: grant.key_id, principal_kind: grant.principal_kind, namespace: grant.namespace };
+    if (this.isPrimary || !this.env.COORDINATOR) return chargeAccess(this, who, charge);
+    const out = await this._primary().chargeAccessFor(who, charge);
+    if (!out.ok) throw Object.assign(new Error(out.detail), { status: out.status, code: out.code, detail: out.detail, extra: out.extra || {} });
+  }
+  async requesterProfile(principalId) {
+    const row = this._one("SELECT profile FROM requester_profiles WHERE principal_id=?", principalId);
+    return row ? JSON.parse(row.profile) : null;
+  }
+  async chargeAccessFor(who, charge) {
+    try { chargeAccess(this, who, charge); return { ok: true }; } catch (e) { return this._errOut(e); }
+  }
+  async chargeClaimFor(who) {
+    try { this.ctx.storage.transactionSync(() => chargeClaimCaps(this, [[who.key_id, 0, "", null]])); return { ok: true }; } catch (e) { return this._errOut(e); }
+  }
   publicActivity() { return publicActivity(this); }
   recordAccessEvent(grant, action, args, out, meta) { audit(this, grant, action, args, out, meta); }
   countAccessEvent(grant, action, args, out, meta) { countAccess(this, grant, action, args, out, meta); }
@@ -1869,8 +1916,11 @@ export class TesseraCoordinator extends DurableObject {
     this.isPrimary = ns === "main";
     try {
       grant = await this._grantFromSecret(secret);
-      args = enforceAccess(this, grant, action, { ...args, namespace: ns });
+      const [checked, charge] = enforceAccess(this, grant, action, { ...args, namespace: ns });
+      args = checked;
+      if (charge) await this._chargeAccess(grant, charge);
       await ensureDemoSeeded(this, grant, ns);
+      await ensureRequesterSeeded(this, grant, ns);
       this.namespace = ns;
       this.isPrimary = ns === "main";
       if (action === "claim") {
@@ -1882,7 +1932,7 @@ export class TesseraCoordinator extends DurableObject {
       else if (action === "listVerbs") {
         const rows=this._all("SELECT * FROM tasks WHERE namespace=? AND (?='' OR queue=?) AND (?='' OR state=?) ORDER BY created_at,id LIMIT 1000",ns,args.queue||"",args.queue||"",args.status||"ready",args.status||"ready");
         const view=this._viewerCtx(grant,args.surfaceHeader);
-        out={ok:true,status:200,data:{verbs:rows.filter(r=>this._taskVisible(r,grant,view)&&grant.queues.some(q=>globMatch(r.queue,q))).slice(0,Math.max(1,Math.min(Number(args.limit)||50,100))).map(r=>this._taskView(r.id))}};
+        out={ok:true,status:200,data:{verbs:rows.filter(r=>this._taskVisible(r,grant,view)&&this._mayUseQueue(grant,r.queue)).slice(0,Math.max(1,Math.min(Number(args.limit)||50,100))).map(r=>this._viewerTaskView(grant,this._taskView(r.id)))}};
       }
       else if (action === "claimEvents") {
         const row = this._taskRow(String(args.task_id));
@@ -1932,7 +1982,7 @@ export class TesseraCoordinator extends DurableObject {
       this.isPrimary = Boolean(args?.isPrimary ?? (this.namespace === "main"));
       const grant = await this._grantFromSecret(secret);
       const now = Date.now() / 1000;
-      if (!this.namespace.startsWith("demo.")) this._ensureNamespaceSeeded(this.namespace, now);
+      if (!this.namespace.startsWith("demo.") && !this.namespace.startsWith("org.")) this._ensureNamespaceSeeded(this.namespace, now);
       const surfaceHeader = args?.surfaceHeader || args?.header_surface_id || "";
       const viewerCtx = this._viewerCtx(grant, surfaceHeader);
       const defaultGovSurface = viewerCtx.surface || "surface:tessera";
@@ -2123,6 +2173,7 @@ export class TesseraCoordinator extends DurableObject {
             args.idempotency_key != null && String(args.idempotency_key).trim()
               ? String(args.idempotency_key).trim()
               : null;
+          if (cleanIdem != null && cleanIdem.length > MAX_IDEMPOTENCY_KEY) throw badReq(`idempotency_key is over ${MAX_IDEMPOTENCY_KEY} characters`);
 
           this._requireQueue(grant, queue);
           this._requireEffect(grant, effectClass);
@@ -2136,10 +2187,11 @@ export class TesseraCoordinator extends DurableObject {
             {
               defaultSurface: defaultGovSurface,
               ownerKeyId: grant.key_id,
-              extraTags: extractTags(args.brief),
+              extraTags: briefTags(args.brief),
             },
             badReq
           );
+          if (filesRequests(grant, this.namespace)) Object.assign(gov, requesterVerbGovernance(grant));
 
           let outId = args.task_id ? String(args.task_id) : newId("t");
           this.ctx.storage.transactionSync(() => {
@@ -2204,7 +2256,9 @@ export class TesseraCoordinator extends DurableObject {
         case "task": {
           const view = this._taskView(String(args.task_id));
           this._requireQueue(grant, view.queue);
-          if (
+          if (usesOpenVerbs(grant, this.namespace) || filesRequests(grant, this.namespace)) {
+            if (!this._taskVisible(this._taskRow(String(args.task_id)), grant, viewerCtx)) throw notFound(`task '${view.task_id}' does not exist`);
+          } else if (
             !canViewGoverned({
               visibility_scope: view.visibility_scope,
               producer_surface: view.producer_surface,
@@ -2219,17 +2273,20 @@ export class TesseraCoordinator extends DurableObject {
           ) {
             throw notFound(`task '${view.task_id}' does not exist`);
           }
-          return { ok: true, status: 200, data: view };
+          return { ok: true, status: 200, data: this._viewerTaskView(grant, view) };
         }
 
         case "results": {
           const view = this._taskView(String(args.task_id));
           this._requireQueue(grant, view.queue);
           if (!this._taskVisible(this._taskRow(String(args.task_id)), grant, viewerCtx)) throw notFound("task does not exist");
+          // An anonymous session in the shared namespace sees only its own submissions.
+          const ownOnly = usesOpenVerbs(grant, this.namespace);
           const results = this._all(
-            "SELECT * FROM results WHERE namespace = ? AND task_id = ? ORDER BY created_at",
+            `SELECT * FROM results WHERE namespace = ? AND task_id = ?${ownOnly ? " AND completed_by_key = ?" : ""} ORDER BY created_at`,
             this.namespace,
-            view.task_id
+            view.task_id,
+            ...(ownOnly ? [grant.key_id] : [])
           ).map((r) => ({
             task_id: r.task_id,
             fencing_token: Number(r.fencing_token),
@@ -2261,12 +2318,17 @@ export class TesseraCoordinator extends DurableObject {
           const kinds = grant.kindFilter(args.kinds || null);
           let lease = null;
 
+          // An anonymous session's claim limits are counted in the primary object: there in this
+          // transaction, from a demo namespace once its lease is granted.
+          const anonymous = grant.principal_kind === "anonymous";
+          const caps = anonymous && this.isPrimary ? claimCaps(grant, this.namespace, args.access_meta?.ip_hash, args.access_meta?.ip_window ?? null) : null;
           if (effects.length > 0 && !(Array.isArray(kinds) && kinds.length === 0)) {
             this.ctx.storage.transactionSync(() => {
               const now = Date.now() / 1000;
               const config = this._queueConfig(queue);
               this._reap(now, queue);
-              if (grant.principal_kind === "anonymous" && this._one("SELECT COUNT(*) n FROM leases WHERE namespace=? AND key_id=? AND expires_at>? AND hard_expires_at>?", this.namespace, grant.key_id, now, now).n >= 1) throw rateLim("one concurrent demo claim allowed", 30);
+              if (anonymous && this._one("SELECT COUNT(*) n FROM leases WHERE namespace=? AND key_id=? AND expires_at>? AND hard_expires_at>?", this.namespace, grant.key_id, now, now).n >= 1) throw rateLim("one concurrent demo claim allowed", 30);
+              if (caps) checkClaimCaps(this, caps, now);
               let sql =
                 "SELECT * FROM tasks WHERE namespace = ? AND queue = ? AND state = 'ready' AND not_before <= ?";
               const params = [this.namespace, queue, now];
@@ -2307,6 +2369,7 @@ export class TesseraCoordinator extends DurableObject {
                 hard
               );
               this._moveCount(queue, "ready", "leased");
+              if (caps) chargeClaimCaps(this, caps, now);
               this._event("claimed", now, {
                 task_id: row.id,
                 queue,
@@ -2328,12 +2391,13 @@ export class TesseraCoordinator extends DurableObject {
                 expires_at: expires,
                 hard_expires_at: hard,
                 heartbeat_seconds: config.heartbeat_seconds,
-                children: this._children(row.id),
-                dependencies: this._dependencies(row.id),
+                children: this._leaseResults(grant, this._children(row.id)),
+                dependencies: this._leaseResults(grant, this._dependencies(row.id)),
                 inputs: this._inputs(row.id),
               };
             });
             if (lease) await this._scheduleNextAlarm();
+            if (lease && anonymous && !caps && this.env.COORDINATOR) await this._primary().chargeClaimFor({ key_id: grant.key_id });
           }
           return { ok: true, status: lease ? 200 : 204, data: { lease, beat } };
         }
@@ -2398,8 +2462,8 @@ export class TesseraCoordinator extends DurableObject {
               expires_at: expires,
               hard_expires_at: Number(row.hard_expires_at),
               heartbeat_seconds: config.heartbeat_seconds,
-              children: this._children(taskId),
-              dependencies: this._dependencies(taskId),
+              children: this._leaseResults(grant, this._children(taskId)),
+              dependencies: this._leaseResults(grant, this._dependencies(taskId)),
               inputs: this._inputs(taskId),
             };
           });
@@ -2423,6 +2487,7 @@ export class TesseraCoordinator extends DurableObject {
           const okFlag = args.ok === undefined ? true : args.ok;
           const errorText = args.error == null ? null : String(args.error);
           if (!idem) throw badReq("the Idempotency-Key header is required");
+          if (idem.length > MAX_IDEMPOTENCY_KEY) throw badReq(`idempotency_key is over ${MAX_IDEMPOTENCY_KEY} characters`);
           const outputVal = args.output === undefined ? null : args.output;
           const outputText = canonicalJson(outputVal);
           if (new TextEncoder().encode(outputText).byteLength > MAX_OUTPUT_BYTES) {
@@ -2553,7 +2618,11 @@ export class TesseraCoordinator extends DurableObject {
           }
           this._requireHolder(grant, taskId);
           const parentView = this._taskRow(taskId);
-          for (const child of children) {
+          for (const [index, child] of children.entries()) {
+            // Children inherit their parent's owner, surface and visibility (same rule as
+            // src/tessera/_tasks.py, whose ChildSpec has no such fields); only tags may differ.
+            const own = INHERITED_GOVERNANCE.filter((field) => child[field] != null);
+            if (own.length) throw forbid(`child ${index}: split children inherit ${own.join(", ")} from their parent`);
             this._requireQueue(grant, child.queue || parentView.queue);
             if (
               child.effect_class &&
@@ -2611,17 +2680,15 @@ export class TesseraCoordinator extends DurableObject {
               const cid = newId("t");
               const prio = child.priority == null ? Number(task.priority) : Number(child.priority);
               const deps = (child.after || []).map((j) => ids[j]);
-              const frontierParent = task.producer_surface === "surface:frontier";
-              if (frontierParent && task.visibility_scope === "private" && child.visibility_scope && child.visibility_scope !== "private") throw forbid("private Frontier children cannot widen visibility");
-              const childGov = normalizeGovernance(
-                frontierParent ? { visibility_scope: task.visibility_scope, allowed_surfaces: JSON.parse(task.allowed_surfaces), target_cohorts: JSON.parse(task.target_cohorts), tags: JSON.parse(task.tags), ...child } : child,
-                {
-                  defaultSurface: task.producer_surface || defaultGovSurface,
-                  ownerKeyId: grant.key_id,
-                  extraTags: extractTags(child.brief),
-                },
-                badReq
-              );
+              const childTags = normalizeTags(child.tags, badReq);
+              const childGov = {
+                producer_surface: task.producer_surface,
+                visibility_scope: task.visibility_scope,
+                allowed_surfaces: JSON.parse(task.allowed_surfaces),
+                target_cohorts: JSON.parse(task.target_cohorts),
+                tags: childTags.length ? childTags : JSON.parse(task.tags),
+                owner_key_id: task.owner_key_id,
+              };
               this._insertTask(
                 cid,
                 q,

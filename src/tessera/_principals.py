@@ -12,8 +12,8 @@ import secrets
 from typing import TYPE_CHECKING, Any, cast
 
 from tessera._access_schema import AccessSchemaOps
-from tessera.errors import InvalidRequest, RateLimited, ScopeDenied
-from tessera.grants import KeyGrant
+from tessera.errors import InvalidRequest, NotFound, RateLimited, ScopeDenied
+from tessera.grants import CLOSED_TO_ANONYMOUS, OPEN_VERB_NAMESPACE, KeyGrant
 from tessera.models import QueueConfig, RecordWrite, TaskSpec
 
 if TYPE_CHECKING:
@@ -28,8 +28,41 @@ DEMO_QUOTAS = {
     "requests_per_hour": 300,
     "request_bytes": 65536,
     "sessions_per_ip_hour": 10,
+    "open_claims_per_hour": 5,
+    "open_claims_per_ip_hour": 10,
 }
 ANON_LABELS: dict[str, Any] = {"origin": "anonymous", "demo": True, "untrusted": True}
+# A limited deterministic screen for common personal and payment data (same rules as the Worker):
+# email addresses outside the example domains, identity and payment card numbers, phone numbers,
+# street addresses and IBANs. It is not a claim that all personal data can be detected.
+_PERSONAL_ANY_CASE = re.compile(r"@(?!example\.(?:com|org|net)\b)[a-z0-9.-]+\.[a-z]{2,}", re.I)
+_PERSONAL_EXACT = re.compile(
+    r"\b\d{3}-\d{2}-\d{4}\b"
+    r"|\b(?:\d[ -]?){13,19}\b"
+    r"|(?<![\w+])(?:\+\d{1,3}[ .-]?)?(?:\(\d{3}\)[ .-]?|\d{3}[ .-])\d{3}[ .-]\d{4}(?![\w-])"
+    r"|(?<![\w+])\+\d{1,3}(?:[ .-]?\d{2,4}){2,5}(?![\w-])"
+    r"|\b\d{1,5}\s+(?:[A-Z][a-z]+\s+){1,3}"
+    r"(?:Street|St|Avenue|Ave|Road|Rd|Lane|Ln|Drive|Dr|Boulevard|Blvd|Court|Ct|Way|Place|Pl)\b"
+    r"|\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,4})?\b"
+)
+# Every field an action stores is screened and counted, ids, keys and tags included.
+STORED_FIELDS: dict[str, tuple[str, ...]] = {
+    "putRecords": ("writes", "store", "store_name", "key", "value", "tags"),
+    "enqueue": ("brief", "task_id", "idempotency_key", "tags"),
+    "submit": ("output", "execution_report", "error", "idempotency_key"),
+}
+
+
+def has_personal_data(text: str) -> bool:
+    return bool(_PERSONAL_ANY_CASE.search(text) or _PERSONAL_EXACT.search(text))
+
+
+def stored_payload(action: str, args: dict[str, Any]) -> str:
+    """The fields an action would store, as the JSON text that is screened and counted."""
+    stored = {name: args.get(name) for name in STORED_FIELDS.get(action, ()) if name in args}
+    return json.dumps(stored, ensure_ascii=False, separators=(",", ":"))
+
+
 # Successful actions keep one audit row each, reads included. Denied, failed and no-op
 # requests and internal pre-checks are counted per minute instead (same rule as the Worker).
 PRECHECK_ACTIONS = frozenset(
@@ -121,6 +154,13 @@ ANON_ACTIONS = {
     "my_audit",
 }
 WRITE_ACTIONS = {"putRecords", "submit", "enqueue"}
+# Outside its own namespace an anonymous session may only work an open verb and read its own work:
+# the task it claimed and its own submissions to it. Claim events would show other attempts, so
+# they stay closed.
+OPEN_VERB_ACTIONS = frozenset(
+    {"claim", "heartbeat", "submit", "task", "results", "listVerbs", "me", "my_audit"}
+)
+OWN_WORK_ACTIONS = frozenset({"task", "results"})
 
 
 class DemoPayloadTooLarge(InvalidRequest):
@@ -143,14 +183,24 @@ def public_principal(grant: KeyGrant) -> dict[str, Any]:
         "effect_classes": grant.effect_classes,
         "labels": grant.labels,
         "expires_at": grant.expires_at,
-        "quotas": DEMO_QUOTAS if grant.anonymous else None,
-        "quota_reason": None
+        "quotas": DEMO_QUOTAS
         if grant.anonymous
+        else _requester_quotas()
+        if grant.requester
+        else None,
+        "quota_reason": None
+        if grant.anonymous or grant.requester
         else "Operator-configured queue grants and service request limits apply.",
     }
 
 
 GLOBAL_SESSIONS_PER_HOUR = 1000
+
+
+def _requester_quotas() -> dict[str, int]:
+    from tessera._requesters import REQUESTER_QUOTAS
+
+    return REQUESTER_QUOTAS
 
 
 def ip_group(ip: str) -> str:
@@ -167,6 +217,52 @@ def ip_group(ip: str) -> str:
     return str(addr)
 
 
+ClaimCap = tuple[str, int, str, int | None]
+
+
+def claim_caps(
+    key_id: str, namespace: str, ip_hash: str | None, ip_window: int | None = None
+) -> list[ClaimCap]:
+    """An anonymous session's hourly claim limits: subject, ceiling, refusal and the hour it
+    counts in (None: the claim's own; the IP hash's: the hour the hash was computed). Same rule as
+    the Worker. They count granted leases only; an empty poll costs a request, never a claim."""
+    caps: list[ClaimCap] = [(key_id, DEMO_QUOTAS["claims_per_hour"], "demo quota exceeded", None)]
+    if namespace == OPEN_VERB_NAMESPACE:
+        # Open verbs are shared work: also capped per session and per IP hash.
+        refusal = "open verb claim quota exceeded"
+        caps += [
+            (f"open:{key_id}", DEMO_QUOTAS["open_claims_per_hour"], refusal, None),
+            (
+                f"open-ip:{ip_hash or 'unknown'}",
+                DEMO_QUOTAS["open_claims_per_ip_hour"],
+                refusal,
+                ip_window,
+            ),
+        ]
+    return caps
+
+
+def check_claim_caps(c: Any, caps: list[ClaimCap], now: float) -> None:
+    """Inside the claim transaction, before a lease is chosen."""
+    for subject, ceiling, refusal, hour in caps:
+        row = c.execute(
+            "SELECT claims FROM access_limits WHERE subject=? AND window=?",
+            (subject, int(now // 3600) if hour is None else hour),
+        ).fetchone()
+        if row is not None and row[0] >= ceiling:
+            raise RateLimited(refusal, 3600 - now % 3600)
+
+
+def charge_claim_caps(c: Any, caps: list[ClaimCap], now: float) -> None:
+    """Inside the claim transaction, once a lease is granted."""
+    for subject, _, _, hour in caps:
+        c.execute(
+            "INSERT INTO access_limits(subject,window,claims) VALUES (?,?,1)"
+            " ON CONFLICT(subject,window) DO UPDATE SET claims=claims+1",
+            (subject, int(now // 3600) if hour is None else hour),
+        )
+
+
 def mint_allowance(ceiling: int, seconds_into_hour: float, used: int) -> tuple[int, float]:
     """Sessions allowed so far this hour and, when exhausted, seconds until the next one.
 
@@ -181,11 +277,15 @@ def mint_allowance(ceiling: int, seconds_into_hour: float, used: int) -> tuple[i
 
 
 class PrincipalOps(AccessSchemaOps):
-    def request_identity(self, ip: str, ua: str) -> dict[str, str]:
+    def request_identity(self, ip: str, ua: str) -> dict[str, Any]:
+        """Daily-rotated HMACs of the caller's address group and agent, and `ip_window`, the hour
+        they were computed in. Per-IP limits count in that hour, never a later one, so a request
+        that crosses midnight cannot charge the new day's hash to the old day's allowance."""
         with self._read() as c:
             salt = c.execute("SELECT value FROM meta WHERE key='access_hash_salt'").fetchone()[0]
-        day = int(self.clock.now() // 86400)
-        return {
+        now = self.clock.now()
+        day = int(now // 86400)
+        hashes: dict[str, Any] = {
             name: hmac.new(
                 salt.encode(), f"{day}:{kind}:{value}".encode(), hashlib.sha256
             ).hexdigest()
@@ -194,6 +294,7 @@ class PrincipalOps(AccessSchemaOps):
                 ("ua_hash", "ua", ua[:512]),
             )
         }
+        return {**hashes, "ip_window": int(now // 3600)}
 
     def principal_metadata(self, grant: KeyGrant) -> KeyGrant:
         with self._read() as c:
@@ -215,7 +316,7 @@ class PrincipalOps(AccessSchemaOps):
         return grant.model_copy(update=meta)
 
     def open_anonymous_session(
-        self, agent_label: str = "", *, ip_hash: str = "unknown"
+        self, agent_label: str = "", *, ip_hash: str = "unknown", ip_window: int | None = None
     ) -> dict[str, Any]:
         if len(agent_label) > 64:
             raise InvalidRequest("agent_label must be at most 64 characters")
@@ -223,17 +324,17 @@ class PrincipalOps(AccessSchemaOps):
         now = self.clock.now()
         window = int(now // 3600)
         with self._tx() as c:
-            for subject, maximum, paced in (
-                (f"mint:{ip_hash}", 10, False),
-                ("mint:global", GLOBAL_SESSIONS_PER_HOUR, True),
+            for subject, maximum, paced, hour in (
+                (f"mint:{ip_hash}", 10, False, window if ip_window is None else ip_window),
+                ("mint:global", GLOBAL_SESSIONS_PER_HOUR, True, window),
             ):
                 c.execute(
                     "INSERT OR IGNORE INTO access_limits(subject,window) VALUES (?,?)",
-                    (subject, window),
+                    (subject, hour),
                 )
                 row = c.execute(
                     "SELECT requests FROM access_limits WHERE subject=? AND window=?",
-                    (subject, window),
+                    (subject, hour),
                 ).fetchone()
                 allowed, wait = (
                     mint_allowance(maximum, now % 3600, row[0])
@@ -244,7 +345,7 @@ class PrincipalOps(AccessSchemaOps):
                     raise RateLimited("anonymous session mint quota exceeded", wait)
                 c.execute(
                     "UPDATE access_limits SET requests=requests+1 WHERE subject=? AND window=?",
-                    (subject, window),
+                    (subject, hour),
                 )
         store = cast("Store", self)
         principal_id = "a_" + secrets.token_hex(16)
@@ -317,42 +418,44 @@ class PrincipalOps(AccessSchemaOps):
         }
 
     def enforce_principal(
-        self, grant: KeyGrant, action: str, args: dict[str, Any], namespace: str
+        self,
+        grant: KeyGrant,
+        action: str,
+        args: dict[str, Any],
+        namespace: str,
+        *,
+        ip_hash: str | None = None,
+        ip_window: int | None = None,
     ) -> None:
-        if not grant.allows_namespace(namespace):
+        open_verbs = grant.uses_open_verbs(namespace)
+        reachable = open_verbs or grant.files_requests(namespace)
+        if not (reachable or grant.allows_namespace(namespace)):
             raise ScopeDenied("this principal may not access this namespace")
         fine = any(":" in s and not s.startswith(("surface:", "namespace:")) for s in grant.scopes)
         required = SCOPES.get(action, "nouns:read" if action in READ_ACTIONS else None)
         if not grant.is_admin and fine and required and required not in grant.scopes:
             raise ScopeDenied(f"missing {required} scope")
+        if grant.requester:
+            cast("Store", self).enforce_requester(grant, action, args, namespace)
+            return
         if not grant.anonymous:
             return
-        if action not in ANON_ACTIONS:
+        if open_verbs:
+            self._enforce_open_verb(grant, action, args, namespace)
+        elif action not in ANON_ACTIONS:
             raise ScopeDenied("anonymous sessions may only use isolated demo nouns and verbs")
-        for name in ("queue", "store", "store_name"):
-            if args.get(name) and not str(args[name]).startswith("demo."):
-                raise ScopeDenied("anonymous sessions cannot access production nouns or verbs")
+        else:
+            for name in ("queue", "store", "store_name"):
+                if args.get(name) and not str(args[name]).startswith("demo."):
+                    raise ScopeDenied("anonymous sessions cannot access production nouns or verbs")
         writes = args.get("writes", [])
         if not isinstance(writes, list):
             raise InvalidRequest("writes must be a list")
         for write in writes:
             if not isinstance(write, dict) or not str(write.get("store", "")).startswith("demo."):
                 raise ScopeDenied("demo store required")
-        payload = (
-            args.get("writes", args.get("value"))
-            if action == "putRecords"
-            else {"output": args.get("output"), "execution_report": args.get("execution_report")}
-            if action == "submit"
-            else args.get("brief")
-            if action == "enqueue"
-            else {}
-        )
-        encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-        if action in WRITE_ACTIONS and re.search(
-            r"@(?!example\.(?:com|org|net)\b)[a-z0-9.-]+\.[a-z]{2,}|\b\d{3}-\d{2}-\d{4}\b|\b(?:\d[ -]?){13,19}\b",
-            encoded,
-            re.I,
-        ):
+        encoded = stored_payload(action, args)
+        if action in WRITE_ACTIONS and has_personal_data(encoded):
             raise InvalidRequest(
                 "demo payloads must not contain personal or payment data; use example.com"
             )
@@ -372,21 +475,40 @@ class PrincipalOps(AccessSchemaOps):
             total = c.execute(
                 "SELECT COALESCE(SUM(bytes),0) FROM access_limits WHERE subject=?", (grant.key_id,)
             ).fetchone()[0]
-            if (
-                row["requests"] >= DEMO_QUOTAS["requests_per_hour"]
-                or (action == "claim" and row["claims"] >= DEMO_QUOTAS["claims_per_hour"])
-                or (action in WRITE_ACTIONS and total + size > DEMO_QUOTAS["storage_bytes"])
+            if row["requests"] >= DEMO_QUOTAS["requests_per_hour"] or (
+                action in WRITE_ACTIONS and total + size > DEMO_QUOTAS["storage_bytes"]
             ):
                 raise RateLimited("demo quota exceeded", 3600 - now % 3600)
+            if action == "claim":
+                # Claims are charged by the claim itself, only when it grants a lease.
+                check_claim_caps(c, claim_caps(grant.key_id, namespace, ip_hash, ip_window), now)
             c.execute(
-                "UPDATE access_limits SET requests=requests+1,claims=claims+?,bytes=bytes+? WHERE subject=? AND window=?",
-                (
-                    int(action == "claim"),
-                    size if action in WRITE_ACTIONS else 0,
-                    grant.key_id,
-                    window,
-                ),
+                "UPDATE access_limits SET requests=requests+1,bytes=bytes+? WHERE subject=? AND window=?",
+                (size if action in WRITE_ACTIONS else 0, grant.key_id, window),
             )
+
+    def _enforce_open_verb(
+        self, grant: KeyGrant, action: str, args: dict[str, Any], namespace: str
+    ) -> None:
+        """Deny by default: claim, heartbeat and submit open verbs, and read only one's own work."""
+        if action not in OPEN_VERB_ACTIONS:
+            raise ScopeDenied(
+                "outside its own namespace an anonymous session may only claim, heartbeat and"
+                " submit open verbs"
+            )
+        if args.get("queue") and str(args["queue"]) in CLOSED_TO_ANONYMOUS:
+            raise ScopeDenied("review, approval and publication verbs are closed to anonymous")
+        if action in OWN_WORK_ACTIONS:
+            task_id = str(args.get("task_id") or "")
+            with self._read() as c:
+                own = c.execute(
+                    "SELECT 1 FROM leases WHERE namespace=? AND task_id=? AND key_id=?"
+                    " UNION ALL SELECT 1 FROM results"
+                    " WHERE namespace=? AND task_id=? AND completed_by_key=? LIMIT 1",
+                    (namespace, task_id, grant.key_id, namespace, task_id, grant.key_id),
+                ).fetchone()
+            if own is None:
+                raise NotFound("task does not exist")
 
     def audit_access(
         self,

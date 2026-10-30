@@ -434,7 +434,8 @@
             "enum": [
               "anonymous",
               "keyed",
-              "service_binding"
+              "service_binding",
+              "requester"
             ],
             "title": "Principal Kind",
             "type": "string"
@@ -1340,7 +1341,8 @@
             "enum": [
               "anonymous",
               "keyed",
-              "service_binding"
+              "service_binding",
+              "requester"
             ],
             "title": "Principal Kind",
             "type": "string"

@@ -239,7 +239,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [scripts/dev_stack.sh](scripts/dev_stack.sh) | Run Tessera on this machine behind the real Cloudflare edge code (wrangler dev), with the origin |
 | [scripts/suite_http_local.py](scripts/suite_http_local.py) | Run the whole conformance suite over HTTP against a real tessera serve process on this machine. |
 
-## src/ (63)
+## src/ (64)
 
 | File | What it is |
 |---|---|
@@ -264,6 +264,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [src/tessera/_observe.py](src/tessera/_observe.py) | Read-only views: tasks, results, the counts record, health, the event log, and Board v2 snapshots (SPEC §5.7… |
 | [src/tessera/_principals.py](src/tessera/_principals.py) | Durable principal metadata, bounded anonymous quotas and content-free access audit. |
 | [src/tessera/_publication_guard.py](src/tessera/_publication_guard.py) | Verify publication against immutable completed queue evidence inside the write transaction. |
+| [src/tessera/_requesters.py](src/tessera/_requesters.py) | Requester keys: self-serve sign-up for organizations that ask for work, with no operator step. |
 | [src/tessera/_service_buckets.py](src/tessera/_service_buckets.py) | HTTP routes for queryable noun stores, persistent named file buckets, and remote key management. |
 | [src/tessera/_service_executions.py](src/tessera/_service_executions.py) | Execution nouns retain task permissions across HTTP and MCP. |
 | [src/tessera/_service_intelligence.py](src/tessera/_service_intelligence.py) | HTTP routes for progressive L0 scent search, HTTP 206 byte-range slicing, live delta feeds, and 0-call dual-r… |
@@ -307,7 +308,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [src/tessera/store.py](src/tessera/store.py) | The in-process Tessera store: the reference implementation of SPEC.md. |
 | [src/tessera/testing.py](src/tessera/testing.py) | Factories the conformance suite loads by name (TESSERABACKENDFACTORY="module:function"). |
 
-## tests/ (58)
+## tests/ (68)
 
 | File | What it is |
 |---|---|
@@ -323,9 +324,11 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [tests/edge_execution_history.mjs](tests/edge_execution_history.mjs) |  |
 | [tests/edge_execution_mcp.mjs](tests/edge_execution_mcp.mjs) | MCP adapter fixture only: authorization/storage are covered by the real runtime suite. |
 | [tests/edge_frontier_publication.mjs](tests/edge_frontier_publication.mjs) |  |
+| [tests/fixtures/access_parity.json](tests/fixtures/access_parity.json) | JSON object: about, steps, queues, cases |
 | [tests/fixtures/execution_learning_vectors.json](tests/fixtures/execution_learning_vectors.json) | JSON object: fingerprints, learning_invalid, learning_valid, observations, profile, reports |
 | [tests/fixtures/execution_matching_vectors.json](tests/fixtures/execution_matching_vectors.json) | JSON object: profile, valid, invalid |
 | [tests/test_access_modes.py](tests/test_access_modes.py) | Full anonymous/keyed agent loops, durable limits and adversarial isolation. |
+| [tests/test_access_parity.py](tests/test_access_parity.py) | The access cases in tests/fixtures/accessparity.json, run against the Python service. |
 | [tests/test_agent_tool_listings.py](tests/test_agent_tool_listings.py) | Every agent-facing tool listing on the Python service matches what MCP tools/list serves. |
 | [tests/test_blob_first_uploader.py](tests/test_blob_first_uploader.py) | Raw blob governance is one row per namespace and digest, written by the first uploader. |
 | [tests/test_board.py](tests/test_board.py) | Console Board v2 (/board, L19), UI chrome, and agent discovery routes. |
@@ -333,6 +336,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [tests/test_category_queries.py](tests/test_category_queries.py) | Category projections agree before bounded scans, without granting visibility. |
 | [tests/test_check_public.py](tests/test_check_public.py) | checkpublic finds secrets and private names, masks them, and honours the allow marker. |
 | [tests/test_claim_admission.py](tests/test_claim_admission.py) | Real async cancellation, fairness, resource bounds and HTTP default admission. |
+| [tests/test_client_addresses.py](tests/test_client_addresses.py) | Per-IP limits key on an address the client cannot choose (finding 6), counted in the hour its daily-rotated h… |
 | [tests/test_continuous_tuning.py](tests/test_continuous_tuning.py) | Continuous tuning example: real tool definitions, held-out splits, contamination checks, strict metrics, mini… |
 | [tests/test_core_boundaries.py](tests/test_core_boundaries.py) | Privacy over version history, strict outcomes, deadline boundaries and category plans. |
 | [tests/test_dead_letter_privacy.py](tests/test_dead_letter_privacy.py) | Failure diagnostics remain private even when the source verb was shared. |
@@ -352,21 +356,28 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [tests/test_intelligence.py](tests/test_intelligence.py) | Tests for progressive L0 scent search, HTTP 206 byte ranges, delta feeds, dead-end tombstones, and 0-call dua… |
 | [tests/test_legacy_tombstone_migration.py](tests/test_legacy_tombstone_migration.py) | Existing diagnostic heads are restricted on upgrade, not only newly failed tasks. |
 | [tests/test_ontology_and_reconcile.py](tests/test_ontology_and_reconcile.py) | Tests for Tessera Wave-2 Categorized Ontology, Empirical-Bayes Rankings, Fragility Decay, 3-Way CAS Reconcili… |
+| [tests/test_open_verbs.py](tests/test_open_verbs.py) | Open verbs: a tracked anonymous session claims, heartbeats and submits only verbs whose producer opened them,… |
 | [tests/test_phase4_atomicity_and_vectors.py](tests/test_phase4_atomicity_and_vectors.py) | Phase 4 atomicity, migration, T22 gates, L26 receipt vectors, and Edge parity tests. |
+| [tests/test_requester_keys.py](tests/test_requester_keys.py) | Requester keys: a self-serve sign-up mints a hashed key that writes nouns only in its own org.<id> namespace,… |
 | [tests/test_research_seed.py](tests/test_research_seed.py) | Bounded authoring, pinned inputs and a real local task loop; no provider calls. |
 | [tests/test_service.py](tests/test_service.py) | The HTTP service: keys, scopes, POST-only writes, holders, rate limits, the edge lock, the agent door, the we… |
 | [tests/test_showcase_seed.py](tests/test_showcase_seed.py) | Creative seeds remain bounded and idempotent through actual Store operations. |
 | [tests/test_spec_events.py](tests/test_spec_events.py) | SPEC §5.5 lists every event type, and the code emits only listed types: a new event can't ship without a line… |
 | [tests/test_tools.py](tests/test_tools.py) | The Muse worker keeps its safety flags whatever the brief says, and briefs load in dependency order. |
 | [tests/test_work_routing.py](tests/test_work_routing.py) | Explicit grants, team-private routing and owner-only negative controls. |
+| [tests/workerd_access_parity.mjs](tests/workerd_access_parity.mjs) | Real Worker/SQLite: the access cases in tests/fixtures/accessparity.json, which |
 | [tests/workerd_access_writes.mjs](tests/workerd_access_writes.mjs) | Real Worker/SQLite: requests that never authenticate write nothing and create no namespace |
 | [tests/workerd_agent_tool_listings.mjs](tests/workerd_agent_tool_listings.mjs) | Real Worker: every agent-facing tool listing matches what MCP tools/list serves. |
 | [tests/workerd_anonymous_cost.mjs](tests/workerd_anonymous_cost.mjs) | Real Worker/SQLite: anonymous sessions stay available but cost little until used, and one |
 | [tests/workerd_blob_first_uploader.mjs](tests/workerd_blob_first_uploader.mjs) | Real Worker/SQLite: a key can always read back bytes it uploaded, whoever stored them first, |
 | [tests/workerd_blob_identity.mjs](tests/workerd_blob_identity.mjs) | Real Worker/SQLite: content identity comes from the uploaded bytes, never from a client header. |
+| [tests/workerd_client_addresses.mjs](tests/workerd_client_addresses.mjs) | Real Worker/SQLite: per-IP limits count in the hour their daily-rotated IP hash was computed, so a |
 | [tests/workerd_execution_history.mjs](tests/workerd_execution_history.mjs) | Actual Worker handlers and ephemeral SQLite Durable Objects; no provider or cloud access. |
 | [tests/workerd_execution_learning.mjs](tests/workerd_execution_learning.mjs) | Actual Worker and SQLite Durable Objects: learning reports, observations and row costs. |
+| [tests/workerd_open_verbs.mjs](tests/workerd_open_verbs.mjs) | Real Worker/SQLite: a tracked anonymous session claims, heartbeats and submits only verbs whose |
 | [tests/workerd_reaper.mjs](tests/workerd_reaper.mjs) | Real Worker/SQLite: the lease reaper keeps running in the main namespace even when an alarm |
+| [tests/workerd_requester_keys.mjs](tests/workerd_requester_keys.mjs) | Real Worker/SQLite: a self-serve requester key writes nouns only in its own org.<id> namespace, |
+| [tests/workerd_requester_storage.mjs](tests/workerd_requester_storage.mjs) | Real Worker/SQLite with persisted objects: a requester sign-up writes only the primary object; the |
 | [tests/workerd_storage_exhaustion.mjs](tests/workerd_storage_exhaustion.mjs) | Real Worker/SQLite under a faithful storage-exhaustion simulation: after the provider's daily |
 | [tests/workerd_storage_quota.mjs](tests/workerd_storage_quota.mjs) | Real Worker/SQLite behavior; fixture-only RPC methods never ship in the product. |
 

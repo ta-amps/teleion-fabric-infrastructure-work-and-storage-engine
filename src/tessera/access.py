@@ -35,6 +35,10 @@ class ServiceSettings:
     public_url: str = "http://localhost:8080"
     allowed_hosts: tuple[str, ...] = ()
     anonymous_access_enabled: bool = False
+    requester_signup_enabled: bool = False
+    # Addresses whose X-Forwarded-For `tessera serve` believes. Empty: none, so per-IP limits use
+    # the connecting address (or CF-Connecting-IP behind the edge lock), never a client's claim.
+    trusted_proxies: tuple[str, ...] = ()
     repo_url: str = "https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine"
 
     @classmethod
@@ -42,6 +46,8 @@ class ServiceSettings:
         env = os.environ
         return cls(
             anonymous_access_enabled=env.get("TESSERA_ANONYMOUS_ACCESS_ENABLED", "false").lower()
+            == "true",
+            requester_signup_enabled=env.get("TESSERA_REQUESTER_SIGNUP_ENABLED", "false").lower()
             == "true",
             db_path=env.get("TESSERA_DB", ".tessera/tessera.db"),
             edge_secret=env.get("TESSERA_EDGE_SECRET") or None,
@@ -55,6 +61,9 @@ class ServiceSettings:
             public_url=env.get("TESSERA_PUBLIC_URL", "http://localhost:8080").rstrip("/"),
             allowed_hosts=tuple(
                 h.strip() for h in env.get("TESSERA_ALLOWED_HOSTS", "").split(",") if h.strip()
+            ),
+            trusted_proxies=tuple(
+                h.strip() for h in env.get("TESSERA_TRUSTED_PROXIES", "").split(",") if h.strip()
             ),
         )
 
@@ -134,9 +143,10 @@ class Gate:
         if not grant.is_admin:
             raise Forbidden("this needs a key with the admin scope")
 
-    @staticmethod
-    def queue(grant: KeyGrant, queue: str) -> None:
-        if not (grant.is_admin or grant.allows_queue(queue)):
+    def queue(self, grant: KeyGrant, queue: str) -> None:
+        # Outside its own namespace an anonymous session reaches only verbs whose producer
+        # opened them; task visibility and the access boundary decide which ones.
+        if not grant.may_use_queue(queue, self.store.current_scope().namespace):
             raise Forbidden(f"this key may not use queue '{queue}'")
 
     @staticmethod

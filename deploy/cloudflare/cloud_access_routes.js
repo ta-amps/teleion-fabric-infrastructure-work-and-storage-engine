@@ -1,7 +1,7 @@
 import { FAVICON_SVG } from "./cloud_pages.js";
 import ACCESS_OPENAPI from "./access_openapi.json" with { type: "json" };
 // Public discovery and bearer-only onboarding; navigation never mints a session.
-import { ANON_LABELS, DEMO_QUOTAS } from "./cloud_access.js";
+import { ANON_LABELS, DEMO_QUOTAS, REQUESTER_QUOTAS, openVerbsDescription, requesterDescription } from "./cloud_access.js";
 
 export const ACCESS_TOOLS = [
   { name: "list_verbs", description: "List ready verbs visible to this principal, with optional queue and status filters.", inputSchema: {type:"object",properties:{queue:{type:"string"},status:{type:"string",enum:["ready","leased","waiting","done","dead","cancelled"]},limit:{type:"integer",minimum:1,maximum:100}},additionalProperties:false}},
@@ -14,10 +14,11 @@ export const ACCESS_TOOLS = [
   { name: "claim_events", description: "Read monotonic events for a task this principal may view; HTTP also supports bounded long-poll.", inputSchema: { type: "object", required: ["task_id"], properties: { task_id: { type: "string" }, after: { type: "integer", minimum: 0 } }, additionalProperties: false } },
 ];
 
-export function accessDescription(url, enabled = true) {
+export function accessDescription(url, enabled = true, requesterEnabled = false) {
   return { service: "Tessera", mcp_url: `${url}/mcp`, transport: "streamable-http", streaming: "long-poll",
     anonymous: { enabled, endpoint: `${url}/v1/session/anonymous`, method: "POST", token_prefix: "tan_", quotas: DEMO_QUOTAS, labels: ANON_LABELS,
-      namespace: "Server assigned demo.<principal_id>; bearer routes automatically", persistence: "Session-private synthetic records, removed after 24 hours", supported_clients: ["coding harness", "personal assistant", "HTTP client", "MCP client"] },
+      namespace: "Server assigned demo.<principal_id>; bearer routes automatically", persistence: "Session-private synthetic records, removed after 24 hours", supported_clients: ["coding harness", "personal assistant", "HTTP client", "MCP client"], open_verbs: openVerbsDescription() },
+    requester: { ...requesterDescription(requesterEnabled), endpoint: `${url}/v1/session/requester`, method: "POST", quotas: REQUESTER_QUOTAS },
     keyed: { endpoint: `${url}/v1/keys`, method: "POST", authorization: "Existing operator admin key required to issue an account-bound key; paste an issued key to connect", token_prefix: "tsk_", signup_mode: "admin_assisted", secret_shown_once: true },
     authorization_header: "Authorization: Bearer <session_token_or_api_key>",
     demo_flow: ["open_anonymous_session", "search_nouns(query=practice)", "claim(queue=demo.ping,worker=your-agent)", "heartbeat", "put_record(store_name=demo.artifacts,expected_version=0)", "submit", "my_audit"],
@@ -29,19 +30,26 @@ export function renderAccessHtml(url) {
 }
 
 // Storage-free access discovery; the Worker serves it before any Durable Object call.
-export function accessDiscoveryRoute(path, method, publicUrl, anonymousEnabled, jsonResp, htmlResp) {
+export function accessDiscoveryRoute(path, method, publicUrl, anonymousEnabled, jsonResp, htmlResp, requesterEnabled = false) {
   if (path === "/v1/openapi.json" && method === "GET") return jsonResp({ ...ACCESS_OPENAPI, servers: [{ url: publicUrl }] });
-  if (path === "/connect.json" && method === "GET") return jsonResp(accessDescription(publicUrl, anonymousEnabled));
+  if (path === "/connect.json" && method === "GET") return jsonResp(accessDescription(publicUrl, anonymousEnabled, requesterEnabled));
   if ((path === "/connect" || path === "/") && method === "GET") return htmlResp(renderAccessHtml(publicUrl), 200, { "content-security-policy": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'" });
   return null;
 }
 
-export async function accessRoute(request, env, { path, url, bearer, primary, stub, baseRpc, meta, publicUrl, rpcResponse, jsonResp, htmlResp, readJsonBody }) {
+export async function accessRoute(request, env, { path, url, bearer, primary, stub, baseRpc, meta, publicUrl, rpcResponse, jsonResp, htmlResp, readJsonBody, namespaceStub }) {
   const method = request.method;
   if (path === "/v1/session/anonymous" && method === "POST") {
     const { body, error } = await readJsonBody(request);
     if (error) return error;
     return rpcResponse(await primary.openAnonymousSession(body, meta));
+  }
+  if (path === "/v1/session/requester" && method === "POST") {
+    const { body, error } = await readJsonBody(request);
+    if (error) return error;
+    // The key, its profile and the sign-up allowance are written together in the primary object;
+    // the requester's own namespace object is created by the key's first call there.
+    return rpcResponse(await primary.openRequesterSession(body, meta));
   }
   if (path === "/v1/verbs" && method === "GET") return rpcResponse(await stub.rpcCall(bearer, "listVerbs", { ...baseRpc, queue: url.searchParams.get("queue"), status: url.searchParams.get("status"), limit: url.searchParams.get("limit") }));
   if (path === "/v1/me" && method === "GET") return rpcResponse(await stub.rpcCall(bearer, "me", baseRpc));

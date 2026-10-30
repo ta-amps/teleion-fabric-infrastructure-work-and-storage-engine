@@ -13,6 +13,12 @@ from tessera._execution_capture import capture_execution, checked_report
 from tessera._frontier_guard import review_proof as frontier_review_proof
 from tessera._frontier_guard import verification_proof as frontier_verification_proof
 from tessera._graph import GraphOps
+from tessera._principals import (
+    charge_claim_caps,
+    check_claim_caps,
+    claim_caps,
+    has_personal_data,
+)
 from tessera._publication_guard import review_proof
 from tessera.errors import (
     Forbidden,
@@ -22,9 +28,12 @@ from tessera.errors import (
     NotFound,
     StaleLease,
 )
+from tessera.grants import OPEN_VERB_NAMESPACE, REQUEST_KIND, REQUEST_QUEUE, REQUEST_SURFACES
 from tessera.models import (
+    DEFAULT_PRIORITY,
     EFFECT_RANK,
     MAX_DEPENDENCIES,
+    MAX_IDEMPOTENCY_KEY,
     MAX_PARK_SECONDS,
     TERMINAL_STATES,
     ChildResult,
@@ -102,6 +111,27 @@ class TaskOps(GraphOps):
     def enqueue(self, spec: TaskSpec, *, namespace: str | None = None) -> str:
         """Add a ready task. Enqueueing an existing id or idempotency_key into the same queue replays its id."""
         ctx = self.current_scope()
+        if ctx.requester:
+            if spec.queue != REQUEST_QUEUE or spec.kind != REQUEST_KIND:
+                raise Forbidden(f"requesters may only file {REQUEST_KIND} verbs in {REQUEST_QUEUE}")
+            self._check_requester_ids(spec)
+            spec = spec.model_copy(
+                update={
+                    "visibility_scope": "allowlist_surfaces",
+                    "producer_surface": "surface:tessera",
+                    "owner_key_id": ctx.key_id,
+                    "allowed_surfaces": list(REQUEST_SURFACES),
+                    "target_cohorts": ["all"],
+                    "tags": ["origin:requester", "untrusted:true", f"kind:{REQUEST_KIND}"],
+                    "effect_class": "write-internal",
+                    "depends_on": [],
+                    "priority": DEFAULT_PRIORITY,
+                }
+            )
+        if (ctx.requester or ctx.anonymous) and any(
+            value and has_personal_data(value) for value in (spec.task_id, spec.idempotency_key)
+        ):
+            raise InvalidRequest("task ids and idempotency keys must not contain personal data")
         if ctx.anonymous:
             if not spec.queue.startswith("demo."):
                 raise Forbidden("anonymous tasks require a demo queue")
@@ -121,6 +151,8 @@ class TaskOps(GraphOps):
             owner_key_id=spec.owner_key_id,
         )
         idem = (spec.idempotency_key or "").strip() or None
+        if idem is not None and len(idem) > MAX_IDEMPOTENCY_KEY:
+            raise InvalidRequest(f"idempotency_key is over {MAX_IDEMPOTENCY_KEY} characters")
         now = self.clock.now()
         with self._tx() as c:
             self._queue_config(c, ns, spec.queue)
@@ -172,6 +204,19 @@ class TaskOps(GraphOps):
                         return str(winner["id"])
                 raise
         return task_id
+
+    def _check_requester_ids(self, spec: TaskSpec) -> None:
+        """A requester's own task ids and idempotency keys start with rq-<principal_id>-, so
+        organizations can neither collide nor learn which other ids exist."""
+        with self._read() as c:
+            row = c.execute(
+                "SELECT principal_id FROM access_principals WHERE key_id=?",
+                (self.current_scope().key_id,),
+            ).fetchone()
+        prefix = f"rq-{row['principal_id'] if row else ''}-"
+        for name, value in (("task_id", spec.task_id), ("idempotency_key", spec.idempotency_key)):
+            if value and (row is None or not value.startswith(prefix)):
+                raise InvalidRequest(f"a requester's {name} must start with {prefix}")
 
     def _insert_task(
         self,
@@ -272,13 +317,19 @@ class TaskOps(GraphOps):
         if not worker:
             raise InvalidRequest("worker is required")
         ns = self._resolve_ns(namespace)
-        effective_key = key_id if key_id is not None else self.current_scope().key_id
+        scope = self.current_scope()
+        effective_key = key_id if key_id is not None else scope.key_id
+        caps = (
+            claim_caps(str(effective_key), ns, scope.ip_hash, scope.ip_window)
+            if scope.anonymous and effective_key
+            else []
+        )
         with self._tx() as c:
             now = self.clock.now()
             config = self._queue_config(c, ns, queue)
             self._reap(c, now, namespace=ns, queue=queue)
             if (
-                self.current_scope().anonymous
+                scope.anonymous
                 and c.execute(
                     "SELECT COUNT(*) FROM leases WHERE namespace=? AND key_id=? AND expires_at>? AND hard_expires_at>?",
                     (ns, effective_key, now, now),
@@ -288,6 +339,7 @@ class TaskOps(GraphOps):
                 from tessera.errors import RateLimited
 
                 raise RateLimited("one concurrent demo claim allowed", retry_after=30)
+            check_claim_caps(c, caps, now)
             sql = [
                 "SELECT * FROM tasks"
                 " WHERE namespace = ? AND queue = ? AND state = 'ready' AND not_before <= ?"
@@ -323,6 +375,7 @@ class TaskOps(GraphOps):
                 (ns, row["id"], token, worker, effective_key, now, now, expires, hard),
             )
             self._move(c, ns, queue, "ready", "leased")
+            charge_claim_caps(c, caps, now)
             self._event(
                 c,
                 "claimed",
@@ -336,7 +389,7 @@ class TaskOps(GraphOps):
             )
             return Lease(
                 namespace=ns,
-                labels=anonymous_labels(json.loads(row["tags"]), self.current_scope().labels),
+                labels=self._actor_labels(json.loads(row["tags"])),
                 claim_receipt=claim_receipt_hash(ns, row["id"], token, now),
                 task_id=row["id"],
                 queue=queue,
@@ -350,10 +403,22 @@ class TaskOps(GraphOps):
                 expires_at=expires,
                 hard_expires_at=hard,
                 heartbeat_seconds=config.heartbeat_seconds,
-                children=self._children(c, ns, row["id"]),
-                dependencies=self._dependencies(c, ns, row["id"]),
+                children=self._lease_results(self._children(c, ns, row["id"])),
+                dependencies=self._lease_results(self._dependencies(c, ns, row["id"])),
                 inputs=self._inputs(c, ns, row["id"]),
             )
+
+    def _actor_labels(self, tags: list[str]) -> dict[str, Any]:
+        ctx = self.current_scope()
+        return anonymous_labels(tags, ctx.labels, actor_anonymous=ctx.anonymous)
+
+    def _lease_results(self, results: list[ChildResult]) -> list[ChildResult]:
+        """An open verb carries its whole input in its brief. Its anonymous claimant sees the
+        state of related tasks, never their outputs or the keys that completed them."""
+        ctx = self.current_scope()
+        if not (ctx.anonymous and ctx.namespace == OPEN_VERB_NAMESPACE):
+            return results
+        return [r.model_copy(update={"output": None, "completed_by_key": None}) for r in results]
 
     def heartbeat(self, task_id: str, fencing_token: int, *, namespace: str | None = None) -> Lease:
         """Extend a live lease. A lapsed or superseded lease raises StaleLease."""
@@ -395,7 +460,7 @@ class TaskOps(GraphOps):
                 )
                 lease = Lease(
                     namespace=ns,
-                    labels=anonymous_labels(json.loads(task["tags"]), self.current_scope().labels),
+                    labels=self._actor_labels(json.loads(task["tags"])),
                     claim_receipt=claim_receipt_hash(ns, task_id, fencing_token, row["claimed_at"]),
                     task_id=task_id,
                     queue=task["queue"],
@@ -409,8 +474,8 @@ class TaskOps(GraphOps):
                     expires_at=expires,
                     hard_expires_at=row["hard_expires_at"],
                     heartbeat_seconds=config.heartbeat_seconds,
-                    children=self._children(c, ns, task_id),
-                    dependencies=self._dependencies(c, ns, task_id),
+                    children=self._lease_results(self._children(c, ns, task_id)),
+                    dependencies=self._lease_results(self._dependencies(c, ns, task_id)),
                     inputs=self._inputs(c, ns, task_id),
                 )
         if lease is None:
@@ -457,6 +522,10 @@ class TaskOps(GraphOps):
             raise InvalidRequest("/ok must be a JSON boolean")
         if not idempotency_key:
             raise InvalidRequest("idempotency_key is required")
+        if len(idempotency_key) > MAX_IDEMPOTENCY_KEY:
+            raise InvalidRequest(f"idempotency_key is over {MAX_IDEMPOTENCY_KEY} characters")
+        if self.current_scope().anonymous and has_personal_data(idempotency_key):
+            raise InvalidRequest("idempotency keys must not contain personal data")
         try:
             output_text = canonical_json(output)
         except (TypeError, ValueError) as exc:
@@ -493,7 +562,7 @@ class TaskOps(GraphOps):
                 task = self._task_row(c, ns, task_id)
                 config = self._queue_config(c, ns, task["queue"])
                 digest = receipt_hash(task_id, fencing_token, ok, output, error)
-                labels = anonymous_labels(json.loads(task["tags"]), self.current_scope().labels)
+                labels = self._actor_labels(json.loads(task["tags"]))
                 effective_completed_by = actor_key if actor_key is not None else row["key_id"]
                 if task["queue"] == "eq03" and ok and effective_completed_by:
                     review_proof(c, ns, task_id, effective_completed_by, output)

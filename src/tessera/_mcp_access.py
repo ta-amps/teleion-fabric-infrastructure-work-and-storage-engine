@@ -37,7 +37,11 @@ def register_access_tools(
         return cast(
             dict[str, Any],
             await run(
-                lambda: store.open_anonymous_session(agent_label, ip_hash=context.meta["ip_hash"])
+                lambda: store.open_anonymous_session(
+                    agent_label,
+                    ip_hash=context.meta["ip_hash"],
+                    ip_window=context.meta.get("ip_window"),
+                )
             ),
         )
 
@@ -45,7 +49,11 @@ def register_access_tools(
         description="Explain open discovery, tracked anonymous sessions, scoped operator-issued keys, quotas and audit. No key needed."
     )
     async def explain_access_modes() -> dict[str, Any]:
-        return access_description(settings.public_url, settings.anonymous_access_enabled)
+        return access_description(
+            settings.public_url,
+            settings.anonymous_access_enabled,
+            settings.requester_signup_enabled,
+        )
 
     @server.tool(
         description="Show your principal identity, account, scopes, labels, quotas and expiry. Requires a session or API key."
@@ -96,7 +104,7 @@ def register_access_tools(
 
     @server.tool(
         name="list_verbs",
-        description="List authorized atomic verbs by queue and state. Requires a session or key. Anonymous callers see only their private demo verbs.",
+        description="List authorized atomic verbs by queue and state. Requires a session or key. Anonymous callers see their private demo verbs, and in the main namespace only verbs tagged open:anonymous.",
     )
     async def verbs(
         queue: str | None = None, status: str = "ready", limit: int = 100

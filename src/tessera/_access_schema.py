@@ -45,9 +45,12 @@ class AccessSchemaOps(StoreBase):
         )
 
     def purge_expired_principals(self) -> int:
+        """Remove expired anonymous sessions and requester keys with their own namespaces. A
+        requester's filed request verbs are shared work in main and stay."""
         with self._tx() as c:
             rows = c.execute(
-                "SELECT key_id,namespace FROM access_principals WHERE principal_kind='anonymous' AND purge_at<=?",
+                "SELECT key_id,namespace FROM access_principals"
+                " WHERE principal_kind IN ('anonymous','requester') AND purge_at<=?",
                 (self.clock.now(),),
             ).fetchall()
             tables = (
@@ -70,7 +73,8 @@ class AccessSchemaOps(StoreBase):
             for row in rows:
                 for table in tables:
                     c.execute(f"DELETE FROM {table} WHERE namespace=?", (row["namespace"],))  # noqa: S608
-                c.execute("DELETE FROM access_limits WHERE subject=?", (row["key_id"],))
+                for subject in (row["key_id"], f"request:{row['key_id']}"):
+                    c.execute("DELETE FROM access_limits WHERE subject=?", (subject,))
                 c.execute("DELETE FROM access_principals WHERE key_id=?", (row["key_id"],))
                 c.execute("DELETE FROM keys WHERE key_id=?", (row["key_id"],))
             c.execute("DELETE FROM access_events WHERE ts<?", (self.clock.now() - 86400,))

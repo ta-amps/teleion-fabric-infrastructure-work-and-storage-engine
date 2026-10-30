@@ -228,11 +228,13 @@ class Client:
         namespace: str | None = None,
     ) -> str:
         extra = {"idempotency-key": idempotency_key} if idempotency_key else None
+        # The service writes only into the request's namespace, so name the spec's own.
+        target = namespace or (spec.namespace if spec.namespace != "main" else None)
         resp = self._call(
             "POST",
             "/v1/tasks",
             body=spec.model_dump(exclude_none=True),
-            headers=self._ns_headers(namespace, extra),
+            headers=self._ns_headers(target, extra),
         )
         return str(resp.json()["task_id"])
 
@@ -570,11 +572,13 @@ class Client:
     def put_records(
         self, writes: Sequence[RecordWrite], *, namespace: str | None = None
     ) -> list[RecordVersion]:
+        named = {w.namespace for w in writes} - {"main"}
+        target = namespace or (next(iter(named)) if len(named) == 1 else None)
         resp = self._call(
             "POST",
             "/v1/stores/batch",
             body={"writes": [w.model_dump() for w in writes]},
-            headers=self._ns_headers(namespace),
+            headers=self._ns_headers(target),
         )
         return [RecordVersion.model_validate(r) for r in resp.json()["records"]]
 

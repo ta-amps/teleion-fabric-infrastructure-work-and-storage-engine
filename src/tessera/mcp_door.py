@@ -94,6 +94,9 @@ def build_mcp(
                 is_admin=grant.is_admin if grant is not None else req_scope.is_admin,
                 anonymous=grant.anonymous if grant is not None else req_scope.anonymous,
                 labels=grant.labels if grant is not None else req_scope.labels,
+                requester=grant.requester if grant is not None else req_scope.requester,
+                ip_hash=req_scope.ip_hash,
+                ip_window=req_scope.ip_window,
             ):
                 return fn()
 

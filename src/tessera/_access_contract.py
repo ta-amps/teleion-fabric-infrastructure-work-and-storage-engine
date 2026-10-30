@@ -7,10 +7,55 @@ import json
 from typing import Any
 
 from tessera import pages
-from tessera._principals import ANON_LABELS, DEMO_QUOTAS
+from tessera._principals import ANON_LABELS, DEMO_QUOTAS, OPEN_VERB_ACTIONS
+from tessera.grants import (
+    CLOSED_TO_ANONYMOUS,
+    OPEN_VERB_NAMESPACE,
+    OPEN_VERB_TAG,
+    REQUEST_KIND,
+    REQUEST_QUEUE,
+    REQUEST_SURFACES,
+)
 
 
-def access_description(public_url: str, enabled: bool) -> dict[str, Any]:
+def requester_description(public_url: str, enabled: bool) -> dict[str, Any]:
+    """Self-serve requester keys; the Worker publishes the same."""
+    from tessera._requesters import REQUESTER_QUOTAS
+
+    return {
+        "enabled": enabled,
+        "namespace": "Server assigned org.<principal_id>; the key writes nouns only in its own"
+        " org. stores there",
+        "files": f"{REQUEST_KIND} verbs in {REQUEST_QUEUE} of the shared namespace"
+        f" (X-Namespace: main), readable by {', '.join(REQUEST_SURFACES)}",
+        "reads": "its own nouns and the request verbs it filed, nothing else",
+        "profile": "display_name, organization_type and causes only; no personal data",
+        "secret_shown_once": True,
+        "endpoint": f"{public_url}/v1/session/requester",
+        "method": "POST",
+        "quotas": REQUESTER_QUOTAS,
+    }
+
+
+def open_verbs_description() -> dict[str, Any]:
+    """How a tracked anonymous session works an open verb; the Worker publishes the same."""
+    return {
+        "namespace": OPEN_VERB_NAMESPACE,
+        "tag": OPEN_VERB_TAG,
+        "how": "Send X-Namespace: main (or call /ns/main/v1/...) to list, claim, heartbeat and"
+        " submit verbs whose producer tagged them open:anonymous.",
+        "actions": sorted(OPEN_VERB_ACTIONS),
+        "closed_queues": sorted(CLOSED_TO_ANONYMOUS),
+        "claimant_sees": "the verb's brief, its own submissions and the state of related tasks;"
+        " never other outputs, attempts, nouns or principals",
+        "review": "A submitted result stays quarantined with its verb. A different keyed worker"
+        " or a person reviews it; anonymous sessions never approve or publish.",
+    }
+
+
+def access_description(
+    public_url: str, enabled: bool, requester_enabled: bool = False
+) -> dict[str, Any]:
     return {
         "service": "Tessera",
         "mcp_url": f"{public_url}/mcp",
@@ -24,6 +69,7 @@ def access_description(public_url: str, enabled: bool) -> dict[str, Any]:
             "labels": ANON_LABELS,
             "namespace": "Server assigned demo.<principal_id>; bearer routes automatically",
             "persistence": "Session-private demo state expires after 24 hours.",
+            "open_verbs": open_verbs_description(),
             "supported_clients": [
                 "coding harness",
                 "personal assistant",
@@ -31,6 +77,7 @@ def access_description(public_url: str, enabled: bool) -> dict[str, Any]:
                 "MCP client",
             ],
         },
+        "requester": requester_description(public_url, requester_enabled),
         "keyed": {
             "endpoint": "POST /v1/keys",
             "authorization": "An existing operator admin key creates an account-bound API key; paste an issued key to connect.",

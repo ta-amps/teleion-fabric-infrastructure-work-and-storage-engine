@@ -12,7 +12,8 @@ from tessera._intelligence import IntelligenceOps
 from tessera._jobs import JobOps
 from tessera._keys import KeyOps
 from tessera._observe import ObserveOps
+from tessera._requesters import RequesterOps
 
 
-class Store(JobOps, ObserveOps, IntelligenceOps, KeyOps, ExecutionOps):
+class Store(JobOps, ObserveOps, IntelligenceOps, KeyOps, ExecutionOps, RequesterOps):
     """Queues, leases, receipts, model jobs, CAS nouns, buckets, feeds, search and reflexes."""
