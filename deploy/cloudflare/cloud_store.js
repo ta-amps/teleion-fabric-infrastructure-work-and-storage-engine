@@ -2222,7 +2222,8 @@ export class TesseraCoordinator extends DurableObject {
             args.idempotency_key != null && String(args.idempotency_key).trim()
               ? String(args.idempotency_key).trim()
               : null;
-          if (cleanIdem != null && cleanIdem.length > MAX_IDEMPOTENCY_KEY) throw badReq(`idempotency_key is over ${MAX_IDEMPOTENCY_KEY} characters`);
+          // Code points, as Python's len() counts them; .length counts UTF-16 units (H-65).
+          if (cleanIdem != null && [...cleanIdem].length > MAX_IDEMPOTENCY_KEY) throw badReq(`idempotency_key is over ${MAX_IDEMPOTENCY_KEY} characters`);
 
           this._requireQueue(grant, queue);
           this._requireEffect(grant, effectClass);
@@ -2552,7 +2553,7 @@ export class TesseraCoordinator extends DurableObject {
           const okFlag = args.ok === undefined ? true : args.ok;
           const errorText = args.error == null ? null : String(args.error);
           if (!idem) throw badReq("the Idempotency-Key header is required");
-          if (idem.length > MAX_IDEMPOTENCY_KEY) throw badReq(`idempotency_key is over ${MAX_IDEMPOTENCY_KEY} characters`);
+          if ([...idem].length > MAX_IDEMPOTENCY_KEY) throw badReq(`idempotency_key is over ${MAX_IDEMPOTENCY_KEY} characters`);
           const outputVal = args.output === undefined ? null : args.output;
           const outputText = canonicalJson(outputVal);
           if (new TextEncoder().encode(outputText).byteLength > MAX_OUTPUT_BYTES) {

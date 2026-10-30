@@ -1539,8 +1539,11 @@ const onboardingApplication = {
     const headers = { "access-control-allow-origin": "*", "access-control-allow-methods": "GET, HEAD, POST, PUT, DELETE, OPTIONS", "access-control-allow-headers": "Authorization, Content-Type, If-Match, X-Request-Id, X-Agent-Label, Idempotency-Key, X-Namespace, X-Tessera-Namespace, X-Surface-Id, MCP-Protocol-Version, MCP-Session-Id", "access-control-expose-headers": "ETag, Retry-After, X-Request-Id, MCP-Session-Id", "x-request-id": requestId, "cache-control": "no-store" };
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers });
     try {
-      // A broken percent escape anywhere in the path is refused up front (H-54).
-      decodeURIComponent(new URL(request.url).pathname);
+      // A broken percent escape (H-54) or a control character (H-65) anywhere in the path is
+      // refused up front, as Python refuses them.
+      if (/[\u0000-\u001f\u007f]/.test(decodeURIComponent(new URL(request.url).pathname))) {
+        return problem(400, "invalid_request", "the path has a control character", {}, headers);
+      }
       const h = new Headers(request.headers); h.set("x-request-id", requestId);
       if (request.body) {
         const route = bodyRoute(new URL(request.url).pathname);

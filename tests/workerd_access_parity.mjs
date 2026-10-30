@@ -59,6 +59,12 @@ async function fabric() {
     bindings: { STORAGE_MODE: "cloud", ANONYMOUS_ACCESS_ENABLED: "true", REQUESTER_SIGNUP_ENABLED: "true", FRAGILITY_PLANNER_ENABLED: "false", BOOTSTRAP_SECRET: BOOTSTRAP },
     outboundService: () => { throw new Error("External requests are prohibited in this fixture"); },
   }] }));
+  // The deployed D1 schemas, as the hosted Worker has them, so bucket objects can be stored.
+  for (const [binding, file] of [["BUCKETS_DB", "d1-buckets.sql"], ["FABRIC_DB", "d1-fabric.sql"]]) {
+    const db = await runtime.getD1Database(binding);
+    const schema = readFileSync(new URL(`../deploy/cloudflare/${file}`, import.meta.url), "utf8").replace(/--[^\n]*\n/g, "\n");
+    for (const statement of schema.split(";").map(s => s.trim()).filter(Boolean)) await db.prepare(statement).run();
+  }
   const worker = await runtime.getWorker("tessera");
   const request = async (method, path, body, token, headers = {}, raw = undefined) => {
     // raw: { text, contentType } sends exactly these bytes, with that Content-Type or none.

@@ -46,13 +46,14 @@ def _prefix_upper(prefix: str) -> str:
 
 
 def _validate_bucket_name(bucket: str) -> None:
-    if not _BUCKET_RE.match(bucket):
+    if not _BUCKET_RE.fullmatch(bucket):
         raise InvalidRequest(f"invalid bucket name {bucket!r}")
 
 
 def _validate_object_key(key: str) -> None:
     if (
-        not _OBJECT_KEY_RE.match(key)
+        # fullmatch: with match, the pattern's $ also accepted a trailing newline (H-65).
+        not _OBJECT_KEY_RE.fullmatch(key)
         or key.endswith("/")
         or "//" in key
         or any(seg in {".", ".."} for seg in key.split("/"))

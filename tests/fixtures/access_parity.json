@@ -2887,6 +2887,91 @@
           ]
         }
       ]
+    },
+    {
+      "id": "H-65-one-length-rule",
+      "finding": "H-65 (hunt)",
+      "title": "Lengths count code points in both implementations, and an object key with a trailing newline is refused",
+      "steps": [
+        {
+          "as": "admin",
+          "method": "POST",
+          "path": "/v1/tasks",
+          "status": 201,
+          "body": {
+            "queue": "eq02",
+            "task_id": "len-1",
+            "brief": {},
+            "idempotency_key": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"
+          }
+        },
+        {
+          "as": "admin",
+          "method": "POST",
+          "path": "/v1/tasks",
+          "status": 400,
+          "body": {
+            "queue": "eq02",
+            "task_id": "len-2",
+            "brief": {},
+            "idempotency_key": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"
+          }
+        },
+        {
+          "as": "admin",
+          "method": "POST",
+          "path": "/v1/buckets/define",
+          "status": 200,
+          "body": {
+            "name": "parity-keys"
+          }
+        },
+        {
+          "as": "admin",
+          "method": "POST",
+          "path": "/v1/buckets/parity-keys/objects/a/b",
+          "status": 201,
+          "raw": "SYNTHETIC object",
+          "content_type": "application/octet-stream"
+        },
+        {
+          "as": "admin",
+          "method": "POST",
+          "path": "/v1/buckets/parity-keys/objects/a/b%0A",
+          "status": 400,
+          "raw": "SYNTHETIC object",
+          "content_type": "application/octet-stream",
+          "expect": {
+            "contains": {
+              "detail": "control character"
+            }
+          }
+        },
+        {
+          "as": "admin",
+          "method": "POST",
+          "path": "/v1/buckets/parity-keys/objects/a/b%0A",
+          "status": 400,
+          "raw": "{}",
+          "content_type": "application/json",
+          "expect": {
+            "contains": {
+              "detail": "control character"
+            }
+          }
+        },
+        {
+          "as": "admin",
+          "method": "GET",
+          "path": "/v1/tasks/len-1%00",
+          "status": 400,
+          "expect": {
+            "contains": {
+              "detail": "control character"
+            }
+          }
+        }
+      ]
     }
   ]
 }

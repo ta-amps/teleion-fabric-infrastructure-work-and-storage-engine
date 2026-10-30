@@ -240,6 +240,10 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
     ) -> Response:
         if malformed_path(request.scope.get("raw_path") or b""):
             return problem(400, "invalid_request", "the path has a malformed percent escape")
+        if _CONTROL.search(request.scope.get("path", "")):
+            # A route's `$` would otherwise match before a trailing newline, so `a/b%0A` reached
+            # the handler as `a/b` (H-65).
+            return problem(400, "invalid_request", "the path has a control character")
         raw_path = request.scope.get("path", "/")
         path_ns: str | None = None
         if raw_path.startswith("/ns/"):
@@ -742,6 +746,7 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
 
 
 _BAD_ESCAPE = re.compile(rb"%(?![0-9A-Fa-f]{2})")
+_CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 _MCP_PATH = re.compile(r"(?:/ns/[^/]+)?/mcp")
 
 
