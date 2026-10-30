@@ -2703,7 +2703,8 @@ export class TesseraCoordinator extends DurableObject {
                 visibility_scope: task.visibility_scope,
                 allowed_surfaces: JSON.parse(task.allowed_surfaces),
                 target_cohorts: JSON.parse(task.target_cohorts),
-                tags: childTags.length ? childTags : JSON.parse(task.tags),
+                // Untagged, it takes its parent's tags, any kind:<x> naming its own kind.
+                tags: childTags.length ? childTags : [...new Set(JSON.parse(task.tags).map((t) => (t.startsWith("kind:") ? `kind:${child.kind || task.kind}` : t)))],
                 owner_key_id: task.owner_key_id,
               };
               this._insertTask(

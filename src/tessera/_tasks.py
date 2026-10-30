@@ -53,6 +53,12 @@ MAX_CHILDREN = 100
 MAX_DEPTH = 4
 
 
+def inherited_tags(parent_tags: Sequence[str], kind: str) -> list[str]:
+    """An untagged split child's tags: its parent's, with any kind:<x> naming the child's own kind
+    (same rule as the Worker)."""
+    return list(dict.fromkeys(f"kind:{kind}" if t.startswith("kind:") else t for t in parent_tags))
+
+
 class TaskOps(GraphOps):
     # -- queues and enqueue -------------------------------------------------------------------
 
@@ -703,7 +709,9 @@ class TaskOps(GraphOps):
                         visibility_scope=task["visibility_scope"],
                         allowed_surfaces=parent_allowed,
                         target_cohorts=parent_cohorts,
-                        tags=child.tags if child.tags else parent_tags,
+                        tags=child.tags
+                        if child.tags
+                        else inherited_tags(parent_tags, child.kind or task["kind"]),
                         owner_key_id=task["owner_key_id"],
                     )
                     ids.append(child_id)

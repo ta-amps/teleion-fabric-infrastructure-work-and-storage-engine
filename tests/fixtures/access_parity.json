@@ -1174,6 +1174,144 @@
           }
         }
       ]
+    },
+    {
+      "id": "B-split-children-get-their-kind",
+      "finding": "B (Low, re-review)",
+      "title": "An untagged split child inherits its parent's tags with its own kind: tag",
+      "steps": [
+        {
+          "signup": "org"
+        },
+        {
+          "key": "classifier",
+          "grant": {
+            "queues": [
+              "eq01",
+              "eq02"
+            ],
+            "scopes": [
+              "store",
+              "surface:eranos"
+            ],
+            "effect_classes": [
+              "read",
+              "write-internal"
+            ]
+          }
+        },
+        {
+          "as": "org",
+          "method": "POST",
+          "path": "/ns/main/v1/tasks",
+          "status": 201,
+          "body": {
+            "queue": "eq01",
+            "kind": "request",
+            "task_id": "rq-{org.principal_id}-split",
+            "brief": {
+              "job": "SYNTHETIC"
+            }
+          }
+        },
+        {
+          "as": "classifier",
+          "method": "POST",
+          "path": "/v1/tasks/claim",
+          "status": 200,
+          "save": "lease",
+          "body": {
+            "queue": "eq01",
+            "worker": "classifier",
+            "kinds": [
+              "request"
+            ]
+          }
+        },
+        {
+          "as": "classifier",
+          "method": "POST",
+          "path": "/v1/tasks/split",
+          "status": 200,
+          "save": "split",
+          "body": {
+            "task_id": "rq-{org.principal_id}-split",
+            "fencing_token": "{lease.fencing_token}",
+            "children": [
+              {
+                "queue": "eq02",
+                "kind": "build",
+                "brief": {
+                  "part": 2
+                }
+              },
+              {
+                "brief": {
+                  "part": 3
+                }
+              },
+              {
+                "queue": "eq02",
+                "kind": "research",
+                "brief": {
+                  "part": 4
+                },
+                "tags": [
+                  "part:4",
+                  "kind:research"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "as": "admin",
+          "method": "GET",
+          "path": "/v1/tasks/{split.children.0}",
+          "status": 200,
+          "expect": {
+            "equals": {
+              "kind": "build",
+              "tags": [
+                "origin:requester",
+                "untrusted:true",
+                "kind:build"
+              ]
+            }
+          }
+        },
+        {
+          "as": "admin",
+          "method": "GET",
+          "path": "/v1/tasks/{split.children.1}",
+          "status": 200,
+          "expect": {
+            "equals": {
+              "kind": "request",
+              "tags": [
+                "origin:requester",
+                "untrusted:true",
+                "kind:request"
+              ]
+            }
+          }
+        },
+        {
+          "as": "admin",
+          "method": "GET",
+          "path": "/v1/tasks/{split.children.2}",
+          "status": 200,
+          "expect": {
+            "equals": {
+              "kind": "research",
+              "tags": [
+                "part:4",
+                "kind:research"
+              ]
+            }
+          }
+        }
+      ]
     }
   ]
 }
