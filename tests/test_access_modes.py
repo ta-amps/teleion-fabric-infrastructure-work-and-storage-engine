@@ -136,9 +136,12 @@ def test_anonymous_full_loop_and_durable_provenance(
         set(e) == {"ts", "principal_kind", "action", "resource_type", "status", "labels"}
         for e in public
     )
-    assert secret not in json.dumps(events) + Path(store.path).read_bytes().decode(
-        "utf-8", "ignore"
-    )
+    # Read the write-ahead log too: fresh rows live there until a checkpoint.
+    store._conn().execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    files = (Path(store.path), Path(store.path + "-wal"))
+    stored = b"".join(f.read_bytes() for f in files if f.exists()).decode("utf-8", "ignore")
+    assert session["principal_id"] in stored, "the check must see the rows this session wrote"
+    assert secret not in json.dumps(events) + stored
 
 
 def test_sessions_cannot_cross_namespaces_or_admin(

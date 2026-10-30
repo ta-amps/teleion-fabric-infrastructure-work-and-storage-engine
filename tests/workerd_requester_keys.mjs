@@ -135,7 +135,10 @@ test("a requester follows its request but not the children a worker split it int
   assert.equal(split.status, 200, JSON.stringify(split.data));
   assert.equal((await request(`/ns/main/v1/tasks/${parent}`, undefined, org.key)).data.state, "waiting");
   for (const child of split.data.children) {
+    // Children inherit the requester as owner, so only the parent_id rule keeps them from it.
+    assert.equal((await request(`/v1/tasks/${child}`, undefined, admin)).data.owner_key_id, org.key_id);
     assert.equal((await request(`/ns/main/v1/tasks/${child}`, undefined, org.key)).status, 404);
     assert.equal((await request(`/ns/main/v1/tasks/${child}/results`, undefined, org.key)).status, 404);
+    assert.equal((await request(`/ns/main/v1/claims/${child}/events`, undefined, org.key)).status, 404);
   }
 });

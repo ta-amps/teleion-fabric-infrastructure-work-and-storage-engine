@@ -50,6 +50,14 @@ def auth(key: str) -> dict[str, str]:
     return {"Authorization": "Bearer " + key}
 
 
+def database_text(store: Store) -> str:
+    """Everything SQLite holds for the store: the main file after a checkpoint, and the write-ahead
+    log in case a reader kept the checkpoint from finishing (fresh rows live there first)."""
+    store._conn().execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    files = (Path(store.path), Path(store.path + "-wal"))
+    return b"".join(f.read_bytes() for f in files if f.exists()).decode("utf-8", "ignore")
+
+
 def tid(org: dict[str, Any], suffix: str) -> str:
     """A requester names its own request verbs rq-<principal_id>-<suffix>."""
     return f"rq-{org['principal_id']}-{suffix}"
@@ -83,7 +91,9 @@ def test_sign_up_mints_a_narrow_hashed_key_and_a_profile_noun(
         f"namespace:{org['namespace']}",
     }
     assert org["labels"]["origin"] == "requester" and org["quotas"]["request_verbs_per_hour"] == 5
-    assert org["key"] not in Path(store.path).read_bytes().decode("utf-8", "ignore")
+    stored = database_text(store)
+    assert "Synthetic Food Bank" in stored, "the check must see the rows this sign-up wrote"
+    assert org["key"] not in stored
     h = auth(org["key"])
     assert client.get("/v1/me", headers=h).json()["namespace"] == org["namespace"]
     profile = client.get("/v1/stores/org.profile/records/profile", headers=h).json()

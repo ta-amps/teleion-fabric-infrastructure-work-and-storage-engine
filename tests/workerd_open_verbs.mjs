@@ -11,12 +11,17 @@ after(async () => { await Promise.all(runtimes.map(runtime => runtime.dispose())
 const fixture = `
 export { default } from './deploy/cloudflare/worker.js';
 import { TesseraCoordinator } from './deploy/cloudflare/cloud_store.js';
-import { reviewProof } from './deploy/cloudflare/cloud_publication.js';
 export class FixtureCoordinator extends TesseraCoordinator {
-  testReviewProof(taskId, actor, output) {
-    this.namespace = "main";
-    try { reviewProof(this, taskId, actor, output, message => new Error(message)); return "allowed"; }
-    catch (e) { return e.message; }
+  // Test-only: hand a review verb's lease to a key the HTTP claim rules would refuse, so the test
+  // can show that submit itself refuses an anonymous approval.
+  testLeaseTo(taskId, keyId) {
+    const now = Date.now() / 1000, token = this._one("SELECT fencing_token FROM tasks WHERE namespace='main' AND id=?", taskId).fencing_token + 1;
+    this.ctx.storage.transactionSync(() => {
+      this.ctx.storage.sql.exec("UPDATE tasks SET state='leased', attempts=attempts+1, fencing_token=? WHERE namespace='main' AND id=?", token, taskId);
+      this.ctx.storage.sql.exec("INSERT INTO leases (namespace, task_id, fencing_token, worker, key_id, claimed_at, last_heartbeat_at, expires_at, hard_expires_at) VALUES ('main', ?, ?, 'fixture', ?, ?, ?, ?, ?)", taskId, token, keyId, now, now, now + 600, now + 600);
+      this.ctx.storage.sql.exec("UPDATE counts SET ready=ready-1, leased=leased+1 WHERE namespace='main' AND queue=(SELECT queue FROM tasks WHERE namespace='main' AND id=?)", taskId);
+    });
+    return token;
   }
 }
 `;
@@ -137,7 +142,11 @@ test("review, approval, publication and nouns stay closed to anonymous sessions"
   assert.equal(drafted.status, 200, JSON.stringify(drafted.data));
   await verb("review-2", { queue: "eq03", kind: "review", depends_on: ["build-2"], tags: ["status:quarantined"] });
   const approval = { approved: true, review_task_id: "review-2", draft_task_id: "build-2", drafter_key_id: drafter.data.key_id, reviewer_key_id: me.principal_id, draft_sha256: "0".repeat(64), kit_id: "KIT-OPEN-01" };
-  assert.match(await primary.testReviewProof("review-2", me.principal_id, approval), /anonymous session never approves/);
+  const fencing = await primary.testLeaseTo("review-2", me.principal_id);
+  const refused = await request("/ns/main/v1/tasks/submit", { task_id: "review-2", fencing_token: fencing, output: approval }, token, { "Idempotency-Key": "anon-approval" });
+  assert.equal(refused.status, 403, JSON.stringify(refused.data));
+  assert.match(refused.data.detail, /anonymous session never approves/);
+  assert.equal((await request("/v1/tasks/review-2", undefined, admin)).data.state, "leased");
 });
 
 test("other sessions and strangers cannot read a submission or other namespaces", async () => {
