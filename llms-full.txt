@@ -969,6 +969,7 @@ Names only here; values go in `.env` (gitignored) or the host's secret store.
 | `TESSERA_REAPER_SECONDS` | 30 | How often the service reaps lapsed leases | no |
 | `TESSERA_PUBLIC_URL` | `http://localhost:8080` | The address the agent pages advertise | no |
 | `TESSERA_ALLOWED_HOSTS` | empty | Comma-separated hosts; when set, the MCP door turns on DNS-rebinding protection for them | no |
+| `TESSERA_TRUSTED_PROXIES` | empty | Comma-separated proxy addresses whose `X-Forwarded-For` `tessera serve` believes; empty trusts none, so per-IP limits use the connecting address (or `CF-Connecting-IP` behind the edge lock) | no |
 | `TESSERA_SERVICE_PORT`, `TESSERA_EDGE_PORT` | 7700, 7701 | Ports for `make dev` | no |
 | `TESSERA_URL`, `TESSERA_KEY` | unset | Where a worker or the HTTP suite finds the service, and the worker's key | the key is |
 | `TESSERA_TEST_KEYS` | unset | JSON of keys for `make suite BACKEND=http` | yes |
@@ -1235,6 +1236,12 @@ session/key/account IDs, daily HMAC IP/UA hashes, action, resource type/ID,
 receipt ID, status, input/output sizes, error code, immutable labels and used
 scopes. Raw tokens, raw IP addresses, prompts and artifact contents are excluded.
 Service-bound keys use `principal_kind=service_binding`.
+
+Per-IP limits key on the HMAC of the connecting address: the Worker reads only `CF-Connecting-IP`,
+and `tessera serve` believes `X-Forwarded-For` only from the proxies named in
+`TESSERA_TRUSTED_PROXIES` (none by default), so a client cannot name its own address. Each limit
+counts in the hour its IP hash was computed, so a request that crosses midnight UTC, when the hash
+rotates, still counts against the hour that hash belongs to.
 
 `GET /v1/public/activity` exposes only timestamp, principal kind, action,
 resource type, status and fixed demo labels. It omits resource/account/session

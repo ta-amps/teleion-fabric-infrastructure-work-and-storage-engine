@@ -308,7 +308,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [src/tessera/store.py](src/tessera/store.py) | The in-process Tessera store: the reference implementation of SPEC.md. |
 | [src/tessera/testing.py](src/tessera/testing.py) | Factories the conformance suite loads by name (TESSERABACKENDFACTORY="module:function"). |
 
-## tests/ (66)
+## tests/ (68)
 
 | File | What it is |
 |---|---|
@@ -336,6 +336,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [tests/test_category_queries.py](tests/test_category_queries.py) | Category projections agree before bounded scans, without granting visibility. |
 | [tests/test_check_public.py](tests/test_check_public.py) | checkpublic finds secrets and private names, masks them, and honours the allow marker. |
 | [tests/test_claim_admission.py](tests/test_claim_admission.py) | Real async cancellation, fairness, resource bounds and HTTP default admission. |
+| [tests/test_client_addresses.py](tests/test_client_addresses.py) | Per-IP limits key on an address the client cannot choose (finding 6), counted in the hour its daily-rotated h… |
 | [tests/test_continuous_tuning.py](tests/test_continuous_tuning.py) | Continuous tuning example: real tool definitions, held-out splits, contamination checks, strict metrics, mini… |
 | [tests/test_core_boundaries.py](tests/test_core_boundaries.py) | Privacy over version history, strict outcomes, deadline boundaries and category plans. |
 | [tests/test_dead_letter_privacy.py](tests/test_dead_letter_privacy.py) | Failure diagnostics remain private even when the source verb was shared. |
@@ -370,6 +371,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [tests/workerd_anonymous_cost.mjs](tests/workerd_anonymous_cost.mjs) | Real Worker/SQLite: anonymous sessions stay available but cost little until used, and one |
 | [tests/workerd_blob_first_uploader.mjs](tests/workerd_blob_first_uploader.mjs) | Real Worker/SQLite: a key can always read back bytes it uploaded, whoever stored them first, |
 | [tests/workerd_blob_identity.mjs](tests/workerd_blob_identity.mjs) | Real Worker/SQLite: content identity comes from the uploaded bytes, never from a client header. |
+| [tests/workerd_client_addresses.mjs](tests/workerd_client_addresses.mjs) | Real Worker/SQLite: per-IP limits count in the hour their daily-rotated IP hash was computed, so a |
 | [tests/workerd_execution_history.mjs](tests/workerd_execution_history.mjs) | Actual Worker handlers and ephemeral SQLite Durable Objects; no provider or cloud access. |
 | [tests/workerd_execution_learning.mjs](tests/workerd_execution_learning.mjs) | Actual Worker and SQLite Durable Objects: learning reports, observations and row costs. |
 | [tests/workerd_open_verbs.mjs](tests/workerd_open_verbs.mjs) | Real Worker/SQLite: a tracked anonymous session claims, heartbeats and submits only verbs whose |

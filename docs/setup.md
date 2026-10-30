@@ -79,6 +79,7 @@ Names only here; values go in `.env` (gitignored) or the host's secret store.
 | `TESSERA_REAPER_SECONDS` | 30 | How often the service reaps lapsed leases | no |
 | `TESSERA_PUBLIC_URL` | `http://localhost:8080` | The address the agent pages advertise | no |
 | `TESSERA_ALLOWED_HOSTS` | empty | Comma-separated hosts; when set, the MCP door turns on DNS-rebinding protection for them | no |
+| `TESSERA_TRUSTED_PROXIES` | empty | Comma-separated proxy addresses whose `X-Forwarded-For` `tessera serve` believes; empty trusts none, so per-IP limits use the connecting address (or `CF-Connecting-IP` behind the edge lock) | no |
 | `TESSERA_SERVICE_PORT`, `TESSERA_EDGE_PORT` | 7700, 7701 | Ports for `make dev` | no |
 | `TESSERA_URL`, `TESSERA_KEY` | unset | Where a worker or the HTTP suite finds the service, and the worker's key | the key is |
 | `TESSERA_TEST_KEYS` | unset | JSON of keys for `make suite BACKEND=http` | yes |

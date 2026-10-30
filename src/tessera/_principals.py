@@ -217,46 +217,49 @@ def ip_group(ip: str) -> str:
     return str(addr)
 
 
-def claim_caps(key_id: str, namespace: str, ip_hash: str | None) -> list[tuple[str, int, str]]:
-    """An anonymous session's hourly claim limits: subject, ceiling and refusal (same rule as the
-    Worker). They count granted leases only; an empty poll costs a request, never a claim."""
-    caps = [(key_id, DEMO_QUOTAS["claims_per_hour"], "demo quota exceeded")]
+ClaimCap = tuple[str, int, str, int | None]
+
+
+def claim_caps(
+    key_id: str, namespace: str, ip_hash: str | None, ip_window: int | None = None
+) -> list[ClaimCap]:
+    """An anonymous session's hourly claim limits: subject, ceiling, refusal and the hour it
+    counts in (None: the claim's own; the IP hash's: the hour the hash was computed). Same rule as
+    the Worker. They count granted leases only; an empty poll costs a request, never a claim."""
+    caps: list[ClaimCap] = [(key_id, DEMO_QUOTAS["claims_per_hour"], "demo quota exceeded", None)]
     if namespace == OPEN_VERB_NAMESPACE:
         # Open verbs are shared work: also capped per session and per IP hash.
+        refusal = "open verb claim quota exceeded"
         caps += [
-            (
-                f"open:{key_id}",
-                DEMO_QUOTAS["open_claims_per_hour"],
-                "open verb claim quota exceeded",
-            ),
+            (f"open:{key_id}", DEMO_QUOTAS["open_claims_per_hour"], refusal, None),
             (
                 f"open-ip:{ip_hash or 'unknown'}",
                 DEMO_QUOTAS["open_claims_per_ip_hour"],
-                "open verb claim quota exceeded",
+                refusal,
+                ip_window,
             ),
         ]
     return caps
 
 
-def check_claim_caps(c: Any, caps: list[tuple[str, int, str]], now: float) -> None:
+def check_claim_caps(c: Any, caps: list[ClaimCap], now: float) -> None:
     """Inside the claim transaction, before a lease is chosen."""
-    window = int(now // 3600)
-    for subject, ceiling, refusal in caps:
+    for subject, ceiling, refusal, hour in caps:
         row = c.execute(
-            "SELECT claims FROM access_limits WHERE subject=? AND window=?", (subject, window)
+            "SELECT claims FROM access_limits WHERE subject=? AND window=?",
+            (subject, int(now // 3600) if hour is None else hour),
         ).fetchone()
         if row is not None and row[0] >= ceiling:
             raise RateLimited(refusal, 3600 - now % 3600)
 
 
-def charge_claim_caps(c: Any, caps: list[tuple[str, int, str]], now: float) -> None:
+def charge_claim_caps(c: Any, caps: list[ClaimCap], now: float) -> None:
     """Inside the claim transaction, once a lease is granted."""
-    window = int(now // 3600)
-    for subject, _, _ in caps:
+    for subject, _, _, hour in caps:
         c.execute(
             "INSERT INTO access_limits(subject,window,claims) VALUES (?,?,1)"
             " ON CONFLICT(subject,window) DO UPDATE SET claims=claims+1",
-            (subject, window),
+            (subject, int(now // 3600) if hour is None else hour),
         )
 
 
@@ -274,11 +277,15 @@ def mint_allowance(ceiling: int, seconds_into_hour: float, used: int) -> tuple[i
 
 
 class PrincipalOps(AccessSchemaOps):
-    def request_identity(self, ip: str, ua: str) -> dict[str, str]:
+    def request_identity(self, ip: str, ua: str) -> dict[str, Any]:
+        """Daily-rotated HMACs of the caller's address group and agent, and `ip_window`, the hour
+        they were computed in. Per-IP limits count in that hour, never a later one, so a request
+        that crosses midnight cannot charge the new day's hash to the old day's allowance."""
         with self._read() as c:
             salt = c.execute("SELECT value FROM meta WHERE key='access_hash_salt'").fetchone()[0]
-        day = int(self.clock.now() // 86400)
-        return {
+        now = self.clock.now()
+        day = int(now // 86400)
+        hashes: dict[str, Any] = {
             name: hmac.new(
                 salt.encode(), f"{day}:{kind}:{value}".encode(), hashlib.sha256
             ).hexdigest()
@@ -287,6 +294,7 @@ class PrincipalOps(AccessSchemaOps):
                 ("ua_hash", "ua", ua[:512]),
             )
         }
+        return {**hashes, "ip_window": int(now // 3600)}
 
     def principal_metadata(self, grant: KeyGrant) -> KeyGrant:
         with self._read() as c:
@@ -308,7 +316,7 @@ class PrincipalOps(AccessSchemaOps):
         return grant.model_copy(update=meta)
 
     def open_anonymous_session(
-        self, agent_label: str = "", *, ip_hash: str = "unknown"
+        self, agent_label: str = "", *, ip_hash: str = "unknown", ip_window: int | None = None
     ) -> dict[str, Any]:
         if len(agent_label) > 64:
             raise InvalidRequest("agent_label must be at most 64 characters")
@@ -316,17 +324,17 @@ class PrincipalOps(AccessSchemaOps):
         now = self.clock.now()
         window = int(now // 3600)
         with self._tx() as c:
-            for subject, maximum, paced in (
-                (f"mint:{ip_hash}", 10, False),
-                ("mint:global", GLOBAL_SESSIONS_PER_HOUR, True),
+            for subject, maximum, paced, hour in (
+                (f"mint:{ip_hash}", 10, False, window if ip_window is None else ip_window),
+                ("mint:global", GLOBAL_SESSIONS_PER_HOUR, True, window),
             ):
                 c.execute(
                     "INSERT OR IGNORE INTO access_limits(subject,window) VALUES (?,?)",
-                    (subject, window),
+                    (subject, hour),
                 )
                 row = c.execute(
                     "SELECT requests FROM access_limits WHERE subject=? AND window=?",
-                    (subject, window),
+                    (subject, hour),
                 ).fetchone()
                 allowed, wait = (
                     mint_allowance(maximum, now % 3600, row[0])
@@ -337,7 +345,7 @@ class PrincipalOps(AccessSchemaOps):
                     raise RateLimited("anonymous session mint quota exceeded", wait)
                 c.execute(
                     "UPDATE access_limits SET requests=requests+1 WHERE subject=? AND window=?",
-                    (subject, window),
+                    (subject, hour),
                 )
         store = cast("Store", self)
         principal_id = "a_" + secrets.token_hex(16)
@@ -417,6 +425,7 @@ class PrincipalOps(AccessSchemaOps):
         namespace: str,
         *,
         ip_hash: str | None = None,
+        ip_window: int | None = None,
     ) -> None:
         open_verbs = grant.uses_open_verbs(namespace)
         reachable = open_verbs or grant.files_requests(namespace)
@@ -472,7 +481,7 @@ class PrincipalOps(AccessSchemaOps):
                 raise RateLimited("demo quota exceeded", 3600 - now % 3600)
             if action == "claim":
                 # Claims are charged by the claim itself, only when it grants a lease.
-                check_claim_caps(c, claim_caps(grant.key_id, namespace, ip_hash), now)
+                check_claim_caps(c, claim_caps(grant.key_id, namespace, ip_hash, ip_window), now)
             c.execute(
                 "UPDATE access_limits SET requests=requests+1,bytes=bytes+? WHERE subject=? AND window=?",
                 (size if action in WRITE_ACTIONS else 0, grant.key_id, window),

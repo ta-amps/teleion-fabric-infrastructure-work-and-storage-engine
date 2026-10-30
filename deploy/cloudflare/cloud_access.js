@@ -177,12 +177,16 @@ export function mintAllowance(ceiling, secondsIntoHour) {
   return { allowed, nextIn: (used) => used < ceiling ? Math.max(1, Math.ceil((used - burst + 1) * 3600 / ceiling - secondsIntoHour)) : Math.max(1, Math.ceil(3600 - secondsIntoHour)) };
 }
 
+// Daily-rotated HMACs of the caller's address group and agent, and ip_window, the hour they were
+// computed in. Per-IP limits count in that hour, never a later one, so a request that crosses
+// midnight cannot charge the new day's hash to the old day's allowance (same rule as Python).
 export async function requestIdentity(c, ip, ua) {
   const salt = c._one("SELECT value FROM meta WHERE key='access_hash_salt'").value;
   const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(salt), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   const hash = async value => Array.from(new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(value))), b => b.toString(16).padStart(2, "0")).join("");
-  const day = Math.floor(Date.now() / 86400000);
-  return { ip_hash: await hash(`${day}:ip:${ipGroup(ip).slice(0, 128)}`), ua_hash: await hash(`${day}:ua:${String(ua || "").slice(0, 512)}`) };
+  const now = Date.now() / 1000;
+  const day = Math.floor(now / 86400);
+  return { ip_hash: await hash(`${day}:ip:${ipGroup(ip).slice(0, 128)}`), ua_hash: await hash(`${day}:ua:${String(ua || "").slice(0, 512)}`), ip_window: Math.floor(now / 3600) };
 }
 
 // Every successful action keeps its own redacted audit row, reads included. Denied, failed
@@ -304,12 +308,12 @@ export async function mintAnonymous(c, body, meta) {
     namespace, labels, scopes, expires_at: now + DEMO_QUOTAS.session_seconds };
   c.ctx.storage.transactionSync(() => {
     const window = Math.floor(now / 3600);
-    for (const [subject, ceiling, paced] of [[`mint:${meta.ip_hash || "unknown"}`, DEMO_QUOTAS.sessions_per_ip_hour, false], ["mint:global", GLOBAL_SESSIONS_PER_HOUR, true]]) {
-      c.ctx.storage.sql.exec("INSERT OR IGNORE INTO access_limits(subject,window) VALUES (?,?)", subject, window);
-      const used = c._one("SELECT requests FROM access_limits WHERE subject=? AND window=?", subject, window);
+    for (const [subject, ceiling, paced, hour] of [[`mint:${meta.ip_hash || "unknown"}`, DEMO_QUOTAS.sessions_per_ip_hour, false, meta.ip_window ?? window], ["mint:global", GLOBAL_SESSIONS_PER_HOUR, true, window]]) {
+      c.ctx.storage.sql.exec("INSERT OR IGNORE INTO access_limits(subject,window) VALUES (?,?)", subject, hour);
+      const used = c._one("SELECT requests FROM access_limits WHERE subject=? AND window=?", subject, hour);
       const pace = paced ? mintAllowance(ceiling, now % 3600) : null;
       if (used.requests >= (pace ? pace.allowed : ceiling)) throw error(429, "rate_limited", "anonymous session mint quota exceeded", { retry_after: pace ? pace.nextIn(used.requests) : 3600 - now % 3600 });
-      c.ctx.storage.sql.exec("UPDATE access_limits SET requests=requests+1 WHERE subject=? AND window=?", subject, window);
+      c.ctx.storage.sql.exec("UPDATE access_limits SET requests=requests+1 WHERE subject=? AND window=?", subject, hour);
     }
     c.ctx.storage.sql.exec("INSERT INTO keys(key_id,key_hash,label,queues,kinds,effect_classes,scopes,created_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?)",
       id, digest, labels.agent_label, '["demo.*"]', '["*"]', '["read","write-internal"]', JSON.stringify(scopes), now, grant.expires_at);
@@ -337,12 +341,12 @@ export async function mintRequester(c, body, meta) {
     namespace, labels, scopes, queues: [REQUEST_QUEUE], kinds: [REQUEST_KIND], effect_classes: ["read", "write-internal"], expires_at: now + REQUESTER_QUOTAS.key_days * 86400 };
   c.ctx.storage.transactionSync(() => {
     const window = Math.floor(now / 3600);
-    for (const [subject, ceiling, paced] of [[`signup:${meta.ip_hash || "unknown"}`, REQUESTER_QUOTAS.signups_per_ip_hour, false], ["signup:global", GLOBAL_SIGNUPS_PER_HOUR, true]]) {
-      c.ctx.storage.sql.exec("INSERT OR IGNORE INTO access_limits(subject,window) VALUES (?,?)", subject, window);
-      const used = c._one("SELECT requests FROM access_limits WHERE subject=? AND window=?", subject, window);
+    for (const [subject, ceiling, paced, hour] of [[`signup:${meta.ip_hash || "unknown"}`, REQUESTER_QUOTAS.signups_per_ip_hour, false, meta.ip_window ?? window], ["signup:global", GLOBAL_SIGNUPS_PER_HOUR, true, window]]) {
+      c.ctx.storage.sql.exec("INSERT OR IGNORE INTO access_limits(subject,window) VALUES (?,?)", subject, hour);
+      const used = c._one("SELECT requests FROM access_limits WHERE subject=? AND window=?", subject, hour);
       const pace = paced ? mintAllowance(ceiling, now % 3600) : null;
       if (used.requests >= (pace ? pace.allowed : ceiling)) throw error(429, "rate_limited", "requester sign-up quota exceeded", { retry_after: pace ? pace.nextIn(used.requests) : 3600 - now % 3600 });
-      c.ctx.storage.sql.exec("UPDATE access_limits SET requests=requests+1 WHERE subject=? AND window=?", subject, window);
+      c.ctx.storage.sql.exec("UPDATE access_limits SET requests=requests+1 WHERE subject=? AND window=?", subject, hour);
     }
     c.ctx.storage.sql.exec("INSERT INTO keys(key_id,key_hash,label,queues,kinds,effect_classes,scopes,created_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?)",
       keyId, digest, profile.display_name, JSON.stringify(grant.queues), JSON.stringify(grant.kinds), JSON.stringify(grant.effect_classes), JSON.stringify(scopes), now, grant.expires_at);
@@ -460,7 +464,7 @@ export function enforceAccess(c, grant, action, args) {
   const bytes = new TextEncoder().encode(payload).length;
   if (bytes > DEMO_QUOTAS.request_bytes) throw error(413, "payload_too_large", "demo request exceeds byte limit");
   const writing = WRITE_ACTIONS.has(action);
-  return [args, { kind: "anonymous", action, namespace: ns, ip_hash: args.access_meta?.ip_hash || null, bytes: writing ? bytes : 0, writing }];
+  return [args, { kind: "anonymous", action, namespace: ns, ip_hash: args.access_meta?.ip_hash || null, ip_window: args.access_meta?.ip_window ?? null, bytes: writing ? bytes : 0, writing }];
 }
 
 // An anonymous or requester key's hourly limits are counted once per key, in the primary object,
@@ -479,30 +483,28 @@ export function chargeAccess(c, who, charge, now = Date.now() / 1000) {
     const filed = filing ? c._one("SELECT claims FROM access_limits WHERE subject=? AND window=?", `request:${who.key_id}`, window)?.claims || 0 : 0;
     if (row.requests >= quotas.requests_per_hour || (charge.writing && total + charge.bytes > quotas.storage_bytes) || (filing && filed >= REQUESTER_QUOTAS.request_verbs_per_hour))
       throw error(429, "rate_limited", requester ? "requester quota exceeded" : "demo quota exceeded", { retry_after: Math.ceil(3600 - now % 3600) });
-    if (!requester && charge.action === "claim") checkClaimCaps(c, claimCaps(who, charge.namespace, charge.ip_hash), now);
+    if (!requester && charge.action === "claim") checkClaimCaps(c, claimCaps(who, charge.namespace, charge.ip_hash, charge.ip_window), now);
     sql.exec("UPDATE access_limits SET requests=requests+1,bytes=bytes+? WHERE subject=? AND window=?", charge.writing ? charge.bytes : 0, who.key_id, window);
     if (filing) sql.exec("INSERT INTO access_limits(subject,window,claims) VALUES (?,?,1) ON CONFLICT(subject,window) DO UPDATE SET claims=claims+1", `request:${who.key_id}`, window);
   });
 }
 
-// An anonymous session's hourly claim limits (same rule as _principals.claim_caps): the session's
-// claims, and in the shared namespace its open-verb claims and those of its IP hash. They count
-// granted leases only; an empty poll costs a request, never a claim.
-export function claimCaps(who, ns, ipHash) {
-  const caps = [[who.key_id, DEMO_QUOTAS.claims_per_hour, "demo quota exceeded"]];
-  if (usesOpenVerbs(who, ns)) caps.push([`open:${who.key_id}`, DEMO_QUOTAS.open_claims_per_hour, "open verb claim quota exceeded"],
-    [`open-ip:${ipHash || "unknown"}`, DEMO_QUOTAS.open_claims_per_ip_hour, "open verb claim quota exceeded"]);
+// An anonymous session's hourly claim limits (same rule as _principals.claim_caps): subject,
+// ceiling, refusal and the hour it counts in (null: the claim's own; the IP hash's: the hour the
+// hash was computed). They count granted leases only; an empty poll costs a request, never a claim.
+export function claimCaps(who, ns, ipHash, ipWindow = null) {
+  const caps = [[who.key_id, DEMO_QUOTAS.claims_per_hour, "demo quota exceeded", null]];
+  if (usesOpenVerbs(who, ns)) caps.push([`open:${who.key_id}`, DEMO_QUOTAS.open_claims_per_hour, "open verb claim quota exceeded", null],
+    [`open-ip:${ipHash || "unknown"}`, DEMO_QUOTAS.open_claims_per_ip_hour, "open verb claim quota exceeded", ipWindow]);
   return caps;
 }
 export function checkClaimCaps(c, caps, now = Date.now() / 1000) {
-  const window = Math.floor(now / 3600);
-  for (const [subject, ceiling, refusal] of caps)
-    if ((c._one("SELECT claims FROM access_limits WHERE subject=? AND window=?", subject, window)?.claims || 0) >= ceiling)
+  for (const [subject, ceiling, refusal, hour] of caps)
+    if ((c._one("SELECT claims FROM access_limits WHERE subject=? AND window=?", subject, hour ?? Math.floor(now / 3600))?.claims || 0) >= ceiling)
       throw error(429, "rate_limited", refusal, { retry_after: Math.ceil(3600 - now % 3600) });
 }
 export function chargeClaimCaps(c, caps, now = Date.now() / 1000) {
-  const window = Math.floor(now / 3600);
-  for (const [subject] of caps) c.ctx.storage.sql.exec("INSERT INTO access_limits(subject,window,claims) VALUES (?,?,1) ON CONFLICT(subject,window) DO UPDATE SET claims=claims+1", subject, window);
+  for (const [subject, , , hour] of caps) c.ctx.storage.sql.exec("INSERT INTO access_limits(subject,window,claims) VALUES (?,?,1) ON CONFLICT(subject,window) DO UPDATE SET claims=claims+1", subject, hour ?? Math.floor(now / 3600));
 }
 
 // Deny by default: own-namespace nouns, and filing and following request verbs in the shared one.

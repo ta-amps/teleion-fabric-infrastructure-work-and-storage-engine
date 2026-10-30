@@ -82,24 +82,31 @@ class RequesterOps:
     """Mixed into Store; uses its transactions, keys and scope context."""
 
     def open_requester_session(
-        self, profile: dict[str, Any], *, ip_hash: str = "unknown"
+        self, profile: dict[str, Any], *, ip_hash: str = "unknown", ip_window: int | None = None
     ) -> dict[str, Any]:
         store = cast("Store", self)
         clean = clean_profile(profile)
         now = store.clock.now()
         window = int(now // 3600)
+        # The IP hash's allowance counts in the hour the hash was computed (request_identity).
+        limits = (
+            (
+                f"signup:{ip_hash}",
+                REQUESTER_QUOTAS["signups_per_ip_hour"],
+                False,
+                window if ip_window is None else ip_window,
+            ),
+            ("signup:global", GLOBAL_SIGNUPS_PER_HOUR, True, window),
+        )
         with store._tx() as c:
-            for subject, ceiling, paced in (
-                (f"signup:{ip_hash}", REQUESTER_QUOTAS["signups_per_ip_hour"], False),
-                ("signup:global", GLOBAL_SIGNUPS_PER_HOUR, True),
-            ):
+            for subject, ceiling, paced, hour in limits:
                 c.execute(
                     "INSERT OR IGNORE INTO access_limits(subject,window) VALUES (?,?)",
-                    (subject, window),
+                    (subject, hour),
                 )
                 used = c.execute(
                     "SELECT requests FROM access_limits WHERE subject=? AND window=?",
-                    (subject, window),
+                    (subject, hour),
                 ).fetchone()[0]
                 allowed, wait = (
                     mint_allowance(ceiling, now % 3600, used)
@@ -110,7 +117,7 @@ class RequesterOps:
                     raise RateLimited("requester sign-up quota exceeded", wait)
                 c.execute(
                     "UPDATE access_limits SET requests=requests+1 WHERE subject=? AND window=?",
-                    (subject, window),
+                    (subject, hour),
                 )
         principal_id = "r_" + secrets.token_hex(16)
         namespace = "org." + principal_id
@@ -126,11 +133,11 @@ class RequesterOps:
                     (principal_id,),
                 )
                 c.execute("DELETE FROM access_principals WHERE principal_id=?", (principal_id,))
-                for subject in (f"signup:{ip_hash}", "signup:global"):
+                for subject, _, _, hour in limits:
                     c.execute(
                         "UPDATE access_limits SET requests=MAX(requests-1,0)"
                         " WHERE subject=? AND window=?",
-                        (subject, window),
+                        (subject, hour),
                     )
             raise
 

@@ -36,6 +36,9 @@ class ServiceSettings:
     allowed_hosts: tuple[str, ...] = ()
     anonymous_access_enabled: bool = False
     requester_signup_enabled: bool = False
+    # Addresses whose X-Forwarded-For `tessera serve` believes. Empty: none, so per-IP limits use
+    # the connecting address (or CF-Connecting-IP behind the edge lock), never a client's claim.
+    trusted_proxies: tuple[str, ...] = ()
     repo_url: str = "https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine"
 
     @classmethod
@@ -58,6 +61,9 @@ class ServiceSettings:
             public_url=env.get("TESSERA_PUBLIC_URL", "http://localhost:8080").rstrip("/"),
             allowed_hosts=tuple(
                 h.strip() for h in env.get("TESSERA_ALLOWED_HOSTS", "").split(",") if h.strip()
+            ),
+            trusted_proxies=tuple(
+                h.strip() for h in env.get("TESSERA_TRUSTED_PROXIES", "").split(",") if h.strip()
             ),
         )
 

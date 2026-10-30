@@ -311,6 +311,7 @@ async def access_dispatch(
                     args,
                     namespace,
                     ip_hash=meta.get("ip_hash"),
+                    ip_window=meta.get("ip_window"),
                 )
             elif not grant.allows_namespace(namespace):
                 from tessera.errors import ScopeDenied
@@ -331,6 +332,7 @@ async def access_dispatch(
                 labels=grant.labels if grant else {},
                 requester=grant.requester if grant else False,
                 ip_hash=meta.get("ip_hash"),
+                ip_window=meta.get("ip_window"),
             ):
                 response = await call_next(request)
                 chunks = [chunk async for chunk in response.body_iterator]  # type: ignore[attr-defined]

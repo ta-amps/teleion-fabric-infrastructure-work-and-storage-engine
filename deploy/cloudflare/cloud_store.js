@@ -1896,7 +1896,7 @@ export class TesseraCoordinator extends DurableObject {
     try { chargeAccess(this, who, charge); return { ok: true }; } catch (e) { return this._errOut(e); }
   }
   async chargeClaimFor(who) {
-    try { this.ctx.storage.transactionSync(() => chargeClaimCaps(this, [[who.key_id]])); return { ok: true }; } catch (e) { return this._errOut(e); }
+    try { this.ctx.storage.transactionSync(() => chargeClaimCaps(this, [[who.key_id, 0, "", null]])); return { ok: true }; } catch (e) { return this._errOut(e); }
   }
   publicActivity() { return publicActivity(this); }
   recordAccessEvent(grant, action, args, out, meta) { audit(this, grant, action, args, out, meta); }
@@ -2321,7 +2321,7 @@ export class TesseraCoordinator extends DurableObject {
           // An anonymous session's claim limits are counted in the primary object: there in this
           // transaction, from a demo namespace once its lease is granted.
           const anonymous = grant.principal_kind === "anonymous";
-          const caps = anonymous && this.isPrimary ? claimCaps(grant, this.namespace, args.access_meta?.ip_hash) : null;
+          const caps = anonymous && this.isPrimary ? claimCaps(grant, this.namespace, args.access_meta?.ip_hash, args.access_meta?.ip_window ?? null) : null;
           if (effects.length > 0 && !(Array.isArray(kinds) && kinds.length === 0)) {
             this.ctx.storage.transactionSync(() => {
               const now = Date.now() / 1000;

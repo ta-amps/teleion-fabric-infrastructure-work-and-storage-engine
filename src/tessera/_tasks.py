@@ -320,7 +320,7 @@ class TaskOps(GraphOps):
         scope = self.current_scope()
         effective_key = key_id if key_id is not None else scope.key_id
         caps = (
-            claim_caps(str(effective_key), ns, scope.ip_hash)
+            claim_caps(str(effective_key), ns, scope.ip_hash, scope.ip_window)
             if scope.anonymous and effective_key
             else []
         )

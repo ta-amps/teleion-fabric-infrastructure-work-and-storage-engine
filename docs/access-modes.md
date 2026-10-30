@@ -219,6 +219,12 @@ receipt ID, status, input/output sizes, error code, immutable labels and used
 scopes. Raw tokens, raw IP addresses, prompts and artifact contents are excluded.
 Service-bound keys use `principal_kind=service_binding`.
 
+Per-IP limits key on the HMAC of the connecting address: the Worker reads only `CF-Connecting-IP`,
+and `tessera serve` believes `X-Forwarded-For` only from the proxies named in
+`TESSERA_TRUSTED_PROXIES` (none by default), so a client cannot name its own address. Each limit
+counts in the hour its IP hash was computed, so a request that crosses midnight UTC, when the hash
+rotates, still counts against the hour that hash belongs to.
+
 `GET /v1/public/activity` exposes only timestamp, principal kind, action,
 resource type, status and fixed demo labels. It omits resource/account/session
 identifiers and client labels. The portal uses this redacted endpoint.

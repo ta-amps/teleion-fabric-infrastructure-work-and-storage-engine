@@ -37,7 +37,11 @@ def register_access_tools(
         return cast(
             dict[str, Any],
             await run(
-                lambda: store.open_anonymous_session(agent_label, ip_hash=context.meta["ip_hash"])
+                lambda: store.open_anonymous_session(
+                    agent_label,
+                    ip_hash=context.meta["ip_hash"],
+                    ip_window=context.meta.get("ip_window"),
+                )
             ),
         )
 

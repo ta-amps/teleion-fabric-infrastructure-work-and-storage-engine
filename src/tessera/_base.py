@@ -106,6 +106,7 @@ class ScopeContext:
     labels: dict[str, Any] | None = None
     requester: bool = False
     ip_hash: str | None = None
+    ip_window: int | None = None
 
 
 _DEFAULT_SCOPE = ScopeContext()
@@ -163,6 +164,7 @@ class StoreBase:
         labels: dict[str, Any] | None = None,
         requester: bool | None = None,
         ip_hash: str | None = None,
+        ip_window: int | None = None,
     ) -> Iterator[ScopeContext]:
         prev = self.current_scope()
         updated = ScopeContext(
@@ -178,6 +180,7 @@ class StoreBase:
             labels=labels if labels is not None else prev.labels,
             requester=requester if requester is not None else prev.requester,
             ip_hash=ip_hash if ip_hash is not None else prev.ip_hash,
+            ip_window=ip_window if ip_window is not None else prev.ip_window,
         )
         token = _SCOPE_CTX.set(updated)
         try:

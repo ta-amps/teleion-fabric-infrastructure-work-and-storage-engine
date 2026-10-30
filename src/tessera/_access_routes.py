@@ -115,14 +115,18 @@ def mount_access_routes(
         if not settings.anonymous_access_enabled:
             raise Unavailable("anonymous sessions are not enabled")
         meta = request.state.access_meta
-        return store.open_anonymous_session(body.agent_label, ip_hash=meta["ip_hash"])
+        return store.open_anonymous_session(
+            body.agent_label, ip_hash=meta["ip_hash"], ip_window=meta.get("ip_window")
+        )
 
     @app.post("/v1/session/requester", status_code=201, response_model=RequesterKey)
     def open_requester(body: RequesterBody, request: Request) -> dict[str, Any]:
         if not settings.requester_signup_enabled:
             raise Unavailable("requester sign-up is not enabled")
         meta = request.state.access_meta
-        return store.open_requester_session(body.profile.model_dump(), ip_hash=meta["ip_hash"])
+        return store.open_requester_session(
+            body.profile.model_dump(), ip_hash=meta["ip_hash"], ip_window=meta.get("ip_window")
+        )
 
     @app.get("/v1/verbs", response_model=Verbs)
     def verbs(
