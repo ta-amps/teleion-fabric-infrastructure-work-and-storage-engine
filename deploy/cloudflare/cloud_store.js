@@ -1,5 +1,5 @@
 import { initExecutions, checkedReport, prepareExecution, validatePrepared, captureExecution, recallExecution, getExecution, listExecutions } from "./cloud_executions.js";
-import { initAccess, principalMetadata, requestIdentity, mintAnonymous, mintRequester, seedDemo, ensureDemoSeeded, enforceAccess, audit, auditMode, countAccess, ownAudit, publicActivity, publicPrincipal, CLOSED_TO_ANONYMOUS, filesRequests, openToAnonymous, usesOpenVerbs } from "./cloud_access.js";
+import { initAccess, principalMetadata, requestIdentity, mintAnonymous, mintRequester, seedDemo, ensureDemoSeeded, enforceAccess, audit, auditMode, countAccess, ownAudit, publicActivity, publicPrincipal, requesterVerbGovernance, CLOSED_TO_ANONYMOUS, filesRequests, openToAnonymous, usesOpenVerbs } from "./cloud_access.js";
 // TesseraCoordinator: single-writer SQLite Durable Object (`new_sqlite_classes`) implementing
 // 100% of Tessera Spec v0.2 (queues, 5 verbs, dependencies, waves, park/resume, model jobs,
 // counts, events, scoped keys, queryable CAS records, persistent named file buckets,
@@ -14,6 +14,7 @@ import { TESSERA_VERSION } from "./cloud_pages.js";
 import { canonicalJson, receiptHash, sha256Hex } from "./cloud_buckets.js";
 import {
   PROTECTED_SURFACES,
+  briefTags,
   canViewGoverned,
   canonicalCategoryTags,
   extractTags,
@@ -24,6 +25,7 @@ import {
   normalizeGovernance,
   normalizeNamespace,
   normalizeSurface,
+  normalizeTags,
   nounFilterSql,
   pollFeed,
   publishFeed,
@@ -35,6 +37,7 @@ import {
 export { canonicalJson, receiptHash };
 
 const NAME_RE = /^[a-z0-9][a-z0-9_.-]{0,63}$/;
+const INHERITED_GOVERNANCE = ["producer_surface", "visibility_scope", "allowed_surfaces", "target_cohorts", "owner_key_id"];
 const TASK_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/;
 const RECORD_KEY_RE = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$/;
 const OBJECT_KEY_RE = /^[A-Za-z0-9][A-Za-z0-9_./:-]{0,511}$/;
@@ -2156,10 +2159,11 @@ export class TesseraCoordinator extends DurableObject {
             {
               defaultSurface: defaultGovSurface,
               ownerKeyId: grant.key_id,
-              extraTags: extractTags(args.brief),
+              extraTags: briefTags(args.brief),
             },
             badReq
           );
+          if (filesRequests(grant, this.namespace)) Object.assign(gov, requesterVerbGovernance(grant));
 
           let outId = args.task_id ? String(args.task_id) : newId("t");
           this.ctx.storage.transactionSync(() => {
@@ -2575,7 +2579,11 @@ export class TesseraCoordinator extends DurableObject {
           }
           this._requireHolder(grant, taskId);
           const parentView = this._taskRow(taskId);
-          for (const child of children) {
+          for (const [index, child] of children.entries()) {
+            // Children inherit their parent's owner, surface and visibility (same rule as
+            // src/tessera/_tasks.py, whose ChildSpec has no such fields); only tags may differ.
+            const own = INHERITED_GOVERNANCE.filter((field) => child[field] != null);
+            if (own.length) throw forbid(`child ${index}: split children inherit ${own.join(", ")} from their parent`);
             this._requireQueue(grant, child.queue || parentView.queue);
             if (
               child.effect_class &&
@@ -2633,17 +2641,15 @@ export class TesseraCoordinator extends DurableObject {
               const cid = newId("t");
               const prio = child.priority == null ? Number(task.priority) : Number(child.priority);
               const deps = (child.after || []).map((j) => ids[j]);
-              const frontierParent = task.producer_surface === "surface:frontier";
-              if (frontierParent && task.visibility_scope === "private" && child.visibility_scope && child.visibility_scope !== "private") throw forbid("private Frontier children cannot widen visibility");
-              const childGov = normalizeGovernance(
-                frontierParent ? { visibility_scope: task.visibility_scope, allowed_surfaces: JSON.parse(task.allowed_surfaces), target_cohorts: JSON.parse(task.target_cohorts), tags: JSON.parse(task.tags), ...child } : child,
-                {
-                  defaultSurface: task.producer_surface || defaultGovSurface,
-                  ownerKeyId: grant.key_id,
-                  extraTags: extractTags(child.brief),
-                },
-                badReq
-              );
+              const childTags = normalizeTags(child.tags, badReq);
+              const childGov = {
+                producer_surface: task.producer_surface,
+                visibility_scope: task.visibility_scope,
+                allowed_surfaces: JSON.parse(task.allowed_surfaces),
+                target_cohorts: JSON.parse(task.target_cohorts),
+                tags: childTags.length ? childTags : JSON.parse(task.tags),
+                owner_key_id: task.owner_key_id,
+              };
               this._insertTask(
                 cid,
                 q,

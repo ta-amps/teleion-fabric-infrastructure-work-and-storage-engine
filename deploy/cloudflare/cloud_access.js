@@ -51,6 +51,12 @@ export const REQUEST_QUEUE = "eq01";
 export const REQUEST_KIND = "request";
 export const REQUEST_SURFACES = Object.freeze(["surface:eranos"]);
 export const REQUESTER_STORE_PREFIX = "org.";
+// A request verb's governance is fixed whatever its caller sends (same rule as _tasks.enqueue).
+export const REQUESTER_VERB_TAGS = Object.freeze(["origin:requester", "untrusted:true", `kind:${REQUEST_KIND}`]);
+export function requesterVerbGovernance(grant) {
+  return { producer_surface: "surface:tessera", visibility_scope: "allowlist_surfaces", allowed_surfaces: [...REQUEST_SURFACES],
+    target_cohorts: ["all"], tags: [...REQUESTER_VERB_TAGS], owner_key_id: grant.key_id };
+}
 const REQUESTER_OWN_ACTIONS = new Set(["putRecords", "getRecord", "listRecords", "recordHistory", "listStores", "stores", "searchNouns", "me", "my_audit"]);
 const REQUESTER_SHARED_ACTIONS = new Set(["enqueue", "task", "results", "claimEvents", "me", "my_audit"]);
 export function filesRequests(grant, ns) {
@@ -428,8 +434,7 @@ function enforceRequester(c, grant, action, args, ns) {
   if (shared && action === "enqueue") {
     if (args.queue !== REQUEST_QUEUE || (args.kind ?? "task") !== REQUEST_KIND) throw error(403, "scope_denied", `requesters may only file ${REQUEST_KIND} verbs in ${REQUEST_QUEUE}`);
     if (Array.isArray(args.depends_on) && args.depends_on.length) throw error(403, "scope_denied", "a request verb cannot depend on other verbs");
-    Object.assign(args, { producer_surface: "surface:tessera", visibility_scope: "allowlist_surfaces", allowed_surfaces: [...REQUEST_SURFACES], target_cohorts: ["all"],
-      tags: ["origin:requester", "untrusted:true", `kind:${REQUEST_KIND}`], effect_class: "write-internal", depends_on: [], owner_key_id: grant.key_id });
+    Object.assign(args, { ...requesterVerbGovernance(grant), effect_class: "write-internal", depends_on: [] });
   } else if (shared) {
     // Only the request verbs it filed: never the children a worker split them into, whose
     // results stay quarantined until a different worker reviews them.

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+Review fixes for open verbs and requester keys, with the same cases run against both implementations from `tests/fixtures/access_parity.json`:
+
+- Governance tags come only from a producer's explicit tags. The Worker had added tags found in a brief (`tags`, `metadata_tags`, `kind` and similar fields), so a requester could open its own request verb to anonymous sessions by writing `open:anonymous` into the brief. Brief-derived tags now never carry `open:`, `status:`, `origin:`, `untrusted:` or `demo:`, and a request verb's governance is fixed after normalization. Split children on the Worker now inherit their parent's owner, surface, visibility and (unless they name their own) tags, as they do in Python; a child may not set the rest.
+
 Requester keys: `POST /v1/session/requester` lets an organization sign up without an operator, on the Worker (behind `REQUESTER_SIGNUP_ENABLED`) and the Python service (behind `TESSERA_REQUESTER_SIGNUP_ENABLED`). It mints an ordinary hashed key whose fixed scope writes private nouns only in its own `org.<principal_id>` namespace (the profile noun among them), files `request` verbs into `eq01` of the shared namespace and reads only the verbs it filed. Personal and payment data are refused, and sign-ups, filed verbs, requests and bytes are capped.
 
 Open verbs: a producer can tag a verb `open:anonymous` so that a tracked anonymous session can claim, heartbeat and submit it in the shared namespace, on the Worker and the Python service. Everything else there stays closed to anonymous sessions: they read only their own claimed work, never other outputs, nouns or principals, and `eq03`, `frontier.review` and `frontier.verify` verbs stay closed whatever their tags say. The store refuses an `eq03` approval completed by an anonymous session. Open-verb claims are capped at 5 per session and 10 per IP hash each hour, receipts carry the session's anonymous labels, and a claimant sees related tasks' states but not their outputs. `/connect.json` publishes the rule and the caps.

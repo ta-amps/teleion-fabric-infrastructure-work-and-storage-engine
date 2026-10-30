@@ -308,7 +308,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [src/tessera/store.py](src/tessera/store.py) | The in-process Tessera store: the reference implementation of SPEC.md. |
 | [src/tessera/testing.py](src/tessera/testing.py) | Factories the conformance suite loads by name (TESSERABACKENDFACTORY="module:function"). |
 
-## tests/ (62)
+## tests/ (65)
 
 | File | What it is |
 |---|---|
@@ -324,9 +324,11 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [tests/edge_execution_history.mjs](tests/edge_execution_history.mjs) |  |
 | [tests/edge_execution_mcp.mjs](tests/edge_execution_mcp.mjs) | MCP adapter fixture only: authorization/storage are covered by the real runtime suite. |
 | [tests/edge_frontier_publication.mjs](tests/edge_frontier_publication.mjs) |  |
+| [tests/fixtures/access_parity.json](tests/fixtures/access_parity.json) | JSON object: about, steps, queues, cases |
 | [tests/fixtures/execution_learning_vectors.json](tests/fixtures/execution_learning_vectors.json) | JSON object: fingerprints, learning_invalid, learning_valid, observations, profile, reports |
 | [tests/fixtures/execution_matching_vectors.json](tests/fixtures/execution_matching_vectors.json) | JSON object: profile, valid, invalid |
 | [tests/test_access_modes.py](tests/test_access_modes.py) | Full anonymous/keyed agent loops, durable limits and adversarial isolation. |
+| [tests/test_access_parity.py](tests/test_access_parity.py) | The access cases in tests/fixtures/accessparity.json, run against the Python service. |
 | [tests/test_agent_tool_listings.py](tests/test_agent_tool_listings.py) | Every agent-facing tool listing on the Python service matches what MCP tools/list serves. |
 | [tests/test_blob_first_uploader.py](tests/test_blob_first_uploader.py) | Raw blob governance is one row per namespace and digest, written by the first uploader. |
 | [tests/test_board.py](tests/test_board.py) | Console Board v2 (/board, L19), UI chrome, and agent discovery routes. |
@@ -362,6 +364,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [tests/test_spec_events.py](tests/test_spec_events.py) | SPEC §5.5 lists every event type, and the code emits only listed types: a new event can't ship without a line… |
 | [tests/test_tools.py](tests/test_tools.py) | The Muse worker keeps its safety flags whatever the brief says, and briefs load in dependency order. |
 | [tests/test_work_routing.py](tests/test_work_routing.py) | Explicit grants, team-private routing and owner-only negative controls. |
+| [tests/workerd_access_parity.mjs](tests/workerd_access_parity.mjs) | Real Worker/SQLite: the access cases in tests/fixtures/accessparity.json, which |
 | [tests/workerd_access_writes.mjs](tests/workerd_access_writes.mjs) | Real Worker/SQLite: requests that never authenticate write nothing and create no namespace |
 | [tests/workerd_agent_tool_listings.mjs](tests/workerd_agent_tool_listings.mjs) | Real Worker: every agent-facing tool listing matches what MCP tools/list serves. |
 | [tests/workerd_anonymous_cost.mjs](tests/workerd_anonymous_cost.mjs) | Real Worker/SQLite: anonymous sessions stay available but cost little until used, and one |

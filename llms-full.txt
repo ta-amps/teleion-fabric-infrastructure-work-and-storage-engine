@@ -1107,6 +1107,12 @@ The rule is deny by default:
 | read the task, results and events of verbs it claimed | read other verbs, results, nouns, blobs or principals |
 | use `/v1/me` and its own audit | enqueue, split, park, resume, cancel, write nouns or blobs |
 
+Only a producer's explicit tags open a verb. Text inside a brief never does: on the Worker a
+brief's `tags`, `metadata_tags`, `kind`, `stage` and similar fields may add search tags, but never
+`open:`, `status:`, `origin:`, `untrusted:` or `demo:` ones, so request text copied into a brief
+cannot open or relabel a verb. Split children inherit their parent's owner, producer surface and
+visibility, and its tags unless the splitter names the child's own; a child cannot set the rest.
+
 An open verb carries its whole input in its brief. The claimant sees the state of related
 tasks, never their outputs or the keys that completed them. A submitted result stays with
 its verb and keeps the verb's visibility and quarantine tags, so it is neither public nor
@@ -1134,8 +1140,8 @@ The key's scope is fixed and narrow, deny by default:
 | The shared namespace (`X-Namespace: main`) | file `request` verbs into `eq01`, and read the task, results and events of the verbs it filed | claim, submit, read the child verbs a worker splits its request into, or other verbs, nouns, principals or namespaces |
 
 A filed request verb is visible to its filer and to the `surface:eranos` keys that answer requests;
-Tessera fixes its governance (`allowlist_surfaces`, `origin:requester`, `untrusted:true`, no
-dependencies). Writes and briefs are screened for common personal and payment data. Limits: 3
+Tessera fixes its governance (`allowlist_surfaces`, exactly the tags `origin:requester`,
+`untrusted:true` and `kind:request`, no dependencies) whatever the brief contains. Writes and briefs are screened for common personal and payment data. Limits: 3
 sign-ups per IP hash and 100 in all each hour, 5 request verbs and 300 requests per key each hour,
 32 KiB per request and 256 KiB of nouns per key. This uses the existing key, principal, audit and
 limit machinery; there is no separate account table or password.
