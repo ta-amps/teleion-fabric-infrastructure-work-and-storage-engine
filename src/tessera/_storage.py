@@ -12,6 +12,7 @@ from tessera._base import StoreBase
 from tessera._frontier_guard import publication_proof as frontier_publication_proof
 from tessera._publication_guard import publication_proof
 from tessera.errors import Forbidden, InvalidRequest, NotFound, TesseraError, VersionConflict
+from tessera.grants import REQUESTER_STORE_PREFIX
 from tessera.models import (
     RecordVersion,
     RecordWrite,
@@ -150,6 +151,24 @@ class StorageOps(StoreBase):
             batch_ns = self._resolve_ns(namespace)
             for w in writes:
                 ctx = self.current_scope()
+                if ctx.requester:
+                    if not w.store.startswith(REQUESTER_STORE_PREFIX):
+                        raise Forbidden("requester writes require an org. store")
+                    kept = [
+                        t
+                        for t in w.tags
+                        if not t.startswith(("status:", "origin:", "untrusted:", "demo:", "open:"))
+                    ]
+                    w = w.model_copy(
+                        update={
+                            "visibility_scope": "private",
+                            "producer_surface": "surface:tessera",
+                            "owner_key_id": ctx.key_id,
+                            "allowed_surfaces": [],
+                            "target_cohorts": ["all"],
+                            "tags": [*kept[:8], "origin:requester", "untrusted:true"],
+                        }
+                    )
                 if ctx.anonymous:
                     if not w.store.startswith("demo."):
                         raise Forbidden("anonymous writes require a demo store")

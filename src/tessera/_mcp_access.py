@@ -45,7 +45,11 @@ def register_access_tools(
         description="Explain open discovery, tracked anonymous sessions, scoped operator-issued keys, quotas and audit. No key needed."
     )
     async def explain_access_modes() -> dict[str, Any]:
-        return access_description(settings.public_url, settings.anonymous_access_enabled)
+        return access_description(
+            settings.public_url,
+            settings.anonymous_access_enabled,
+            settings.requester_signup_enabled,
+        )
 
     @server.tool(
         description="Show your principal identity, account, scopes, labels, quotas and expiry. Requires a session or API key."

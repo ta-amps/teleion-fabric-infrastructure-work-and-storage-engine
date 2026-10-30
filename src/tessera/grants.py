@@ -29,6 +29,15 @@ CLOSED_TO_ANONYMOUS: frozenset[str] = frozenset({"eq03", "frontier.review", "fro
 OPEN_VERB_EFFECTS: frozenset[str] = frozenset({"read", "write-internal"})
 
 
+# Requester keys. A self-serve sign-up mints a key that writes nouns only in its own `org.<id>`
+# namespace and files request verbs into one request queue of the shared namespace, readable by the
+# surfaces that answer requests. It reads its own request verbs there and nothing else.
+REQUEST_QUEUE = "eq01"
+REQUEST_KIND = "request"
+REQUEST_SURFACES: tuple[str, ...] = ("surface:eranos",)
+REQUESTER_STORE_PREFIX = "org."
+
+
 def open_to_anonymous(queue: str, tags: Sequence[str], effect_class: str) -> bool:
     """True when a verb's producer opened it and it is not a review or publication verb."""
     return (
@@ -74,6 +83,14 @@ class KeyGrant(_Model):
     def anonymous(self) -> bool:
         return self.principal_kind == "anonymous"
 
+    @property
+    def requester(self) -> bool:
+        return self.principal_kind == "requester"
+
+    def files_requests(self, namespace: str) -> bool:
+        """A requester outside its own namespace may only file and follow its request verbs."""
+        return self.requester and namespace == OPEN_VERB_NAMESPACE != self.namespace
+
     def allows_namespace(self, namespace: str) -> bool:
         scopes = [s for s in self.scopes if s.startswith("namespace:")]
         return self.is_admin or (
@@ -92,7 +109,7 @@ class KeyGrant(_Model):
 
     def bound_surface(self) -> str | None:
         """Surface authorization comes only from an explicit authenticated scope."""
-        if self.anonymous:
+        if self.anonymous or self.requester:
             return None
         for s in self.scopes:
             m = _SURFACE_SCOPE_RE.fullmatch(s)

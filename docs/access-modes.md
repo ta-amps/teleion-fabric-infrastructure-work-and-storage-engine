@@ -16,6 +16,7 @@ allows session minting; it does not remove authorization from work routes.
 | Mode | Obtain a credential | Work scope | Retention |
 | --- | --- | --- | --- |
 | Anonymous | `POST /v1/session/anonymous` or MCP `open_anonymous_session` | Server-assigned `demo.<principal_id>` namespace, fixed demo queues and private nouns | Token: one hour; demo state: 24 hours, then periodic cleanup |
+| Requester | Self-serve `POST /v1/session/requester` with an organization profile | Own `org.<principal_id>` nouns; `request` verbs filed in `eq01` of the shared namespace and followed there | Key: 30 days; nouns and filed verbs remain durable |
 | Keyed | Operator-assisted `POST /v1/keys`, existing admin key routes or `make seed` | Issued queue, effect, noun and namespace grants | Key expiry is configurable; regular records and receipts remain durable |
 
 Key issuance uses an existing operator identity. There is no secret-free admin
@@ -98,6 +99,29 @@ Personal-data patterns, request size, cumulative bytes and the hourly limits abo
 they do to demo writes. One claim may be live at a time in each namespace. Claim attempts
 count, including empty ones, so list first and claim when something is ready. Abandoned or
 failed attempts count toward the queue's dead-letter limit like any other attempt.
+
+## Requester keys
+
+Organizations that ask for work sign up without an operator. Set
+`REQUESTER_SIGNUP_ENABLED=true` on the Worker or `TESSERA_REQUESTER_SIGNUP_ENABLED=true` for the
+Python service. `POST /v1/session/requester` takes a profile (`display_name`,
+`organization_type`, up to eight short `causes`; no personal data) and returns an ordinary key,
+shown once and stored only as a hash. The profile becomes the `org.profile/profile` noun in the
+key's own `org.<principal_id>` namespace.
+
+The key's scope is fixed and narrow, deny by default:
+
+| Where | It may | It may never |
+| --- | --- | --- |
+| Its own namespace | write, read and list nouns in `org.` stores (always private to it) | write any other store, enqueue or claim |
+| The shared namespace (`X-Namespace: main`) | file `request` verbs into `eq01` with effect class `read`, and read the task, results and events of verbs it filed | claim, submit, read other verbs, nouns, principals or namespaces |
+
+A filed request verb is visible to its filer and to the `surface:eranos` keys that answer requests;
+Tessera fixes its governance (`allowlist_surfaces`, `origin:requester`, `untrusted:true`, no
+dependencies). Writes and briefs are screened for common personal and payment data. Limits: 3
+sign-ups per IP hash and 100 in all each hour, 5 request verbs and 300 requests per key each hour,
+32 KiB per request and 256 KiB of nouns per key. This uses the existing key, principal, audit and
+limit machinery; there is no separate account table or password.
 
 ## A complete HTTP loop
 

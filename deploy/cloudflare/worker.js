@@ -472,7 +472,7 @@ const worker = {
     }
     const principal = requestBearer ? await primary.resolveKeyGrant(requestBearer) : null;
     const explicitNamespace = url.pathname.startsWith("/ns/") || request.headers.has("x-namespace") || request.headers.has("x-tessera-namespace");
-    if (principal?.principal_kind === "anonymous" && !explicitNamespace) namespace = principal.namespace;
+    if (["anonymous", "requester"].includes(principal?.principal_kind) && !explicitNamespace) namespace = principal.namespace;
     isPrimary = namespace === "main";
     const rawStub = coordBinding.get(coordBinding.idFromName(isPrimary ? "primary" : `ns:${namespace}`));
     const identity = await primary.requestIdentity(request.headers.get("cf-connecting-ip"), request.headers.get("user-agent"));
@@ -510,7 +510,8 @@ const worker = {
       const access = await stub.rpcCall(bearer, "verifyKey", baseRpc);
       if (!access.ok) return rpcResponse(access);
     }
-    const accessResponse = await accessRoute(request, env, { path, url, bearer, primary, stub, baseRpc, meta, publicUrl, rpcResponse, jsonResp, htmlResp, readJsonBody });
+    const namespaceStub = ns => coordBinding.get(coordBinding.idFromName(ns === "main" ? "primary" : `ns:${ns}`));
+    const accessResponse = await accessRoute(request, env, { path, url, bearer, primary, stub, baseRpc, meta, publicUrl, rpcResponse, jsonResp, htmlResp, readJsonBody, namespaceStub });
     if (accessResponse) return accessResponse;
 
 

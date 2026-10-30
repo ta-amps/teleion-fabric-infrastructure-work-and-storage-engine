@@ -19,6 +19,7 @@ from tessera._access_models import (
     KeyList,
     PrincipalView,
     PublicActivity,
+    RequesterKey,
     Verbs,
 )
 from tessera._principals import public_principal
@@ -32,6 +33,18 @@ from tessera.store import Store
 class AnonymousBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     agent_label: str = Field(default="", max_length=64)
+
+
+class RequesterProfile(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    display_name: str = Field(min_length=2, max_length=80)
+    organization_type: str = Field(min_length=3, max_length=120)
+    causes: list[str] = Field(default_factory=list, max_length=8)
+
+
+class RequesterBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    profile: RequesterProfile
 
 
 class AccountKeyBody(IssueKeyBody):
@@ -86,7 +99,11 @@ def mount_access_routes(
 
     @app.get("/connect.json")
     def connect_json() -> dict[str, Any]:
-        return access_description(settings.public_url, settings.anonymous_access_enabled)
+        return access_description(
+            settings.public_url,
+            settings.anonymous_access_enabled,
+            settings.requester_signup_enabled,
+        )
 
     @app.get("/connect.js", include_in_schema=False)
     def connect_script() -> Response:
@@ -98,6 +115,13 @@ def mount_access_routes(
             raise Unavailable("anonymous sessions are not enabled")
         meta = request.state.access_meta
         return store.open_anonymous_session(body.agent_label, ip_hash=meta["ip_hash"])
+
+    @app.post("/v1/session/requester", status_code=201, response_model=RequesterKey)
+    def open_requester(body: RequesterBody, request: Request) -> dict[str, Any]:
+        if not settings.requester_signup_enabled:
+            raise Unavailable("requester sign-up is not enabled")
+        meta = request.state.access_meta
+        return store.open_requester_session(body.profile.model_dump(), ip_hash=meta["ip_hash"])
 
     @app.get("/v1/verbs", response_model=Verbs)
     def verbs(

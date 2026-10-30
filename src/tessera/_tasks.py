@@ -22,7 +22,7 @@ from tessera.errors import (
     NotFound,
     StaleLease,
 )
-from tessera.grants import OPEN_VERB_NAMESPACE
+from tessera.grants import OPEN_VERB_NAMESPACE, REQUEST_KIND, REQUEST_QUEUE, REQUEST_SURFACES
 from tessera.models import (
     EFFECT_RANK,
     MAX_DEPENDENCIES,
@@ -103,6 +103,21 @@ class TaskOps(GraphOps):
     def enqueue(self, spec: TaskSpec, *, namespace: str | None = None) -> str:
         """Add a ready task. Enqueueing an existing id or idempotency_key into the same queue replays its id."""
         ctx = self.current_scope()
+        if ctx.requester:
+            if spec.queue != REQUEST_QUEUE or spec.kind != REQUEST_KIND:
+                raise Forbidden(f"requesters may only file {REQUEST_KIND} verbs in {REQUEST_QUEUE}")
+            spec = spec.model_copy(
+                update={
+                    "visibility_scope": "allowlist_surfaces",
+                    "producer_surface": "surface:tessera",
+                    "owner_key_id": ctx.key_id,
+                    "allowed_surfaces": list(REQUEST_SURFACES),
+                    "target_cohorts": ["all"],
+                    "tags": ["origin:requester", "untrusted:true", f"kind:{REQUEST_KIND}"],
+                    "effect_class": "read",
+                    "depends_on": [],
+                }
+            )
         if ctx.anonymous:
             if not spec.queue.startswith("demo."):
                 raise Forbidden("anonymous tasks require a demo queue")

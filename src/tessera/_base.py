@@ -104,6 +104,7 @@ class ScopeContext:
     is_admin: bool = False
     anonymous: bool = False
     labels: dict[str, Any] | None = None
+    requester: bool = False
 
 
 _DEFAULT_SCOPE = ScopeContext()
@@ -159,6 +160,7 @@ class StoreBase:
         is_admin: bool | None = None,
         anonymous: bool | None = None,
         labels: dict[str, Any] | None = None,
+        requester: bool | None = None,
     ) -> Iterator[ScopeContext]:
         prev = self.current_scope()
         updated = ScopeContext(
@@ -172,6 +174,7 @@ class StoreBase:
             is_admin=is_admin if is_admin is not None else prev.is_admin,
             anonymous=anonymous if anonymous is not None else prev.anonymous,
             labels=labels if labels is not None else prev.labels,
+            requester=requester if requester is not None else prev.requester,
         )
         token = _SCOPE_CTX.set(updated)
         try:
@@ -271,6 +274,9 @@ class StoreBase:
         if ctx.is_admin:
             return True
         tags = json.loads(row["tags"])
+        if ctx.requester and ctx.namespace == OPEN_VERB_NAMESPACE:
+            # A requester follows the request verbs it filed, and sees nothing else there.
+            return bool(row["owner_key_id"] == ctx.key_id)
         if ctx.anonymous and ctx.namespace == OPEN_VERB_NAMESPACE:
             # Deny by default: outside its own namespace an anonymous session sees only verbs
             # whose producer opened them, and never review or publication verbs.

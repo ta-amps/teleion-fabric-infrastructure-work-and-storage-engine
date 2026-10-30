@@ -239,7 +239,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [scripts/dev_stack.sh](scripts/dev_stack.sh) | Run Tessera on this machine behind the real Cloudflare edge code (wrangler dev), with the origin |
 | [scripts/suite_http_local.py](scripts/suite_http_local.py) | Run the whole conformance suite over HTTP against a real tessera serve process on this machine. |
 
-## src/ (63)
+## src/ (64)
 
 | File | What it is |
 |---|---|
@@ -264,6 +264,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [src/tessera/_observe.py](src/tessera/_observe.py) | Read-only views: tasks, results, the counts record, health, the event log, and Board v2 snapshots (SPEC §5.7… |
 | [src/tessera/_principals.py](src/tessera/_principals.py) | Durable principal metadata, bounded anonymous quotas and content-free access audit. |
 | [src/tessera/_publication_guard.py](src/tessera/_publication_guard.py) | Verify publication against immutable completed queue evidence inside the write transaction. |
+| [src/tessera/_requesters.py](src/tessera/_requesters.py) | Requester keys: self-serve sign-up for organizations that ask for work, with no operator step. |
 | [src/tessera/_service_buckets.py](src/tessera/_service_buckets.py) | HTTP routes for queryable noun stores, persistent named file buckets, and remote key management. |
 | [src/tessera/_service_executions.py](src/tessera/_service_executions.py) | Execution nouns retain task permissions across HTTP and MCP. |
 | [src/tessera/_service_intelligence.py](src/tessera/_service_intelligence.py) | HTTP routes for progressive L0 scent search, HTTP 206 byte-range slicing, live delta feeds, and 0-call dual-r… |
@@ -307,7 +308,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [src/tessera/store.py](src/tessera/store.py) | The in-process Tessera store: the reference implementation of SPEC.md. |
 | [src/tessera/testing.py](src/tessera/testing.py) | Factories the conformance suite loads by name (TESSERABACKENDFACTORY="module:function"). |
 
-## tests/ (60)
+## tests/ (62)
 
 | File | What it is |
 |---|---|
@@ -354,6 +355,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [tests/test_ontology_and_reconcile.py](tests/test_ontology_and_reconcile.py) | Tests for Tessera Wave-2 Categorized Ontology, Empirical-Bayes Rankings, Fragility Decay, 3-Way CAS Reconcili… |
 | [tests/test_open_verbs.py](tests/test_open_verbs.py) | Open verbs: a tracked anonymous session claims, heartbeats and submits only verbs whose producer opened them,… |
 | [tests/test_phase4_atomicity_and_vectors.py](tests/test_phase4_atomicity_and_vectors.py) | Phase 4 atomicity, migration, T22 gates, L26 receipt vectors, and Edge parity tests. |
+| [tests/test_requester_keys.py](tests/test_requester_keys.py) | Requester keys: a self-serve sign-up mints a hashed key that writes nouns only in its own org.<id> namespace,… |
 | [tests/test_research_seed.py](tests/test_research_seed.py) | Bounded authoring, pinned inputs and a real local task loop; no provider calls. |
 | [tests/test_service.py](tests/test_service.py) | The HTTP service: keys, scopes, POST-only writes, holders, rate limits, the edge lock, the agent door, the we… |
 | [tests/test_showcase_seed.py](tests/test_showcase_seed.py) | Creative seeds remain bounded and idempotent through actual Store operations. |
@@ -369,6 +371,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [tests/workerd_execution_learning.mjs](tests/workerd_execution_learning.mjs) | Actual Worker and SQLite Durable Objects: learning reports, observations and row costs. |
 | [tests/workerd_open_verbs.mjs](tests/workerd_open_verbs.mjs) | Real Worker/SQLite: a tracked anonymous session claims, heartbeats and submits only verbs whose |
 | [tests/workerd_reaper.mjs](tests/workerd_reaper.mjs) | Real Worker/SQLite: the lease reaper keeps running in the main namespace even when an alarm |
+| [tests/workerd_requester_keys.mjs](tests/workerd_requester_keys.mjs) | Real Worker/SQLite: a self-serve requester key writes nouns only in its own org.<id> namespace, |
 | [tests/workerd_storage_exhaustion.mjs](tests/workerd_storage_exhaustion.mjs) | Real Worker/SQLite under a faithful storage-exhaustion simulation: after the provider's daily |
 | [tests/workerd_storage_quota.mjs](tests/workerd_storage_quota.mjs) | Real Worker/SQLite behavior; fixture-only RPC methods never ship in the product. |
 

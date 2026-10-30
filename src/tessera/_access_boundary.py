@@ -61,7 +61,14 @@ MCP_ACTIONS = {
     "list_executions": "listExecutions",
     "list_execution_observations": "listExecutions",
 }
-PUBLIC_PATHS = {"/v1/health", "/v1/openapi.json", "/v1/public/activity", "/v1/session/anonymous"}
+PUBLIC_PATHS = {
+    "/v1/health",
+    "/v1/openapi.json",
+    "/v1/public/activity",
+    "/v1/session/anonymous",
+    "/v1/session/requester",
+}
+MINT_ACTIONS = {"mint_session", "mint_requester"}
 
 
 def access_error(exc: TesseraError) -> JSONResponse:
@@ -96,6 +103,8 @@ def http_action(path: str, method: str, args: dict[str, Any]) -> str:
         return "getExecution"
     if path == "/v1/session/anonymous":
         return "mint_session"
+    if path == "/v1/session/requester":
+        return "mint_requester"
     if path == "/v1/me":
         return "me"
     if path in {"/v1/me/audit", "/v1/admin/audit"}:
@@ -227,7 +236,7 @@ async def access_dispatch(
         ):
             bounded = bool(
                 (grant and grant.anonymous)
-                or path == "/v1/session/anonymous"
+                or path in {"/v1/session/anonymous", "/v1/session/requester"}
                 or (not grant and path == "/mcp")
             )
             if bounded:
@@ -286,7 +295,11 @@ async def access_dispatch(
         if not public and grant is None:
             grant = await run_in_threadpool(gate.grant, secret)
         namespace = store.current_scope().namespace
-        if grant and grant.anonymous and not getattr(request.state, "explicit_namespace", False):
+        if (
+            grant
+            and (grant.anonymous or grant.requester)
+            and not getattr(request.state, "explicit_namespace", False)
+        ):
             namespace = grant.namespace
         meta["namespace"] = namespace
         if grant:
@@ -316,6 +329,7 @@ async def access_dispatch(
                 is_admin=grant.is_admin if grant else False,
                 anonymous=grant.anonymous if grant else False,
                 labels=grant.labels if grant else {},
+                requester=grant.requester if grant else False,
             ):
                 response = await call_next(request)
                 chunks = [chunk async for chunk in response.body_iterator]  # type: ignore[attr-defined]
@@ -342,12 +356,12 @@ async def access_dispatch(
                         output = {"isError": True, "code": "mcp_error"}
         except ValueError:
             pass
-        if action == "mint_session" and response.status_code < 400:
-            minted = output.get("session_token")
+        if action in MINT_ACTIONS and response.status_code < 400:
+            minted = output.get("session_token") or output.get("key")
             if isinstance(minted, str):
                 grant = await run_in_threadpool(gate.grant, minted)
                 meta["namespace"] = grant.namespace
-        if grant or not public or action == "mint_session":
+        if grant or not public or action in MINT_ACTIONS:
             status = 400 if output.get("isError") else response.status_code
             await run_in_threadpool(
                 store.audit_access,

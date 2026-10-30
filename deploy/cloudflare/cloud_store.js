@@ -1,5 +1,5 @@
 import { initExecutions, checkedReport, prepareExecution, validatePrepared, captureExecution, recallExecution, getExecution, listExecutions } from "./cloud_executions.js";
-import { initAccess, principalMetadata, requestIdentity, mintAnonymous, seedDemo, ensureDemoSeeded, enforceAccess, audit, auditMode, countAccess, ownAudit, publicActivity, publicPrincipal, CLOSED_TO_ANONYMOUS, openToAnonymous, usesOpenVerbs } from "./cloud_access.js";
+import { initAccess, principalMetadata, requestIdentity, mintAnonymous, mintRequester, seedDemo, ensureDemoSeeded, enforceAccess, audit, auditMode, countAccess, ownAudit, publicActivity, publicPrincipal, CLOSED_TO_ANONYMOUS, filesRequests, openToAnonymous, usesOpenVerbs } from "./cloud_access.js";
 // TesseraCoordinator: single-writer SQLite Durable Object (`new_sqlite_classes`) implementing
 // 100% of Tessera Spec v0.2 (queues, 5 verbs, dependencies, waves, park/resume, model jobs,
 // counts, events, scoped keys, queryable CAS records, persistent named file buckets,
@@ -1514,8 +1514,10 @@ export class TesseraCoordinator extends DurableObject {
   _taskVisible(row, grant, viewerCtx) {
     if (grant.is_admin) return true;
     const tags = parseJsonSafe(row.tags, []);
-    // Deny by default: outside its own namespace an anonymous session sees only opened verbs.
+    // Deny by default: outside its own namespace an anonymous session sees only opened verbs,
+    // and a requester sees only the request verbs it filed.
     if (usesOpenVerbs(grant, this.namespace)) return openToAnonymous(row.queue, tags, row.effect_class);
+    if (filesRequests(grant, this.namespace)) return row.owner_key_id === grant.key_id;
     if (tags.includes("status:quarantined") && viewerCtx.surface !== row.producer_surface) return false;
     if (row.visibility_scope === "private") return row.owner_key_id === grant.key_id;
     if (row.visibility_scope === "surface_only") return Boolean(viewerCtx.surface && viewerCtx.surface === row.producer_surface);
@@ -1864,6 +1866,10 @@ export class TesseraCoordinator extends DurableObject {
     try { return { ok: true, status: 201, data: await mintAnonymous(this, body, meta) }; }
     catch (e) { return this._errOut(e); }
   }
+  async openRequesterSession(body, meta) {
+    try { return { ok: true, status: 201, data: await mintRequester(this, body, meta) }; }
+    catch (e) { return this._errOut(e); }
+  }
   async seedDemo(grant, purgeAt) { return seedDemo(this, grant, purgeAt); }
   publicActivity() { return publicActivity(this); }
   recordAccessEvent(grant, action, args, out, meta) { audit(this, grant, action, args, out, meta); }
@@ -1946,7 +1952,7 @@ export class TesseraCoordinator extends DurableObject {
       this.isPrimary = Boolean(args?.isPrimary ?? (this.namespace === "main"));
       const grant = await this._grantFromSecret(secret);
       const now = Date.now() / 1000;
-      if (!this.namespace.startsWith("demo.")) this._ensureNamespaceSeeded(this.namespace, now);
+      if (!this.namespace.startsWith("demo.") && !this.namespace.startsWith("org.")) this._ensureNamespaceSeeded(this.namespace, now);
       const surfaceHeader = args?.surfaceHeader || args?.header_surface_id || "";
       const viewerCtx = this._viewerCtx(grant, surfaceHeader);
       const defaultGovSurface = viewerCtx.surface || "surface:tessera";
@@ -2218,7 +2224,7 @@ export class TesseraCoordinator extends DurableObject {
         case "task": {
           const view = this._taskView(String(args.task_id));
           this._requireQueue(grant, view.queue);
-          if (usesOpenVerbs(grant, this.namespace)) {
+          if (usesOpenVerbs(grant, this.namespace) || filesRequests(grant, this.namespace)) {
             if (!this._taskVisible(this._taskRow(String(args.task_id)), grant, viewerCtx)) throw notFound(`task '${view.task_id}' does not exist`);
           } else if (
             !canViewGoverned({

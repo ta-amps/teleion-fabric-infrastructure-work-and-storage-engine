@@ -226,6 +226,7 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
             is_admin=grant.is_admin,
             anonymous=grant.anonymous,
             labels=grant.labels,
+            requester=grant.requester,
         ):
             yield grant
 
@@ -703,7 +704,13 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
             "scheme": "bearer",
             "description": "A tracked tan_ session token or scoped tsk_ API key.",
         }
-        public = {"/v1/health", "/v1/public/activity", "/v1/session/anonymous", "/connect.json"}
+        public = {
+            "/v1/health",
+            "/v1/public/activity",
+            "/v1/session/anonymous",
+            "/v1/session/requester",
+            "/connect.json",
+        }
         for path, operations in schema["paths"].items():
             for operation in operations.values():
                 if isinstance(operation, dict):

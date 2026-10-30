@@ -25,12 +25,50 @@ export function openToAnonymous(queue, tags, effectClass) {
 export function usesOpenVerbs(grant, ns) {
   return grant?.principal_kind === "anonymous" && ns === OPEN_VERB_NAMESPACE && grant.namespace !== ns;
 }
+export function requesterDescription() {
+  return { namespace: "Server assigned org.<principal_id>; the key writes nouns only in its own org. stores there",
+    files: `${REQUEST_KIND} verbs in ${REQUEST_QUEUE} of the shared namespace (X-Namespace: main), readable by ${REQUEST_SURFACES.join(", ")}`,
+    reads: "its own nouns and the request verbs it filed, nothing else",
+    profile: "display_name, organization_type and causes only; no personal data",
+    secret_shown_once: true };
+}
 export function openVerbsDescription() {
   return { namespace: OPEN_VERB_NAMESPACE, tag: OPEN_VERB_TAG,
     how: "Send X-Namespace: main (or call /ns/main/v1/...) to list, claim, heartbeat and submit verbs whose producer tagged them open:anonymous.",
     actions: [...OPEN_VERB_ACTIONS].sort(), closed_queues: [...CLOSED_TO_ANONYMOUS].sort(),
     claimant_sees: "the verb's brief, its own receipts and the state of related tasks; never other outputs, nouns or principals",
     review: "A submitted result stays quarantined with its verb. A different keyed worker or a person reviews it; anonymous sessions never approve or publish." };
+}
+// Requester keys (same rule as src/tessera/_requesters.py): a self-serve sign-up mints a hashed
+// key that writes nouns only in its own org.<principal_id> namespace, files request verbs into the
+// shared request queue and follows the request verbs it filed. Everything else is denied.
+export const REQUESTER_QUOTAS = Object.freeze({
+  key_days: 30, signups_per_ip_hour: 3, requests_per_hour: 300,
+  request_verbs_per_hour: 5, request_bytes: 32768, storage_bytes: 262144,
+});
+export const GLOBAL_SIGNUPS_PER_HOUR = 100;
+export const REQUEST_QUEUE = "eq01";
+export const REQUEST_KIND = "request";
+export const REQUEST_SURFACES = Object.freeze(["surface:eranos"]);
+export const REQUESTER_STORE_PREFIX = "org.";
+const REQUESTER_OWN_ACTIONS = new Set(["putRecords", "getRecord", "listRecords", "recordHistory", "listStores", "stores", "searchNouns", "me", "my_audit"]);
+const REQUESTER_SHARED_ACTIONS = new Set(["enqueue", "task", "results", "claimEvents", "me", "my_audit"]);
+export function filesRequests(grant, ns) {
+  return grant?.principal_kind === "requester" && ns === OPEN_VERB_NAMESPACE && grant.namespace !== ns;
+}
+const PERSONAL_DATA = /@(?!example\.(?:com|org|net)\b)[a-z0-9.-]+\.[a-z]{2,}|\b\d{3}-\d{2}-\d{4}\b|\b(?:\d[ -]?){13,19}\b/i;
+export function cleanProfile(profile) {
+  const text = (value, field, low, high) => {
+    const clean = String(value ?? "").replace(/[^\p{L}\p{N}_ .,&'()/:+-]/gu, "").trim();
+    if (clean.length < low || clean.length > high) throw error(400, "invalid_request", `profile ${field} must be ${low} to ${high} characters`);
+    return clean;
+  };
+  if (!profile || typeof profile !== "object" || Array.isArray(profile)) throw error(400, "invalid_request", "profile must be an object");
+  const causes = profile.causes ?? [];
+  if (!Array.isArray(causes) || causes.length > 8) throw error(400, "invalid_request", "profile causes must be a list of at most 8 short phrases");
+  const clean = { display_name: text(profile.display_name, "display_name", 2, 80), organization_type: text(profile.organization_type, "organization_type", 3, 120), causes: causes.map(c => text(c, "cause", 2, 40)) };
+  if (PERSONAL_DATA.test(JSON.stringify(clean))) throw error(400, "invalid_request", "profiles must not contain personal or payment data");
+  return clean;
 }
 export const ANON_LABELS = Object.freeze({ origin: "anonymous", demo: true, untrusted: true });
 export const GLOBAL_SESSIONS_PER_HOUR = 1000;
@@ -140,7 +178,7 @@ export function namespaceAllowed(grant, ns) {
 }
 // A namespace a principal may reach at all: its grants, or the shared namespace's open verbs.
 export function namespaceReachable(grant, ns) {
-  return namespaceAllowed(grant, ns) || usesOpenVerbs(grant, ns);
+  return namespaceAllowed(grant, ns) || usesOpenVerbs(grant, ns) || filesRequests(grant, ns);
 }
 
 // Counters are buffered in object memory and written when their minute has passed, when the
@@ -252,6 +290,37 @@ export async function mintAnonymous(c, body, meta) {
   return { session_token: token, ...grant, key_id: null, quotas: DEMO_QUOTAS, persisted: true, retention_expires_at: now + DEMO_QUOTAS.retention_seconds };
 }
 
+export async function mintRequester(c, body, meta) {
+  if (String(c.env.REQUESTER_SIGNUP_ENABLED || "false") !== "true") throw error(503, "requester_disabled", "requester sign-up is not enabled");
+  const profile = cleanProfile(body?.profile);
+  const now = Date.now() / 1000;
+  const token = randomSecret("tsk_");
+  const digest = await sha256Hex(new TextEncoder().encode(token));
+  const principalId = `r_${crypto.randomUUID().replaceAll("-", "")}`;
+  const keyId = `k_${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`;
+  const namespace = `org.${principalId}`;
+  const labels = { origin: "requester", untrusted: true, display_name: profile.display_name };
+  const scopes = ["nouns:read", "cas:write", "verbs:submit", `namespace:${namespace}`];
+  const grant = { key_id: keyId, principal_id: principalId, session_id: null, principal_kind: "requester", account_id: `requester:${principalId}`,
+    namespace, labels, scopes, queues: [REQUEST_QUEUE], kinds: [REQUEST_KIND], effect_classes: ["read"], expires_at: now + REQUESTER_QUOTAS.key_days * 86400 };
+  c.ctx.storage.transactionSync(() => {
+    const window = Math.floor(now / 3600);
+    for (const [subject, ceiling, paced] of [[`signup:${meta.ip_hash || "unknown"}`, REQUESTER_QUOTAS.signups_per_ip_hour, false], ["signup:global", GLOBAL_SIGNUPS_PER_HOUR, true]]) {
+      c.ctx.storage.sql.exec("INSERT OR IGNORE INTO access_limits(subject,window) VALUES (?,?)", subject, window);
+      const used = c._one("SELECT requests FROM access_limits WHERE subject=? AND window=?", subject, window);
+      const pace = paced ? mintAllowance(ceiling, now % 3600) : null;
+      if (used.requests >= (pace ? pace.allowed : ceiling)) throw error(429, "rate_limited", "requester sign-up quota exceeded", { retry_after: pace ? pace.nextIn(used.requests) : 3600 - now % 3600 });
+      c.ctx.storage.sql.exec("UPDATE access_limits SET requests=requests+1 WHERE subject=? AND window=?", subject, window);
+    }
+    c.ctx.storage.sql.exec("INSERT INTO keys(key_id,key_hash,label,queues,kinds,effect_classes,scopes,created_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?)",
+      keyId, digest, profile.display_name, JSON.stringify(grant.queues), JSON.stringify(grant.kinds), JSON.stringify(grant.effect_classes), JSON.stringify(scopes), now, grant.expires_at);
+    c.ctx.storage.sql.exec("INSERT INTO access_principals(key_id,principal_kind,principal_id,account_id,namespace,key_prefix,labels,quota_tier,last_used_at,purge_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+      keyId, "requester", principalId, grant.account_id, namespace, token.slice(0, 8), JSON.stringify(labels), "requester", now, null);
+    audit(c, grant, "mint_requester", { namespace }, { ok: true, status: 201, data: {} }, meta);
+  });
+  return { key: token, ...publicPrincipal(grant), profile };
+}
+
 export function seedDemo(c, grant, purgeAt) {
   c.namespace = grant.namespace;
   c.isPrimary = false;
@@ -288,7 +357,7 @@ export async function ensureDemoSeeded(c, grant, ns) {
 export function enforceAccess(c, grant, action, args) {
   const ns = args.namespace || "main";
   const openVerbs = usesOpenVerbs(grant, ns);
-  if (!openVerbs && !namespaceAllowed(grant, ns)) throw error(403, "scope_denied", "this principal may not access this namespace");
+  if (!openVerbs && !filesRequests(grant, ns) && !namespaceAllowed(grant, ns)) throw error(403, "scope_denied", "this principal may not access this namespace");
   const fineScopes = grant.scopes.some(s => s.includes(":") && !s.startsWith("surface:") && !s.startsWith("namespace:"));
   const required = SCOPES[action] || (READ_ACTIONS.has(action) ? "nouns:read" : null);
   if (!grant.is_admin && fineScopes && required && !grant.scopes.includes(required)) throw error(403, "scope_denied", `missing ${required} scope`);
@@ -301,6 +370,7 @@ export function enforceAccess(c, grant, action, args) {
   };
   checkGov(args);
   for (const w of args.writes || []) checkGov(w);
+  if (grant.principal_kind === "requester") return enforceRequester(c, grant, action, args, ns);
   if (grant.principal_kind !== "anonymous") return args;
   if (openVerbs) {
     if (!OPEN_VERB_ACTIONS.has(action)) throw error(403, "scope_denied", "outside its own namespace an anonymous session may only claim, heartbeat and submit open verbs");
@@ -350,6 +420,43 @@ export function enforceAccess(c, grant, action, args) {
   return args;
 }
 
+// Deny by default: own-namespace nouns, and filing and following request verbs in the shared one.
+function enforceRequester(c, grant, action, args, ns) {
+  const shared = filesRequests(grant, ns);
+  if (!(shared ? REQUESTER_SHARED_ACTIONS : REQUESTER_OWN_ACTIONS).has(action)) throw error(403, "scope_denied", "a requester key writes nouns in its own namespace and files request verbs");
+  args = { ...args };
+  if (shared && action === "enqueue") {
+    if (args.queue !== REQUEST_QUEUE || (args.kind ?? "task") !== REQUEST_KIND) throw error(403, "scope_denied", `requesters may only file ${REQUEST_KIND} verbs in ${REQUEST_QUEUE}`);
+    if (Array.isArray(args.depends_on) && args.depends_on.length) throw error(403, "scope_denied", "a request verb cannot depend on other verbs");
+    Object.assign(args, { producer_surface: "surface:tessera", visibility_scope: "allowlist_surfaces", allowed_surfaces: [...REQUEST_SURFACES], target_cohorts: ["all"],
+      tags: ["origin:requester", "untrusted:true", `kind:${REQUEST_KIND}`], effect_class: "read", depends_on: [], owner_key_id: grant.key_id });
+  } else if (shared) {
+    if (!c._one("SELECT 1 AS own FROM tasks WHERE namespace=? AND id=? AND owner_key_id=?", ns, String(args.task_id || ""), grant.key_id)) throw error(404, "not_found", "task does not exist");
+  } else {
+    const names = [args.store, args.store_name, ...(args.writes || []).map(w => w?.store)];
+    if (names.some(n => n && !String(n).startsWith(REQUESTER_STORE_PREFIX))) throw error(403, "scope_denied", "requester nouns live in org. stores of their own namespace");
+    if (action === "putRecords") args.writes = (args.writes || []).map(w => ({ ...w, namespace: ns, producer_surface: "surface:tessera", owner_key_id: grant.key_id, visibility_scope: "private", allowed_surfaces: [], target_cohorts: ["all"],
+      tags: [...(w.tags || []).filter(t => !/^(status|origin|untrusted|demo|open):/.test(t)).slice(0, 8), "origin:requester", "untrusted:true"] }));
+  }
+  const writing = action === "putRecords" || action === "enqueue";
+  const payload = JSON.stringify(action === "putRecords" ? args.writes : action === "enqueue" ? args.brief : {});
+  if (writing && PERSONAL_DATA.test(payload)) throw error(400, "synthetic_only", "requests and nouns must not contain personal or payment data");
+  const bytes = new TextEncoder().encode(payload).length;
+  if (bytes > REQUESTER_QUOTAS.request_bytes) throw error(413, "payload_too_large", "requester request exceeds byte limit");
+  const now = Date.now() / 1000, window = Math.floor(now / 3600);
+  c.ctx.storage.transactionSync(() => {
+    for (const subject of [grant.key_id, `request:${grant.key_id}`]) c.ctx.storage.sql.exec("INSERT OR IGNORE INTO access_limits(subject,window) VALUES (?,?)", subject, window);
+    const row = c._one("SELECT * FROM access_limits WHERE subject=? AND window=?", grant.key_id, window);
+    const filed = c._one("SELECT claims FROM access_limits WHERE subject=? AND window=?", `request:${grant.key_id}`, window).claims;
+    const total = c._one("SELECT COALESCE(SUM(bytes),0) n FROM access_limits WHERE subject=?", grant.key_id).n;
+    if (row.requests >= REQUESTER_QUOTAS.requests_per_hour || (action === "enqueue" && filed >= REQUESTER_QUOTAS.request_verbs_per_hour) || (writing && total + bytes > REQUESTER_QUOTAS.storage_bytes))
+      throw error(429, "rate_limited", "requester quota exceeded", { retry_after: Math.ceil(3600 - now % 3600) });
+    c.ctx.storage.sql.exec("UPDATE access_limits SET requests=requests+1,bytes=bytes+? WHERE subject=? AND window=?", writing ? bytes : 0, grant.key_id, window);
+    if (action === "enqueue") c.ctx.storage.sql.exec("UPDATE access_limits SET claims=claims+1 WHERE subject=? AND window=?", `request:${grant.key_id}`, window);
+  });
+  return args;
+}
+
 export function ownAudit(c, grant, args = {}) {
   const limit = Math.max(1, Math.min(Number(args.limit) || 50, 200));
   const all = grant.is_admin && args.admin;
@@ -372,6 +479,6 @@ export function publicPrincipal(grant) {
     session_id: grant.session_id || null, key_id: grant.principal_kind === "anonymous" ? null : grant.key_id,
     account_id: grant.account_id || null, namespace: grant.namespace || "main", key_prefix: grant.key_prefix || null,
     scopes: grant.scopes, queues: grant.queues, kinds: grant.kinds, effect_classes: grant.effect_classes,
-    labels: grant.labels || {}, quotas: grant.principal_kind === "anonymous" ? DEMO_QUOTAS : null,
-    quota_reason: grant.principal_kind === "anonymous" ? null : "Operator-configured queue grants and service request limits apply.", expires_at: grant.expires_at };
+    labels: grant.labels || {}, quotas: grant.principal_kind === "anonymous" ? DEMO_QUOTAS : grant.principal_kind === "requester" ? REQUESTER_QUOTAS : null,
+    quota_reason: ["anonymous", "requester"].includes(grant.principal_kind) ? null : "Operator-configured queue grants and service request limits apply.", expires_at: grant.expires_at };
 }

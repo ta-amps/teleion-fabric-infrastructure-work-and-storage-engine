@@ -35,6 +35,7 @@ class ServiceSettings:
     public_url: str = "http://localhost:8080"
     allowed_hosts: tuple[str, ...] = ()
     anonymous_access_enabled: bool = False
+    requester_signup_enabled: bool = False
     repo_url: str = "https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine"
 
     @classmethod
@@ -42,6 +43,8 @@ class ServiceSettings:
         env = os.environ
         return cls(
             anonymous_access_enabled=env.get("TESSERA_ANONYMOUS_ACCESS_ENABLED", "false").lower()
+            == "true",
+            requester_signup_enabled=env.get("TESSERA_REQUESTER_SIGNUP_ENABLED", "false").lower()
             == "true",
             db_path=env.get("TESSERA_DB", ".tessera/tessera.db"),
             edge_secret=env.get("TESSERA_EDGE_SECRET") or None,

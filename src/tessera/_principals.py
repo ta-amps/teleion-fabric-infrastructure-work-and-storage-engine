@@ -32,6 +32,11 @@ DEMO_QUOTAS = {
     "open_claims_per_ip_hour": 10,
 }
 ANON_LABELS: dict[str, Any] = {"origin": "anonymous", "demo": True, "untrusted": True}
+# A limited deterministic filter for common personal and payment data (same rule as the Worker).
+PERSONAL_DATA = re.compile(
+    r"@(?!example\.(?:com|org|net)\b)[a-z0-9.-]+\.[a-z]{2,}|\b\d{3}-\d{2}-\d{4}\b|\b(?:\d[ -]?){13,19}\b",
+    re.I,
+)
 # Successful actions keep one audit row each, reads included. Denied, failed and no-op
 # requests and internal pre-checks are counted per minute instead (same rule as the Worker).
 PRECHECK_ACTIONS = frozenset(
@@ -160,14 +165,24 @@ def public_principal(grant: KeyGrant) -> dict[str, Any]:
         "effect_classes": grant.effect_classes,
         "labels": grant.labels,
         "expires_at": grant.expires_at,
-        "quotas": DEMO_QUOTAS if grant.anonymous else None,
-        "quota_reason": None
+        "quotas": DEMO_QUOTAS
         if grant.anonymous
+        else _requester_quotas()
+        if grant.requester
+        else None,
+        "quota_reason": None
+        if grant.anonymous or grant.requester
         else "Operator-configured queue grants and service request limits apply.",
     }
 
 
 GLOBAL_SESSIONS_PER_HOUR = 1000
+
+
+def _requester_quotas() -> dict[str, int]:
+    from tessera._requesters import REQUESTER_QUOTAS
+
+    return REQUESTER_QUOTAS
 
 
 def ip_group(ip: str) -> str:
@@ -343,12 +358,16 @@ class PrincipalOps(AccessSchemaOps):
         ip_hash: str | None = None,
     ) -> None:
         open_verbs = grant.uses_open_verbs(namespace)
-        if not (open_verbs or grant.allows_namespace(namespace)):
+        reachable = open_verbs or grant.files_requests(namespace)
+        if not (reachable or grant.allows_namespace(namespace)):
             raise ScopeDenied("this principal may not access this namespace")
         fine = any(":" in s and not s.startswith(("surface:", "namespace:")) for s in grant.scopes)
         required = SCOPES.get(action, "nouns:read" if action in READ_ACTIONS else None)
         if not grant.is_admin and fine and required and required not in grant.scopes:
             raise ScopeDenied(f"missing {required} scope")
+        if grant.requester:
+            cast("Store", self).enforce_requester(grant, action, args, namespace)
+            return
         if not grant.anonymous:
             return
         if open_verbs:
@@ -375,11 +394,7 @@ class PrincipalOps(AccessSchemaOps):
             else {}
         )
         encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-        if action in WRITE_ACTIONS and re.search(
-            r"@(?!example\.(?:com|org|net)\b)[a-z0-9.-]+\.[a-z]{2,}|\b\d{3}-\d{2}-\d{4}\b|\b(?:\d[ -]?){13,19}\b",
-            encoded,
-            re.I,
-        ):
+        if action in WRITE_ACTIONS and PERSONAL_DATA.search(encoded):
             raise InvalidRequest(
                 "demo payloads must not contain personal or payment data; use example.com"
             )
