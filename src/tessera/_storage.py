@@ -429,6 +429,13 @@ class StorageOps(StoreBase):
                 now,
             ),
         )
+        uploader = self.current_scope().key_id
+        if uploader is not None:
+            c.execute(
+                "INSERT OR IGNORE INTO blob_uploaders (namespace, sha256, key_id, created_at)"
+                " VALUES (?, ?, ?, ?)",
+                (namespace, digest, uploader, now),
+            )
         if cur.rowcount:
             self._event(
                 c,
@@ -486,7 +493,25 @@ class StorageOps(StoreBase):
             )
 
     def get_blob(self, sha256: str, *, namespace: str | None = None) -> bytes:
-        ns = self._resolve_ns(namespace)
+        return self._read_blob(sha256, self._resolve_ns(namespace), raw=True)
+
+    @staticmethod
+    def _uploaded_by(c: sqlite3.Connection, ns: str, sha256: str, key_id: str | None) -> bool:
+        """Whether this key uploaded these bytes into this namespace, as a blob or an object."""
+        return (
+            key_id is not None
+            and c.execute(
+                "SELECT 1 FROM blob_uploaders WHERE namespace = ? AND sha256 = ? AND key_id = ?",
+                (ns, sha256, key_id),
+            ).fetchone()
+            is not None
+        )
+
+    def _read_blob(self, sha256: str, ns: str, *, raw: bool) -> bytes:
+        """Bytes registered in `ns`; quarantined objects holding them hide them from other surfaces.
+        A raw read also needs the blob's own row, written by its first uploader, to admit the
+        caller, unless the caller's key uploaded these bytes here itself. An object read
+        (`raw=False`) skips that row: the object's own ACL, already checked, governs it."""
         ctx = self.current_scope()
         with self._read() as c:
             bn = c.execute(
@@ -511,16 +536,20 @@ class StorageOps(StoreBase):
                     )
                     if not viewer_ok:
                         raise NotFound(f"blob {sha256} does not exist")
-            if not can_view_governed(
-                visibility_scope=str(bn["visibility_scope"]),
-                producer_surface=str(bn["producer_surface"]),
-                allowed_surfaces=json.loads(bn["allowed_surfaces"]),
-                owner_key_id=bn["owner_key_id"],
-                tags=bn_tags,
-                viewer_surface=ctx.surface,
-                viewer_key_id=ctx.key_id,
-                is_admin=ctx.is_admin,
-                direct_get=True,
+            if (
+                raw
+                and not can_view_governed(
+                    visibility_scope=str(bn["visibility_scope"]),
+                    producer_surface=str(bn["producer_surface"]),
+                    allowed_surfaces=json.loads(bn["allowed_surfaces"]),
+                    owner_key_id=bn["owner_key_id"],
+                    tags=bn_tags,
+                    viewer_surface=ctx.surface,
+                    viewer_key_id=ctx.key_id,
+                    is_admin=ctx.is_admin,
+                    direct_get=True,
+                )
+                and not self._uploaded_by(c, ns, sha256, ctx.key_id)
             ):
                 raise NotFound(f"blob {sha256} does not exist")
             row = c.execute("SELECT data, size FROM blobs WHERE sha256 = ?", (sha256,)).fetchone()

@@ -440,6 +440,12 @@ const DEFAULT_QUEUES = [
   ["eq03", 600, 60],
 ];
 
+// Keys that uploaded bytes into a namespace, as a raw blob or an object. blob_namespaces keeps the
+// first uploader's governance; a key can still read back bytes it uploaded itself, which tells it
+// nothing it did not already hold. Created on the first upload, so a cold start stays read-only.
+const BLOB_UPLOADERS_DDL =
+  "CREATE TABLE IF NOT EXISTS blob_uploaders (namespace TEXT NOT NULL, sha256 TEXT NOT NULL, key_id TEXT NOT NULL, created_at REAL NOT NULL, PRIMARY KEY (namespace, sha256, key_id))";
+
 const DEFAULT_BUCKETS = [
   ["nouns", "Canonical and proposed atomic noun schemas, packs, and structured artifacts"],
   ["verbs", "Atomic verb briefs, worker recipes, and multi-stage workflow templates"],
@@ -511,6 +517,29 @@ export class TesseraCoordinator extends DurableObject {
       for (const stmt of missing) { const m = pattern.exec(stmt); if (m) names.add(m[1]); }
     }
     return missing.length;
+  }
+
+  _recordBlobUploader(sha256, keyId, now) {
+    if (!keyId) return;
+    this.ctx.storage.sql.exec(
+      "INSERT OR IGNORE INTO blob_uploaders (namespace, sha256, key_id, created_at) VALUES (?, ?, ?, ?)",
+      this.namespace,
+      sha256,
+      keyId,
+      now
+    );
+  }
+
+  _blobUploadedBy(sha256, keyId) {
+    if (!keyId || !(this.schemaNames && this.schemaNames.has("blob_uploaders"))) return false;
+    return Boolean(
+      this._one(
+        "SELECT 1 FROM blob_uploaders WHERE namespace = ? AND sha256 = ? AND key_id = ?",
+        this.namespace,
+        sha256,
+        keyId
+      )
+    );
   }
 
   // Observational writes (profile timestamps, identity snapshots, aggregated counters) must
@@ -3161,6 +3190,7 @@ export class TesseraCoordinator extends DurableObject {
             { defaultSurface: defaultGovSurface, ownerKeyId: grant.key_id },
             badReq
           );
+          this._ensureDdl([BLOB_UPLOADERS_DDL]);
           this.ctx.storage.transactionSync(() => {
             this.ctx.storage.sql.exec(
               "INSERT OR IGNORE INTO blobs (sha256, size, created_at) VALUES (?, ?, ?)",
@@ -3181,6 +3211,7 @@ export class TesseraCoordinator extends DurableObject {
               gov.owner_key_id,
               now
             );
+            this._recordBlobUploader(sha256, grant.key_id, now);
             this._syncNounTags("blob", "blobs", sha256, gov.tags);
             if (inserted) {
               this._event("blob_stored", now, { detail: { sha256, size } });
@@ -3198,6 +3229,7 @@ export class TesseraCoordinator extends DurableObject {
             sha256
           );
           if (!bns) throw notFound(`blob ${sha256} does not exist`);
+          // The first uploader's row admits the caller, or this key uploaded these bytes itself.
           if (
             !canViewGoverned({
               visibility_scope: bns.visibility_scope || "public_commons",
@@ -3209,7 +3241,8 @@ export class TesseraCoordinator extends DurableObject {
               viewer_key_id: viewerCtx.key_id,
               is_admin: viewerCtx.is_admin,
               direct_get: true,
-            })
+            }) &&
+            !this._blobUploadedBy(sha256, viewerCtx.key_id)
           ) {
             throw notFound(`blob ${sha256} does not exist`);
           }
@@ -3298,6 +3331,7 @@ export class TesseraCoordinator extends DurableObject {
           const tagsJson = JSON.stringify(gov.tags);
 
           let outMeta;
+          this._ensureDdl([BLOB_UPLOADERS_DDL]);
           this.ctx.storage.transactionSync(() => {
             const container=this._one("SELECT * FROM buckets WHERE namespace=? AND name=?",this.namespace,bucket);
             if (container && (container.owner_key_id || container.visibility_scope !== "public_commons")) this._authorizeMutation(container,grant,viewerCtx);
@@ -3406,6 +3440,7 @@ export class TesseraCoordinator extends DurableObject {
               gov.owner_key_id,
               now
             );
+            this._recordBlobUploader(sha256, grant.key_id, now);
             if (blobIns) {
               this._event("blob_stored", now, { detail: { sha256, size } });
             }

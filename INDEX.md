@@ -106,7 +106,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [deploy/fly/README.md](deploy/fly/README.md) | Fly.io: the Tessera service |
 | [deploy/fly/fly.toml](deploy/fly/fly.toml) | Tessera service on one Fly.io machine with a volume (brief L20), reached through the Cloudflare edge |
 
-## docs/ (29)
+## docs/ (30)
 
 | File | What it is |
 |---|---|
@@ -132,6 +132,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [docs/opencode-and-ollama.md](docs/opencode-and-ollama.md) | Bilateral swarm testing with OpenCode & Ollama Cloud (muse-spark-open) |
 | [docs/operations.md](docs/operations.md) | Operations |
 | [docs/opportunity-lab.md](docs/opportunity-lab.md) | Opportunity Lab |
+| [docs/raw-blob-governance.md](docs/raw-blob-governance.md) | Raw blob governance and the first uploader |
 | [docs/research-seeds.md](docs/research-seeds.md) | Research seeds and proposed recurring work |
 | [docs/review.md](docs/review.md) | Tessera: review guide |
 | [docs/setup.md](docs/setup.md) | Tessera: setup |
@@ -306,7 +307,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [src/tessera/store.py](src/tessera/store.py) | The in-process Tessera store: the reference implementation of SPEC.md. |
 | [src/tessera/testing.py](src/tessera/testing.py) | Factories the conformance suite loads by name (TESSERABACKENDFACTORY="module:function"). |
 
-## tests/ (56)
+## tests/ (58)
 
 | File | What it is |
 |---|---|
@@ -326,6 +327,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [tests/fixtures/execution_matching_vectors.json](tests/fixtures/execution_matching_vectors.json) | JSON object: profile, valid, invalid |
 | [tests/test_access_modes.py](tests/test_access_modes.py) | Full anonymous/keyed agent loops, durable limits and adversarial isolation. |
 | [tests/test_agent_tool_listings.py](tests/test_agent_tool_listings.py) | Every agent-facing tool listing on the Python service matches what MCP tools/list serves. |
+| [tests/test_blob_first_uploader.py](tests/test_blob_first_uploader.py) | Raw blob governance is one row per namespace and digest, written by the first uploader. |
 | [tests/test_board.py](tests/test_board.py) | Console Board v2 (/board, L19), UI chrome, and agent discovery routes. |
 | [tests/test_buckets.py](tests/test_buckets.py) | Tests for queryable noun stores, persistent named file buckets, external blobdir, and MCP tools. |
 | [tests/test_category_queries.py](tests/test_category_queries.py) | Category projections agree before bounded scans, without granting visibility. |
@@ -360,6 +362,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [tests/workerd_access_writes.mjs](tests/workerd_access_writes.mjs) | Real Worker/SQLite: requests that never authenticate write nothing and create no namespace |
 | [tests/workerd_agent_tool_listings.mjs](tests/workerd_agent_tool_listings.mjs) | Real Worker: every agent-facing tool listing matches what MCP tools/list serves. |
 | [tests/workerd_anonymous_cost.mjs](tests/workerd_anonymous_cost.mjs) | Real Worker/SQLite: anonymous sessions stay available but cost little until used, and one |
+| [tests/workerd_blob_first_uploader.mjs](tests/workerd_blob_first_uploader.mjs) | Real Worker/SQLite: a key can always read back bytes it uploaded, whoever stored them first, |
 | [tests/workerd_blob_identity.mjs](tests/workerd_blob_identity.mjs) | Real Worker/SQLite: content identity comes from the uploaded bytes, never from a client header. |
 | [tests/workerd_execution_history.mjs](tests/workerd_execution_history.mjs) | Actual Worker handlers and ephemeral SQLite Durable Objects; no provider or cloud access. |
 | [tests/workerd_execution_learning.mjs](tests/workerd_execution_learning.mjs) | Actual Worker and SQLite Durable Objects: learning reports, observations and row costs. |

@@ -540,7 +540,8 @@ class BucketOps(StorageOps):
     ) -> tuple[ObjectMeta, bytes]:
         ns = self._resolve_ns(namespace)
         meta = self.get_object_meta(bucket, key, version, namespace=ns)
-        return meta, self.get_blob(meta.sha256, namespace=ns)
+        # The object's ACL governs its bytes, whoever registered those bytes first.
+        return meta, self._read_blob(meta.sha256, ns, raw=False)
 
     def list_objects(
         self,

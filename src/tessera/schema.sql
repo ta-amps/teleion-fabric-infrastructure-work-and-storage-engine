@@ -236,6 +236,17 @@ CREATE TABLE IF NOT EXISTS blob_namespaces (
   PRIMARY KEY (namespace, sha256)
 );
 
+-- Keys that uploaded bytes into a namespace, as a raw blob or an object. The first upload sets the
+-- blob_namespaces row above; a key can still read back bytes it uploaded itself, which tells it
+-- nothing it did not already hold.
+CREATE TABLE IF NOT EXISTS blob_uploaders (
+  namespace  TEXT NOT NULL,
+  sha256     TEXT NOT NULL REFERENCES blobs(sha256),
+  key_id     TEXT NOT NULL,
+  created_at REAL NOT NULL,
+  PRIMARY KEY (namespace, sha256, key_id)
+);
+
 -- Named buckets of versioned content-addressed files for reusable atomic nouns and verbs.
 CREATE TABLE IF NOT EXISTS buckets (
   namespace   TEXT NOT NULL DEFAULT 'main',
