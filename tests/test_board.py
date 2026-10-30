@@ -200,7 +200,7 @@ const statesServedCount = (text) => counts(text).length > 0 && counts(text).ever
 if (TESSERA_VERSION !== "0.2.0") throw new Error("bad version: " + TESSERA_VERSION);
 const fav = renderFaviconSvg();
 if (!fav.includes("<svg")) throw new Error("missing svg in favicon");
-const connect = renderConnectHtml("https://example.test", "https://github.com/ta-amps/tessera", MCP_TOOLS);
+const connect = renderConnectHtml("https://example.test", "https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine", MCP_TOOLS);
 if (!statesServedCount(connect)) throw new Error("tool count mismatch: " + counts(connect));
 for (const tool of MCP_TOOLS) {
   if (!connect.includes(`<code>${tool.name}</code>`)) throw new Error("connect page omits " + tool.name);
@@ -226,13 +226,13 @@ for (const heading of ["Live Verb Queues", "Task Dependency &amp; Split Wave DAG
   if (!board.includes(heading)) throw new Error("missing heading: " + heading);
 }
 if (board.toLowerCase().includes("<form")) throw new Error("board must not contain forms");
-const llms = renderLlmsTxt("https://example.test", "https://github.com/ta-amps/tessera", MCP_TOOLS);
-const llmsFull = renderLlmsFullTxt("https://example.test", "https://github.com/ta-amps/tessera", MCP_TOOLS);
+const llms = renderLlmsTxt("https://example.test", "https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine", MCP_TOOLS);
+const llmsFull = renderLlmsFullTxt("https://example.test", "https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine", MCP_TOOLS);
 if (!statesServedCount(llms) || !statesServedCount(llmsFull) || !llmsFull.includes("0.2.0")) {
   throw new Error("llms text mismatch: " + counts(llms) + " / " + counts(llmsFull));
 }
 let refused = false;
-try { renderLlmsTxt("https://example.test", "https://github.com/ta-amps/tessera"); } catch { refused = true; }
+try { renderLlmsTxt("https://example.test", "https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine"); } catch { refused = true; }
 if (!refused) throw new Error("a page rendered a tool list without the served registry");
 """
     res = subprocess.run(

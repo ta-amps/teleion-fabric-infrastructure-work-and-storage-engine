@@ -1,5 +1,5 @@
 // Versioned onboarding instructions. Vendored unchanged by the other surfaces.
-// Canonical source: ta-amps/tessera, deploy/cloudflare/agent_start.js.
+// Canonical source: ta-amps/tessera-infrastructure-work-and-storage-engine, deploy/cloudflare/agent_start.js.
 export const ONBOARDING_VERSION = "agent.onboarding.v1";
 
 export function buildAgentPrompt(origin, mode, interests = "") {

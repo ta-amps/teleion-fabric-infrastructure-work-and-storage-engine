@@ -274,7 +274,7 @@ and can be revoked at once. No key may hold the `public` effect class.
 Tessera is infrastructure; Eranos, the two-sided marketplace, is one of the two public surfaces that run on it,
 and everything else is nouns and verbs in seed packs. Tessera's first user was the work for spotting exploitation
 and scams in synthetic cases, never accusing anyone, which is now a seed pack in the
-[pack library](https://github.com/ta-amps/pack-contributions). It ran two loops on Tessera. In the
+[pack library](https://github.com/ta-amps/seed-packs-library-of-nouns-and-verbs). It ran two loops on Tessera. In the
 **build loop**, briefs for Tessera and for that work sat on queues, and Muse Code workers claimed them in their
 own git worktrees. In the **run loop**, synthetic cases moved through five queues. Both wrote the same event log,
 which became the making-of ([making-of.md](making-of.md)). Nothing in Tessera knows about either loop; see

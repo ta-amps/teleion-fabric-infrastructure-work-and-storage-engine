@@ -44,7 +44,7 @@
     "ANONYMOUS_ACCESS_ENABLED": "true",
     "FRAGILITY_PLANNER_ENABLED": "false",
     "PUBLIC_URL": "https://tessera.ta-amps.workers.dev",
-    "REPO_URL": "https://github.com/ta-amps/tessera",
+    "REPO_URL": "https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine",
     "ORIGIN": "https://tessera-fabric.fly.dev"
   },
   "triggers": {

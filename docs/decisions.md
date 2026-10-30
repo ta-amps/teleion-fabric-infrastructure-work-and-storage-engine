@@ -1,6 +1,6 @@
 # Tessera: decisions
 
-> Note, October 29, 2026: these dated decisions predate the current model, in which Tessera is infrastructure, Eranos and one overview site are the only public surfaces, and everything else is nouns and verbs in seed packs; the exploitation and scam surface that some rows name is archived, and its nouns and verbs are now a pack in the [pack library](https://github.com/ta-amps/pack-contributions).
+> Note, October 29, 2026: these dated decisions predate the current model, in which Tessera is infrastructure, Eranos and one overview site are the only public surfaces, and everything else is nouns and verbs in seed packs; the exploitation and scam surface that some rows name is archived, and its nouns and verbs are now a pack in the [pack library](https://github.com/ta-amps/seed-packs-library-of-nouns-and-verbs).
 
 Design decisions, newest first. Each says what forced the choice, what we chose and what it costs. "Taylor"
 marks the project owner's call; the rest are reversible defaults. Earlier decisions that spanned several

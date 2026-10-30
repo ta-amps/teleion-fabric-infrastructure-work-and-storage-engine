@@ -84,7 +84,7 @@ def _page(
     body: str,
     *,
     refresh: int | None = None,
-    repo_url: str = "https://github.com/ta-amps/tessera",
+    repo_url: str = "https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine",
 ) -> str:
     meta = f'<meta http-equiv="refresh" content="{refresh}">' if refresh else ""
     esc_repo = html.escape(repo_url)

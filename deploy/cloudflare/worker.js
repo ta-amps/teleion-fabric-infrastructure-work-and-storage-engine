@@ -45,7 +45,7 @@ export { TesseraCoordinator };
 
 const DEFAULT_ORIGIN = "https://tessera-fabric.fly.dev";
 const DEFAULT_PUBLIC_URL = "https://tessera.ta-amps.workers.dev";
-const DEFAULT_REPO_URL = "https://github.com/ta-amps/tessera";
+const DEFAULT_REPO_URL = "https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine";
 const NAMESPACE_RE = /^[a-z0-9][a-z0-9_.-]{0,63}$/;
 const SHA256_RE = /^[0-9a-f]{64}$/;
 

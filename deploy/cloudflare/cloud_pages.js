@@ -67,7 +67,7 @@ function fmtTs(ts) {
   return new Date(Number(ts) * 1000).toISOString().replace("T", " ").slice(0, 19) + " UTC";
 }
 
-function page(title, body, refresh = null, repoUrl = "https://github.com/ta-amps/tessera") {
+function page(title, body, refresh = null, repoUrl = "https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine") {
   const meta = refresh ? `<meta http-equiv="refresh" content="${Number(refresh)}">` : "";
   return (
     `<!doctype html><html lang='en'><head><meta charset='utf-8'>` +
@@ -233,7 +233,7 @@ export function renderAgentCard(publicUrl, repoUrl, tools) {
   };
 }
 
-export function renderBoardHtml(health, snapshot = {}, repoUrl = "https://github.com/ta-amps/tessera") {
+export function renderBoardHtml(health, snapshot = {}, repoUrl = "https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine") {
   const ns = String(snapshot?.namespace || "main");
   const dagNodes = Array.isArray(snapshot?.dag_nodes) ? snapshot.dag_nodes : [];
   const parkedTiles = Array.isArray(snapshot?.parked_tiles) ? snapshot.parked_tiles : [];
@@ -291,7 +291,7 @@ export function renderBoardHtml(health, snapshot = {}, repoUrl = "https://github
   );
 }
 
-export function renderWorkClaimForm(message = "", repoUrl = "https://github.com/ta-amps/tessera") {
+export function renderWorkClaimForm(message = "", repoUrl = "https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine") {
   const note = message ? `<p>${esc(message)}</p>` : "";
   return page(
     "Tessera: work",
@@ -315,7 +315,7 @@ export function renderWorkClaimForm(message = "", repoUrl = "https://github.com/
   );
 }
 
-export function renderWorkLeaseForm(lease, repoUrl = "https://github.com/ta-amps/tessera") {
+export function renderWorkLeaseForm(lease, repoUrl = "https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine") {
   const tid = esc(lease.task_id);
   const token = Number(lease.fencing_token);
   const brief = esc(JSON.stringify(lease.brief, null, 2));
@@ -343,7 +343,7 @@ export function renderWorkLeaseForm(lease, repoUrl = "https://github.com/ta-amps
   );
 }
 
-export function renderWorkSubmitted(receipt, repoUrl = "https://github.com/ta-amps/tessera") {
+export function renderWorkSubmitted(receipt, repoUrl = "https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine") {
   return page(
     "Tessera: submitted",
     `<h1>Submitted</h1><p>Task ${esc(receipt.task_id)} is now <strong>${esc(receipt.state_after)}</strong>.</p><p class="muted">Receipt <code>${esc(receipt.receipt_hash)}</code></p><p><a href="/work">Claim another task</a></p>`,
@@ -352,7 +352,7 @@ export function renderWorkSubmitted(receipt, repoUrl = "https://github.com/ta-am
   );
 }
 
-export function renderWorkResumed(resumed, repoUrl = "https://github.com/ta-amps/tessera") {
+export function renderWorkResumed(resumed, repoUrl = "https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine") {
   return page(
     "Tessera: resumed",
     `<h1>Resumed</h1><p>Task <code>${esc(resumed.task_id)}</code> is now <strong>${esc(resumed.state)}</strong>.</p><p><a href="/work">Back to work forms</a></p>`,
