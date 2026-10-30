@@ -1,5 +1,5 @@
 import { initExecutions, checkedReport, prepareExecution, validatePrepared, captureExecution, recallExecution, getExecution, listExecutions } from "./cloud_executions.js";
-import { initAccess, principalMetadata, requestIdentity, mintAnonymous, mintRequester, seedDemo, ensureDemoSeeded, enforceAccess, audit, auditMode, countAccess, ownAudit, publicActivity, publicPrincipal, requesterVerbGovernance, CLOSED_TO_ANONYMOUS, filesRequests, openToAnonymous, usesOpenVerbs } from "./cloud_access.js";
+import { initAccess, principalMetadata, requestIdentity, mintAnonymous, mintRequester, seedDemo, ensureDemoSeeded, enforceAccess, chargeAccess, claimCaps, checkClaimCaps, chargeClaimCaps, audit, auditMode, countAccess, ownAudit, publicActivity, publicPrincipal, requesterVerbGovernance, CLOSED_TO_ANONYMOUS, filesRequests, openToAnonymous, usesOpenVerbs } from "./cloud_access.js";
 // TesseraCoordinator: single-writer SQLite Durable Object (`new_sqlite_classes`) implementing
 // 100% of Tessera Spec v0.2 (queues, 5 verbs, dependencies, waves, park/resume, model jobs,
 // counts, events, scoped keys, queryable CAS records, persistent named file buckets,
@@ -1879,6 +1879,20 @@ export class TesseraCoordinator extends DurableObject {
     catch (e) { return this._errOut(e); }
   }
   async seedDemo(grant, purgeAt) { return seedDemo(this, grant, purgeAt); }
+  // Per-key limits live in the primary object, so a key's namespaces share one allowance.
+  _primary() { return this.env.COORDINATOR.get(this.env.COORDINATOR.idFromName("primary")); }
+  async _chargeAccess(grant, charge) {
+    const who = { key_id: grant.key_id, principal_kind: grant.principal_kind, namespace: grant.namespace };
+    if (this.isPrimary || !this.env.COORDINATOR) return chargeAccess(this, who, charge);
+    const out = await this._primary().chargeAccessFor(who, charge);
+    if (!out.ok) throw Object.assign(new Error(out.detail), { status: out.status, code: out.code, detail: out.detail, extra: out.extra || {} });
+  }
+  async chargeAccessFor(who, charge) {
+    try { chargeAccess(this, who, charge); return { ok: true }; } catch (e) { return this._errOut(e); }
+  }
+  async chargeClaimFor(who) {
+    try { this.ctx.storage.transactionSync(() => chargeClaimCaps(this, [[who.key_id]])); return { ok: true }; } catch (e) { return this._errOut(e); }
+  }
   publicActivity() { return publicActivity(this); }
   recordAccessEvent(grant, action, args, out, meta) { audit(this, grant, action, args, out, meta); }
   countAccessEvent(grant, action, args, out, meta) { countAccess(this, grant, action, args, out, meta); }
@@ -1897,7 +1911,9 @@ export class TesseraCoordinator extends DurableObject {
     this.isPrimary = ns === "main";
     try {
       grant = await this._grantFromSecret(secret);
-      args = enforceAccess(this, grant, action, { ...args, namespace: ns });
+      const [checked, charge] = enforceAccess(this, grant, action, { ...args, namespace: ns });
+      args = checked;
+      if (charge) await this._chargeAccess(grant, charge);
       await ensureDemoSeeded(this, grant, ns);
       this.namespace = ns;
       this.isPrimary = ns === "main";
@@ -2295,12 +2311,17 @@ export class TesseraCoordinator extends DurableObject {
           const kinds = grant.kindFilter(args.kinds || null);
           let lease = null;
 
+          // An anonymous session's claim limits are counted in the primary object: there in this
+          // transaction, from a demo namespace once its lease is granted.
+          const anonymous = grant.principal_kind === "anonymous";
+          const caps = anonymous && this.isPrimary ? claimCaps(grant, this.namespace, args.access_meta?.ip_hash) : null;
           if (effects.length > 0 && !(Array.isArray(kinds) && kinds.length === 0)) {
             this.ctx.storage.transactionSync(() => {
               const now = Date.now() / 1000;
               const config = this._queueConfig(queue);
               this._reap(now, queue);
-              if (grant.principal_kind === "anonymous" && this._one("SELECT COUNT(*) n FROM leases WHERE namespace=? AND key_id=? AND expires_at>? AND hard_expires_at>?", this.namespace, grant.key_id, now, now).n >= 1) throw rateLim("one concurrent demo claim allowed", 30);
+              if (anonymous && this._one("SELECT COUNT(*) n FROM leases WHERE namespace=? AND key_id=? AND expires_at>? AND hard_expires_at>?", this.namespace, grant.key_id, now, now).n >= 1) throw rateLim("one concurrent demo claim allowed", 30);
+              if (caps) checkClaimCaps(this, caps, now);
               let sql =
                 "SELECT * FROM tasks WHERE namespace = ? AND queue = ? AND state = 'ready' AND not_before <= ?";
               const params = [this.namespace, queue, now];
@@ -2341,6 +2362,7 @@ export class TesseraCoordinator extends DurableObject {
                 hard
               );
               this._moveCount(queue, "ready", "leased");
+              if (caps) chargeClaimCaps(this, caps, now);
               this._event("claimed", now, {
                 task_id: row.id,
                 queue,
@@ -2368,6 +2390,7 @@ export class TesseraCoordinator extends DurableObject {
               };
             });
             if (lease) await this._scheduleNextAlarm();
+            if (lease && anonymous && !caps && this.env.COORDINATOR) await this._primary().chargeClaimFor({ key_id: grant.key_id });
           }
           return { ok: true, status: lease ? 200 : 204, data: { lease, beat } };
         }

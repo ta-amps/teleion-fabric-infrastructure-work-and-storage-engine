@@ -378,7 +378,7 @@ export function enforceAccess(c, grant, action, args) {
   checkGov(args);
   for (const w of args.writes || []) checkGov(w);
   if (grant.principal_kind === "requester") return enforceRequester(c, grant, action, args, ns);
-  if (grant.principal_kind !== "anonymous") return args;
+  if (grant.principal_kind !== "anonymous") return [args, null];
   if (openVerbs) {
     if (!OPEN_VERB_ACTIONS.has(action)) throw error(403, "scope_denied", "outside its own namespace an anonymous session may only claim, heartbeat and submit open verbs");
     if (args.queue && CLOSED_TO_ANONYMOUS.has(String(args.queue))) throw error(403, "scope_denied", "review, approval and publication verbs are closed to anonymous");
@@ -403,28 +403,50 @@ export function enforceAccess(c, grant, action, args) {
     throw error(400, "synthetic_only", "demo payloads must not contain personal or payment data; use example.com");
   const bytes = new TextEncoder().encode(payload).length;
   if (bytes > DEMO_QUOTAS.request_bytes) throw error(413, "payload_too_large", "demo request exceeds byte limit");
-  const now = Date.now() / 1000, window = Math.floor(now / 3600);
+  const writing = WRITE_ACTIONS.has(action);
+  return [args, { kind: "anonymous", action, namespace: ns, ip_hash: args.access_meta?.ip_hash || null, bytes: writing ? bytes : 0, writing }];
+}
+
+// An anonymous or requester key's hourly limits are counted once per key, in the primary object,
+// wherever its requests go (the Python service counts them in its one database). Claims are not
+// charged here: the claim itself charges them, and only when it grants a lease.
+export function chargeAccess(c, who, charge, now = Date.now() / 1000) {
+  const window = Math.floor(now / 3600);
+  const sql = c.ctx.storage.sql;
+  const requester = charge.kind === "requester";
+  const quotas = requester ? REQUESTER_QUOTAS : DEMO_QUOTAS;
   c.ctx.storage.transactionSync(() => {
-    const subject = grant.key_id;
-    c.ctx.storage.sql.exec("INSERT OR IGNORE INTO access_limits(subject,window) VALUES (?,?)", subject, window);
-    const row = c._one("SELECT * FROM access_limits WHERE subject=? AND window=?", subject, window);
-    const total = c._one("SELECT COALESCE(SUM(bytes),0) n FROM access_limits WHERE subject=?", subject).n;
-    const active = c._one("SELECT COUNT(*) n FROM leases WHERE namespace=? AND key_id=? AND expires_at>? AND hard_expires_at>?", ns, grant.key_id, now, now).n;
-    if (row.requests >= DEMO_QUOTAS.requests_per_hour || (action === "claim" && (row.claims >= DEMO_QUOTAS.claims_per_hour || active >= DEMO_QUOTAS.concurrent_claims)) || (WRITE_ACTIONS.has(action) && total + bytes > DEMO_QUOTAS.storage_bytes))
-      throw error(429, "rate_limited", "demo quota exceeded", { retry_after: Math.ceil(action === "claim" && active ? 30 : 3600 - now % 3600) });
-    if (openVerbs && action === "claim") {
-      // Open verbs are shared work: cap claim attempts per session and per IP hash.
-      const caps = [[`open:${grant.key_id}`, DEMO_QUOTAS.open_claims_per_hour], [`open-ip:${args.access_meta?.ip_hash || "unknown"}`, DEMO_QUOTAS.open_claims_per_ip_hour]];
-      for (const [capSubject, ceiling] of caps) {
-        c.ctx.storage.sql.exec("INSERT OR IGNORE INTO access_limits(subject,window) VALUES (?,?)", capSubject, window);
-        if (c._one("SELECT claims FROM access_limits WHERE subject=? AND window=?", capSubject, window).claims >= ceiling)
-          throw error(429, "rate_limited", "open verb claim quota exceeded", { retry_after: Math.ceil(3600 - now % 3600) });
-      }
-      for (const [capSubject] of caps) c.ctx.storage.sql.exec("UPDATE access_limits SET claims=claims+1 WHERE subject=? AND window=?", capSubject, window);
-    }
-    c.ctx.storage.sql.exec("UPDATE access_limits SET requests=requests+1,claims=claims+?,bytes=bytes+? WHERE subject=? AND window=?", action === "claim" ? 1 : 0, WRITE_ACTIONS.has(action) ? bytes : 0, subject, window);
+    sql.exec("INSERT OR IGNORE INTO access_limits(subject,window) VALUES (?,?)", who.key_id, window);
+    const row = c._one("SELECT * FROM access_limits WHERE subject=? AND window=?", who.key_id, window);
+    const total = c._one("SELECT COALESCE(SUM(bytes),0) n FROM access_limits WHERE subject=?", who.key_id).n;
+    const filing = requester && charge.action === "enqueue";
+    const filed = filing ? c._one("SELECT claims FROM access_limits WHERE subject=? AND window=?", `request:${who.key_id}`, window)?.claims || 0 : 0;
+    if (row.requests >= quotas.requests_per_hour || (charge.writing && total + charge.bytes > quotas.storage_bytes) || (filing && filed >= REQUESTER_QUOTAS.request_verbs_per_hour))
+      throw error(429, "rate_limited", requester ? "requester quota exceeded" : "demo quota exceeded", { retry_after: Math.ceil(3600 - now % 3600) });
+    if (!requester && charge.action === "claim") checkClaimCaps(c, claimCaps(who, charge.namespace, charge.ip_hash), now);
+    sql.exec("UPDATE access_limits SET requests=requests+1,bytes=bytes+? WHERE subject=? AND window=?", charge.writing ? charge.bytes : 0, who.key_id, window);
+    if (filing) sql.exec("INSERT INTO access_limits(subject,window,claims) VALUES (?,?,1) ON CONFLICT(subject,window) DO UPDATE SET claims=claims+1", `request:${who.key_id}`, window);
   });
-  return args;
+}
+
+// An anonymous session's hourly claim limits (same rule as _principals.claim_caps): the session's
+// claims, and in the shared namespace its open-verb claims and those of its IP hash. They count
+// granted leases only; an empty poll costs a request, never a claim.
+export function claimCaps(who, ns, ipHash) {
+  const caps = [[who.key_id, DEMO_QUOTAS.claims_per_hour, "demo quota exceeded"]];
+  if (usesOpenVerbs(who, ns)) caps.push([`open:${who.key_id}`, DEMO_QUOTAS.open_claims_per_hour, "open verb claim quota exceeded"],
+    [`open-ip:${ipHash || "unknown"}`, DEMO_QUOTAS.open_claims_per_ip_hour, "open verb claim quota exceeded"]);
+  return caps;
+}
+export function checkClaimCaps(c, caps, now = Date.now() / 1000) {
+  const window = Math.floor(now / 3600);
+  for (const [subject, ceiling, refusal] of caps)
+    if ((c._one("SELECT claims FROM access_limits WHERE subject=? AND window=?", subject, window)?.claims || 0) >= ceiling)
+      throw error(429, "rate_limited", refusal, { retry_after: Math.ceil(3600 - now % 3600) });
+}
+export function chargeClaimCaps(c, caps, now = Date.now() / 1000) {
+  const window = Math.floor(now / 3600);
+  for (const [subject] of caps) c.ctx.storage.sql.exec("INSERT INTO access_limits(subject,window,claims) VALUES (?,?,1) ON CONFLICT(subject,window) DO UPDATE SET claims=claims+1", subject, window);
 }
 
 // Deny by default: own-namespace nouns, and filing and following request verbs in the shared one.
@@ -451,18 +473,7 @@ function enforceRequester(c, grant, action, args, ns) {
   if (writing && PERSONAL_DATA.test(payload)) throw error(400, "synthetic_only", "requests and nouns must not contain personal or payment data");
   const bytes = new TextEncoder().encode(payload).length;
   if (bytes > REQUESTER_QUOTAS.request_bytes) throw error(413, "payload_too_large", "requester request exceeds byte limit");
-  const now = Date.now() / 1000, window = Math.floor(now / 3600);
-  c.ctx.storage.transactionSync(() => {
-    for (const subject of [grant.key_id, `request:${grant.key_id}`]) c.ctx.storage.sql.exec("INSERT OR IGNORE INTO access_limits(subject,window) VALUES (?,?)", subject, window);
-    const row = c._one("SELECT * FROM access_limits WHERE subject=? AND window=?", grant.key_id, window);
-    const filed = c._one("SELECT claims FROM access_limits WHERE subject=? AND window=?", `request:${grant.key_id}`, window).claims;
-    const total = c._one("SELECT COALESCE(SUM(bytes),0) n FROM access_limits WHERE subject=?", grant.key_id).n;
-    if (row.requests >= REQUESTER_QUOTAS.requests_per_hour || (action === "enqueue" && filed >= REQUESTER_QUOTAS.request_verbs_per_hour) || (writing && total + bytes > REQUESTER_QUOTAS.storage_bytes))
-      throw error(429, "rate_limited", "requester quota exceeded", { retry_after: Math.ceil(3600 - now % 3600) });
-    c.ctx.storage.sql.exec("UPDATE access_limits SET requests=requests+1,bytes=bytes+? WHERE subject=? AND window=?", writing ? bytes : 0, grant.key_id, window);
-    if (action === "enqueue") c.ctx.storage.sql.exec("UPDATE access_limits SET claims=claims+1 WHERE subject=? AND window=?", `request:${grant.key_id}`, window);
-  });
-  return args;
+  return [args, { kind: "requester", action, namespace: ns, bytes: writing ? bytes : 0, writing }];
 }
 
 export function ownAudit(c, grant, args = {}) {

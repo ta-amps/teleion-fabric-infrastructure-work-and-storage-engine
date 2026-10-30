@@ -330,6 +330,7 @@ async def access_dispatch(
                 anonymous=grant.anonymous if grant else False,
                 labels=grant.labels if grant else {},
                 requester=grant.requester if grant else False,
+                ip_hash=meta.get("ip_hash"),
             ):
                 response = await call_next(request)
                 chunks = [chunk async for chunk in response.body_iterator]  # type: ignore[attr-defined]

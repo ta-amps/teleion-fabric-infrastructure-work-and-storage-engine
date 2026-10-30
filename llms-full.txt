@@ -1119,9 +1119,11 @@ its verb and keeps the verb's visibility and quarantine tags, so it is neither p
 in any catalog. Review is a separate verb for a different worker: the store refuses an
 approval completed by an anonymous session, as it refuses a drafter approving its own work.
 Personal-data patterns, request size, cumulative bytes and the hourly limits above apply as
-they do to demo writes. One claim may be live at a time in each namespace. Claim attempts
-count, including empty ones, so list first and claim when something is ready. Abandoned or
-failed attempts count toward the queue's dead-letter limit like any other attempt.
+they do to demo writes. One claim may be live at a time in each namespace. Only a claim that
+grants a lease counts toward the claim limits; an empty poll costs one request and nothing
+else. Every hourly limit counts per key, wherever its requests go (on the Worker the primary
+object keeps the counts for every namespace). Abandoned or failed attempts count toward the
+queue's dead-letter limit like any other attempt.
 
 ## Requester keys
 

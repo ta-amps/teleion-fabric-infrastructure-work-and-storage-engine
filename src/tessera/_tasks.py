@@ -13,6 +13,7 @@ from tessera._execution_capture import capture_execution, checked_report
 from tessera._frontier_guard import review_proof as frontier_review_proof
 from tessera._frontier_guard import verification_proof as frontier_verification_proof
 from tessera._graph import GraphOps
+from tessera._principals import charge_claim_caps, check_claim_caps, claim_caps
 from tessera._publication_guard import review_proof
 from tessera.errors import (
     Forbidden,
@@ -288,13 +289,19 @@ class TaskOps(GraphOps):
         if not worker:
             raise InvalidRequest("worker is required")
         ns = self._resolve_ns(namespace)
-        effective_key = key_id if key_id is not None else self.current_scope().key_id
+        scope = self.current_scope()
+        effective_key = key_id if key_id is not None else scope.key_id
+        caps = (
+            claim_caps(str(effective_key), ns, scope.ip_hash)
+            if scope.anonymous and effective_key
+            else []
+        )
         with self._tx() as c:
             now = self.clock.now()
             config = self._queue_config(c, ns, queue)
             self._reap(c, now, namespace=ns, queue=queue)
             if (
-                self.current_scope().anonymous
+                scope.anonymous
                 and c.execute(
                     "SELECT COUNT(*) FROM leases WHERE namespace=? AND key_id=? AND expires_at>? AND hard_expires_at>?",
                     (ns, effective_key, now, now),
@@ -304,6 +311,7 @@ class TaskOps(GraphOps):
                 from tessera.errors import RateLimited
 
                 raise RateLimited("one concurrent demo claim allowed", retry_after=30)
+            check_claim_caps(c, caps, now)
             sql = [
                 "SELECT * FROM tasks"
                 " WHERE namespace = ? AND queue = ? AND state = 'ready' AND not_before <= ?"
@@ -339,6 +347,7 @@ class TaskOps(GraphOps):
                 (ns, row["id"], token, worker, effective_key, now, now, expires, hard),
             )
             self._move(c, ns, queue, "ready", "leased")
+            charge_claim_caps(c, caps, now)
             self._event(
                 c,
                 "claimed",

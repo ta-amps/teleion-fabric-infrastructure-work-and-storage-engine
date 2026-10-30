@@ -105,6 +105,7 @@ class ScopeContext:
     anonymous: bool = False
     labels: dict[str, Any] | None = None
     requester: bool = False
+    ip_hash: str | None = None
 
 
 _DEFAULT_SCOPE = ScopeContext()
@@ -161,6 +162,7 @@ class StoreBase:
         anonymous: bool | None = None,
         labels: dict[str, Any] | None = None,
         requester: bool | None = None,
+        ip_hash: str | None = None,
     ) -> Iterator[ScopeContext]:
         prev = self.current_scope()
         updated = ScopeContext(
@@ -175,6 +177,7 @@ class StoreBase:
             anonymous=anonymous if anonymous is not None else prev.anonymous,
             labels=labels if labels is not None else prev.labels,
             requester=requester if requester is not None else prev.requester,
+            ip_hash=ip_hash if ip_hash is not None else prev.ip_hash,
         )
         token = _SCOPE_CTX.set(updated)
         try:

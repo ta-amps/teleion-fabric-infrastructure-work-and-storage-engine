@@ -604,6 +604,100 @@
           }
         }
       ]
+    },
+    {
+      "id": "F4-empty-polls-are-free",
+      "finding": "4 (Medium)",
+      "title": "Empty claim polls never spend an anonymous session's claim allowance",
+      "steps": [
+        {
+          "session": "anon"
+        },
+        {
+          "as": "anon",
+          "method": "POST",
+          "path": "/ns/main/v1/tasks/claim",
+          "status": 204,
+          "repeat": 25,
+          "body": {
+            "queue": "eq02",
+            "worker": "volunteer"
+          }
+        },
+        {
+          "as": "anon",
+          "method": "POST",
+          "path": "/v1/tasks/claim",
+          "status": 204,
+          "repeat": 25,
+          "body": {
+            "queue": "demo.ping",
+            "worker": "volunteer",
+            "kinds": [
+              "none-of-these"
+            ]
+          }
+        },
+        {
+          "as": "admin",
+          "method": "POST",
+          "path": "/v1/tasks",
+          "status": 201,
+          "body": {
+            "queue": "eq02",
+            "task_id": "late-1",
+            "kind": "draft",
+            "effect_class": "write-internal",
+            "brief": {
+              "title": "SYNTHETIC"
+            },
+            "tags": [
+              "status:quarantined",
+              "open:anonymous"
+            ],
+            "producer_surface": "surface:eranos",
+            "visibility_scope": "surface_only"
+          }
+        },
+        {
+          "as": "anon",
+          "method": "POST",
+          "path": "/ns/main/v1/tasks/claim",
+          "status": 200,
+          "body": {
+            "queue": "eq02",
+            "worker": "volunteer"
+          },
+          "expect": {
+            "equals": {
+              "task_id": "late-1"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "7-quotas-follow-the-key",
+      "finding": "7 (Low)",
+      "title": "An anonymous session's hourly requests count once per key, wherever it sends them",
+      "steps": [
+        {
+          "session": "anon"
+        },
+        {
+          "as": "anon",
+          "method": "GET",
+          "path": "/v1/me",
+          "status": 200,
+          "repeat": 300
+        },
+        {
+          "as": "anon",
+          "method": "GET",
+          "path": "/ns/main/v1/verbs?queue=eq02",
+          "status": 429
+        }
+      ]
     }
   ]
 }

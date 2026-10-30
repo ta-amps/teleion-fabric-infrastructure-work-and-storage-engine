@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from tessera._access_schema import AccessSchemaOps
 from tessera.errors import InvalidRequest, NotFound, RateLimited, ScopeDenied
-from tessera.grants import CLOSED_TO_ANONYMOUS, KeyGrant
+from tessera.grants import CLOSED_TO_ANONYMOUS, OPEN_VERB_NAMESPACE, KeyGrant
 from tessera.models import QueueConfig, RecordWrite, TaskSpec
 
 if TYPE_CHECKING:
@@ -189,6 +189,49 @@ def ip_group(ip: str) -> str:
             return str(addr.ipv4_mapped)
         return str(ipaddress.ip_network(f"{addr}/64", strict=False))
     return str(addr)
+
+
+def claim_caps(key_id: str, namespace: str, ip_hash: str | None) -> list[tuple[str, int, str]]:
+    """An anonymous session's hourly claim limits: subject, ceiling and refusal (same rule as the
+    Worker). They count granted leases only; an empty poll costs a request, never a claim."""
+    caps = [(key_id, DEMO_QUOTAS["claims_per_hour"], "demo quota exceeded")]
+    if namespace == OPEN_VERB_NAMESPACE:
+        # Open verbs are shared work: also capped per session and per IP hash.
+        caps += [
+            (
+                f"open:{key_id}",
+                DEMO_QUOTAS["open_claims_per_hour"],
+                "open verb claim quota exceeded",
+            ),
+            (
+                f"open-ip:{ip_hash or 'unknown'}",
+                DEMO_QUOTAS["open_claims_per_ip_hour"],
+                "open verb claim quota exceeded",
+            ),
+        ]
+    return caps
+
+
+def check_claim_caps(c: Any, caps: list[tuple[str, int, str]], now: float) -> None:
+    """Inside the claim transaction, before a lease is chosen."""
+    window = int(now // 3600)
+    for subject, ceiling, refusal in caps:
+        row = c.execute(
+            "SELECT claims FROM access_limits WHERE subject=? AND window=?", (subject, window)
+        ).fetchone()
+        if row is not None and row[0] >= ceiling:
+            raise RateLimited(refusal, 3600 - now % 3600)
+
+
+def charge_claim_caps(c: Any, caps: list[tuple[str, int, str]], now: float) -> None:
+    """Inside the claim transaction, once a lease is granted."""
+    window = int(now // 3600)
+    for subject, _, _ in caps:
+        c.execute(
+            "INSERT INTO access_limits(subject,window,claims) VALUES (?,?,1)"
+            " ON CONFLICT(subject,window) DO UPDATE SET claims=claims+1",
+            (subject, window),
+        )
 
 
 def mint_allowance(ceiling: int, seconds_into_hour: float, used: int) -> tuple[int, float]:
@@ -406,42 +449,16 @@ class PrincipalOps(AccessSchemaOps):
             total = c.execute(
                 "SELECT COALESCE(SUM(bytes),0) FROM access_limits WHERE subject=?", (grant.key_id,)
             ).fetchone()[0]
-            if (
-                row["requests"] >= DEMO_QUOTAS["requests_per_hour"]
-                or (action == "claim" and row["claims"] >= DEMO_QUOTAS["claims_per_hour"])
-                or (action in WRITE_ACTIONS and total + size > DEMO_QUOTAS["storage_bytes"])
+            if row["requests"] >= DEMO_QUOTAS["requests_per_hour"] or (
+                action in WRITE_ACTIONS and total + size > DEMO_QUOTAS["storage_bytes"]
             ):
                 raise RateLimited("demo quota exceeded", 3600 - now % 3600)
-            if open_verbs and action == "claim":
-                # Open verbs are shared work: cap claim attempts per session and per IP hash.
-                caps = (
-                    (f"open:{grant.key_id}", DEMO_QUOTAS["open_claims_per_hour"]),
-                    (f"open-ip:{ip_hash or 'unknown'}", DEMO_QUOTAS["open_claims_per_ip_hour"]),
-                )
-                for subject, ceiling in caps:
-                    c.execute(
-                        "INSERT OR IGNORE INTO access_limits(subject,window) VALUES (?,?)",
-                        (subject, window),
-                    )
-                    used = c.execute(
-                        "SELECT claims FROM access_limits WHERE subject=? AND window=?",
-                        (subject, window),
-                    ).fetchone()[0]
-                    if used >= ceiling:
-                        raise RateLimited("open verb claim quota exceeded", 3600 - now % 3600)
-                for subject, _ in caps:
-                    c.execute(
-                        "UPDATE access_limits SET claims=claims+1 WHERE subject=? AND window=?",
-                        (subject, window),
-                    )
+            if action == "claim":
+                # Claims are charged by the claim itself, only when it grants a lease.
+                check_claim_caps(c, claim_caps(grant.key_id, namespace, ip_hash), now)
             c.execute(
-                "UPDATE access_limits SET requests=requests+1,claims=claims+?,bytes=bytes+? WHERE subject=? AND window=?",
-                (
-                    int(action == "claim"),
-                    size if action in WRITE_ACTIONS else 0,
-                    grant.key_id,
-                    window,
-                ),
+                "UPDATE access_limits SET requests=requests+1,bytes=bytes+? WHERE subject=? AND window=?",
+                (size if action in WRITE_ACTIONS else 0, grant.key_id, window),
             )
 
     def _enforce_open_verb(
