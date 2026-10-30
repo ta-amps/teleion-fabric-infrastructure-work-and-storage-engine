@@ -114,7 +114,7 @@ class TaskOps(GraphOps):
                     "allowed_surfaces": list(REQUEST_SURFACES),
                     "target_cohorts": ["all"],
                     "tags": ["origin:requester", "untrusted:true", f"kind:{REQUEST_KIND}"],
-                    "effect_class": "read",
+                    "effect_class": "write-internal",
                     "depends_on": [],
                 }
             )

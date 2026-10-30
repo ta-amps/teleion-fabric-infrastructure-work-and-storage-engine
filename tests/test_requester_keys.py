@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from tessera import QueueConfig, Store
+from tessera import ChildSpec, QueueConfig, Store
 from tessera.access import ServiceSettings
 from tessera.clock import FakeClock
 from tessera.service import create_app
@@ -54,7 +54,7 @@ def request_verb(task_id: str, brief: dict[str, Any] | None = None) -> dict[str,
     return {
         "queue": "eq01",
         "kind": "request",
-        "effect_class": "read",
+        "effect_class": "write-internal",
         "task_id": task_id,
         "brief": brief or {"job": "SYNTHETIC summary of public tenant laws"},
     }
@@ -68,7 +68,7 @@ def test_sign_up_mints_a_narrow_hashed_key_and_a_profile_noun(
     assert org["principal_kind"] == "requester" and org["key"].startswith("tsk_")
     assert org["namespace"] == "org." + org["principal_id"]
     assert org["queues"] == ["eq01"] and org["kinds"] == ["request"]
-    assert org["effect_classes"] == ["read"]
+    assert org["effect_classes"] == ["read", "write-internal"]
     assert set(org["scopes"]) == {
         "nouns:read",
         "cas:write",
@@ -189,3 +189,30 @@ def test_sign_up_is_off_unless_enabled(tmp_path: Path) -> None:
         assert client.post("/v1/session/requester", json={"profile": PROFILE}).status_code == 503
         assert client.get("/connect.json").json()["requester"]["enabled"] is False
     store.close()
+
+
+def test_requester_follows_its_request_but_not_the_split_children(
+    fabric: tuple[TestClient, Store, str],
+) -> None:
+    client, store, _ = fabric
+    org = sign_up(client)
+    h = auth(org["key"])
+    assert (
+        client.post("/ns/main/v1/tasks", json=request_verb("rq-split"), headers=h).status_code
+        == 201
+    )
+    lease = store.claim("eq01", "classifier", kinds=["request"], key_id="k_classifier")
+    assert lease is not None and lease.task_id == "rq-split"
+    children = store.split(
+        "rq-split",
+        lease.fencing_token,
+        [
+            ChildSpec(queue="eq02", kind="research", brief={"part": 1}, tags=["open:anonymous"]),
+            ChildSpec(queue="eq03", kind="report_review", brief={"part": 1}, after=[0]),
+        ],
+    )
+    assert client.get("/ns/main/v1/tasks/rq-split", headers=h).json()["state"] == "waiting"
+    for child in children:
+        assert store.task(child).owner_key_id == org["key_id"]
+        assert client.get(f"/ns/main/v1/tasks/{child}", headers=h).status_code == 404
+        assert client.get(f"/ns/main/v1/tasks/{child}/results", headers=h).status_code == 404

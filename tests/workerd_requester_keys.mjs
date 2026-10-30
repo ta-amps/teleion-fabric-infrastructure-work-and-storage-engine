@@ -44,7 +44,7 @@ async function setup(enabled = "true") {
   return { request, admin: issued.data.key, signUp };
 }
 
-const verb = (task_id, brief = { job: "SYNTHETIC summary of public tenant laws" }) => ({ queue: "eq01", kind: "request", effect_class: "read", task_id, brief });
+const verb = (task_id, brief = { job: "SYNTHETIC summary of public tenant laws" }) => ({ queue: "eq01", kind: "request", effect_class: "write-internal", task_id, brief });
 
 test("sign-up mints a narrow key and writes the profile noun in its own namespace", async () => {
   const { request, signUp } = await setup();
@@ -54,7 +54,7 @@ test("sign-up mints a narrow key and writes the profile noun in its own namespac
   assert.equal(org.data.namespace, `org.${org.data.principal_id}`);
   assert.deepEqual(org.data.queues, ["eq01"]);
   assert.deepEqual(org.data.kinds, ["request"]);
-  assert.deepEqual(org.data.effect_classes, ["read"]);
+  assert.deepEqual(org.data.effect_classes, ["read", "write-internal"]);
   const me = await request("/v1/me", undefined, org.data.key);
   assert.equal(me.data.namespace, org.data.namespace);
   const profile = await request("/v1/stores/org.profile/records/profile", undefined, org.data.key);
@@ -116,4 +116,22 @@ test("personal data, filed requests and sign-ups are capped", async () => {
 test("sign-up is off unless enabled", async () => {
   const { signUp } = await setup("false");
   assert.equal((await signUp()).status, 503);
+});
+
+test("a requester follows its request but not the children a worker split it into", async () => {
+  const { request, admin, signUp } = await setup();
+  const org = (await signUp()).data;
+  assert.equal((await request("/ns/main/v1/tasks", verb("rq-split"), org.key)).status, 201);
+  const lease = await request("/v1/tasks/claim", { queue: "eq01", worker: "classifier", kinds: ["request"] }, admin);
+  assert.equal(lease.status, 200, JSON.stringify(lease.data));
+  const split = await request("/v1/tasks/split", { task_id: "rq-split", fencing_token: lease.data.fencing_token, children: [
+    { queue: "eq02", kind: "research", brief: { part: 1 }, tags: ["open:anonymous"] },
+    { queue: "eq03", kind: "report_review", brief: { part: 1 }, after: [0] },
+  ] }, admin);
+  assert.equal(split.status, 200, JSON.stringify(split.data));
+  assert.equal((await request("/ns/main/v1/tasks/rq-split", undefined, org.key)).data.state, "waiting");
+  for (const child of split.data.children) {
+    assert.equal((await request(`/ns/main/v1/tasks/${child}`, undefined, org.key)).status, 404);
+    assert.equal((await request(`/ns/main/v1/tasks/${child}/results`, undefined, org.key)).status, 404);
+  }
 });

@@ -302,7 +302,7 @@ export async function mintRequester(c, body, meta) {
   const labels = { origin: "requester", untrusted: true, display_name: profile.display_name };
   const scopes = ["nouns:read", "cas:write", "verbs:submit", `namespace:${namespace}`];
   const grant = { key_id: keyId, principal_id: principalId, session_id: null, principal_kind: "requester", account_id: `requester:${principalId}`,
-    namespace, labels, scopes, queues: [REQUEST_QUEUE], kinds: [REQUEST_KIND], effect_classes: ["read"], expires_at: now + REQUESTER_QUOTAS.key_days * 86400 };
+    namespace, labels, scopes, queues: [REQUEST_QUEUE], kinds: [REQUEST_KIND], effect_classes: ["read", "write-internal"], expires_at: now + REQUESTER_QUOTAS.key_days * 86400 };
   c.ctx.storage.transactionSync(() => {
     const window = Math.floor(now / 3600);
     for (const [subject, ceiling, paced] of [[`signup:${meta.ip_hash || "unknown"}`, REQUESTER_QUOTAS.signups_per_ip_hour, false], ["signup:global", GLOBAL_SIGNUPS_PER_HOUR, true]]) {
@@ -429,9 +429,11 @@ function enforceRequester(c, grant, action, args, ns) {
     if (args.queue !== REQUEST_QUEUE || (args.kind ?? "task") !== REQUEST_KIND) throw error(403, "scope_denied", `requesters may only file ${REQUEST_KIND} verbs in ${REQUEST_QUEUE}`);
     if (Array.isArray(args.depends_on) && args.depends_on.length) throw error(403, "scope_denied", "a request verb cannot depend on other verbs");
     Object.assign(args, { producer_surface: "surface:tessera", visibility_scope: "allowlist_surfaces", allowed_surfaces: [...REQUEST_SURFACES], target_cohorts: ["all"],
-      tags: ["origin:requester", "untrusted:true", `kind:${REQUEST_KIND}`], effect_class: "read", depends_on: [], owner_key_id: grant.key_id });
+      tags: ["origin:requester", "untrusted:true", `kind:${REQUEST_KIND}`], effect_class: "write-internal", depends_on: [], owner_key_id: grant.key_id });
   } else if (shared) {
-    if (!c._one("SELECT 1 AS own FROM tasks WHERE namespace=? AND id=? AND owner_key_id=?", ns, String(args.task_id || ""), grant.key_id)) throw error(404, "not_found", "task does not exist");
+    // Only the request verbs it filed: never the children a worker split them into, whose
+    // results stay quarantined until a different worker reviews them.
+    if (!c._one("SELECT 1 AS own FROM tasks WHERE namespace=? AND id=? AND owner_key_id=? AND parent_id IS NULL", ns, String(args.task_id || ""), grant.key_id)) throw error(404, "not_found", "task does not exist");
   } else {
     const names = [args.store, args.store_name, ...(args.writes || []).map(w => w?.store)];
     if (names.some(n => n && !String(n).startsWith(REQUESTER_STORE_PREFIX))) throw error(403, "scope_denied", "requester nouns live in org. stores of their own namespace");

@@ -112,7 +112,8 @@ class RequesterOps:
             clean["display_name"],
             queues=[REQUEST_QUEUE],
             kinds=[REQUEST_KIND],
-            effect_classes=["read"],
+            # A request asks for internal writes (kits, reports); the key itself never claims.
+            effect_classes=["read", "write-internal"],
             scopes=["nouns:read", "cas:write", "verbs:submit", f"namespace:{namespace}"],
             days=REQUESTER_QUOTAS["key_days"],
             account_id=f"requester:{principal_id}",
@@ -160,7 +161,8 @@ class RequesterOps:
         elif shared:
             with store._read() as c:
                 own = c.execute(
-                    "SELECT 1 FROM tasks WHERE namespace=? AND id=? AND owner_key_id=?",
+                    "SELECT 1 FROM tasks WHERE namespace=? AND id=? AND owner_key_id=?"
+                    " AND parent_id IS NULL",
                     (namespace, str(args.get("task_id") or ""), grant.key_id),
                 ).fetchone()
             if own is None:
