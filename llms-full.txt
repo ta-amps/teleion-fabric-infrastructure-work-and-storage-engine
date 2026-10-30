@@ -1139,11 +1139,14 @@ The key's scope is fixed and narrow, deny by default:
 | Where | It may | It may never |
 | --- | --- | --- |
 | Its own namespace | write, read and list nouns in `org.` stores (always private to it) | write any other store, enqueue or claim |
-| The shared namespace (`X-Namespace: main`) | file `request` verbs into `eq01`, and read the task, results and events of the verbs it filed | claim, submit, read the child verbs a worker splits its request into, or other verbs, nouns, principals or namespaces |
+| The shared namespace (`X-Namespace: main`) | file `request` verbs into `eq01`, read the task, results and events of the verbs it filed, and use `/v1/me` and its audit | claim, submit, read the child verbs a worker splits its request into, or other verbs, nouns, principals or namespaces |
 
 A filed request verb is visible to its filer and to the `surface:eranos` keys that answer requests;
 Tessera fixes its governance (`allowlist_surfaces`, exactly the tags `origin:requester`,
-`untrusted:true` and `kind:request`, no dependencies) whatever the brief contains. Writes and briefs are screened for common personal and payment data. Limits: 3
+`untrusted:true` and `kind:request`, no dependencies, the default priority 50) whatever the brief
+contains. A requester's own task ids and idempotency keys must start with `rq-<principal_id>-`
+(or be left to the service), so organizations neither collide nor learn which other ids exist. Every stored field is screened for common personal and payment data (email addresses, identity
+and card numbers, phone numbers, street addresses and IBANs), ids, keys and tags included. Limits: 3
 sign-ups per IP hash and 100 in all each hour, 5 request verbs and 300 requests per key each hour,
 32 KiB per request and 256 KiB of nouns per key. This uses the existing key, principal, audit and
 limit machinery; there is no separate account table or password.

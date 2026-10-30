@@ -44,7 +44,9 @@ async function setup(enabled = "true") {
   return { request, admin: issued.data.key, signUp };
 }
 
-const verb = (task_id, brief = { job: "SYNTHETIC summary of public tenant laws" }) => ({ queue: "eq01", kind: "request", effect_class: "write-internal", task_id, brief });
+// A requester names its own request verbs rq-<principal_id>-<suffix>.
+const tid = (org, suffix) => `rq-${org.principal_id}-${suffix}`;
+const verb = (org, suffix, brief = { job: "SYNTHETIC summary of public tenant laws" }) => ({ queue: "eq01", kind: "request", effect_class: "write-internal", task_id: tid(org, suffix), brief });
 
 test("sign-up mints a narrow key and writes the profile noun in its own namespace", async () => {
   const { request, signUp } = await setup();
@@ -68,15 +70,15 @@ test("sign-up mints a narrow key and writes the profile noun in its own namespac
 test("a requester files and follows only its own request verbs", async () => {
   const { request, admin, signUp } = await setup();
   const first = (await signUp()).data, second = (await signUp({ display_name: "Synthetic Clinic" })).data;
-  const filed = await request("/ns/main/v1/tasks", verb("rq-1"), first.key);
+  const filed = await request("/ns/main/v1/tasks", verb(first, "1"), first.key);
   assert.equal(filed.status, 201, JSON.stringify(filed.data));
-  const view = await request("/v1/tasks/rq-1", undefined, admin);
+  const view = await request(`/v1/tasks/${tid(first, "1")}`, undefined, admin);
   assert.equal(view.data.visibility_scope, "allowlist_surfaces");
   assert.deepEqual(view.data.allowed_surfaces, ["surface:eranos"]);
   assert.ok(view.data.tags.includes("origin:requester"));
-  assert.equal((await request("/ns/main/v1/tasks/rq-1", undefined, first.key)).data.state, "ready");
-  assert.equal((await request("/ns/main/v1/tasks/rq-1", undefined, second.key)).status, 404);
-  assert.equal((await request("/ns/main/v1/tasks/rq-1")).status, 401);
+  assert.equal((await request(`/ns/main/v1/tasks/${tid(first, "1")}`, undefined, first.key)).data.state, "ready");
+  assert.equal((await request(`/ns/main/v1/tasks/${tid(first, "1")}`, undefined, second.key)).status, 404);
+  assert.equal((await request(`/ns/main/v1/tasks/${tid(first, "1")}`)).status, 401);
 });
 
 test("requester keys reach nothing else", async () => {
@@ -85,8 +87,8 @@ test("requester keys reach nothing else", async () => {
   for (const [path, body] of [
     ["/v1/stores/eranos.requests/records/r1", { value: {} }],
     ["/ns/main/v1/stores/eranos.catalog/records/KIT-X-01", { value: {} }],
-    ["/ns/main/v1/tasks", { ...verb("x1"), queue: "eq02" }],
-    ["/ns/main/v1/tasks", { ...verb("x2"), kind: "build" }],
+    ["/ns/main/v1/tasks", { ...verb(first, "x1"), queue: "eq02" }],
+    ["/ns/main/v1/tasks", { ...verb(first, "x2"), kind: "build" }],
     ["/ns/main/v1/tasks/claim", { queue: "eq01", worker: "w" }],
   ]) {
     const denied = await request(path, body, first.key);
@@ -102,11 +104,11 @@ test("personal data, filed requests and sign-ups are capped", async () => {
   const { request, signUp } = await setup();
   const org = (await signUp()).data;
   for (const value of ["write to person@real.invalid", "123-45-6789", "4111 1111 1111 1111"]) {
-    assert.equal((await request("/ns/main/v1/tasks", verb("pii", { job: value }), org.key)).status, 400);
+    assert.equal((await request("/ns/main/v1/tasks", verb(org, "pii", { job: value }), org.key)).status, 400);
     assert.equal((await request("/v1/stores/org.requests/records/pii", { value: { note: value }, expected_version: 0 }, org.key)).status, 400);
   }
-  for (let i = 0; i < 5; i++) assert.equal((await request("/ns/main/v1/tasks", verb(`rq-${i}`), org.key)).status, 201);
-  const capped = await request("/ns/main/v1/tasks", verb("rq-6"), org.key);
+  for (let i = 0; i < 5; i++) assert.equal((await request("/ns/main/v1/tasks", verb(org, String(i)), org.key)).status, 201);
+  const capped = await request("/ns/main/v1/tasks", verb(org, "6"), org.key);
   assert.equal(capped.status, 429, JSON.stringify(capped.data));
   assert.equal((await signUp({ display_name: "Second Org" })).status, 201);
   assert.equal((await signUp({ display_name: "Third Org" })).status, 201);
@@ -121,15 +123,16 @@ test("sign-up is off unless enabled", async () => {
 test("a requester follows its request but not the children a worker split it into", async () => {
   const { request, admin, signUp } = await setup();
   const org = (await signUp()).data;
-  assert.equal((await request("/ns/main/v1/tasks", verb("rq-split"), org.key)).status, 201);
+  const parent = tid(org, "split");
+  assert.equal((await request("/ns/main/v1/tasks", verb(org, "split"), org.key)).status, 201);
   const lease = await request("/v1/tasks/claim", { queue: "eq01", worker: "classifier", kinds: ["request"] }, admin);
   assert.equal(lease.status, 200, JSON.stringify(lease.data));
-  const split = await request("/v1/tasks/split", { task_id: "rq-split", fencing_token: lease.data.fencing_token, children: [
+  const split = await request("/v1/tasks/split", { task_id: parent, fencing_token: lease.data.fencing_token, children: [
     { queue: "eq02", kind: "research", brief: { part: 1 }, tags: ["open:anonymous"] },
     { queue: "eq03", kind: "report_review", brief: { part: 1 }, after: [0] },
   ] }, admin);
   assert.equal(split.status, 200, JSON.stringify(split.data));
-  assert.equal((await request("/ns/main/v1/tasks/rq-split", undefined, org.key)).data.state, "waiting");
+  assert.equal((await request(`/ns/main/v1/tasks/${parent}`, undefined, org.key)).data.state, "waiting");
   for (const child of split.data.children) {
     assert.equal((await request(`/ns/main/v1/tasks/${child}`, undefined, org.key)).status, 404);
     assert.equal((await request(`/ns/main/v1/tasks/${child}/results`, undefined, org.key)).status, 404);

@@ -15,7 +15,12 @@ import re
 import secrets
 from typing import TYPE_CHECKING, Any, cast
 
-from tessera._principals import PERSONAL_DATA, DemoPayloadTooLarge, mint_allowance
+from tessera._principals import (
+    DemoPayloadTooLarge,
+    has_personal_data,
+    mint_allowance,
+    stored_payload,
+)
 from tessera.errors import InvalidRequest, NotFound, RateLimited, ScopeDenied
 from tessera.grants import REQUEST_KIND, REQUEST_QUEUE, REQUESTER_STORE_PREFIX, KeyGrant
 from tessera.models import RecordWrite
@@ -46,6 +51,8 @@ OWN_ACTIONS = frozenset(
     }
 )
 SHARED_ACTIONS = frozenset({"enqueue", "task", "results", "claimEvents", "me", "my_audit"})
+# In the shared namespace these read one request verb, which must be one the key filed.
+FOLLOW_ACTIONS = frozenset({"task", "results", "claimEvents"})
 _TEXT = re.compile(r"[^\w .,&'()/:+-]", re.UNICODE)
 
 
@@ -66,7 +73,7 @@ def clean_profile(profile: dict[str, Any]) -> dict[str, Any]:
         "organization_type": _clean(profile.get("organization_type"), "organization_type", 3, 120),
         "causes": [_clean(c, "cause", 2, 40) for c in causes],
     }
-    if PERSONAL_DATA.search(json.dumps(clean, ensure_ascii=False)):
+    if has_personal_data(json.dumps(clean, ensure_ascii=False)):
         raise InvalidRequest("profiles must not contain personal or payment data")
     return clean
 
@@ -158,7 +165,7 @@ class RequesterOps:
                 )
             if args.get("depends_on"):
                 raise ScopeDenied("a request verb cannot depend on other verbs")
-        elif shared:
+        elif shared and action in FOLLOW_ACTIONS:
             with store._read() as c:
                 own = c.execute(
                     "SELECT 1 FROM tasks WHERE namespace=? AND id=? AND owner_key_id=?"
@@ -167,21 +174,14 @@ class RequesterOps:
                 ).fetchone()
             if own is None:
                 raise NotFound("task does not exist")
-        else:
+        elif not shared:
             names = [args.get("store"), args.get("store_name")]
             names += [w.get("store") for w in args.get("writes") or [] if isinstance(w, dict)]
             if any(n and not str(n).startswith(REQUESTER_STORE_PREFIX) for n in names):
                 raise ScopeDenied("requester nouns live in org. stores of their own namespace")
-        payload = (
-            args.get("writes", args.get("value"))
-            if action == "putRecords"
-            else args.get("brief")
-            if action == "enqueue"
-            else {}
-        )
-        encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        encoded = stored_payload(action, args)
         writing = action in {"putRecords", "enqueue"}
-        if writing and PERSONAL_DATA.search(encoded):
+        if writing and has_personal_data(encoded):
             raise InvalidRequest("requests and nouns must not contain personal or payment data")
         size = len(encoded.encode())
         if size > REQUESTER_QUOTAS["request_bytes"]:

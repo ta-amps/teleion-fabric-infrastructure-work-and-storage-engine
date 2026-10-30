@@ -32,11 +32,37 @@ DEMO_QUOTAS = {
     "open_claims_per_ip_hour": 10,
 }
 ANON_LABELS: dict[str, Any] = {"origin": "anonymous", "demo": True, "untrusted": True}
-# A limited deterministic filter for common personal and payment data (same rule as the Worker).
-PERSONAL_DATA = re.compile(
-    r"@(?!example\.(?:com|org|net)\b)[a-z0-9.-]+\.[a-z]{2,}|\b\d{3}-\d{2}-\d{4}\b|\b(?:\d[ -]?){13,19}\b",
-    re.I,
+# A limited deterministic screen for common personal and payment data (same rules as the Worker):
+# email addresses outside the example domains, identity and payment card numbers, phone numbers,
+# street addresses and IBANs. It is not a claim that all personal data can be detected.
+_PERSONAL_ANY_CASE = re.compile(r"@(?!example\.(?:com|org|net)\b)[a-z0-9.-]+\.[a-z]{2,}", re.I)
+_PERSONAL_EXACT = re.compile(
+    r"\b\d{3}-\d{2}-\d{4}\b"
+    r"|\b(?:\d[ -]?){13,19}\b"
+    r"|(?<![\w+])(?:\+\d{1,3}[ .-]?)?(?:\(\d{3}\)[ .-]?|\d{3}[ .-])\d{3}[ .-]\d{4}(?![\w-])"
+    r"|(?<![\w+])\+\d{1,3}(?:[ .-]?\d{2,4}){2,5}(?![\w-])"
+    r"|\b\d{1,5}\s+(?:[A-Z][a-z]+\s+){1,3}"
+    r"(?:Street|St|Avenue|Ave|Road|Rd|Lane|Ln|Drive|Dr|Boulevard|Blvd|Court|Ct|Way|Place|Pl)\b"
+    r"|\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,4})?\b"
 )
+# Every field an action stores is screened and counted, ids, keys and tags included.
+STORED_FIELDS: dict[str, tuple[str, ...]] = {
+    "putRecords": ("writes", "store", "store_name", "key", "value", "tags"),
+    "enqueue": ("brief", "task_id", "idempotency_key", "tags"),
+    "submit": ("output", "execution_report", "error", "idempotency_key"),
+}
+
+
+def has_personal_data(text: str) -> bool:
+    return bool(_PERSONAL_ANY_CASE.search(text) or _PERSONAL_EXACT.search(text))
+
+
+def stored_payload(action: str, args: dict[str, Any]) -> str:
+    """The fields an action would store, as the JSON text that is screened and counted."""
+    stored = {name: args.get(name) for name in STORED_FIELDS.get(action, ()) if name in args}
+    return json.dumps(stored, ensure_ascii=False, separators=(",", ":"))
+
+
 # Successful actions keep one audit row each, reads included. Denied, failed and no-op
 # requests and internal pre-checks are counted per minute instead (same rule as the Worker).
 PRECHECK_ACTIONS = frozenset(
@@ -419,17 +445,8 @@ class PrincipalOps(AccessSchemaOps):
         for write in writes:
             if not isinstance(write, dict) or not str(write.get("store", "")).startswith("demo."):
                 raise ScopeDenied("demo store required")
-        payload = (
-            args.get("writes", args.get("value"))
-            if action == "putRecords"
-            else {"output": args.get("output"), "execution_report": args.get("execution_report")}
-            if action == "submit"
-            else args.get("brief")
-            if action == "enqueue"
-            else {}
-        )
-        encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-        if action in WRITE_ACTIONS and PERSONAL_DATA.search(encoded):
+        encoded = stored_payload(action, args)
+        if action in WRITE_ACTIONS and has_personal_data(encoded):
             raise InvalidRequest(
                 "demo payloads must not contain personal or payment data; use example.com"
             )

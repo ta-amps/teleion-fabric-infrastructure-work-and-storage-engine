@@ -13,7 +13,12 @@ from tessera._execution_capture import capture_execution, checked_report
 from tessera._frontier_guard import review_proof as frontier_review_proof
 from tessera._frontier_guard import verification_proof as frontier_verification_proof
 from tessera._graph import GraphOps
-from tessera._principals import charge_claim_caps, check_claim_caps, claim_caps
+from tessera._principals import (
+    charge_claim_caps,
+    check_claim_caps,
+    claim_caps,
+    has_personal_data,
+)
 from tessera._publication_guard import review_proof
 from tessera.errors import (
     Forbidden,
@@ -25,6 +30,7 @@ from tessera.errors import (
 )
 from tessera.grants import OPEN_VERB_NAMESPACE, REQUEST_KIND, REQUEST_QUEUE, REQUEST_SURFACES
 from tessera.models import (
+    DEFAULT_PRIORITY,
     EFFECT_RANK,
     MAX_DEPENDENCIES,
     MAX_PARK_SECONDS,
@@ -107,6 +113,7 @@ class TaskOps(GraphOps):
         if ctx.requester:
             if spec.queue != REQUEST_QUEUE or spec.kind != REQUEST_KIND:
                 raise Forbidden(f"requesters may only file {REQUEST_KIND} verbs in {REQUEST_QUEUE}")
+            self._check_requester_ids(spec)
             spec = spec.model_copy(
                 update={
                     "visibility_scope": "allowlist_surfaces",
@@ -117,8 +124,13 @@ class TaskOps(GraphOps):
                     "tags": ["origin:requester", "untrusted:true", f"kind:{REQUEST_KIND}"],
                     "effect_class": "write-internal",
                     "depends_on": [],
+                    "priority": DEFAULT_PRIORITY,
                 }
             )
+        if (ctx.requester or ctx.anonymous) and any(
+            value and has_personal_data(value) for value in (spec.task_id, spec.idempotency_key)
+        ):
+            raise InvalidRequest("task ids and idempotency keys must not contain personal data")
         if ctx.anonymous:
             if not spec.queue.startswith("demo."):
                 raise Forbidden("anonymous tasks require a demo queue")
@@ -189,6 +201,19 @@ class TaskOps(GraphOps):
                         return str(winner["id"])
                 raise
         return task_id
+
+    def _check_requester_ids(self, spec: TaskSpec) -> None:
+        """A requester's own task ids and idempotency keys start with rq-<principal_id>-, so
+        organizations can neither collide nor learn which other ids exist."""
+        with self._read() as c:
+            row = c.execute(
+                "SELECT principal_id FROM access_principals WHERE key_id=?",
+                (self.current_scope().key_id,),
+            ).fetchone()
+        prefix = f"rq-{row['principal_id'] if row else ''}-"
+        for name, value in (("task_id", spec.task_id), ("idempotency_key", spec.idempotency_key)):
+            if value and (row is None or not value.startswith(prefix)):
+                raise InvalidRequest(f"a requester's {name} must start with {prefix}")
 
     def _insert_task(
         self,
@@ -494,6 +519,8 @@ class TaskOps(GraphOps):
             raise InvalidRequest("/ok must be a JSON boolean")
         if not idempotency_key:
             raise InvalidRequest("idempotency_key is required")
+        if self.current_scope().anonymous and has_personal_data(idempotency_key):
+            raise InvalidRequest("idempotency keys must not contain personal data")
         try:
             output_text = canonical_json(output)
         except (TypeError, ValueError) as exc:

@@ -63,7 +63,27 @@ const REQUESTER_SHARED_ACTIONS = new Set(["enqueue", "task", "results", "claimEv
 export function filesRequests(grant, ns) {
   return grant?.principal_kind === "requester" && ns === OPEN_VERB_NAMESPACE && grant.namespace !== ns;
 }
-const PERSONAL_DATA = /@(?!example\.(?:com|org|net)\b)[a-z0-9.-]+\.[a-z]{2,}|\b\d{3}-\d{2}-\d{4}\b|\b(?:\d[ -]?){13,19}\b/i;
+// A limited deterministic screen for common personal and payment data (same rules as
+// src/tessera/_principals.py): email addresses outside the example domains, identity and payment
+// card numbers, phone numbers, street addresses and IBANs. Not a claim that all of it is caught.
+const PERSONAL_ANY_CASE = /@(?!example\.(?:com|org|net)\b)[a-z0-9.-]+\.[a-z]{2,}/i;
+const PERSONAL_EXACT = new RegExp([
+  String.raw`\b\d{3}-\d{2}-\d{4}\b`,
+  String.raw`\b(?:\d[ -]?){13,19}\b`,
+  String.raw`(?<![\w+])(?:\+\d{1,3}[ .-]?)?(?:\(\d{3}\)[ .-]?|\d{3}[ .-])\d{3}[ .-]\d{4}(?![\w-])`,
+  String.raw`(?<![\w+])\+\d{1,3}(?:[ .-]?\d{2,4}){2,5}(?![\w-])`,
+  String.raw`\b\d{1,5}\s+(?:[A-Z][a-z]+\s+){1,3}(?:Street|St|Avenue|Ave|Road|Rd|Lane|Ln|Drive|Dr|Boulevard|Blvd|Court|Ct|Way|Place|Pl)\b`,
+  String.raw`\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,4})?\b`,
+].join("|"));
+export function hasPersonalData(text) { return PERSONAL_ANY_CASE.test(text) || PERSONAL_EXACT.test(text); }
+// Every field an action stores is screened and counted, ids, keys and tags included.
+const STORED_FIELDS = { putRecords: ["writes", "store", "store_name", "key", "value", "tags"], enqueue: ["brief", "task_id", "idempotency_key", "tags"], submit: ["output", "execution_report", "error", "idempotency_key"] };
+export function storedPayload(action, args) {
+  return JSON.stringify(Object.fromEntries((STORED_FIELDS[action] || []).filter(name => args[name] !== undefined).map(name => [name, args[name]])));
+}
+const DEFAULT_PRIORITY = 50; // requests always get the default priority (models.DEFAULT_PRIORITY)
+// In the shared namespace these read one request verb, which must be one the key filed.
+const REQUESTER_FOLLOW_ACTIONS = new Set(["task", "results", "claimEvents"]);
 export function cleanProfile(profile) {
   const text = (value, field, low, high) => {
     const clean = String(value ?? "").replace(/[^\p{L}\p{N}_ .,&'()/:+-]/gu, "").trim();
@@ -74,7 +94,7 @@ export function cleanProfile(profile) {
   const causes = profile.causes ?? [];
   if (!Array.isArray(causes) || causes.length > 8) throw error(400, "invalid_request", "profile causes must be a list of at most 8 short phrases");
   const clean = { display_name: text(profile.display_name, "display_name", 2, 80), organization_type: text(profile.organization_type, "organization_type", 3, 120), causes: causes.map(c => text(c, "cause", 2, 40)) };
-  if (PERSONAL_DATA.test(JSON.stringify(clean))) throw error(400, "invalid_request", "profiles must not contain personal or payment data");
+  if (hasPersonalData(JSON.stringify(clean))) throw error(400, "invalid_request", "profiles must not contain personal or payment data");
   return clean;
 }
 export const ANON_LABELS = Object.freeze({ origin: "anonymous", demo: true, untrusted: true });
@@ -398,8 +418,8 @@ export function enforceAccess(c, grant, action, args) {
     if (!String(w.store).startsWith("demo.")) throw error(403, "scope_denied", "demo store required");
     return governed(w);
   });
-  const payload = JSON.stringify(action === "putRecords" ? args.writes : action === "submit" ? {output:args.output,execution_report:args.execution_report} : action === "enqueue" ? args.brief : {});
-  if (WRITE_ACTIONS.has(action) && (/@(?!example\.(?:com|org|net)\b)[a-z0-9.-]+\.[a-z]{2,}/i.test(payload) || /\b\d{3}-\d{2}-\d{4}\b|\b(?:\d[ -]?){13,19}\b/.test(payload)))
+  const payload = storedPayload(action, args);
+  if (WRITE_ACTIONS.has(action) && hasPersonalData(payload))
     throw error(400, "synthetic_only", "demo payloads must not contain personal or payment data; use example.com");
   const bytes = new TextEncoder().encode(payload).length;
   if (bytes > DEMO_QUOTAS.request_bytes) throw error(413, "payload_too_large", "demo request exceeds byte limit");
@@ -457,20 +477,25 @@ function enforceRequester(c, grant, action, args, ns) {
   if (shared && action === "enqueue") {
     if (args.queue !== REQUEST_QUEUE || (args.kind ?? "task") !== REQUEST_KIND) throw error(403, "scope_denied", `requesters may only file ${REQUEST_KIND} verbs in ${REQUEST_QUEUE}`);
     if (Array.isArray(args.depends_on) && args.depends_on.length) throw error(403, "scope_denied", "a request verb cannot depend on other verbs");
-    Object.assign(args, { ...requesterVerbGovernance(grant), effect_class: "write-internal", depends_on: [] });
-  } else if (shared) {
+    // Its own ids start with rq-<principal_id>-, so organizations neither collide nor learn which
+    // other ids exist (same rule as _tasks._check_requester_ids).
+    const prefix = `rq-${grant.principal_id}-`;
+    for (const name of ["task_id", "idempotency_key"])
+      if (args[name] != null && String(args[name]).trim() && !String(args[name]).startsWith(prefix)) throw error(400, "invalid_request", `a requester's ${name} must start with ${prefix}`);
+    Object.assign(args, { ...requesterVerbGovernance(grant), effect_class: "write-internal", depends_on: [], priority: DEFAULT_PRIORITY });
+  } else if (shared && REQUESTER_FOLLOW_ACTIONS.has(action)) {
     // Only the request verbs it filed: never the children a worker split them into, whose
     // results stay quarantined until a different worker reviews them.
     if (!c._one("SELECT 1 AS own FROM tasks WHERE namespace=? AND id=? AND owner_key_id=? AND parent_id IS NULL", ns, String(args.task_id || ""), grant.key_id)) throw error(404, "not_found", "task does not exist");
-  } else {
+  } else if (!shared) {
     const names = [args.store, args.store_name, ...(args.writes || []).map(w => w?.store)];
     if (names.some(n => n && !String(n).startsWith(REQUESTER_STORE_PREFIX))) throw error(403, "scope_denied", "requester nouns live in org. stores of their own namespace");
     if (action === "putRecords") args.writes = (args.writes || []).map(w => ({ ...w, namespace: ns, producer_surface: "surface:tessera", owner_key_id: grant.key_id, visibility_scope: "private", allowed_surfaces: [], target_cohorts: ["all"],
       tags: [...(w.tags || []).filter(t => !/^(status|origin|untrusted|demo|open):/.test(t)).slice(0, 8), "origin:requester", "untrusted:true"] }));
   }
   const writing = action === "putRecords" || action === "enqueue";
-  const payload = JSON.stringify(action === "putRecords" ? args.writes : action === "enqueue" ? args.brief : {});
-  if (writing && PERSONAL_DATA.test(payload)) throw error(400, "synthetic_only", "requests and nouns must not contain personal or payment data");
+  const payload = storedPayload(action, args);
+  if (writing && hasPersonalData(payload)) throw error(400, "synthetic_only", "requests and nouns must not contain personal or payment data");
   const bytes = new TextEncoder().encode(payload).length;
   if (bytes > REQUESTER_QUOTAS.request_bytes) throw error(413, "payload_too_large", "requester request exceeds byte limit");
   return [args, { kind: "requester", action, namespace: ns, bytes: writing ? bytes : 0, writing }];

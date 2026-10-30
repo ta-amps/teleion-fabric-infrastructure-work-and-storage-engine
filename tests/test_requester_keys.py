@@ -50,12 +50,19 @@ def auth(key: str) -> dict[str, str]:
     return {"Authorization": "Bearer " + key}
 
 
-def request_verb(task_id: str, brief: dict[str, Any] | None = None) -> dict[str, Any]:
+def tid(org: dict[str, Any], suffix: str) -> str:
+    """A requester names its own request verbs rq-<principal_id>-<suffix>."""
+    return f"rq-{org['principal_id']}-{suffix}"
+
+
+def request_verb(
+    org: dict[str, Any], suffix: str, brief: dict[str, Any] | None = None
+) -> dict[str, Any]:
     return {
         "queue": "eq01",
         "kind": "request",
         "effect_class": "write-internal",
-        "task_id": task_id,
+        "task_id": tid(org, suffix),
         "brief": brief or {"job": "SYNTHETIC summary of public tenant laws"},
     }
 
@@ -92,15 +99,16 @@ def test_requester_files_and_follows_only_its_own_request_verbs(
     client, store, _ = fabric
     first, second = sign_up(client), sign_up(client, display_name="Synthetic Clinic")
     h, other = auth(first["key"]), auth(second["key"])
-    filed = client.post("/ns/main/v1/tasks", json=request_verb("rq-1"), headers=h)
+    filed = client.post("/ns/main/v1/tasks", json=request_verb(first, "1"), headers=h)
     assert filed.status_code == 201, filed.text
-    verb = store.task("rq-1")
+    verb = store.task(tid(first, "1"))
     assert verb.visibility_scope == "allowlist_surfaces"
     assert verb.allowed_surfaces == ["surface:eranos"] and verb.owner_key_id == first["key_id"]
     assert {"origin:requester", "untrusted:true", "kind:request"} <= set(verb.tags)
-    assert client.get("/ns/main/v1/tasks/rq-1", headers=h).json()["state"] == "ready"
-    assert client.get("/ns/main/v1/tasks/rq-1", headers=other).status_code == 404
-    assert client.get("/ns/main/v1/tasks/rq-1").status_code == 401
+    path = f"/ns/main/v1/tasks/{tid(first, '1')}"
+    assert client.get(path, headers=h).json()["state"] == "ready"
+    assert client.get(path, headers=other).status_code == 404
+    assert client.get(path).status_code == 401
     own = client.post(
         "/v1/stores/org.requests/records/r1",
         json={"value": {"job": "SYNTHETIC"}, "expected_version": 0},
@@ -120,9 +128,9 @@ def test_requester_keys_reach_nothing_else(fabric: tuple[TestClient, Store, str]
     for path, body in store_writes:
         assert client.post(path, json=body, headers=h).status_code == 403, path
     for body in (
-        {**request_verb("x1"), "queue": "eq02"},
-        {**request_verb("x2"), "kind": "build"},
-        {**request_verb("x3"), "depends_on": ["rq-1"]},
+        {**request_verb(first, "x1"), "queue": "eq02"},
+        {**request_verb(first, "x2"), "kind": "build"},
+        {**request_verb(first, "x3"), "depends_on": [tid(first, "1")]},
     ):
         assert client.post("/ns/main/v1/tasks", json=body, headers=h).status_code == 403, body
     assert (
@@ -155,7 +163,9 @@ def test_personal_data_and_quotas_hold(fabric: tuple[TestClient, Store, str]) ->
     for value in ("write to person@real.invalid", "123-45-6789", "4111 1111 1111 1111"):
         brief = {"job": value}
         assert (
-            client.post("/ns/main/v1/tasks", json=request_verb("pii", brief), headers=h).status_code
+            client.post(
+                "/ns/main/v1/tasks", json=request_verb(org, "pii", brief), headers=h
+            ).status_code
             == 400
         )
         record = {"value": {"note": value}, "expected_version": 0}
@@ -169,9 +179,9 @@ def test_personal_data_and_quotas_hold(fabric: tuple[TestClient, Store, str]) ->
     )
     assert refused.status_code == 400
     for i in range(5):
-        filed = client.post("/ns/main/v1/tasks", json=request_verb(f"rq-{i}"), headers=h)
+        filed = client.post("/ns/main/v1/tasks", json=request_verb(org, str(i)), headers=h)
         assert filed.status_code == 201, filed.text
-    capped = client.post("/ns/main/v1/tasks", json=request_verb("rq-6"), headers=h)
+    capped = client.post("/ns/main/v1/tasks", json=request_verb(org, "6"), headers=h)
     assert capped.status_code == 429 and int(capped.headers["retry-after"]) > 0
     # Three sign-ups per IP hash each hour: the fixture's one plus two more, then refused.
     sign_up(client, display_name="Second Org")
@@ -197,22 +207,53 @@ def test_requester_follows_its_request_but_not_the_split_children(
     client, store, _ = fabric
     org = sign_up(client)
     h = auth(org["key"])
+    parent = tid(org, "split")
     assert (
-        client.post("/ns/main/v1/tasks", json=request_verb("rq-split"), headers=h).status_code
+        client.post("/ns/main/v1/tasks", json=request_verb(org, "split"), headers=h).status_code
         == 201
     )
     lease = store.claim("eq01", "classifier", kinds=["request"], key_id="k_classifier")
-    assert lease is not None and lease.task_id == "rq-split"
+    assert lease is not None and lease.task_id == parent
     children = store.split(
-        "rq-split",
+        parent,
         lease.fencing_token,
         [
             ChildSpec(queue="eq02", kind="research", brief={"part": 1}, tags=["open:anonymous"]),
             ChildSpec(queue="eq03", kind="report_review", brief={"part": 1}, after=[0]),
         ],
     )
-    assert client.get("/ns/main/v1/tasks/rq-split", headers=h).json()["state"] == "waiting"
+    assert client.get(f"/ns/main/v1/tasks/{parent}", headers=h).json()["state"] == "waiting"
     for child in children:
         assert store.task(child).owner_key_id == org["key_id"]
         assert client.get(f"/ns/main/v1/tasks/{child}", headers=h).status_code == 404
         assert client.get(f"/ns/main/v1/tasks/{child}/results", headers=h).status_code == 404
+
+
+def test_a_payload_namespace_never_redirects_a_write(
+    fabric: tuple[TestClient, Store, str],
+) -> None:
+    """A key writes only into the namespace its request was authorized for (finding 5)."""
+    client, store, admin = fabric
+    with store.scope_context(namespace="victim-ns"):
+        store.define_queue(QueueConfig(name="eq01"))
+    org = sign_up(client)
+    producer, _ = store.issue_key("producer", queues=["eq01"], scopes=["store"])
+    filed = {**request_verb(org, "cross"), "namespace": "victim-ns"}
+    queued = {"queue": "eq01", "task_id": "t-cross", "brief": {"job": "SYNTHETIC"}}
+    write = {"store": "notes", "key": "n1", "value": {"note": "SYNTHETIC"}, "expected_version": 0}
+    for path, body, key in (
+        ("/ns/main/v1/tasks", filed, org["key"]),
+        ("/v1/tasks", {**queued, "namespace": "victim-ns"}, producer),
+        ("/v1/tasks", {**queued, "namespace": "victim-ns"}, admin),
+        ("/v1/stores/batch", {"writes": [{**write, "namespace": "victim-ns"}]}, producer),
+    ):
+        refused = client.post(path, json=body, headers=auth(key))
+        assert refused.status_code == 403, (path, refused.text)
+    with store.scope_context(namespace="victim-ns"):
+        assert store.counts()["eq01"].ready == 0
+        assert store.stores() == []
+    # Naming the namespace in the request itself still works for a key granted it.
+    named = client.post(
+        "/ns/victim-ns/v1/tasks", json={**queued, "namespace": "victim-ns"}, headers=auth(admin)
+    )
+    assert named.status_code == 201, named.text

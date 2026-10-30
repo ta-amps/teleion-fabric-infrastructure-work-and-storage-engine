@@ -194,6 +194,9 @@ class StoreBase:
             return normalized
         if model_ns is not None and model_ns != "main":
             norm_model = normalize_namespace(model_ns)
+            if self.current_scope().key_id and norm_model != ctx_ns:
+                # A key is authorized for the request's namespace, never one named in a payload.
+                raise Forbidden("payload namespace must match the authenticated request namespace")
             if ctx_ns != "main" and norm_model != ctx_ns:
                 raise InvalidRequest(
                     f"namespace '{norm_model}' in payload conflicts with request namespace '{ctx_ns}'"

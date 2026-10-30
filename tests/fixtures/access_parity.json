@@ -698,6 +698,285 @@
           "status": 429
         }
       ]
+    },
+    {
+      "id": "10-requester-me-in-main",
+      "finding": "10 (Low)",
+      "title": "A requester's /v1/me and audit answer in the shared namespace too",
+      "steps": [
+        {
+          "signup": "org"
+        },
+        {
+          "as": "org",
+          "method": "GET",
+          "path": "/ns/main/v1/me",
+          "status": 200,
+          "expect": {
+            "equals": {
+              "principal_kind": "requester",
+              "namespace": "{org.namespace}"
+            }
+          }
+        },
+        {
+          "as": "org",
+          "method": "GET",
+          "path": "/ns/main/v1/me/audit",
+          "status": 200
+        }
+      ]
+    },
+    {
+      "id": "11-requester-fields-narrowed",
+      "finding": "11 (Low)",
+      "title": "A request verb always gets the default priority, and a requester names ids only under its own prefix",
+      "steps": [
+        {
+          "signup": "org"
+        },
+        {
+          "signup": "other",
+          "profile": {
+            "display_name": "Synthetic Clinic"
+          }
+        },
+        {
+          "as": "org",
+          "method": "POST",
+          "path": "/ns/main/v1/tasks",
+          "status": 201,
+          "body": {
+            "queue": "eq01",
+            "kind": "request",
+            "task_id": "rq-{org.principal_id}-urgent",
+            "brief": {
+              "job": "SYNTHETIC summary of public tenant laws"
+            },
+            "priority": 100
+          }
+        },
+        {
+          "as": "admin",
+          "method": "GET",
+          "path": "/v1/tasks/rq-{org.principal_id}-urgent",
+          "status": 200,
+          "expect": {
+            "equals": {
+              "priority": 50
+            }
+          }
+        },
+        {
+          "as": "org",
+          "method": "POST",
+          "path": "/ns/main/v1/tasks",
+          "status": 400,
+          "body": {
+            "queue": "eq01",
+            "kind": "request",
+            "task_id": "shared-name",
+            "brief": {
+              "job": "SYNTHETIC summary of public tenant laws"
+            }
+          }
+        },
+        {
+          "as": "other",
+          "method": "POST",
+          "path": "/ns/main/v1/tasks",
+          "status": 400,
+          "body": {
+            "queue": "eq01",
+            "kind": "request",
+            "task_id": "rq-{org.principal_id}-urgent",
+            "brief": {
+              "job": "SYNTHETIC"
+            }
+          }
+        },
+        {
+          "as": "org",
+          "method": "POST",
+          "path": "/ns/main/v1/tasks",
+          "status": 400,
+          "body": {
+            "queue": "eq01",
+            "kind": "request",
+            "task_id": "rq-{org.principal_id}-idem-bad",
+            "brief": {
+              "job": "SYNTHETIC summary of public tenant laws"
+            },
+            "idempotency_key": "shared-idem"
+          }
+        },
+        {
+          "as": "org",
+          "method": "POST",
+          "path": "/ns/main/v1/tasks",
+          "status": 201,
+          "body": {
+            "queue": "eq01",
+            "kind": "request",
+            "task_id": "rq-{org.principal_id}-idem-ok",
+            "brief": {
+              "job": "SYNTHETIC summary of public tenant laws"
+            },
+            "idempotency_key": "rq-{org.principal_id}-retry-1"
+          }
+        },
+        {
+          "as": "org",
+          "method": "POST",
+          "path": "/ns/main/v1/tasks",
+          "status": 201,
+          "body": {
+            "queue": "eq01",
+            "kind": "request",
+            "brief": {
+              "job": "SYNTHETIC without an id"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "12-personal-data-in-ids-keys-and-tags",
+      "finding": "12 (Low)",
+      "title": "Personal data is refused in ids, idempotency keys, record keys and tags, and phone, street and IBAN patterns are caught",
+      "steps": [
+        {
+          "signup": "org"
+        },
+        {
+          "as": "org",
+          "method": "POST",
+          "path": "/ns/main/v1/tasks",
+          "status": 400,
+          "body": {
+            "queue": "eq01",
+            "kind": "request",
+            "task_id": "rq-{org.principal_id}-555-201-3344",
+            "brief": {
+              "job": "SYNTHETIC summary of public tenant laws"
+            }
+          }
+        },
+        {
+          "as": "org",
+          "method": "POST",
+          "path": "/ns/main/v1/tasks",
+          "status": 400,
+          "body": {
+            "queue": "eq01",
+            "kind": "request",
+            "task_id": "rq-{org.principal_id}-idem",
+            "brief": {
+              "job": "SYNTHETIC summary of public tenant laws"
+            },
+            "idempotency_key": "rq-{org.principal_id}-jane.doe@gmail.com"
+          }
+        },
+        {
+          "as": "org",
+          "method": "POST",
+          "path": "/v1/stores/org.requests/records/555-201-3344",
+          "status": 400,
+          "body": {
+            "value": {
+              "job": "SYNTHETIC"
+            },
+            "expected_version": 0
+          }
+        },
+        {
+          "as": "org",
+          "method": "POST",
+          "path": "/v1/stores/org.requests/records/tagged",
+          "status": 400,
+          "body": {
+            "value": {
+              "job": "SYNTHETIC"
+            },
+            "expected_version": 0,
+            "tags": [
+              "call:555-201-3344"
+            ]
+          }
+        },
+        {
+          "as": "org",
+          "method": "POST",
+          "path": "/ns/main/v1/tasks",
+          "status": 400,
+          "body": {
+            "queue": "eq01",
+            "kind": "request",
+            "task_id": "rq-{org.principal_id}-phone",
+            "brief": {
+              "job": "SYNTHETIC: call (555) 201-3344"
+            }
+          }
+        },
+        {
+          "as": "org",
+          "method": "POST",
+          "path": "/ns/main/v1/tasks",
+          "status": 400,
+          "body": {
+            "queue": "eq01",
+            "kind": "request",
+            "task_id": "rq-{org.principal_id}-street",
+            "brief": {
+              "job": "SYNTHETIC: meet at 123 Main Street"
+            }
+          }
+        },
+        {
+          "as": "org",
+          "method": "POST",
+          "path": "/ns/main/v1/tasks",
+          "status": 400,
+          "body": {
+            "queue": "eq01",
+            "kind": "request",
+            "task_id": "rq-{org.principal_id}-iban",
+            "brief": {
+              "job": "SYNTHETIC: pay DE89 3704 0044 0532 0130 00"
+            }
+          }
+        },
+        {
+          "as": "org",
+          "method": "POST",
+          "path": "/ns/main/v1/tasks",
+          "status": 201,
+          "body": {
+            "queue": "eq01",
+            "kind": "request",
+            "task_id": "rq-{org.principal_id}-clean",
+            "brief": {
+              "job": "SYNTHETIC: summarize Fla. Stat. 83.49 and 501.2075; see example.com"
+            }
+          }
+        },
+        {
+          "session": "anon"
+        },
+        {
+          "as": "anon",
+          "method": "POST",
+          "path": "/v1/tasks",
+          "status": 400,
+          "body": {
+            "queue": "demo.ping",
+            "task_id": "call-555-201-3344",
+            "brief": {
+              "title": "SYNTHETIC"
+            }
+          }
+        }
+      ]
     }
   ]
 }

@@ -251,6 +251,9 @@ class _GovernedModel(_Model):
         return normalize_tags(v)
 
 
+DEFAULT_PRIORITY = 50  # A task's priority when its producer names none; requests always get it.
+
+
 class QueueConfig(_Model):
     """A queue's lease and retry settings (SPEC §4). Defaults are the plan's starting values."""
 
@@ -271,7 +274,7 @@ class TaskSpec(_GovernedModel):
     idempotency_key: str | None = Field(default=None, max_length=256)
     kind: str = Field(default="task", pattern=NAME_PATTERN)
     effect_class: EffectClass = "write-internal"
-    priority: int = Field(default=50, ge=0, le=100)
+    priority: int = Field(default=DEFAULT_PRIORITY, ge=0, le=100)
     not_before: float | None = None
     depends_on: list[str] = Field(
         default_factory=list,
