@@ -112,7 +112,7 @@ General
 1. Martin Kleppmann, "How to do distributed locking", 2016-02-08. https://martin.kleppmann.com/2016/02/08/how-to-do-distributed-locking.html
 2. MCP, Versioning ("The current protocol version is 2026-07-28"). https://modelcontextprotocol.io/specification/versioning
 3. MCP spec 2026-07-28, Transports: Streamable HTTP. https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http (changelog: https://modelcontextprotocol.io/specification/2026-07-28/changelog)
-4. Tessera README and SPEC.md (self-reported, not tested by the researcher). https://github.com/ta-amps/tessera
+4. Tessera README and SPEC.md (self-reported, not tested by the researcher). https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine
 
 Amazon SQS
 5. Visibility timeout. https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-visibility-timeout.html

@@ -16,7 +16,8 @@ Usage: python3 scripts/check_architecture.py [ROOT] [--summary | --mermaid | --s
   --mermaid    print the component graph as a Mermaid flowchart (no check)
   --sync-docs  rewrite the architecture doc's "## Invariants" table from architecture.json
 Exit 0 when consistent (or when there is no architecture.json), 1 with a report otherwise.
-Stdlib only; copy it into any repo. Schema: agents/schemas/architecture.schema.json in hackathon-context.
+Stdlib only; copy it into any repo. Schema: agents/schemas/architecture.schema.json in the hackathon/
+folder of ta-amps-hackathon.
 """
 
 from __future__ import annotations

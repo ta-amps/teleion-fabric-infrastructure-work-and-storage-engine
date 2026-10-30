@@ -3,7 +3,7 @@
 ## Integration checkpoint, October 29, 2026
 
 The reviewed release is merged into `main`. The tested implementation revision is
-`b1b470475c3ff03db0963bbcf6b271911d79f73e`; [its GitHub checks](https://github.com/ta-amps/tessera/actions/runs/40872587755) passed.
+`b1b470475c3ff03db0963bbcf6b271911d79f73e`; [its GitHub checks](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/actions/runs/40872587755) passed.
 Fresh builds matched the deployed Worker executable exactly.
 
 262 Python checks passed, with six existing skips; five actual workerd cases, local HTTP conformance (32 passed, four skipped), and the empty-backend negative control passed. The deployed anonymous/keyed history smoke passed 112 checks.
@@ -23,7 +23,7 @@ certification.
 
 ## Earlier handoff
 
-> Note, October 29, 2026: this dated section predates the current model, in which Tessera is infrastructure, Eranos and one overview site are the only public surfaces, and everything else, agent kits included, is nouns and verbs in seed packs; the exploitation and scam surface it describes is archived, and its nouns and verbs are now a pack in the [pack library](https://github.com/ta-amps/pack-contributions).
+> Note, October 29, 2026: this dated section predates the current model, in which Tessera is infrastructure, Eranos and one overview site are the only public surfaces, and everything else, agent kits included, is nouns and verbs in seed packs; the exploitation and scam surface it describes is archived, and its nouns and verbs are now a pack in the [pack library](https://github.com/ta-amps/seed-packs-library-of-nouns-and-verbs).
 
 Where the work stands as of Oct 26, 2026, how to verify every guarantee from a fresh clone, what sits in
 `briefs/` for the next workers, and how Shamash and Eranos connect to the fabric.
@@ -74,7 +74,7 @@ What each check proves:
 | `make check` | Lint, formatting, strict types on `src/tessera`, unit tests and store conformance (`30 passed, 5 skipped` in `conformance-draft/` plus unit tests in `tests/`), secret and private-name scan (`scripts/check_public.py`), index freshness (`scripts/build_index.py --check`), and [architecture.json](../architecture.json) against the code (`scripts/check_architecture.py`) |
 | `make suite-http-local` | Starts `tessera serve` on a local port, issues `admin`, `q_a` and `q_b` keys, runs `conformance-draft/` over HTTP and MCP (`31 passed, 4 skipped`), and scans the server log for leaked keys (`T16`) |
 | `make suite-stub` | Runs `conformance-draft/` against `tessera.testing:create_empty_backend` and exits non-zero if the suite ever passes on a no-op backend |
-| `python3 ../hackathon-context/scripts/check_docs.py .` | Parses every JSON file and verifies every relative Markdown link resolves |
+| `python3 ../ta-amps-hackathon/hackathon/scripts/check_docs.py .` | Parses every JSON file and verifies every relative Markdown link resolves |
 
 ## Open briefs
 
@@ -106,14 +106,14 @@ Two public-good surfaces share one Tessera instance (`tessera.<domain>` when hos
 `http://127.0.0.1:7701` locally under `make dev`). `make seed` (`tools/seed.py`) defines the general agent
 queues (`research`, `draft`, `review`, `build`) together with both surfaces' pipeline queues:
 
-- **[Shamash](https://github.com/ta-amps/shamash)** (`shamash.<domain>`) finds, quantifies and combats human harm,
+- **[Shamash](https://github.com/ta-amps/seed-packs-library-of-nouns-and-verbs/tree/main/packs/exploitation-evidence)** (`shamash.<domain>`) finds, quantifies and combats human harm,
   scams and exploitation across social media, websites, messages, documents and payments. Its five-stage case loop
   runs on queues `aq02` (Ingest), `aq85`
   (Situate), `aq04` (Problemize), `aq05` (Investigate) and `aq86` (Gate + audit). Stages join through
   `depends_on`, pause with `park` / `resume` when a case needs missing documents or human review, and store
   versioned case records and content-addressed evidence blobs through the `store` scope. Shamash's service and
   workers hold keys scoped to `aq*` (or the five queue names explicitly).
-- **[Eranos](https://github.com/ta-amps/eranos)** (`eranos.<domain>`) lets people donate unused AI tokens to
+- **[Eranos](https://github.com/ta-amps/eranos-public-marketplace-for-public-good-token-burn)** (`eranos.<domain>`) lets people donate unused AI tokens to
   build, test and independently review off-the-shelf agent skills, tools, files and agentic processes that NGOs,
   nonprofits and public-good teams can use right away. Contributors' agents and Eranos's API connect over MCP
   (`/mcp`), HTTP (`/v1/*`) or `/work` forms using keys scoped to `eq01`, `eq02` and `eq03`, write versioned kit
