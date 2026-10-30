@@ -308,7 +308,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [src/tessera/store.py](src/tessera/store.py) | The in-process Tessera store: the reference implementation of SPEC.md. |
 | [src/tessera/testing.py](src/tessera/testing.py) | Factories the conformance suite loads by name (TESSERABACKENDFACTORY="module:function"). |
 
-## tests/ (70)
+## tests/ (71)
 
 | File | What it is |
 |---|---|
@@ -332,6 +332,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [tests/test_agent_tool_listings.py](tests/test_agent_tool_listings.py) | Every agent-facing tool listing on the Python service matches what MCP tools/list serves. |
 | [tests/test_blob_first_uploader.py](tests/test_blob_first_uploader.py) | Raw blob governance is one row per namespace and digest, written by the first uploader. |
 | [tests/test_board.py](tests/test_board.py) | Console Board v2 (/board, L19), UI chrome, and agent discovery routes. |
+| [tests/test_body_limits.py](tests/test_body_limits.py) | Python bounds bodies as the Worker does, before authentication (H-60): 64 KiB for anonymous sessions, 16 MiB… |
 | [tests/test_buckets.py](tests/test_buckets.py) | Tests for queryable noun stores, persistent named file buckets, external blobdir, and MCP tools. |
 | [tests/test_category_queries.py](tests/test_category_queries.py) | Category projections agree before bounded scans, without granting visibility. |
 | [tests/test_check_public.py](tests/test_check_public.py) | checkpublic finds secrets and private names, masks them, and honours the allow marker. |

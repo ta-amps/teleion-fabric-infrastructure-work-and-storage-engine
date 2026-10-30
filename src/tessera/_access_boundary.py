@@ -98,11 +98,60 @@ def _no_constant(_: str) -> Any:
     raise InvalidRequest("JSON numbers must be finite")
 
 
+# Bodies, as the Worker bounds them (H-60): 64 KiB for anonymous sessions, 16 MiB for blob and
+# bucket-object uploads (the storage limit), 1 MiB for everything else, refused before
+# authentication. A JSON body nests at most
+# 64 containers deep and holds only well-formed Unicode strings (H-58, H-59).
+ANONYMOUS_BODY_BYTES = 65536
+BLOB_BODY_BYTES = 16 * 1024 * 1024
+BODY_BYTES = 1024 * 1024
+MAX_JSON_DEPTH = 64
+_JSON_STRING = re.compile(rb'"(?:[^"\\]|\\.)*"')
+_JSON_BRACKET = re.compile(rb"[\[\]{}]")
+
+
+def body_limit(path: str, authorization: str) -> int:
+    if authorization.startswith("Bearer tan_"):
+        return ANONYMOUS_BODY_BYTES
+    return BLOB_BODY_BYTES if RAW_BODY.fullmatch(path) else BODY_BYTES
+
+
+def _check_depth(raw: bytes) -> None:
+    depth = 0
+    for bracket in _JSON_BRACKET.finditer(_JSON_STRING.sub(b'""', raw)):
+        depth += 1 if bracket[0] in b"[{" else -1
+        if depth > MAX_JSON_DEPTH:
+            raise InvalidRequest(f"JSON bodies nest at most {MAX_JSON_DEPTH} levels deep")
+
+
+def _check_strings(value: Any) -> None:
+    stack = [value]
+    while stack:
+        item = stack.pop()
+        texts: list[Any] = [item] if isinstance(item, str) else []
+        if isinstance(item, dict):
+            texts += list(item)
+            stack += list(item.values())
+        elif isinstance(item, list):
+            stack += item
+        for text in texts:
+            try:
+                text.encode("utf-8")
+            except UnicodeEncodeError as exc:
+                raise InvalidRequest(
+                    "JSON strings must be valid Unicode (no lone surrogates)"
+                ) from exc
+
+
 def strict_json(raw: bytes) -> Any:
-    """JSON with the Worker's number rules: finite, and integers that survive IEEE-754 (H-07)."""
-    return json.loads(
+    """JSON with the Worker's rules: finite numbers, integers that survive IEEE-754 (H-07), at most
+    MAX_JSON_DEPTH levels of nesting and no lone surrogates."""
+    _check_depth(raw)
+    value = json.loads(
         raw, parse_float=_finite_float, parse_int=_exact_int, parse_constant=_no_constant
     )
+    _check_strings(value)
+    return value
 
 
 def access_error(exc: TesseraError) -> JSONResponse:
@@ -244,6 +293,10 @@ async def access_dispatch(
     action = path
     args: dict[str, Any] = {}
     try:
+        limit = body_limit(path, request.headers.get("authorization", ""))
+        declared = request.headers.get("content-length", "")
+        if declared.isdigit() and int(declared) > limit:
+            raise DemoPayloadTooLarge("request exceeds byte limit")
         form: dict[str, str] = {}
         if work_form:
             raw_form = await request.body()
@@ -283,18 +336,16 @@ async def access_dispatch(
                 or path in {"/v1/session/anonymous", "/v1/session/requester"}
                 or (not grant and path == "/mcp")
             )
-            if bounded:
-                chunks = []
-                total = 0
-                async for chunk in request.stream():
-                    total += len(chunk)
-                    if total > 65536:
-                        raise DemoPayloadTooLarge("demo request exceeds byte limit")
-                    chunks.append(chunk)
-                raw = b"".join(chunks)
-                request._body = raw
-            else:
-                raw = await request.body()
+            cap = min(limit, ANONYMOUS_BODY_BYTES) if bounded else limit
+            chunks = []
+            total = 0
+            async for chunk in request.stream():
+                total += len(chunk)
+                if total > cap:
+                    raise DemoPayloadTooLarge("request exceeds byte limit")
+                chunks.append(chunk)
+            raw = b"".join(chunks)
+            request._body = raw
             meta["bytes_in"] = len(raw)
             try:
                 body = strict_json(raw) if raw else {}

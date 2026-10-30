@@ -1517,12 +1517,12 @@ const worker = {
 
 // What a route's body holds. Blob and bucket-object uploads are raw bytes and /work forms are
 // form posts; every other body is parsed as JSON whatever its Content-Type says, so its numbers
-// are checked whatever it says too (H-07). The 16 MiB cap belongs to the blob upload route itself,
-// not to any path that contains "/blobs" (H-65).
+// are checked whatever it says too (H-07). The 16 MiB cap (the storage limit) belongs to the upload
+// routes themselves, not to any path that contains "/blobs" (H-65); Python applies the same caps.
 export function bodyRoute(pathname) {
   const path = pathname.replace(/^\/ns\/[^/]+(?=\/)/, "");
   if (path === "/v1/blobs") return { kind: "bytes", limit: 16 * 1024 * 1024 };
-  if (/^\/v1\/buckets\/[^/]+\/objects\/./.test(path)) return { kind: "bytes", limit: 1024 * 1024 };
+  if (/^\/v1\/buckets\/[^/]+\/objects\/./.test(path)) return { kind: "bytes", limit: 16 * 1024 * 1024 };
   if (path === "/work" || path.startsWith("/work/")) return { kind: "form", limit: 1024 * 1024 };
   return { kind: "json", limit: 1024 * 1024 };
 }
