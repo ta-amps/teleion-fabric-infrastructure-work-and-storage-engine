@@ -125,7 +125,10 @@ def run_step(
         else:
             response = client.post(path, json=fill(step.get("body", {}), saved), headers=headers)
         assert response.status_code == step["status"], (where, path, response.text[:400])
-    body = response.json() if response.content else None
+    try:
+        body = response.json() if response.content else None
+    except ValueError:  # an MCP door may answer as an event stream
+        body = None
     if "save" in step:
         saved[step["save"]] = body
     check(where, body, fill(step.get("expect", {}), saved))

@@ -1087,6 +1087,93 @@
           }
         }
       ]
+    },
+    {
+      "id": "8-mcp-handshake-for-every-bearer",
+      "finding": "8 (Low)",
+      "title": "Anonymous and requester bearers can complete the MCP handshake in the shared namespace",
+      "steps": [
+        {
+          "session": "anon"
+        },
+        {
+          "signup": "org"
+        },
+        {
+          "as": "anon",
+          "method": "POST",
+          "path": "/ns/main/mcp",
+          "status": 200,
+          "headers": {
+            "Accept": "application/json, text/event-stream"
+          },
+          "body": {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+              "protocolVersion": "2025-06-18",
+              "capabilities": {},
+              "clientInfo": {
+                "name": "synthetic-parity",
+                "version": "0"
+              }
+            }
+          }
+        },
+        {
+          "as": "anon",
+          "method": "POST",
+          "path": "/ns/main/mcp",
+          "status": 200,
+          "headers": {
+            "Accept": "application/json, text/event-stream"
+          },
+          "body": {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/list",
+            "params": {}
+          }
+        },
+        {
+          "as": "org",
+          "method": "POST",
+          "path": "/ns/main/mcp",
+          "status": 200,
+          "headers": {
+            "Accept": "application/json, text/event-stream"
+          },
+          "body": {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+              "protocolVersion": "2025-06-18",
+              "capabilities": {},
+              "clientInfo": {
+                "name": "synthetic-parity",
+                "version": "0"
+              }
+            }
+          }
+        },
+        {
+          "as": "org",
+          "method": "POST",
+          "path": "/ns/main/mcp",
+          "status": 200,
+          "headers": {
+            "Accept": "application/json, text/event-stream"
+          },
+          "body": {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/list",
+            "params": {}
+          }
+        }
+      ]
     }
   ]
 }

@@ -313,7 +313,13 @@ async def access_dispatch(
                     ip_hash=meta.get("ip_hash"),
                     ip_window=meta.get("ip_window"),
                 )
-            elif not grant.allows_namespace(namespace):
+            elif not (
+                grant.allows_namespace(namespace)
+                or grant.uses_open_verbs(namespace)
+                or grant.files_requests(namespace)
+            ):
+                # Discovery (the MCP handshake, tools/list) answers wherever the principal may
+                # work, the shared namespace included for anonymous and requester bearers.
                 from tessera.errors import ScopeDenied
 
                 raise ScopeDenied("this principal may not access this namespace")
