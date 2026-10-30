@@ -5,6 +5,7 @@
 Access follow-ups after the re-review:
 
 - Every access description agrees with the switches (F-054). On the Worker the agent card, `llms-full.txt`, MCP `explain_access_modes` and the MCP sign-in hint said `requester.enabled: false` while `/connect.json` said `true`, because they built the description without the requester switch; the Python connect page did the same. All of them now read both switches from one place.
+- An expired demo or requester namespace now really shrinks (F-050). Its purge alarm deleted everything and then rebuilt the whole schema at once, so each purged object kept about 320 KB (74 tables and indexes) forever. The purge now deletes the object's storage and its alarm and leaves it empty (4 KB in local measurement); the schema comes back only if the namespace is used again.
 
 Review fixes for open verbs and requester keys, with the same cases run against both implementations from `tests/fixtures/access_parity.json`:
 
