@@ -656,6 +656,29 @@ def test_denied_and_no_op_requests_are_counted_not_written_per_request(
     assert client.get("/v1/admin/audit", headers=auth(admin)).json()["counters"]
 
 
+def test_unhandled_errors_reach_the_audit_counters(tmp_path: Path) -> None:
+    """H-61: a fault no handler names still counts, as 500:internal (the Worker's outcome for a
+    storage fault). Before, only Tessera's own errors were audited, so an operator reading the
+    audit never saw Python's 500s."""
+    store = Store(str(tmp_path / "faults.db"), clock=FakeClock())
+    worker, _ = store.issue_key("worker", queues=["*"], scopes=["nouns:read"])
+    settings = ServiceSettings(reaper_seconds=86400, public_url="http://testserver")
+
+    def broken() -> Any:
+        raise RuntimeError("synthetic fault")
+
+    with TestClient(create_app(store, settings), raise_server_exceptions=False) as client:
+        original = store.counts
+        store.counts = broken  # type: ignore[method-assign]
+        try:
+            assert client.get("/v1/counts", headers=auth(worker)).status_code == 500
+        finally:
+            store.counts = original  # type: ignore[method-assign]
+        audit = client.get("/v1/me/audit", headers=auth(worker)).json()
+    assert any(c["outcome"] == "500:internal" for c in audit["counters"]), audit["counters"]
+    store.close()
+
+
 def test_ipv6_prefix_grouping_and_paced_global_sessions_match_the_worker(
     access: tuple[TestClient, Store, FakeClock, str],
 ) -> None:

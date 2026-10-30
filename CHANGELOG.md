@@ -16,6 +16,7 @@ Fixes from the annoyance hunt (`hunt/HUNT-REPORT.md`), with cases in `tests/fixt
 - HEAD answers wherever GET does, with GET's status and headers and no body (H-53); `/connect.json`, task views and the health page had answered HEAD with 404. `/mcp` keeps its own method rules.
 - A path with a cut-short or non-UTF-8 percent escape answers 400 in both implementations (H-54); the Worker had answered 500 for a broken escape in a task id, blob hash, feed name or namespace.
 - Write routes answer other methods with 405 and `Allow: POST` (H-55). The sign-in and requester sign-up addresses had answered GET with 404 "no route", and Python's existing 405s named no allowed method. The Worker's 404 now repeats at most 200 characters of an unknown path; it had echoed paths of any length.
+- Python's unexpected faults reach the audit trail (H-61). The access boundary audited only Tessera's own errors, so a 500 from a fault no handler names was never counted; it now counts as `500:internal`, as the Worker counts a fault in its storage object, before the server answers 500 and logs it.
 
 Access follow-ups after the re-review:
 

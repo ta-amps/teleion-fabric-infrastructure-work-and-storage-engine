@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import math
 import re
@@ -492,3 +493,18 @@ async def access_dispatch(
         response = access_error(exc)
         response.headers["x-request-id"] = request_id
         return response
+    except Exception:
+        # A fault no handler names still reaches the audit trail (H-61), counted as 500:internal,
+        # the code of Tessera's base error and of the Worker's storage faults. The error itself goes
+        # on to the server's own 500 answer and log.
+        with contextlib.suppress(Exception):
+            await run_in_threadpool(
+                store.audit_access,
+                grant,
+                action,
+                args,
+                status=500,
+                meta=meta,
+                error_code="internal",
+            )
+        raise
