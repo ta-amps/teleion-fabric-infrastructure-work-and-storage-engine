@@ -65,17 +65,37 @@ export function filesRequests(grant, ns) {
 }
 // A limited deterministic screen for common personal and payment data (same rules as
 // src/tessera/_principals.py): email addresses outside the example domains, identity and payment
-// card numbers, phone numbers, street addresses and IBANs. Not a claim that all of it is caught.
-const PERSONAL_ANY_CASE = /@(?!example\.(?:com|org|net)\b)[a-z0-9.-]+\.[a-z]{2,}/i;
-const PERSONAL_EXACT = new RegExp([
-  String.raw`\b\d{3}-\d{2}-\d{4}\b`,
-  String.raw`\b(?:\d[ -]?){13,19}\b`,
+// card numbers, IBANs, phone numbers and street addresses. Not a claim that all of it is caught.
+const PERSONAL_EMAIL = /@(?!example\.(?:com|org|net)\b)[a-z0-9.-]+\.[a-z]{2,}/i;
+const PERSONAL_IDENTITY = /\b\d{3}-\d{2}-\d{4}\b|\b(?:\d[ -]?){13,19}\b/;
+// An IBAN carries at least ten digits, so a bill name such as "AB12 RENT CAPS" is not one.
+const PERSONAL_IBAN = /\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,4})?\b/g;
+const PERSONAL_CONTACT = new RegExp([
   String.raw`(?<![\w+])(?:\+\d{1,3}[ .-]?)?(?:\(\d{3}\)[ .-]?|\d{3}[ .-])\d{3}[ .-]\d{4}(?![\w-])`,
   String.raw`(?<![\w+])\+\d{1,3}(?:[ .-]?\d{2,4}){2,5}(?![\w-])`,
   String.raw`\b\d{1,5}\s+(?:[A-Z][a-z]+\s+){1,3}(?:Street|St|Avenue|Ave|Road|Rd|Lane|Ln|Drive|Dr|Boulevard|Blvd|Court|Ct|Way|Place|Pl)\b`,
-  String.raw`\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,4})?\b`,
 ].join("|"));
-export function hasPersonalData(text) { return PERSONAL_ANY_CASE.test(text) || PERSONAL_EXACT.test(text); }
+const MIN_CITED_QUOTE = 20; // characters: a quote at least this long counts as a cited source quote
+function identityOrPayment(text) {
+  return PERSONAL_EMAIL.test(text) || PERSONAL_IDENTITY.test(text) || [...text.matchAll(PERSONAL_IBAN)].some(m => (m[0].match(/\d/g) || []).length >= 10);
+}
+export function hasPersonalData(text) { return identityOrPayment(text) || PERSONAL_CONTACT.test(text); }
+function citedQuotes(value) {
+  if (Array.isArray(value)) return value.flatMap(citedQuotes);
+  if (!value || typeof value !== "object") return [];
+  const own = typeof value.quote === "string" && value.quote.trim().length >= MIN_CITED_QUOTE ? [value.quote] : [];
+  return [...own, ...Object.values(value).flatMap(citedQuotes)];
+}
+// Research outputs may cite public contact details: a phone number or street address that appears
+// in a cited source quote (or in text repeating it) passes. Email addresses, identity, card and IBAN
+// numbers never do, and request inputs get no such allowance. The verb's reviewer checks the quote
+// against its source (same rule as _principals.submission_has_personal_data).
+export function submissionHasPersonalData(payload, output) {
+  const quotes = [...new Set(citedQuotes(output))].sort((a, b) => b.length - a.length);
+  let text = payload;
+  for (const quote of quotes) text = text.split(JSON.stringify(quote).slice(1, -1)).join(" ");
+  return hasPersonalData(text) || quotes.some(identityOrPayment);
+}
 // Every field an action stores is screened and counted, ids, keys and tags included.
 const STORED_FIELDS = { putRecords: ["writes", "store", "store_name", "key", "value", "tags"], enqueue: ["brief", "task_id", "idempotency_key", "tags"], submit: ["output", "execution_report", "error", "idempotency_key"] };
 export function storedPayload(action, args) {
@@ -459,7 +479,7 @@ export function enforceAccess(c, grant, action, args) {
     return governed(w);
   });
   const payload = storedPayload(action, args);
-  if (WRITE_ACTIONS.has(action) && hasPersonalData(payload))
+  if (WRITE_ACTIONS.has(action) && (action === "submit" ? submissionHasPersonalData(payload, args.output) : hasPersonalData(payload)))
     throw error(400, "synthetic_only", "demo payloads must not contain personal or payment data; use example.com");
   const bytes = new TextEncoder().encode(payload).length;
   if (bytes > DEMO_QUOTAS.request_bytes) throw error(413, "payload_too_large", "demo request exceeds byte limit");

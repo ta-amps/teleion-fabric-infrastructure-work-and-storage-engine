@@ -71,7 +71,11 @@ write CAS records, submit, cancel and inspect their own audit. Bucket/blob write
 admin calls, production queues and other principals' namespaces are denied.
 Use synthetic examples and `example.com` addresses. Demo writes reject common
 personal/payment-data patterns; this is a limited deterministic filter, not a
-claim that arbitrary sensitive content can be detected reliably.
+claim that arbitrary sensitive content can be detected reliably. A submitted
+result may repeat a public phone number or street address that appears in a
+cited source quote (a `quote` field of at least 20 characters); the verb's
+reviewer checks the quote against its source. Email addresses, identity, card
+and IBAN numbers are refused even there, and request inputs get no allowance.
 
 ## Open verbs
 
