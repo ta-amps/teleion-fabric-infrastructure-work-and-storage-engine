@@ -191,12 +191,20 @@ import {
   renderLlmsFullTxt,
   renderLlmsTxt,
 } from "./deploy/cloudflare/cloud_pages.js";
+import { MCP_TOOLS } from "./deploy/cloudflare/cloud_mcp.js";
+
+// Every "N tools" statement must state the size of the served registry.
+const counts = (text) => [...text.matchAll(/\\b(\\d+) tools\\b/g)].map((m) => Number(m[1]));
+const statesServedCount = (text) => counts(text).length > 0 && counts(text).every((n) => n === MCP_TOOLS.length);
 
 if (TESSERA_VERSION !== "0.2.0") throw new Error("bad version: " + TESSERA_VERSION);
 const fav = renderFaviconSvg();
 if (!fav.includes("<svg")) throw new Error("missing svg in favicon");
-const connect = renderConnectHtml("https://example.test", "https://github.com/ta-amps/tessera");
-if (!connect.includes("26 tools") || connect.includes("25 tools")) throw new Error("tool count mismatch");
+const connect = renderConnectHtml("https://example.test", "https://github.com/ta-amps/tessera", MCP_TOOLS);
+if (!statesServedCount(connect)) throw new Error("tool count mismatch: " + counts(connect));
+for (const tool of MCP_TOOLS) {
+  if (!connect.includes(`<code>${tool.name}</code>`)) throw new Error("connect page omits " + tool.name);
+}
 if (!connect.includes("<header class='site-hdr'>") || !connect.includes("<footer class='site-ftr'>")) {
   throw new Error("missing semantic chrome");
 }
@@ -218,9 +226,14 @@ for (const heading of ["Live Verb Queues", "Task Dependency &amp; Split Wave DAG
   if (!board.includes(heading)) throw new Error("missing heading: " + heading);
 }
 if (board.toLowerCase().includes("<form")) throw new Error("board must not contain forms");
-const llms = renderLlmsTxt("https://example.test", "https://github.com/ta-amps/tessera");
-const llmsFull = renderLlmsFullTxt("https://example.test", "https://github.com/ta-amps/tessera");
-if (!llms.includes("26 tools") || !llmsFull.includes("0.2.0")) throw new Error("llms text mismatch");
+const llms = renderLlmsTxt("https://example.test", "https://github.com/ta-amps/tessera", MCP_TOOLS);
+const llmsFull = renderLlmsFullTxt("https://example.test", "https://github.com/ta-amps/tessera", MCP_TOOLS);
+if (!statesServedCount(llms) || !statesServedCount(llmsFull) || !llmsFull.includes("0.2.0")) {
+  throw new Error("llms text mismatch: " + counts(llms) + " / " + counts(llmsFull));
+}
+let refused = false;
+try { renderLlmsTxt("https://example.test", "https://github.com/ta-amps/tessera"); } catch { refused = true; }
+if (!refused) throw new Error("a page rendered a tool list without the served registry");
 """
     res = subprocess.run(
         ["node", "--input-type=module", "-e", script],

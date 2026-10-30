@@ -1,8 +1,7 @@
 import { agentStartAsset, withAgentStart } from "./agent_start.js";
 import { storageQuotaFailure } from "./storage_quota.js";
 import { namespaceAllowed, publicPrincipal } from "./cloud_access.js";
-import { accessDiscoveryRoute, accessRoute, accessDescription, ACCESS_TOOLS } from "./cloud_access_routes.js";
-import { TOOLS as FABRIC_TOOLS } from "./cloud_mcp.js";
+import { accessDiscoveryRoute, accessRoute, accessDescription } from "./cloud_access_routes.js";
 // Tessera Cloud Worker: 24/7 native cloud execution on Cloudflare Durable Object SQLite + D1
 // (`STORAGE_MODE = "cloud"`, the default) with optional Fly.io origin reverse-proxy fallback
 // (`STORAGE_MODE = "origin"`). Serves all Tessera Spec v0.2 HTTP routes (`/v1/*` and
@@ -12,7 +11,7 @@ import { TOOLS as FABRIC_TOOLS } from "./cloud_mcp.js";
 
 import { loadCloudBlob, mirrorBucketObjectToD1, sha256Hex, storeCloudBlob, validateWireNumbers } from "./cloud_buckets.js";
 import { normalizeNamespace, sliceBytesResponse, tagMatchesCategory } from "./cloud_intelligence.js";
-import { govFields, handleMcpRequest } from "./cloud_mcp.js";
+import { govFields, handleMcpRequest, MCP_TOOLS } from "./cloud_mcp.js";
 import {
   ROBOTS_TXT,
   renderAgentCard,
@@ -375,9 +374,8 @@ function discoveryResponse(path, method, env, publicUrl, repoUrl) {
   const anonymousEnabled = env.ANONYMOUS_ACCESS_ENABLED === "true";
   const access = accessDiscoveryRoute(path, method, publicUrl, anonymousEnabled, jsonResp, htmlResp);
   if (access) return access;
-  const toolCount = `${FABRIC_TOOLS.length + ACCESS_TOOLS.length} tools`;
   if (path === "/" || path === "/connect") {
-    return htmlResp(renderConnectHtml(publicUrl, repoUrl));
+    return htmlResp(renderConnectHtml(publicUrl, repoUrl, MCP_TOOLS));
   }
   if (path === "/favicon.svg") {
     return withSecurity(
@@ -393,7 +391,7 @@ function discoveryResponse(path, method, env, publicUrl, repoUrl) {
   }
   if (path === "/llms.txt") {
     return withSecurity(
-      new Response(renderLlmsTxt(publicUrl, repoUrl).replace(/\b26 tools\b/g, toolCount) + "\n\nExternal harnesses and personal assistants: POST /v1/session/anonymous without secrets, then use Authorization: Bearer <session_token> for demo nouns and verbs. See /connect.json. tools/list is public; tool counts and schemas are authoritative there. Keyed production work remains protected.\n", {
+      new Response(renderLlmsTxt(publicUrl, repoUrl, MCP_TOOLS) + "\n\nExternal harnesses and personal assistants: POST /v1/session/anonymous without secrets, then use Authorization: Bearer <session_token> for demo nouns and verbs. See /connect.json. tools/list is public; tool counts and schemas are authoritative there. Keyed production work remains protected.\n", {
         status: 200,
         headers: { "content-type": "text/plain; charset=utf-8" },
       }),
@@ -402,7 +400,7 @@ function discoveryResponse(path, method, env, publicUrl, repoUrl) {
   }
   if (path === "/llms-full.txt") {
     return withSecurity(
-      new Response(renderLlmsFullTxt(publicUrl, repoUrl).replace(/\b26 tools\b/g, toolCount) + "\n\n" + JSON.stringify(accessDescription(publicUrl, anonymousEnabled), null, 2), {
+      new Response(renderLlmsFullTxt(publicUrl, repoUrl, MCP_TOOLS) + "\n\n" + JSON.stringify(accessDescription(publicUrl, anonymousEnabled), null, 2), {
         status: 200,
         headers: { "content-type": "text/plain; charset=utf-8" },
       }),
@@ -410,7 +408,7 @@ function discoveryResponse(path, method, env, publicUrl, repoUrl) {
     );
   }
   if (path === "/.well-known/agent-card.json") {
-    return jsonResp({ ...renderAgentCard(publicUrl, repoUrl), tools: [...FABRIC_TOOLS, ...ACCESS_TOOLS], skills: [...FABRIC_TOOLS, ...ACCESS_TOOLS].map(t => ({ id: t.name, name: t.name, description: t.description })), tool_count: FABRIC_TOOLS.length + ACCESS_TOOLS.length, authentication: { discovery: "none", demo: "tan_ bearer session", keyed: "tsk_ bearer key" }, capabilities: { streaming: "long-poll", tools: true }, access: accessDescription(publicUrl, anonymousEnabled) });
+    return jsonResp({ ...renderAgentCard(publicUrl, repoUrl, MCP_TOOLS), authentication: { discovery: "none", demo: "tan_ bearer session", keyed: "tsk_ bearer key" }, capabilities: { streaming: "long-poll", tools: true }, access: accessDescription(publicUrl, anonymousEnabled) });
   }
   if (path === "/robots.txt") {
     return withSecurity(

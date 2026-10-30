@@ -419,6 +419,10 @@ export const TOOLS = [
   },
 ];
 
+// The one served tool registry. `tools/list` returns exactly this array, and every agent page
+// (llms.txt, llms-full.txt, the agent card and the connect page) renders its tool list from it.
+export const MCP_TOOLS = Object.freeze([...TOOLS, ...ACCESS_TOOLS]);
+
 function b64ToBytes(b64) {
   const bin = atob(b64);
   const out = new Uint8Array(bin.length);
@@ -865,7 +869,7 @@ export async function handleMcpRequest(
       return { jsonrpc: "2.0", id, result: {} };
     }
     if (method === "tools/list") {
-      return { jsonrpc: "2.0", id, result: { tools: [...TOOLS, ...ACCESS_TOOLS] } };
+      return { jsonrpc: "2.0", id, result: { tools: MCP_TOOLS } };
     }
     if (method === "tools/call") {
       const toolName = params?.name;

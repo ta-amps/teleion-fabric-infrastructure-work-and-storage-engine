@@ -306,7 +306,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [src/tessera/store.py](src/tessera/store.py) | The in-process Tessera store: the reference implementation of SPEC.md. |
 | [src/tessera/testing.py](src/tessera/testing.py) | Factories the conformance suite loads by name (TESSERABACKENDFACTORY="module:function"). |
 
-## tests/ (54)
+## tests/ (56)
 
 | File | What it is |
 |---|---|
@@ -325,6 +325,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [tests/fixtures/execution_learning_vectors.json](tests/fixtures/execution_learning_vectors.json) | JSON object: fingerprints, learning_invalid, learning_valid, observations, profile, reports |
 | [tests/fixtures/execution_matching_vectors.json](tests/fixtures/execution_matching_vectors.json) | JSON object: profile, valid, invalid |
 | [tests/test_access_modes.py](tests/test_access_modes.py) | Full anonymous/keyed agent loops, durable limits and adversarial isolation. |
+| [tests/test_agent_tool_listings.py](tests/test_agent_tool_listings.py) | Every agent-facing tool listing on the Python service matches what MCP tools/list serves. |
 | [tests/test_board.py](tests/test_board.py) | Console Board v2 (/board, L19), UI chrome, and agent discovery routes. |
 | [tests/test_buckets.py](tests/test_buckets.py) | Tests for queryable noun stores, persistent named file buckets, external blobdir, and MCP tools. |
 | [tests/test_category_queries.py](tests/test_category_queries.py) | Category projections agree before bounded scans, without granting visibility. |
@@ -357,6 +358,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [tests/test_tools.py](tests/test_tools.py) | The Muse worker keeps its safety flags whatever the brief says, and briefs load in dependency order. |
 | [tests/test_work_routing.py](tests/test_work_routing.py) | Explicit grants, team-private routing and owner-only negative controls. |
 | [tests/workerd_access_writes.mjs](tests/workerd_access_writes.mjs) | Real Worker/SQLite: requests that never authenticate write nothing and create no namespace |
+| [tests/workerd_agent_tool_listings.mjs](tests/workerd_agent_tool_listings.mjs) | Real Worker: every agent-facing tool listing matches what MCP tools/list serves. |
 | [tests/workerd_anonymous_cost.mjs](tests/workerd_anonymous_cost.mjs) | Real Worker/SQLite: anonymous sessions stay available but cost little until used, and one |
 | [tests/workerd_blob_identity.mjs](tests/workerd_blob_identity.mjs) | Real Worker/SQLite: content identity comes from the uploaded bytes, never from a client header. |
 | [tests/workerd_execution_history.mjs](tests/workerd_execution_history.mjs) | Actual Worker handlers and ephemeral SQLite Durable Objects; no provider or cloud access. |

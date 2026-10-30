@@ -343,7 +343,8 @@
       "tests": [
         "tests/test_service.py::test_the_agent_door",
         "tests/test_service.py::test_web_forms_never_echo_the_key",
-        "tests/test_board.py"
+        "tests/test_board.py",
+        "tests/test_agent_tool_listings.py::test_python_pages_list_exactly_the_served_tools"
       ]
     },
     {
@@ -408,7 +409,8 @@
       ],
       "tests": [
         "tests/test_board.py::test_cloudflare_pages_parity",
-        "tests/test_phase4_atomicity_and_vectors.py::test_l26_receipt_vectors_python_and_cloudflare_edge_node_parity"
+        "tests/test_phase4_atomicity_and_vectors.py::test_l26_receipt_vectors_python_and_cloudflare_edge_node_parity",
+        "tests/workerd_agent_tool_listings.mjs"
       ]
     },
     {
