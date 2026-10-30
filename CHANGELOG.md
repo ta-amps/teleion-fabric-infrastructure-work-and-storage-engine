@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+Access follow-ups after the re-review:
+
+- Every access description agrees with the switches (F-054). On the Worker the agent card, `llms-full.txt`, MCP `explain_access_modes` and the MCP sign-in hint said `requester.enabled: false` while `/connect.json` said `true`, because they built the description without the requester switch; the Python connect page did the same. All of them now read both switches from one place.
+
 Review fixes for open verbs and requester keys, with the same cases run against both implementations from `tests/fixtures/access_parity.json`:
 
 - Governance tags come only from a producer's explicit tags. The Worker had added tags found in a brief (`tags`, `metadata_tags`, `kind` and similar fields), so a requester could open its own request verb to anonymous sessions by writing `open:anonymous` into the brief. Brief-derived tags now never carry `open:`, `status:`, `origin:`, `untrusted:` or `demo:`, and a request verb's governance is fixed after normalization. Split children on the Worker now inherit their parent's owner, surface, visibility and (unless they name their own) tags, as they do in Python; a child may not set the rest.

@@ -4,6 +4,8 @@ request verbs it filed. Sign-ups, writes and filed requests are capped; personal
 
 from __future__ import annotations
 
+import html
+import json
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -314,3 +316,38 @@ def test_a_failed_sign_up_leaves_no_key_and_spends_no_allowance(
         sign_up(client, display_name=name)
     blocked = client.post("/v1/session/requester", json={"profile": PROFILE})
     assert blocked.status_code == 429
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_every_access_description_agrees_with_the_sign_up_switch(
+    tmp_path: Path, enabled: bool
+) -> None:
+    """F-054: the connect page, connect.json and MCP all say whether sign-up is on."""
+    store = Store(str(tmp_path / "switch.db"), clock=FakeClock())
+    settings = ServiceSettings(
+        anonymous_access_enabled=True,
+        requester_signup_enabled=enabled,
+        reaper_seconds=86400,
+        public_url="http://testserver",
+    )
+    with TestClient(create_app(store, settings)) as client:
+        page = client.get("/connect").text
+        embedded = json.loads(html.unescape(page.split("<pre>", 1)[1].split("</pre>", 1)[0]))
+        mcp = client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {"name": "explain_access_modes", "arguments": {}},
+            },
+            headers={"Accept": "application/json, text/event-stream"},
+        ).json()["result"]["structuredContent"]
+        for where, contract in (
+            ("/connect.json", client.get("/connect.json").json()),
+            ("/connect", embedded),
+            ("MCP explain_access_modes", mcp),
+        ):
+            assert contract["requester"]["enabled"] is enabled, where
+            assert contract["anonymous"]["enabled"] is True, where
+    store.close()

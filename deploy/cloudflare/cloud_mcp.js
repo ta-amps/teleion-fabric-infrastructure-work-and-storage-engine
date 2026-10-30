@@ -1,4 +1,4 @@
-import { ACCESS_TOOLS, accessDescription } from "./cloud_access_routes.js";
+import { ACCESS_TOOLS, accessDescriptionFor } from "./cloud_access_routes.js";
 // Native Streamable HTTP MCP Door (`/mcp`) for Tessera Cloud.
 // Exposes tools across atomic verbs, queryable CAS nouns, persistent cloud buckets,
 // progressive L0 scent search, delta feeds, reflex recall, and Surface Handshake v1.0
@@ -876,7 +876,7 @@ export async function handleMcpRequest(
       const toolArgs = params?.arguments || {};
       let out;
       if (toolName === "open_anonymous_session") out = await stub.openAnonymousSession(toolArgs);
-      else if (toolName === "explain_access_modes") out = { ok: true, data: accessDescription(env.PUBLIC_URL || new URL(request.url).origin, env.ANONYMOUS_ACCESS_ENABLED === "true") };
+      else if (toolName === "explain_access_modes") out = { ok: true, data: accessDescriptionFor(env.PUBLIC_URL || new URL(request.url).origin, env) };
       else if (toolName === "whoami") out = await stub.rpcCall(bearerSecret, "me", routeCtx);
       else if (toolName === "my_audit" || toolName === "admin_audit") out = await stub.auditForToken(bearerSecret, { ...toolArgs, admin: toolName === "admin_audit" });
       else if (toolName === "cancel") out = await stub.rpcCall(bearerSecret, "cancel", { ...toolArgs, ...routeCtx });
@@ -889,7 +889,7 @@ export async function handleMcpRequest(
           id,
           result: {
             content: [{ type: "text", text: `${out.code}: ${out.detail}` }],
-            structuredContent: { error: { code: out.code, status: out.status, detail: out.detail, ...(out.code === "storage_quota_exhausted" ? { retry_after: out.extra?.retry_after, reset_at: out.extra?.reset_at } : {}) }, access: out.status === 401 ? accessDescription(env.PUBLIC_URL || new URL(request.url).origin, env.ANONYMOUS_ACCESS_ENABLED === "true") : undefined },
+            structuredContent: { error: { code: out.code, status: out.status, detail: out.detail, ...(out.code === "storage_quota_exhausted" ? { retry_after: out.extra?.retry_after, reset_at: out.extra?.reset_at } : {}) }, access: out.status === 401 ? accessDescriptionFor(env.PUBLIC_URL || new URL(request.url).origin, env) : undefined },
             isError: true,
           },
         };

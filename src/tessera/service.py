@@ -653,6 +653,7 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
         return connect_html(
             settings.public_url,
             settings.anonymous_access_enabled,
+            settings.requester_signup_enabled,
             len(await served_tools()),
         )
 
