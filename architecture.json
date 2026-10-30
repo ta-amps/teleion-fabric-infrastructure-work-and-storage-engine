@@ -152,7 +152,8 @@
         "tests/test_intelligence.py",
         "tests/test_governance_and_isolation.py",
         "tests/test_phase4_atomicity_and_vectors.py",
-        "tests/test_frontier_publication.py"
+        "tests/test_frontier_publication.py",
+        "tests/test_blob_first_uploader.py"
       ]
     },
     {
@@ -407,6 +408,7 @@
         "service"
       ],
       "tests": [
+        "tests/workerd_blob_first_uploader.mjs",
         "tests/test_board.py::test_cloudflare_pages_parity",
         "tests/test_phase4_atomicity_and_vectors.py::test_l26_receipt_vectors_python_and_cloudflare_edge_node_parity"
       ]
@@ -555,6 +557,7 @@
         "record_heads",
         "blobs",
         "blob_namespaces",
+        "blob_uploaders",
         "buckets",
         "bucket_objects",
         "bucket_object_versions",

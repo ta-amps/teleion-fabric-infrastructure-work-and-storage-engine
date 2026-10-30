@@ -220,5 +220,5 @@ day, and the `Retry-After` hint asks it to poll once a minute once the queue sta
   anonymous request updates its durable quota row.
 - Health refreshes remain proportional to public tasks (see above).
 - Counters not yet written are lost when an object is evicted (at most about a minute's worth).
-- Raw blob privacy is still set by the first uploader in a namespace; see the
-  [review findings log](review.md#findings-log).
+- Raw blob privacy is still set by the first uploader in a namespace, though a key can now read
+  back bytes it uploaded; see [raw blob governance](raw-blob-governance.md).

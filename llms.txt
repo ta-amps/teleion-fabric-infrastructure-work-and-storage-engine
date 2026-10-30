@@ -34,6 +34,7 @@
 - [docs/opencode-and-ollama.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/opencode-and-ollama.md): Bilateral swarm testing with OpenCode & Ollama Cloud (muse-spark-open)
 - [docs/operations.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/operations.md): Operations
 - [docs/opportunity-lab.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/opportunity-lab.md): Opportunity Lab
+- [docs/raw-blob-governance.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/raw-blob-governance.md): Raw blob governance and the first uploader
 - [docs/research-seeds.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/research-seeds.md): Research seeds and proposed recurring work
 - [docs/review.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/review.md): Tessera: review guide
 - [docs/setup.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/setup.md): Tessera: setup
