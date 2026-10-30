@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 
 from tessera import BucketConfig, ChildSpec, FakeClock, QueueConfig, Store, TaskSpec
 from tessera.access import ServiceSettings
-from tessera.errors import NotFound, StaleLease, VersionConflict
+from tessera.errors import IdempotencyConflict, NotFound, StaleLease, VersionConflict
 from tessera.receipts import canonical_json, receipt_hash
 from tessera.service import create_app
 
@@ -416,12 +416,12 @@ def test_concurrent_idempotency_key_enqueue_dedup_and_t22_http(tmp_path: Path) -
     try:
         store.define_queue(QueueConfig(name="default"))
 
-        def enqueue_same(i: int) -> str:
+        def enqueue_same(_: int) -> str:
             return store.enqueue(
                 TaskSpec(
                     queue="default",
                     kind="dedup.kind",
-                    brief={"payload": "identical", "caller": i},
+                    brief={"payload": "identical"},
                     idempotency_key="enq-idem-01",
                 )
             )
@@ -430,6 +430,16 @@ def test_concurrent_idempotency_key_enqueue_dedup_and_t22_http(tmp_path: Path) -
             ids = list(pool.map(enqueue_same, range(16)))
         assert len(set(ids)) == 1
         assert store.counts()["default"].ready == 1
+        # Only an exact replay returns the first id; a different request under the key conflicts.
+        with pytest.raises(IdempotencyConflict):
+            store.enqueue(
+                TaskSpec(
+                    queue="default",
+                    kind="dedup.kind",
+                    brief={"payload": "different"},
+                    idempotency_key="enq-idem-01",
+                )
+            )
 
         # Per-(namespace, feed) monotonic seq independence.
         e_main_a1 = store.publish_feed("feed_a", {"m": 1}, kind="note", summary="m1")
@@ -466,11 +476,18 @@ def test_concurrent_idempotency_key_enqueue_dedup_and_t22_http(tmp_path: Path) -
             r2 = tc.post(
                 "/v1/tasks",
                 headers={"Authorization": f"Bearer {worker_secret}", "Idempotency-Key": "hdr-1"},
-                json={"queue": "default", "kind": "http.dedup", "brief": {"k": 2}},
+                json={"queue": "default", "kind": "http.dedup", "brief": {"k": 1}},
             )
             assert r1.status_code in (200, 201)
             assert r2.status_code in (200, 201)
             assert r1.json()["task_id"] == r2.json()["task_id"]
+            # The same key with a different request conflicts instead of replaying.
+            r3 = tc.post(
+                "/v1/tasks",
+                headers={"Authorization": f"Bearer {worker_secret}", "Idempotency-Key": "hdr-1"},
+                json={"queue": "default", "kind": "http.dedup", "brief": {"k": 2}},
+            )
+            assert r3.status_code == 409 and r3.json()["code"] == "idempotency_conflict"
 
             # Enqueueing write-repo requires admin scope (403 scope_denied).
             denied = tc.post(

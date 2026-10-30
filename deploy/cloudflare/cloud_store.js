@@ -2211,22 +2211,36 @@ export class TesseraCoordinator extends DurableObject {
           if (filesRequests(grant, this.namespace)) Object.assign(gov, requesterVerbGovernance(grant));
 
           let outId = args.task_id ? String(args.task_id) : newId("t");
+          // Only an exact replay returns the first task's id (H-08; same rule as _tasks._same_enqueue).
+          const sameEnqueue = (row) => {
+            if ((row.owner_key_id ?? null) !== (gov.owner_key_id ?? null)) throw idemConflict("this idempotency key or task id belongs to another principal's task");
+            const deps = this._all("SELECT depends_on FROM task_deps WHERE namespace = ? AND task_id = ? ORDER BY rowid", this.namespace, row.id).map((r) => r.depends_on);
+            const same = (args.task_id == null || String(args.task_id) === row.id)
+              && row.kind === kind && row.effect_class === effectClass && Number(row.priority) === priority
+              && row.brief === canonicalJson(args.brief) && Number(row.not_before) === notBefore
+              && JSON.stringify(deps) === JSON.stringify([...new Set(dependsOn)])
+              && row.producer_surface === gov.producer_surface && row.visibility_scope === gov.visibility_scope
+              && row.allowed_surfaces === JSON.stringify(gov.allowed_surfaces) && row.target_cohorts === JSON.stringify(gov.target_cohorts)
+              && row.tags === JSON.stringify(gov.tags);
+            if (!same) throw idemConflict("this idempotency key or task id was used for a different request");
+          };
           this.ctx.storage.transactionSync(() => {
             this._queueConfig(queue);
             if (cleanIdem != null) {
               const priorIdem = this._one(
-                "SELECT id FROM tasks WHERE namespace = ? AND queue = ? AND idempotency_key = ?",
+                "SELECT * FROM tasks WHERE namespace = ? AND queue = ? AND idempotency_key = ?",
                 this.namespace,
                 queue,
                 cleanIdem
               );
               if (priorIdem) {
+                sameEnqueue(priorIdem);
                 outId = String(priorIdem.id);
                 return;
               }
             }
             const existing = this._one(
-              "SELECT queue FROM tasks WHERE namespace = ? AND id = ?",
+              "SELECT * FROM tasks WHERE namespace = ? AND id = ?",
               this.namespace,
               outId
             );
@@ -2234,6 +2248,7 @@ export class TesseraCoordinator extends DurableObject {
               if (existing.queue !== queue) {
                 throw badReq(`task '${outId}' already exists in another queue`);
               }
+              sameEnqueue(existing);
               return;
             }
             try {
@@ -2260,6 +2275,7 @@ export class TesseraCoordinator extends DurableObject {
                   cleanIdem
                 );
                 if (winner) {
+                  sameEnqueue(this._one("SELECT * FROM tasks WHERE namespace = ? AND id = ?", this.namespace, winner.id));
                   outId = String(winner.id);
                   return;
                 }

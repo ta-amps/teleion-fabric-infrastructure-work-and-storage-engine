@@ -1936,6 +1936,187 @@
           "status": 404
         }
       ]
+    },
+    {
+      "id": "H-08-enqueue-replays-must-match",
+      "finding": "H-08 (hunt)",
+      "title": "An enqueue replay returns the first task only when it is the same request from the same principal",
+      "steps": [
+        {
+          "key": "k1",
+          "grant": {
+            "queues": [
+              "eq02"
+            ],
+            "scopes": [
+              "store"
+            ]
+          }
+        },
+        {
+          "key": "k2",
+          "grant": {
+            "queues": [
+              "eq02"
+            ],
+            "scopes": [
+              "store"
+            ]
+          }
+        },
+        {
+          "as": "k1",
+          "method": "POST",
+          "path": "/v1/tasks",
+          "status": 201,
+          "save": "first",
+          "headers": {
+            "Idempotency-Key": "seedpack:demo:template:0001"
+          },
+          "body": {
+            "queue": "eq02",
+            "kind": "draft",
+            "effect_class": "write-internal",
+            "brief": {
+              "title": "SYNTHETIC pack verb"
+            }
+          }
+        },
+        {
+          "as": "k1",
+          "method": "POST",
+          "path": "/v1/tasks",
+          "status": 201,
+          "headers": {
+            "Idempotency-Key": "seedpack:demo:template:0001"
+          },
+          "body": {
+            "queue": "eq02",
+            "kind": "draft",
+            "effect_class": "write-internal",
+            "brief": {
+              "title": "SYNTHETIC pack verb"
+            }
+          },
+          "expect": {
+            "equals": {
+              "task_id": "{first.task_id}"
+            }
+          }
+        },
+        {
+          "as": "k1",
+          "method": "POST",
+          "path": "/v1/tasks",
+          "status": 409,
+          "headers": {
+            "Idempotency-Key": "seedpack:demo:template:0001"
+          },
+          "body": {
+            "queue": "eq02",
+            "kind": "draft",
+            "effect_class": "write-internal",
+            "brief": {
+              "title": "SYNTHETIC changed pack verb"
+            }
+          }
+        },
+        {
+          "as": "k2",
+          "method": "POST",
+          "path": "/v1/tasks",
+          "status": 409,
+          "headers": {
+            "Idempotency-Key": "seedpack:demo:template:0001"
+          },
+          "body": {
+            "queue": "eq02",
+            "kind": "draft",
+            "effect_class": "write-internal",
+            "brief": {
+              "title": "SYNTHETIC pack verb"
+            }
+          }
+        },
+        {
+          "as": "k1",
+          "method": "POST",
+          "path": "/v1/tasks",
+          "status": 201,
+          "body": {
+            "queue": "eq02",
+            "kind": "draft",
+            "effect_class": "write-internal",
+            "brief": {
+              "title": "SYNTHETIC named"
+            },
+            "task_id": "named-1"
+          }
+        },
+        {
+          "as": "k1",
+          "method": "POST",
+          "path": "/v1/tasks",
+          "status": 201,
+          "body": {
+            "queue": "eq02",
+            "kind": "draft",
+            "effect_class": "write-internal",
+            "brief": {
+              "title": "SYNTHETIC named"
+            },
+            "task_id": "named-1"
+          },
+          "expect": {
+            "equals": {
+              "task_id": "named-1"
+            }
+          }
+        },
+        {
+          "as": "k1",
+          "method": "POST",
+          "path": "/v1/tasks",
+          "status": 409,
+          "body": {
+            "queue": "eq02",
+            "kind": "draft",
+            "effect_class": "write-internal",
+            "brief": {
+              "title": "SYNTHETIC renamed"
+            },
+            "task_id": "named-1"
+          }
+        },
+        {
+          "as": "k2",
+          "method": "POST",
+          "path": "/v1/tasks",
+          "status": 409,
+          "body": {
+            "queue": "eq02",
+            "kind": "draft",
+            "effect_class": "write-internal",
+            "brief": {
+              "title": "SYNTHETIC named"
+            },
+            "task_id": "named-1"
+          }
+        },
+        {
+          "as": "admin",
+          "method": "GET",
+          "path": "/v1/tasks/{first.task_id}",
+          "status": 200,
+          "expect": {
+            "equals": {
+              "brief": {
+                "title": "SYNTHETIC pack verb"
+              }
+            }
+          }
+        }
+      ]
     }
   ]
 }

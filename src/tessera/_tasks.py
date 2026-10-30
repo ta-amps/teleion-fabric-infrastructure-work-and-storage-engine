@@ -164,18 +164,20 @@ class TaskOps(GraphOps):
             self._queue_config(c, ns, spec.queue)
             if idem is not None:
                 dup = c.execute(
-                    "SELECT id FROM tasks WHERE namespace = ? AND queue = ? AND idempotency_key = ?",
+                    "SELECT * FROM tasks WHERE namespace = ? AND queue = ? AND idempotency_key = ?",
                     (ns, spec.queue, idem),
                 ).fetchone()
                 if dup is not None:
+                    self._same_enqueue(c, ns, dup, spec, prod_surface, owner_key)
                     return str(dup["id"])
             task_id = spec.task_id or new_id("t")
             existing = c.execute(
-                "SELECT queue FROM tasks WHERE namespace = ? AND id = ?", (ns, task_id)
+                "SELECT * FROM tasks WHERE namespace = ? AND id = ?", (ns, task_id)
             ).fetchone()
             if existing is not None:
                 if existing["queue"] != spec.queue:
                     raise InvalidRequest(f"task '{task_id}' already exists in another queue")
+                self._same_enqueue(c, ns, existing, spec, prod_surface, owner_key)
                 return task_id
             try:
                 self._insert_task(
@@ -202,14 +204,57 @@ class TaskOps(GraphOps):
             except sqlite3.IntegrityError:
                 if idem is not None:
                     winner = c.execute(
-                        "SELECT id FROM tasks"
+                        "SELECT * FROM tasks"
                         " WHERE namespace = ? AND queue = ? AND idempotency_key = ?",
                         (ns, spec.queue, idem),
                     ).fetchone()
                     if winner is not None:
+                        self._same_enqueue(c, ns, winner, spec, prod_surface, owner_key)
                         return str(winner["id"])
                 raise
         return task_id
+
+    def _same_enqueue(
+        self,
+        c: sqlite3.Connection,
+        ns: str,
+        row: sqlite3.Row,
+        spec: TaskSpec,
+        producer_surface: str,
+        owner_key: str | None,
+    ) -> None:
+        """Only an exact replay of an enqueue returns the first task's id (H-08). The same key or
+        task id from another principal, or with a different request, is a conflict, so nobody's
+        work is silently not filed (same rule as the Worker)."""
+        if row["owner_key_id"] != owner_key:
+            raise IdempotencyConflict(
+                "this idempotency key or task id belongs to another principal's task"
+            )
+        deps = [
+            r["depends_on"]
+            for r in c.execute(
+                "SELECT depends_on FROM task_deps WHERE namespace = ? AND task_id = ? ORDER BY rowid",
+                (ns, row["id"]),
+            )
+        ]
+        same = (
+            (spec.task_id is None or spec.task_id == row["id"])
+            and row["kind"] == spec.kind
+            and row["effect_class"] == spec.effect_class
+            and row["priority"] == spec.priority
+            and row["brief"] == canonical_json(spec.brief)
+            and float(row["not_before"]) == float(spec.not_before or 0.0)
+            and deps == list(dict.fromkeys(spec.depends_on))
+            and row["producer_surface"] == producer_surface
+            and row["visibility_scope"] == spec.visibility_scope
+            and json.loads(row["allowed_surfaces"]) == list(spec.allowed_surfaces)
+            and json.loads(row["target_cohorts"]) == (list(spec.target_cohorts) or ["all"])
+            and json.loads(row["tags"]) == list(spec.tags)
+        )
+        if not same:
+            raise IdempotencyConflict(
+                "this idempotency key or task id was used for a different request"
+            )
 
     def _check_requester_ids(self, spec: TaskSpec) -> None:
         """A requester's own task ids and idempotency keys start with rq-<principal_id>-, so
