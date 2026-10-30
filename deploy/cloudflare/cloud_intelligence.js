@@ -65,14 +65,15 @@ export function normalizeCohorts(values, badReq) {
   return out.length ? out : ["all"];
 }
 
+// A caller names at most MAX_TAGS tags of at most MAX_TAG_LENGTH characters (H-57; same caps as
+// models.caller_tags). Duplicates are dropped in linear time.
+export const MAX_TAGS = 64;
+export const MAX_TAG_LENGTH = 128;
 export function normalizeTags(values, badReq) {
   if (values == null) return [];
   if (!Array.isArray(values)) throw badReq("tags must be a list");
-  const out = [];
-  for (const item of values) {
-    const clean = String(item ?? "").trim();
-    if (clean && !out.includes(clean)) out.push(clean);
-  }
+  const out = [...new Set(values.map((item) => String(item ?? "").trim()).filter(Boolean))];
+  if (out.length > MAX_TAGS || out.some((tag) => [...tag].length > MAX_TAG_LENGTH)) throw badReq(`at most ${MAX_TAGS} tags of at most ${MAX_TAG_LENGTH} characters each`);
   return out;
 }
 
@@ -104,11 +105,7 @@ export function normalizeGovernance(
     if (!NAME_RE.test(s.split(":")[1])) throw badReq(`invalid allowed_surfaces item '${s}'`);
   }
   const targetCohorts = normalizeCohorts(src.target_cohorts, badReq);
-  const baseTags = normalizeTags(src.tags, badReq);
-  for (const t of extraTags) {
-    const clean = String(t ?? "").trim();
-    if (clean && !baseTags.includes(clean)) baseTags.push(clean);
-  }
+  const baseTags = [...new Set([...normalizeTags(src.tags, badReq), ...extraTags.map((t) => String(t ?? "").trim()).filter(Boolean)])];
   const resolvedOwner =
     ownerKeyId == null && src.owner_key_id !== undefined
       ? src.owner_key_id == null

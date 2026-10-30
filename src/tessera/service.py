@@ -18,7 +18,7 @@ from urllib.parse import urlsplit
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
-from pydantic import BaseModel, ConfigDict, Field, StrictBool
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, ValidationError
 from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -336,6 +336,16 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
         first = exc.errors()[0] if exc.errors() else {}
         where = ".".join(str(p) for p in first.get("loc", ()))
         return problem(400, "invalid_request", f"{where}: {first.get('msg', 'invalid request')}")
+
+    @app.exception_handler(ValidationError)
+    async def invalid_model(_: Request, exc: ValidationError) -> JSONResponse:
+        # A model a route builds from path or body values (a record key, a store name, tags)
+        # that fails validation is the client's mistake, as the Worker answers it (H-59).
+        errors = exc.errors()
+        if not errors:
+            return problem(400, "invalid_request", "invalid request")
+        where = ".".join(str(p) for p in errors[0]["loc"])
+        return problem(400, "invalid_request", f"{where}: {errors[0]['msg']}")
 
     @app.exception_handler(StarletteHTTPException)
     async def http_error(_: Request, exc: StarletteHTTPException) -> JSONResponse:

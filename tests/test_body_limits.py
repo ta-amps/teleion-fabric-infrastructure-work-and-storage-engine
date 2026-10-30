@@ -41,3 +41,14 @@ def test_bodies_over_the_worker_caps_are_refused_before_they_are_used(tmp_path: 
         )
         assert store.counts()["q"].ready == 1
     store.close()
+
+
+def test_tags_deduplicate_in_linear_time() -> None:
+    """H-57: 60,000 tags took 15.5 s in Python; one pass now."""
+    import time
+
+    from tessera.models import normalize_tags
+
+    started = time.perf_counter()
+    assert len(normalize_tags([f"t{i % 30000}" for i in range(60000)])) == 30000
+    assert time.perf_counter() - started < 1.0

@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { build } from "esbuild";
 import { Miniflare, convertV4MiniflareOptions } from "miniflare";
+import { normalizeTags } from "../deploy/cloudflare/cloud_intelligence.js";
 
 const runtimes = [];
 after(async () => { await Promise.all(runtimes.map(runtime => runtime.dispose())); });
@@ -37,4 +38,11 @@ test("the 16 MiB cap belongs to the blob upload route, not to any path containin
   const big = "x".repeat(1536 * 1024);
   assert.equal(await post("/ns/blobsteam/v1/tasks", JSON.stringify({ queue: "q", brief: { pad: big } }), admin, { "content-type": "application/json" }), 413);
   assert.notEqual(await post("/v1/blobs", new TextEncoder().encode(big), admin, { "content-type": "application/octet-stream" }), 413);
+});
+
+test("tags deduplicate in linear time (H-57)", () => {
+  const tags = Array.from({ length: 60000 }, (_, i) => `t${i % 30000}`);
+  const started = performance.now();
+  assert.throws(() => normalizeTags(tags, message => new Error(message)), /at most 64 tags/);
+  assert.ok(performance.now() - started < 1000, "60,000 tags took 4.9 s before");
 });
