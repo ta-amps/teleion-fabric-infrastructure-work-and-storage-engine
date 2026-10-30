@@ -73,13 +73,27 @@ const PERSONAL_IBAN = /\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,4})?
 const PERSONAL_CONTACT = new RegExp([
   String.raw`(?<![\w+])(?:\+\d{1,3}[ .-]?)?(?:\(\d{3}\)[ .-]?|\d{3}[ .-])\d{3}[ .-]\d{4}(?![\w-])`,
   String.raw`(?<![\w+])\+\d{1,3}(?:[ .-]?\d{2,4}){2,5}(?![\w-])`,
-  String.raw`\b\d{1,5}\s+(?:[A-Z][a-z]+\s+){1,3}(?:Street|St|Avenue|Ave|Road|Rd|Lane|Ln|Drive|Dr|Boulevard|Blvd|Court|Ct|Way|Place|Pl)\b`,
+  String.raw`\b\d{1,5}[ \t]+(?:[A-Z][a-z]+[ \t]+){1,3}(?:Street|St|Avenue|Ave|Road|Rd|Lane|Ln|Drive|Dr|Boulevard|Blvd|Court|Ct|Way|Place|Pl)\b`,
 ].join("|"));
 const MIN_CITED_QUOTE = 20; // characters: a quote at least this long counts as a cited source quote
-function identityOrPayment(text) {
-  return PERSONAL_EMAIL.test(text) || PERSONAL_IDENTITY.test(text) || [...text.matchAll(PERSONAL_IBAN)].some(m => (m[0].match(/\d/g) || []).length >= 10);
+// The patterns read ASCII only, as in Python with re.ASCII. screenText first folds full-width letters
+// and digits (NFKC) and writes every other decimal digit as its ASCII digit, so numbers written in
+// Arabic-Indic, Devanagari or full-width digits are caught the same way in both implementations.
+// Unicode encodes each digit set as a run of ten from zero, so a digit's value is its place in its run.
+export function screenText(text) {
+  return String(text).normalize("NFKC").replace(/\p{Nd}/gu, ch => {
+    if (ch >= "0" && ch <= "9") return ch;
+    const cp = ch.codePointAt(0);
+    let k = 0;
+    while (k < 64 && /\p{Nd}/u.test(String.fromCodePoint(cp - k - 1))) k++;
+    return String(k % 10);
+  });
 }
-export function hasPersonalData(text) { return identityOrPayment(text) || PERSONAL_CONTACT.test(text); }
+function identityOrPayment(text) {
+  text = screenText(text);
+  return PERSONAL_EMAIL.test(text) || PERSONAL_IDENTITY.test(text) || [...text.matchAll(PERSONAL_IBAN)].some(m => (m[0].match(/[0-9]/g) || []).length >= 10);
+}
+export function hasPersonalData(text) { return identityOrPayment(text) || PERSONAL_CONTACT.test(screenText(text)); }
 function citedQuotes(value) {
   if (Array.isArray(value)) return value.flatMap(citedQuotes);
   if (!value || typeof value !== "object") return [];

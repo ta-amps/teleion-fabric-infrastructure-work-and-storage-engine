@@ -1706,6 +1706,191 @@
           "status": 400
         }
       ]
+    },
+    {
+      "id": "H-06-numbers-in-any-digits",
+      "finding": "H-06 (hunt)",
+      "title": "The personal-data screen reads Arabic-Indic and full-width digits and full-width domains the same way in both implementations",
+      "steps": [
+        {
+          "session": "anon"
+        },
+        {
+          "as": "anon",
+          "method": "POST",
+          "path": "/v1/stores/demo.artifacts/records/sample-0",
+          "status": 400,
+          "body": {
+            "value": {
+              "note": "call 555-123-4567 today"
+            },
+            "expected_version": 0
+          }
+        },
+        {
+          "as": "anon",
+          "method": "POST",
+          "path": "/v1/stores/demo.artifacts/records/sample-1",
+          "status": 400,
+          "body": {
+            "value": {
+              "note": "call ٥٥٥-١٢٣-٤٥٦٧ today"
+            },
+            "expected_version": 0
+          }
+        },
+        {
+          "as": "anon",
+          "method": "POST",
+          "path": "/v1/stores/demo.artifacts/records/sample-2",
+          "status": 400,
+          "body": {
+            "value": {
+              "note": "call ５５５-１２３-４５６７ today"
+            },
+            "expected_version": 0
+          }
+        },
+        {
+          "as": "anon",
+          "method": "POST",
+          "path": "/v1/stores/demo.artifacts/records/sample-3",
+          "status": 400,
+          "body": {
+            "value": {
+              "note": "SSN 123-45-6789"
+            },
+            "expected_version": 0
+          }
+        },
+        {
+          "as": "anon",
+          "method": "POST",
+          "path": "/v1/stores/demo.artifacts/records/sample-4",
+          "status": 400,
+          "body": {
+            "value": {
+              "note": "SSN ١٢٣-٤٥-٦٧٨٩"
+            },
+            "expected_version": 0
+          }
+        },
+        {
+          "as": "anon",
+          "method": "POST",
+          "path": "/v1/stores/demo.artifacts/records/sample-5",
+          "status": 400,
+          "body": {
+            "value": {
+              "note": "card 4111 1111 1111 1111"
+            },
+            "expected_version": 0
+          }
+        },
+        {
+          "as": "anon",
+          "method": "POST",
+          "path": "/v1/stores/demo.artifacts/records/sample-6",
+          "status": 400,
+          "body": {
+            "value": {
+              "note": "card ٤١١١ ١١١١ ١١١١ ١١١١"
+            },
+            "expected_version": 0
+          }
+        },
+        {
+          "as": "anon",
+          "method": "POST",
+          "path": "/v1/stores/demo.artifacts/records/sample-7",
+          "status": 400,
+          "body": {
+            "value": {
+              "note": "card ４１１１１１１１１１１１１１１１"
+            },
+            "expected_version": 0
+          }
+        },
+        {
+          "as": "anon",
+          "method": "POST",
+          "path": "/v1/stores/demo.artifacts/records/sample-8",
+          "status": 400,
+          "body": {
+            "value": {
+              "note": "phone +٩٧١ ٥٠ ١٢٣ ٤٥٦٧"
+            },
+            "expected_version": 0
+          }
+        },
+        {
+          "as": "anon",
+          "method": "POST",
+          "path": "/v1/stores/demo.artifacts/records/sample-9",
+          "status": 200,
+          "body": {
+            "value": {
+              "note": "write to ana@ｅｘａｍｐｌｅ.com"
+            },
+            "expected_version": 0
+          }
+        },
+        {
+          "as": "anon",
+          "method": "POST",
+          "path": "/v1/stores/demo.artifacts/records/sample-10",
+          "status": 400,
+          "body": {
+            "value": {
+              "note": "write to ana@mail.ｃｏｍ"
+            },
+            "expected_version": 0
+          }
+        },
+        {
+          "as": "anon",
+          "method": "POST",
+          "path": "/v1/stores/demo.artifacts/records/sample-11",
+          "status": 400,
+          "body": {
+            "value": {
+              "note": "the 12 Main Street office"
+            },
+            "expected_version": 0
+          }
+        },
+        {
+          "signup": "org"
+        },
+        {
+          "as": "org",
+          "method": "POST",
+          "path": "/ns/main/v1/tasks",
+          "status": 400,
+          "body": {
+            "queue": "eq01",
+            "kind": "request",
+            "task_id": "rq-{org.principal_id}-digits",
+            "brief": {
+              "job": "SYNTHETIC: call ٥٥٥-١٢٣-٤٥٦٧ today"
+            }
+          }
+        },
+        {
+          "as": "org",
+          "method": "POST",
+          "path": "/ns/main/v1/tasks",
+          "status": 400,
+          "body": {
+            "queue": "eq01",
+            "kind": "request",
+            "task_id": "rq-{org.principal_id}-wide",
+            "brief": {
+              "job": "SYNTHETIC: write to ana@mail.ｃｏｍ"
+            }
+          }
+        }
+      ]
     }
   ]
 }

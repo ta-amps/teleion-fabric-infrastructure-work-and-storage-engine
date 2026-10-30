@@ -5,6 +5,7 @@
 Fixes from the annoyance hunt (`hunt/HUNT-REPORT.md`), with cases in `tests/fixtures/access_parity.json`:
 
 - Sign-up keeps names in every script (H-05). Profile text is NFC normalized and keeps combining marks, so Hindi, Tamil, Thai and Arabic names keep their vowel signs and harakat, and a decomposed "José" stays José. Control and format characters are refused (the zero-width joiners Persian and Indic names need are kept), other symbols are still removed, and lengths count code points in both implementations.
+- The personal-data screen reads numbers in any digits (H-06). In JavaScript `\d` and `\b` match ASCII only, so the hosted Worker missed phone, identity and card numbers written in Arabic-Indic or full-width digits that Python caught, and neither caught full-width email domains. Both now fold the screened text (NFKC, then every decimal digit as 0-9) and match with ASCII-only patterns, so they agree on the hunt's samples, which are now a parity case.
 
 Access follow-ups after the re-review:
 
