@@ -31,7 +31,19 @@ export function requesterDescription(enabled = false) {
     files: `${REQUEST_KIND} verbs in ${REQUEST_QUEUE} of the shared namespace (X-Namespace: main), readable by ${REQUEST_SURFACES.join(", ")}`,
     reads: "its own nouns and the request verbs it filed, nothing else",
     profile: "display_name, organization_type and causes only; no personal data",
+    profile_rules: profileRules(),
     secret_shown_once: true };
+}
+// The rules cleanProfile applies, published for clients to check up front (H-09; the same object
+// as _requesters.profile_rules).
+export function profileRules() {
+  return { normalization: "NFC",
+    kept: `letters, combining marks and digits of any script (Unicode L, M and N), the zero-width joiners U+200C and U+200D, spaces and ${PROFILE_SYMBOLS.replace(" ", "").split("").join(" ")}`,
+    kept_pattern: String.raw`[\p{L}\p{M}\p{N}_ .,&'()/:+\-\u200C\u200D]`,
+    removed: "every other character, before lengths are counted",
+    refused: "control and format characters (Unicode Cc and Cf) other than U+200C and U+200D, and personal or payment data",
+    length_unit: "Unicode code points, after normalization and removal",
+    fields: PROFILE_FIELDS, max_causes: MAX_CAUSES };
 }
 export function openVerbsDescription() {
   return { namespace: OPEN_VERB_NAMESPACE, tag: OPEN_VERB_TAG,

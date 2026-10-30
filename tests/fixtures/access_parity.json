@@ -2117,6 +2117,46 @@
           }
         }
       ]
+    },
+    {
+      "id": "H-09-published-profile-rules",
+      "finding": "H-09 (hunt)",
+      "title": "Both implementations publish the same requester profile rules in connect.json",
+      "steps": [
+        {
+          "as": "none",
+          "method": "GET",
+          "path": "/connect.json",
+          "status": 200,
+          "expect": {
+            "equals": {
+              "requester.profile_rules": {
+                "fields": {
+                  "cause": {
+                    "max_length": 40,
+                    "min_length": 2
+                  },
+                  "display_name": {
+                    "max_length": 80,
+                    "min_length": 2
+                  },
+                  "organization_type": {
+                    "max_length": 120,
+                    "min_length": 3
+                  }
+                },
+                "kept": "letters, combining marks and digits of any script (Unicode L, M and N), the zero-width joiners U+200C and U+200D, spaces and _ . , & ' ( ) / : + -",
+                "kept_pattern": "[\\p{L}\\p{M}\\p{N}_ .,&'()/:+\\-\\u200C\\u200D]",
+                "length_unit": "Unicode code points, after normalization and removal",
+                "max_causes": 8,
+                "normalization": "NFC",
+                "refused": "control and format characters (Unicode Cc and Cf) other than U+200C and U+200D, and personal or payment data",
+                "removed": "every other character, before lengths are counted"
+              }
+            }
+          }
+        }
+      ]
     }
   ]
 }

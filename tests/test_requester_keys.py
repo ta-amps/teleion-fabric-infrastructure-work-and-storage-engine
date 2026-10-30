@@ -351,3 +351,51 @@ def test_every_access_description_agrees_with_the_sign_up_switch(
             assert contract["requester"]["enabled"] is enabled, where
             assert contract["anonymous"]["enabled"] is True, where
     store.close()
+
+
+def test_published_profile_rules_are_the_enforced_ones(
+    fabric: tuple[TestClient, Store, str],
+) -> None:
+    """H-09: what /connect.json publishes is exactly what sign-up enforces, so a client such as
+    Eranos's request box can check a profile before it is sent."""
+    client, _, _ = fabric
+    rules = client.get("/connect.json").json()["requester"]["profile_rules"]
+    fields, most = rules["fields"], rules["max_causes"]
+
+    def size(field: str, bound: str, delta: int = 0) -> str:
+        return "a" * (fields[field][bound] + delta)
+
+    def attempt(**profile: Any) -> int:
+        body = {
+            "display_name": size("display_name", "min_length"),
+            "organization_type": "Food pantry",
+        }
+        response = client.post("/v1/session/requester", json={"profile": {**body, **profile}})
+        return response.status_code
+
+    # The fixture signed up once; two more fit in this address's hourly allowance.
+    assert (
+        attempt(
+            display_name=size("display_name", "max_length"),
+            organization_type=size("organization_type", "max_length"),
+            causes=[size("cause", "max_length")] * most,
+        )
+        == 201
+    )
+    assert (
+        attempt(
+            organization_type=size("organization_type", "min_length"),
+            causes=[size("cause", "min_length")],
+        )
+        == 201
+    )
+    for over in (
+        {"display_name": size("display_name", "max_length", 1)},
+        {"display_name": size("display_name", "min_length", -1)},
+        {"organization_type": size("organization_type", "max_length", 1)},
+        {"organization_type": size("organization_type", "min_length", -1)},
+        {"causes": [size("cause", "min_length")] * (most + 1)},
+        {"causes": [size("cause", "max_length", 1)]},
+        {"causes": [size("cause", "min_length", -1)]},
+    ):
+        assert attempt(**over) == 400, over

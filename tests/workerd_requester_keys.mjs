@@ -142,3 +142,25 @@ test("a requester follows its request but not the children a worker split it int
     assert.equal((await request(`/ns/main/v1/claims/${child}/events`, undefined, org.key)).status, 404);
   }
 });
+
+test("the published profile rules are the enforced ones (H-09)", async () => {
+  const { request } = await setup();
+  const rules = (await request("/connect.json")).data.requester.profile_rules;
+  const { fields, max_causes: most } = rules;
+  const size = (field, bound, delta = 0) => "a".repeat(fields[field][bound] + delta);
+  let ip = 0;
+  const attempt = async (profile) => (await request("/v1/session/requester", { profile: { display_name: size("display_name", "min_length"), organization_type: "Food pantry", ...profile } }, undefined, { "cf-connecting-ip": `198.51.100.${++ip}` })).status;
+  assert.equal(await attempt({ display_name: size("display_name", "max_length"), organization_type: size("organization_type", "max_length"), causes: Array(most).fill(size("cause", "max_length")) }), 201);
+  assert.equal(await attempt({ organization_type: size("organization_type", "min_length"), causes: [size("cause", "min_length")] }), 201);
+  for (const over of [
+    { display_name: size("display_name", "max_length", 1) }, { display_name: size("display_name", "min_length", -1) },
+    { organization_type: size("organization_type", "max_length", 1) }, { organization_type: size("organization_type", "min_length", -1) },
+    { causes: Array(most + 1).fill(size("cause", "min_length")) }, { causes: [size("cause", "max_length", 1)] }, { causes: [size("cause", "min_length", -1)] },
+  ]) assert.equal(await attempt(over), 400, JSON.stringify(over).slice(0, 80));
+  // The published pattern keeps exactly the characters sign-up keeps.
+  const kept = new RegExp(rules.kept_pattern, "u");
+  const sample = "Org #5 सेवा \u{1F34E}José!";
+  const signed = await request("/v1/session/requester", { profile: { display_name: sample, organization_type: "Food pantry" } }, undefined, { "cf-connecting-ip": `198.51.100.${++ip}` });
+  assert.equal(signed.status, 201, JSON.stringify(signed.data));
+  assert.equal(signed.data.profile.display_name, [...sample.normalize(rules.normalization)].filter(ch => kept.test(ch)).join("").trim());
+});

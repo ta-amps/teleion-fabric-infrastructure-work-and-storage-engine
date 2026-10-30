@@ -68,6 +68,24 @@ PROFILE_JOINERS = "\u200c\u200d"
 RAW_LENGTH_FACTOR = 4  # input longer than four times a field's limit is refused unread
 
 
+def profile_rules() -> dict[str, Any]:
+    """The rules clean_profile applies, as /connect.json publishes them for clients to check up
+    front (H-09). The Worker publishes the same object."""
+    return {
+        "normalization": "NFC",
+        "kept": "letters, combining marks and digits of any script (Unicode L, M and N), the"
+        f" zero-width joiners U+200C and U+200D, spaces and"
+        f" {' '.join(ch for ch in PROFILE_SYMBOLS if ch != ' ')}",
+        "kept_pattern": "[\\p{L}\\p{M}\\p{N}_ .,&'()/:+\\-\\u200C\\u200D]",
+        "removed": "every other character, before lengths are counted",
+        "refused": "control and format characters (Unicode Cc and Cf) other than U+200C and U+200D,"
+        " and personal or payment data",
+        "length_unit": "Unicode code points, after normalization and removal",
+        "fields": PROFILE_FIELDS,
+        "max_causes": MAX_CAUSES,
+    }
+
+
 def _clean(value: Any, field: str) -> str:
     low, high = PROFILE_FIELDS[field]["min_length"], PROFILE_FIELDS[field]["max_length"]
     text = unicodedata.normalize("NFC", str(value or ""))
