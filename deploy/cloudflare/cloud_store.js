@@ -1453,6 +1453,11 @@ export class TesseraCoordinator extends DurableObject {
     }
   }
 
+  // An anonymous viewer never sees which keys own, parked or deduplicated a verb.
+  _viewerTaskView(grant, view) {
+    return grant.principal_kind === "anonymous" ? { ...view, owner_key_id: null, parked_by: null, idempotency_key: null } : view;
+  }
+
   // An open verb carries its whole input in its brief; its anonymous claimant sees the state of
   // related tasks, never their outputs or the keys that completed them.
   _leaseResults(grant, results) {
@@ -1905,7 +1910,7 @@ export class TesseraCoordinator extends DurableObject {
       else if (action === "listVerbs") {
         const rows=this._all("SELECT * FROM tasks WHERE namespace=? AND (?='' OR queue=?) AND (?='' OR state=?) ORDER BY created_at,id LIMIT 1000",ns,args.queue||"",args.queue||"",args.status||"ready",args.status||"ready");
         const view=this._viewerCtx(grant,args.surfaceHeader);
-        out={ok:true,status:200,data:{verbs:rows.filter(r=>this._taskVisible(r,grant,view)&&this._mayUseQueue(grant,r.queue)).slice(0,Math.max(1,Math.min(Number(args.limit)||50,100))).map(r=>this._taskView(r.id))}};
+        out={ok:true,status:200,data:{verbs:rows.filter(r=>this._taskVisible(r,grant,view)&&this._mayUseQueue(grant,r.queue)).slice(0,Math.max(1,Math.min(Number(args.limit)||50,100))).map(r=>this._viewerTaskView(grant,this._taskView(r.id)))}};
       }
       else if (action === "claimEvents") {
         const row = this._taskRow(String(args.task_id));
@@ -2245,17 +2250,20 @@ export class TesseraCoordinator extends DurableObject {
           ) {
             throw notFound(`task '${view.task_id}' does not exist`);
           }
-          return { ok: true, status: 200, data: view };
+          return { ok: true, status: 200, data: this._viewerTaskView(grant, view) };
         }
 
         case "results": {
           const view = this._taskView(String(args.task_id));
           this._requireQueue(grant, view.queue);
           if (!this._taskVisible(this._taskRow(String(args.task_id)), grant, viewerCtx)) throw notFound("task does not exist");
+          // An anonymous session in the shared namespace sees only its own submissions.
+          const ownOnly = usesOpenVerbs(grant, this.namespace);
           const results = this._all(
-            "SELECT * FROM results WHERE namespace = ? AND task_id = ? ORDER BY created_at",
+            `SELECT * FROM results WHERE namespace = ? AND task_id = ?${ownOnly ? " AND completed_by_key = ?" : ""} ORDER BY created_at`,
             this.namespace,
-            view.task_id
+            view.task_id,
+            ...(ownOnly ? [grant.key_id] : [])
           ).map((r) => ({
             task_id: r.task_id,
             fencing_token: Number(r.fencing_token),

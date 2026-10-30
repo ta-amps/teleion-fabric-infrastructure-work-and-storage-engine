@@ -17,8 +17,9 @@ export const OPEN_VERB_TAG = "open:anonymous";
 export const OPEN_VERB_NAMESPACE = "main";
 export const CLOSED_TO_ANONYMOUS = new Set(["eq03", "frontier.review", "frontier.verify"]);
 const OPEN_VERB_EFFECTS = new Set(["read", "write-internal"]);
-export const OPEN_VERB_ACTIONS = new Set(["claim", "heartbeat", "submit", "task", "results", "claimEvents", "listVerbs", "me", "my_audit"]);
-const OWN_WORK_ACTIONS = new Set(["task", "results", "claimEvents"]);
+// Claim events would show other attempts on the verb, so they stay closed (same rule as Python).
+export const OPEN_VERB_ACTIONS = new Set(["claim", "heartbeat", "submit", "task", "results", "listVerbs", "me", "my_audit"]);
+const OWN_WORK_ACTIONS = new Set(["task", "results"]);
 export function openToAnonymous(queue, tags, effectClass) {
   return Array.isArray(tags) && tags.includes(OPEN_VERB_TAG) && !CLOSED_TO_ANONYMOUS.has(queue) && OPEN_VERB_EFFECTS.has(effectClass);
 }
@@ -36,7 +37,7 @@ export function openVerbsDescription() {
   return { namespace: OPEN_VERB_NAMESPACE, tag: OPEN_VERB_TAG,
     how: "Send X-Namespace: main (or call /ns/main/v1/...) to list, claim, heartbeat and submit verbs whose producer tagged them open:anonymous.",
     actions: [...OPEN_VERB_ACTIONS].sort(), closed_queues: [...CLOSED_TO_ANONYMOUS].sort(),
-    claimant_sees: "the verb's brief, its own receipts and the state of related tasks; never other outputs, nouns or principals",
+    claimant_sees: "the verb's brief, its own submissions and the state of related tasks; never other outputs, attempts, nouns or principals",
     review: "A submitted result stays quarantined with its verb. A different keyed worker or a person reviews it; anonymous sessions never approve or publish." };
 }
 // Requester keys (same rule as src/tessera/_requesters.py): a self-serve sign-up mints a hashed

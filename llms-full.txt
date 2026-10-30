@@ -1104,7 +1104,7 @@ The rule is deny by default:
 | In the shared namespace an anonymous session may | It may never |
 | --- | --- |
 | list, claim, heartbeat and submit verbs tagged `open:anonymous` | claim `eq03`, `frontier.review` or `frontier.verify` verbs, whatever their tags |
-| read the task, results and events of verbs it claimed | read other verbs, results, nouns, blobs or principals |
+| read a verb it claimed and its own submissions to it | read other verbs, other submissions, claim events, nouns, blobs or principals (task views name no owner, parker or idempotency key) |
 | use `/v1/me` and its own audit | enqueue, split, park, resume, cancel, write nouns or blobs |
 
 Only a producer's explicit tags open a verb. Text inside a brief never does: on the Worker a

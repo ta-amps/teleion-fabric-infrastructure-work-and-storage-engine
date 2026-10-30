@@ -222,13 +222,14 @@ def test_other_sessions_and_strangers_cannot_read_a_submission(
     first, second = session(client, "first"), session(client, "second")
     work(client, first["session_token"], "build-1")
     other = auth(second["session_token"])
-    for path in (
-        "/ns/main/v1/tasks/build-1",
-        "/ns/main/v1/tasks/build-1/results",
-        "/ns/main/v1/claims/build-1/events",
-    ):
+    for path in ("/ns/main/v1/tasks/build-1", "/ns/main/v1/tasks/build-1/results"):
         assert client.get(path, headers=other).status_code == 404, path
         assert client.get(path).status_code == 401, path
+    # Claim events would show other attempts: closed to every anonymous session, its own work too.
+    for session_token in (first["session_token"], second["session_token"]):
+        events = client.get("/ns/main/v1/claims/build-1/events", headers=auth(session_token))
+        assert events.status_code == 403
+    assert client.get("/ns/main/v1/claims/build-1/events").status_code == 401
     # Cross-namespace stays closed: another session's demo namespace and any other namespace.
     assert client.get(f"/ns/{first['namespace']}/v1/verbs", headers=other).status_code == 403
     assert client.get("/ns/conformance-other/v1/verbs", headers=other).status_code == 403

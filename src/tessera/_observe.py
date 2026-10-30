@@ -8,6 +8,7 @@ from typing import Any
 from tessera._base import StoreBase
 from tessera._version import __version__
 from tessera.errors import NotFound
+from tessera.grants import OPEN_VERB_NAMESPACE
 from tessera.models import Event, Health, QueueCounts, QueueHealth, ResultView, TaskView
 
 
@@ -17,17 +18,22 @@ class ObserveOps(StoreBase):
         with self._read() as c:
             if not self._task_visible(self._task_row(c, ns, task_id)):
                 raise NotFound("task does not exist")
-            return self._task_view(c, ns, task_id)
+            return self._viewer_task_view(self._task_view(c, ns, task_id))
 
     def results(self, task_id: str, *, namespace: str | None = None) -> list[ResultView]:
-        """Every submit for a task, failed ones included, oldest first."""
+        """Every submit for a task, failed ones included, oldest first. An anonymous session in
+        the shared namespace sees only its own submissions to the open verb it worked."""
         ns = self._resolve_ns(namespace)
+        ctx = self.current_scope()
+        own_only = ctx.anonymous and ns == OPEN_VERB_NAMESPACE
         with self._read() as c:
             if not self._task_visible(self._task_row(c, ns, task_id)):
                 raise NotFound("task does not exist")
+            only = ctx.key_id if own_only else None
             rows = c.execute(
-                "SELECT * FROM results WHERE namespace = ? AND task_id = ? ORDER BY created_at",
-                (ns, task_id),
+                "SELECT * FROM results WHERE namespace = ? AND task_id = ?"
+                " AND (? IS NULL OR completed_by_key = ?) ORDER BY created_at",
+                (ns, task_id, only, only),
             ).fetchall()
         return [
             ResultView(

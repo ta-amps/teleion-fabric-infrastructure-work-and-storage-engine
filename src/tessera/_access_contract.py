@@ -46,8 +46,8 @@ def open_verbs_description() -> dict[str, Any]:
         " submit verbs whose producer tagged them open:anonymous.",
         "actions": sorted(OPEN_VERB_ACTIONS),
         "closed_queues": sorted(CLOSED_TO_ANONYMOUS),
-        "claimant_sees": "the verb's brief, its own receipts and the state of related tasks;"
-        " never other outputs, nouns or principals",
+        "claimant_sees": "the verb's brief, its own submissions and the state of related tasks;"
+        " never other outputs, attempts, nouns or principals",
         "review": "A submitted result stays quarantined with its verb. A different keyed worker"
         " or a person reviews it; anonymous sessions never approve or publish.",
     }

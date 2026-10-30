@@ -128,21 +128,13 @@ ANON_ACTIONS = {
     "my_audit",
 }
 WRITE_ACTIONS = {"putRecords", "submit", "enqueue"}
-# Outside its own namespace an anonymous session may only work an open verb and read its own work.
+# Outside its own namespace an anonymous session may only work an open verb and read its own work:
+# the task it claimed and its own submissions to it. Claim events would show other attempts, so
+# they stay closed.
 OPEN_VERB_ACTIONS = frozenset(
-    {
-        "claim",
-        "heartbeat",
-        "submit",
-        "task",
-        "results",
-        "claimEvents",
-        "listVerbs",
-        "me",
-        "my_audit",
-    }
+    {"claim", "heartbeat", "submit", "task", "results", "listVerbs", "me", "my_audit"}
 )
-OWN_WORK_ACTIONS = frozenset({"task", "results", "claimEvents"})
+OWN_WORK_ACTIONS = frozenset({"task", "results"})
 
 
 class DemoPayloadTooLarge(InvalidRequest):

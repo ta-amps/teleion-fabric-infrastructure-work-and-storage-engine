@@ -145,10 +145,13 @@ test("other sessions and strangers cannot read a submission or other namespaces"
   await verb("build-1");
   const first = await session("first"), second = await session("second");
   await work(first.session_token, "build-1");
-  for (const path of ["/ns/main/v1/tasks/build-1", "/ns/main/v1/tasks/build-1/results", "/ns/main/v1/claims/build-1/events"]) {
+  for (const path of ["/ns/main/v1/tasks/build-1", "/ns/main/v1/tasks/build-1/results"]) {
     assert.equal((await request(path, undefined, second.session_token)).status, 404, path);
     assert.equal((await request(path)).status, 401, path);
   }
+  // Claim events would show other attempts: closed to every anonymous session, its own work too.
+  for (const session of [first, second]) assert.equal((await request("/ns/main/v1/claims/build-1/events", undefined, session.session_token)).status, 403);
+  assert.equal((await request("/ns/main/v1/claims/build-1/events")).status, 401);
   assert.equal((await request(`/ns/${first.namespace}/v1/verbs`, undefined, second.session_token)).status, 403);
   assert.equal((await request("/ns/conformance-other/v1/verbs", undefined, second.session_token)).status, 403);
 });

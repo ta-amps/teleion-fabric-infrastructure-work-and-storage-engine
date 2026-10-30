@@ -8,9 +8,27 @@
     "templates": "{name.field} is replaced by a remembered value; a string that is only a template keeps the value's type."
   },
   "queues": [
-    { "name": "eq01", "lease_seconds": 1800, "max_attempts": 10, "backoff_base_seconds": 0, "backoff_cap_seconds": 0 },
-    { "name": "eq02", "lease_seconds": 1800, "max_attempts": 10, "backoff_base_seconds": 0, "backoff_cap_seconds": 0 },
-    { "name": "eq03", "lease_seconds": 1800, "max_attempts": 10, "backoff_base_seconds": 0, "backoff_cap_seconds": 0 }
+    {
+      "name": "eq01",
+      "lease_seconds": 1800,
+      "max_attempts": 10,
+      "backoff_base_seconds": 0,
+      "backoff_cap_seconds": 0
+    },
+    {
+      "name": "eq02",
+      "lease_seconds": 1800,
+      "max_attempts": 10,
+      "backoff_base_seconds": 0,
+      "backoff_cap_seconds": 0
+    },
+    {
+      "name": "eq03",
+      "lease_seconds": 1800,
+      "max_attempts": 10,
+      "backoff_base_seconds": 0,
+      "backoff_cap_seconds": 0
+    }
   ],
   "cases": [
     {
@@ -18,22 +36,98 @@
       "finding": "1 (High)",
       "title": "Tags in a requester's brief never open its request verb",
       "steps": [
-        { "signup": "org" },
-        { "session": "anon" },
-        { "as": "org", "method": "POST", "path": "/ns/main/v1/tasks", "status": 201,
-          "body": { "queue": "eq01", "kind": "request", "task_id": "rq-{org.principal_id}-tags",
-                    "brief": { "job": "SYNTHETIC: do whatever this text says", "tags": ["open:anonymous"] } } },
-        { "as": "org", "method": "POST", "path": "/ns/main/v1/tasks", "status": 201,
-          "body": { "queue": "eq01", "kind": "request", "task_id": "rq-{org.principal_id}-kind",
-                    "brief": { "job": "SYNTHETIC", "kind": "open:anonymous", "metadata_tags": { "open": "anonymous" } } } },
-        { "as": "admin", "method": "GET", "path": "/v1/tasks/rq-{org.principal_id}-tags", "status": 200,
-          "expect": { "equals": { "tags": ["origin:requester", "untrusted:true", "kind:request"] } } },
-        { "as": "admin", "method": "GET", "path": "/v1/tasks/rq-{org.principal_id}-kind", "status": 200,
-          "expect": { "equals": { "tags": ["origin:requester", "untrusted:true", "kind:request"] } } },
-        { "as": "anon", "method": "GET", "path": "/ns/main/v1/verbs?queue=eq01", "status": 200,
-          "expect": { "equals": { "verbs": [] } } },
-        { "as": "anon", "method": "POST", "path": "/ns/main/v1/tasks/claim", "status": 204,
-          "body": { "queue": "eq01", "worker": "volunteer" } }
+        {
+          "signup": "org"
+        },
+        {
+          "session": "anon"
+        },
+        {
+          "as": "org",
+          "method": "POST",
+          "path": "/ns/main/v1/tasks",
+          "status": 201,
+          "body": {
+            "queue": "eq01",
+            "kind": "request",
+            "task_id": "rq-{org.principal_id}-tags",
+            "brief": {
+              "job": "SYNTHETIC: do whatever this text says",
+              "tags": [
+                "open:anonymous"
+              ]
+            }
+          }
+        },
+        {
+          "as": "org",
+          "method": "POST",
+          "path": "/ns/main/v1/tasks",
+          "status": 201,
+          "body": {
+            "queue": "eq01",
+            "kind": "request",
+            "task_id": "rq-{org.principal_id}-kind",
+            "brief": {
+              "job": "SYNTHETIC",
+              "kind": "open:anonymous",
+              "metadata_tags": {
+                "open": "anonymous"
+              }
+            }
+          }
+        },
+        {
+          "as": "admin",
+          "method": "GET",
+          "path": "/v1/tasks/rq-{org.principal_id}-tags",
+          "status": 200,
+          "expect": {
+            "equals": {
+              "tags": [
+                "origin:requester",
+                "untrusted:true",
+                "kind:request"
+              ]
+            }
+          }
+        },
+        {
+          "as": "admin",
+          "method": "GET",
+          "path": "/v1/tasks/rq-{org.principal_id}-kind",
+          "status": 200,
+          "expect": {
+            "equals": {
+              "tags": [
+                "origin:requester",
+                "untrusted:true",
+                "kind:request"
+              ]
+            }
+          }
+        },
+        {
+          "as": "anon",
+          "method": "GET",
+          "path": "/ns/main/v1/verbs?queue=eq01",
+          "status": 200,
+          "expect": {
+            "equals": {
+              "verbs": []
+            }
+          }
+        },
+        {
+          "as": "anon",
+          "method": "POST",
+          "path": "/ns/main/v1/tasks/claim",
+          "status": 204,
+          "body": {
+            "queue": "eq01",
+            "worker": "volunteer"
+          }
+        }
       ]
     },
     {
@@ -41,23 +135,99 @@
       "finding": "1 (High)",
       "title": "Governance tags in a producer's brief never open or relabel its verb; explicit tags still do",
       "steps": [
-        { "session": "anon" },
-        { "as": "admin", "method": "POST", "path": "/v1/tasks", "status": 201,
-          "body": { "queue": "eq02", "task_id": "build-closed", "kind": "draft", "effect_class": "write-internal",
-                    "brief": { "title": "SYNTHETIC copied request text", "tags": ["open:anonymous"], "stage": "open:anonymous", "track": "status:verified" },
-                    "producer_surface": "surface:eranos", "visibility_scope": "surface_only" } },
-        { "as": "admin", "method": "GET", "path": "/v1/tasks/build-closed", "status": 200,
-          "expect": { "lacks": { "tags": ["open:anonymous", "status:verified"] } } },
-        { "as": "anon", "method": "GET", "path": "/ns/main/v1/verbs?queue=eq02", "status": 200,
-          "expect": { "equals": { "verbs": [] } } },
-        { "as": "anon", "method": "POST", "path": "/ns/main/v1/tasks/claim", "status": 204,
-          "body": { "queue": "eq02", "worker": "volunteer" } },
-        { "as": "admin", "method": "POST", "path": "/v1/tasks", "status": 201,
-          "body": { "queue": "eq02", "task_id": "build-open", "kind": "draft", "effect_class": "write-internal",
-                    "brief": { "title": "SYNTHETIC" }, "tags": ["open:anonymous"],
-                    "producer_surface": "surface:eranos", "visibility_scope": "surface_only" } },
-        { "as": "anon", "method": "GET", "path": "/ns/main/v1/verbs?queue=eq02", "status": 200,
-          "expect": { "equals": { "verbs.*.task_id": ["build-open"] } } }
+        {
+          "session": "anon"
+        },
+        {
+          "as": "admin",
+          "method": "POST",
+          "path": "/v1/tasks",
+          "status": 201,
+          "body": {
+            "queue": "eq02",
+            "task_id": "build-closed",
+            "kind": "draft",
+            "effect_class": "write-internal",
+            "brief": {
+              "title": "SYNTHETIC copied request text",
+              "tags": [
+                "open:anonymous"
+              ],
+              "stage": "open:anonymous",
+              "track": "status:verified"
+            },
+            "producer_surface": "surface:eranos",
+            "visibility_scope": "surface_only"
+          }
+        },
+        {
+          "as": "admin",
+          "method": "GET",
+          "path": "/v1/tasks/build-closed",
+          "status": 200,
+          "expect": {
+            "lacks": {
+              "tags": [
+                "open:anonymous",
+                "status:verified"
+              ]
+            }
+          }
+        },
+        {
+          "as": "anon",
+          "method": "GET",
+          "path": "/ns/main/v1/verbs?queue=eq02",
+          "status": 200,
+          "expect": {
+            "equals": {
+              "verbs": []
+            }
+          }
+        },
+        {
+          "as": "anon",
+          "method": "POST",
+          "path": "/ns/main/v1/tasks/claim",
+          "status": 204,
+          "body": {
+            "queue": "eq02",
+            "worker": "volunteer"
+          }
+        },
+        {
+          "as": "admin",
+          "method": "POST",
+          "path": "/v1/tasks",
+          "status": 201,
+          "body": {
+            "queue": "eq02",
+            "task_id": "build-open",
+            "kind": "draft",
+            "effect_class": "write-internal",
+            "brief": {
+              "title": "SYNTHETIC"
+            },
+            "tags": [
+              "open:anonymous"
+            ],
+            "producer_surface": "surface:eranos",
+            "visibility_scope": "surface_only"
+          }
+        },
+        {
+          "as": "anon",
+          "method": "GET",
+          "path": "/ns/main/v1/verbs?queue=eq02",
+          "status": 200,
+          "expect": {
+            "equals": {
+              "verbs.*.task_id": [
+                "build-open"
+              ]
+            }
+          }
+        }
       ]
     },
     {
@@ -65,28 +235,374 @@
       "finding": "9 (Low)",
       "title": "Split children inherit the parent's owner, surface and visibility, and its tags unless they name their own",
       "steps": [
-        { "key": "splitter", "grant": { "queues": ["eq02"], "scopes": ["store", "surface:eranos"], "effect_classes": ["read", "write-internal"] } },
-        { "as": "admin", "method": "POST", "path": "/v1/tasks", "status": 201,
-          "body": { "queue": "eq02", "task_id": "parent-1", "kind": "draft", "effect_class": "write-internal",
-                    "brief": { "title": "SYNTHETIC parent" }, "tags": ["open:anonymous", "part:1"],
-                    "producer_surface": "surface:eranos", "visibility_scope": "allowlist_surfaces", "allowed_surfaces": ["surface:herma"] } },
-        { "as": "splitter", "method": "POST", "path": "/v1/tasks/claim", "status": 200, "save": "lease",
-          "body": { "queue": "eq02", "worker": "splitter" } },
-        { "as": "splitter", "method": "POST", "path": "/v1/tasks/split", "status": 200, "save": "split",
-          "body": { "task_id": "parent-1", "fencing_token": "{lease.fencing_token}", "children": [
-            { "brief": { "part": 1 } },
-            { "brief": { "part": 2 }, "tags": ["part:2"] },
-            { "brief": { "part": 3, "tags": ["open:anonymous", "status:quarantined"], "kind": "open:anonymous" }, "tags": ["part:3"] }
-          ] } },
-        { "as": "admin", "method": "GET", "path": "/v1/tasks/{split.children.0}", "status": 200,
-          "expect": { "equals": { "parent_id": "parent-1", "tags": ["open:anonymous", "part:1"], "owner_key_id": "{admin.key_id}",
-                                  "producer_surface": "surface:eranos", "visibility_scope": "allowlist_surfaces",
-                                  "allowed_surfaces": ["surface:herma"], "target_cohorts": ["all"] } } },
-        { "as": "admin", "method": "GET", "path": "/v1/tasks/{split.children.1}", "status": 200,
-          "expect": { "equals": { "tags": ["part:2"], "owner_key_id": "{admin.key_id}", "visibility_scope": "allowlist_surfaces",
-                                  "allowed_surfaces": ["surface:herma"] } } },
-        { "as": "admin", "method": "GET", "path": "/v1/tasks/{split.children.2}", "status": 200,
-          "expect": { "equals": { "tags": ["part:3"], "owner_key_id": "{admin.key_id}", "visibility_scope": "allowlist_surfaces" } } }
+        {
+          "key": "splitter",
+          "grant": {
+            "queues": [
+              "eq02"
+            ],
+            "scopes": [
+              "store",
+              "surface:eranos"
+            ],
+            "effect_classes": [
+              "read",
+              "write-internal"
+            ]
+          }
+        },
+        {
+          "as": "admin",
+          "method": "POST",
+          "path": "/v1/tasks",
+          "status": 201,
+          "body": {
+            "queue": "eq02",
+            "task_id": "parent-1",
+            "kind": "draft",
+            "effect_class": "write-internal",
+            "brief": {
+              "title": "SYNTHETIC parent"
+            },
+            "tags": [
+              "open:anonymous",
+              "part:1"
+            ],
+            "producer_surface": "surface:eranos",
+            "visibility_scope": "allowlist_surfaces",
+            "allowed_surfaces": [
+              "surface:herma"
+            ]
+          }
+        },
+        {
+          "as": "splitter",
+          "method": "POST",
+          "path": "/v1/tasks/claim",
+          "status": 200,
+          "save": "lease",
+          "body": {
+            "queue": "eq02",
+            "worker": "splitter"
+          }
+        },
+        {
+          "as": "splitter",
+          "method": "POST",
+          "path": "/v1/tasks/split",
+          "status": 200,
+          "save": "split",
+          "body": {
+            "task_id": "parent-1",
+            "fencing_token": "{lease.fencing_token}",
+            "children": [
+              {
+                "brief": {
+                  "part": 1
+                }
+              },
+              {
+                "brief": {
+                  "part": 2
+                },
+                "tags": [
+                  "part:2"
+                ]
+              },
+              {
+                "brief": {
+                  "part": 3,
+                  "tags": [
+                    "open:anonymous",
+                    "status:quarantined"
+                  ],
+                  "kind": "open:anonymous"
+                },
+                "tags": [
+                  "part:3"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "as": "admin",
+          "method": "GET",
+          "path": "/v1/tasks/{split.children.0}",
+          "status": 200,
+          "expect": {
+            "equals": {
+              "parent_id": "parent-1",
+              "tags": [
+                "open:anonymous",
+                "part:1"
+              ],
+              "owner_key_id": "{admin.key_id}",
+              "producer_surface": "surface:eranos",
+              "visibility_scope": "allowlist_surfaces",
+              "allowed_surfaces": [
+                "surface:herma"
+              ],
+              "target_cohorts": [
+                "all"
+              ]
+            }
+          }
+        },
+        {
+          "as": "admin",
+          "method": "GET",
+          "path": "/v1/tasks/{split.children.1}",
+          "status": 200,
+          "expect": {
+            "equals": {
+              "tags": [
+                "part:2"
+              ],
+              "owner_key_id": "{admin.key_id}",
+              "visibility_scope": "allowlist_surfaces",
+              "allowed_surfaces": [
+                "surface:herma"
+              ]
+            }
+          }
+        },
+        {
+          "as": "admin",
+          "method": "GET",
+          "path": "/v1/tasks/{split.children.2}",
+          "status": 200,
+          "expect": {
+            "equals": {
+              "tags": [
+                "part:3"
+              ],
+              "owner_key_id": "{admin.key_id}",
+              "visibility_scope": "allowlist_surfaces"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "F2-own-submissions-only",
+      "finding": "2 (Medium)",
+      "title": "After a failed attempt, an anonymous session sees only its own submissions and no claim events",
+      "steps": [
+        {
+          "session": "anon"
+        },
+        {
+          "key": "keyed",
+          "grant": {
+            "queues": [
+              "eq02"
+            ],
+            "scopes": [
+              "store",
+              "surface:eranos"
+            ],
+            "effect_classes": [
+              "read",
+              "write-internal"
+            ]
+          }
+        },
+        {
+          "as": "admin",
+          "method": "POST",
+          "path": "/v1/tasks",
+          "status": 201,
+          "body": {
+            "queue": "eq02",
+            "task_id": "build-1",
+            "kind": "draft",
+            "effect_class": "write-internal",
+            "brief": {
+              "title": "SYNTHETIC"
+            },
+            "tags": [
+              "status:quarantined",
+              "open:anonymous"
+            ],
+            "producer_surface": "surface:eranos",
+            "visibility_scope": "surface_only"
+          }
+        },
+        {
+          "as": "anon",
+          "method": "POST",
+          "path": "/ns/main/v1/tasks/claim",
+          "status": 200,
+          "save": "first",
+          "body": {
+            "queue": "eq02",
+            "worker": "volunteer"
+          }
+        },
+        {
+          "as": "anon",
+          "method": "POST",
+          "path": "/ns/main/v1/tasks/submit",
+          "status": 200,
+          "headers": {
+            "Idempotency-Key": "anon-fail"
+          },
+          "body": {
+            "task_id": "build-1",
+            "fencing_token": "{first.fencing_token}",
+            "output": {},
+            "ok": false,
+            "error": "SYNTHETIC give up"
+          }
+        },
+        {
+          "as": "keyed",
+          "method": "POST",
+          "path": "/v1/tasks/claim",
+          "status": 200,
+          "save": "second",
+          "body": {
+            "queue": "eq02",
+            "worker": "keyed-worker"
+          }
+        },
+        {
+          "as": "keyed",
+          "method": "POST",
+          "path": "/v1/tasks/submit",
+          "status": 200,
+          "headers": {
+            "Idempotency-Key": "keyed-ok"
+          },
+          "body": {
+            "task_id": "build-1",
+            "fencing_token": "{second.fencing_token}",
+            "output": {
+              "private_keyed_note": "SYNTHETIC keyed-only output"
+            }
+          }
+        },
+        {
+          "as": "anon",
+          "method": "GET",
+          "path": "/ns/main/v1/tasks/build-1/results",
+          "status": 200,
+          "expect": {
+            "equals": {
+              "results.#": 1,
+              "results.*.completed_by_key": [
+                "{anon.principal_id}"
+              ],
+              "results.0.ok": false
+            }
+          }
+        },
+        {
+          "as": "anon",
+          "method": "GET",
+          "path": "/ns/main/v1/claims/build-1/events",
+          "status": 403
+        },
+        {
+          "as": "admin",
+          "method": "GET",
+          "path": "/v1/tasks/build-1/results",
+          "status": 200,
+          "expect": {
+            "equals": {
+              "results.#": 2
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "16-anonymous-views-name-no-principals",
+      "finding": "16 (Low)",
+      "title": "Task views shown to an anonymous session never name owners, parkers or idempotency keys",
+      "steps": [
+        {
+          "session": "anon"
+        },
+        {
+          "as": "admin",
+          "method": "POST",
+          "path": "/v1/tasks",
+          "status": 201,
+          "body": {
+            "queue": "eq02",
+            "task_id": "build-2",
+            "kind": "draft",
+            "effect_class": "write-internal",
+            "idempotency_key": "producer-idem-2",
+            "brief": {
+              "title": "SYNTHETIC"
+            },
+            "tags": [
+              "status:quarantined",
+              "open:anonymous"
+            ],
+            "producer_surface": "surface:eranos",
+            "visibility_scope": "surface_only"
+          }
+        },
+        {
+          "as": "anon",
+          "method": "GET",
+          "path": "/ns/main/v1/verbs?queue=eq02",
+          "status": 200,
+          "expect": {
+            "equals": {
+              "verbs.*.task_id": [
+                "build-2"
+              ]
+            },
+            "null": [
+              "verbs.0.owner_key_id",
+              "verbs.0.idempotency_key",
+              "verbs.0.parked_by"
+            ]
+          }
+        },
+        {
+          "as": "anon",
+          "method": "POST",
+          "path": "/ns/main/v1/tasks/claim",
+          "status": 200,
+          "body": {
+            "queue": "eq02",
+            "worker": "volunteer"
+          }
+        },
+        {
+          "as": "anon",
+          "method": "GET",
+          "path": "/ns/main/v1/tasks/build-2",
+          "status": 200,
+          "expect": {
+            "equals": {
+              "state": "leased"
+            },
+            "null": [
+              "owner_key_id",
+              "idempotency_key",
+              "parked_by"
+            ]
+          }
+        },
+        {
+          "as": "admin",
+          "method": "GET",
+          "path": "/v1/tasks/build-2",
+          "status": 200,
+          "expect": {
+            "equals": {
+              "owner_key_id": "{admin.key_id}",
+              "idempotency_key": "producer-idem-2"
+            }
+          }
+        }
       ]
     }
   ]

@@ -602,6 +602,14 @@ class StoreBase:
             owner_key_id=row["owner_key_id"],
         )
 
+    def _viewer_task_view(self, view: TaskView) -> TaskView:
+        """An anonymous viewer never sees which keys own, parked or deduplicated a verb."""
+        if not self.current_scope().anonymous:
+            return view
+        return view.model_copy(
+            update={"owner_key_id": None, "parked_by": None, "idempotency_key": None}
+        )
+
     def _jitter(self) -> float:
         with self._rng_lock:
             return self._rng.uniform(0.5, 1.0)
