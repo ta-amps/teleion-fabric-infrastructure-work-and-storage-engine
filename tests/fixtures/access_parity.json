@@ -1891,6 +1891,51 @@
           }
         }
       ]
+    },
+    {
+      "id": "H-07-numbers-checked-whatever-the-content-type",
+      "finding": "H-07 (hunt)",
+      "title": "Non-finite and inexact numbers are refused whether or not the body says it is JSON",
+      "steps": [
+        {
+          "as": "admin",
+          "method": "POST",
+          "path": "/v1/tasks",
+          "status": 400,
+          "content_type": null,
+          "raw": "{\"queue\": \"eq02\", \"task_id\": \"never-runs\", \"brief\": {\"title\": \"SYNTHETIC\"}, \"not_before\": 1e999}"
+        },
+        {
+          "as": "admin",
+          "method": "POST",
+          "path": "/v1/tasks",
+          "status": 400,
+          "content_type": "text/plain",
+          "raw": "{\"queue\": \"eq02\", \"task_id\": \"rounded\", \"brief\": {\"n\": 123456789012345678901234567890}}"
+        },
+        {
+          "as": "admin",
+          "method": "POST",
+          "path": "/v1/tasks",
+          "status": 400,
+          "content_type": "application/json",
+          "raw": "{\"queue\": \"eq02\", \"task_id\": \"rounded-json\", \"brief\": {\"n\": 123456789012345678901234567890}}"
+        },
+        {
+          "as": "admin",
+          "method": "POST",
+          "path": "/v1/tasks",
+          "status": 201,
+          "content_type": null,
+          "raw": "{\"queue\": \"eq02\", \"task_id\": \"plain-ok\", \"brief\": {\"title\": \"SYNTHETIC\", \"n\": 12}}"
+        },
+        {
+          "as": "admin",
+          "method": "GET",
+          "path": "/v1/tasks/never-runs",
+          "status": 404
+        }
+      ]
     }
   ]
 }

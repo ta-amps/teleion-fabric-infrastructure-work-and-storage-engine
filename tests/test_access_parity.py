@@ -124,6 +124,10 @@ def run_step(
     for _ in range(step.get("repeat", 1)):
         if step["method"] == "GET":
             response = client.get(path, headers=headers)
+        elif "raw" in step:  # exactly these bytes, with this Content-Type or none
+            if step.get("content_type"):
+                headers["Content-Type"] = step["content_type"]
+            response = client.post(path, content=step["raw"].encode(), headers=headers)
         else:
             response = client.post(path, json=fill(step.get("body", {}), saved), headers=headers)
         assert response.status_code == step["status"], (where, path, response.text[:400])

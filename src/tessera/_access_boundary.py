@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 import secrets
 from collections.abc import Awaitable, Callable
@@ -69,6 +70,39 @@ PUBLIC_PATHS = {
     "/v1/session/requester",
 }
 MINT_ACTIONS = {"mint_session", "mint_requester"}
+# Raw-byte uploads; every other body is JSON (same routes as the Worker's bodyRoute).
+RAW_BODY = re.compile(r"/v1/blobs|/v1/buckets/[^/]+/objects/.+")
+EXACT_INTEGER = 2**53
+
+
+def _finite_float(text: str) -> float:
+    value = float(text)
+    if not math.isfinite(value):
+        raise InvalidRequest("JSON numbers must be finite")
+    return value
+
+
+def _exact_int(text: str) -> int:
+    value = int(text)
+    if abs(value) >= EXACT_INTEGER:
+        try:
+            exact = int(float(value)) == value
+        except OverflowError:
+            exact = False
+        if not exact:
+            raise InvalidRequest("JSON integers must round-trip exactly through IEEE-754")
+    return value
+
+
+def _no_constant(_: str) -> Any:
+    raise InvalidRequest("JSON numbers must be finite")
+
+
+def strict_json(raw: bytes) -> Any:
+    """JSON with the Worker's number rules: finite, and integers that survive IEEE-754 (H-07)."""
+    return json.loads(
+        raw, parse_float=_finite_float, parse_int=_exact_int, parse_constant=_no_constant
+    )
 
 
 def access_error(exc: TesseraError) -> JSONResponse:
@@ -231,9 +265,19 @@ async def access_dispatch(
                         body[field] = json.loads(body[field])
                     except ValueError as exc:
                         raise InvalidRequest("form output/input must be JSON") from exc
-        if request.method in {"POST", "PUT", "PATCH"} and "json" in request.headers.get(
-            "content-type", ""
-        ):
+        content_type = request.headers.get("content-type", "").lower()
+        # A JSON route's body is read as JSON whatever its Content-Type says, as the Worker reads
+        # it, so its numbers are checked either way (H-07); multipart bodies are not JSON.
+        as_json = "json" in content_type or not (
+            content_type.startswith("multipart/") or RAW_BODY.fullmatch(path) or work_form
+        )
+        if request.method in {"POST", "PUT", "PATCH"} and as_json:
+            if "json" not in content_type:
+                request.scope["headers"] = [
+                    (name, value)
+                    for name, value in request.scope["headers"]
+                    if name != b"content-type"
+                ] + [(b"content-type", b"application/json")]
             bounded = bool(
                 (grant and grant.anonymous)
                 or path in {"/v1/session/anonymous", "/v1/session/requester"}
@@ -253,7 +297,7 @@ async def access_dispatch(
                 raw = await request.body()
             meta["bytes_in"] = len(raw)
             try:
-                body = json.loads(raw) if raw else {}
+                body = strict_json(raw) if raw else {}
             except ValueError as exc:
                 raise InvalidRequest("request body must be valid JSON") from exc
             if not isinstance(body, dict):

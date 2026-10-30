@@ -60,11 +60,13 @@ async function fabric() {
     outboundService: () => { throw new Error("External requests are prohibited in this fixture"); },
   }] }));
   const worker = await runtime.getWorker("tessera");
-  const request = async (method, path, body, token, headers = {}) => {
+  const request = async (method, path, body, token, headers = {}, raw = undefined) => {
+    // raw: { text, contentType } sends exactly these bytes, with that Content-Type or none.
+    const base = raw ? (raw.contentType ? { "Content-Type": raw.contentType } : {}) : { "Content-Type": "application/json" };
     const response = await worker.fetch("https://tessera.example" + path, {
       method,
-      headers: { "Content-Type": "application/json", "cf-connecting-ip": "192.0.2.40", ...(token ? { Authorization: "Bearer " + token } : {}), ...headers },
-      ...(method === "GET" ? {} : { body: JSON.stringify(body ?? {}) }),
+      headers: { ...base, "cf-connecting-ip": "192.0.2.40", ...(token ? { Authorization: "Bearer " + token } : {}), ...headers },
+      ...(method === "GET" ? {} : { body: raw ? new TextEncoder().encode(raw.text) : JSON.stringify(body ?? {}) }),
     });
     const text = await response.text();
     let data = null;
@@ -108,7 +110,8 @@ async function runStep({ request, saved }, step, where) {
   const path = fill(step.path, saved);
   let response;
   for (let i = 0; i < (step.repeat || 1); i++) {
-    response = await request(step.method, path, fill(step.body || {}, saved), token, fill(step.headers || {}, saved));
+    const raw = "raw" in step ? { text: step.raw, contentType: step.content_type || null } : undefined;
+    response = await request(step.method, path, fill(step.body || {}, saved), token, fill(step.headers || {}, saved), raw);
     assert.equal(response.status, step.status, `${where}: ${path} ${JSON.stringify(response.data)?.slice(0, 400)}`);
   }
   if (step.save) saved[step.save] = response.data;

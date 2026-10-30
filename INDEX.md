@@ -308,7 +308,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [src/tessera/store.py](src/tessera/store.py) | The in-process Tessera store: the reference implementation of SPEC.md. |
 | [src/tessera/testing.py](src/tessera/testing.py) | Factories the conformance suite loads by name (TESSERABACKENDFACTORY="module:function"). |
 
-## tests/ (69)
+## tests/ (70)
 
 | File | What it is |
 |---|---|
@@ -372,6 +372,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [tests/workerd_anonymous_cost.mjs](tests/workerd_anonymous_cost.mjs) | Real Worker/SQLite: anonymous sessions stay available but cost little until used, and one |
 | [tests/workerd_blob_first_uploader.mjs](tests/workerd_blob_first_uploader.mjs) | Real Worker/SQLite: a key can always read back bytes it uploaded, whoever stored them first, |
 | [tests/workerd_blob_identity.mjs](tests/workerd_blob_identity.mjs) | Real Worker/SQLite: content identity comes from the uploaded bytes, never from a client header. |
+| [tests/workerd_body_limits.mjs](tests/workerd_body_limits.mjs) | Real Worker: body limits follow the route itself (H-65). |
 | [tests/workerd_client_addresses.mjs](tests/workerd_client_addresses.mjs) | Real Worker/SQLite: per-IP limits count in the hour their daily-rotated IP hash was computed, so a |
 | [tests/workerd_execution_history.mjs](tests/workerd_execution_history.mjs) | Actual Worker handlers and ephemeral SQLite Durable Objects; no provider or cloud access. |
 | [tests/workerd_execution_learning.mjs](tests/workerd_execution_learning.mjs) | Actual Worker and SQLite Durable Objects: learning reports, observations and row costs. |

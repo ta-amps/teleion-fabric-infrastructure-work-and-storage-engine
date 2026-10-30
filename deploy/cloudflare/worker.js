@@ -1515,6 +1515,18 @@ const worker = {
 };
 
 
+// What a route's body holds. Blob and bucket-object uploads are raw bytes and /work forms are
+// form posts; every other body is parsed as JSON whatever its Content-Type says, so its numbers
+// are checked whatever it says too (H-07). The 16 MiB cap belongs to the blob upload route itself,
+// not to any path that contains "/blobs" (H-65).
+export function bodyRoute(pathname) {
+  const path = pathname.replace(/^\/ns\/[^/]+(?=\/)/, "");
+  if (path === "/v1/blobs") return { kind: "bytes", limit: 16 * 1024 * 1024 };
+  if (/^\/v1\/buckets\/[^/]+\/objects\/./.test(path)) return { kind: "bytes", limit: 1024 * 1024 };
+  if (path === "/work" || path.startsWith("/work/")) return { kind: "form", limit: 1024 * 1024 };
+  return { kind: "json", limit: 1024 * 1024 };
+}
+
 const onboardingApplication = {
   scheduled: worker.scheduled,
   async fetch(request, env, ctx) {
@@ -1524,7 +1536,8 @@ const onboardingApplication = {
     try {
       const h = new Headers(request.headers); h.set("x-request-id", requestId);
       if (request.body) {
-        const limit = (h.get("authorization") || "").startsWith("Bearer tan_") ? 65536 : new URL(request.url).pathname.includes("/blobs") ? 16*1024*1024 : 1024*1024;
+        const route = bodyRoute(new URL(request.url).pathname);
+        const limit = (h.get("authorization") || "").startsWith("Bearer tan_") ? 65536 : route.limit;
         const reader = request.body.getReader(); const chunks = []; let size = 0;
         while (true) {
           const { done, value } = await reader.read(); if (done) break;
@@ -1535,7 +1548,7 @@ const onboardingApplication = {
         h.set("content-length", String(size));
         const bytes = new Uint8Array(size); let offset = 0;
         for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
-        if ((h.get("content-type") || "").includes("json")) validateWireNumbers(new TextDecoder().decode(bytes));
+        if (route.kind === "json") validateWireNumbers(new TextDecoder().decode(bytes));
         h.set("content-length", String(size));
         request = new Request(request, { headers: h, body: bytes });
       } else request = new Request(request, { headers: h });
