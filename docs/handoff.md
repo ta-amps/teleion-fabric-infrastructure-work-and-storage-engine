@@ -23,6 +23,8 @@ certification.
 
 ## Earlier handoff
 
+> Note, October 29, 2026: this dated section predates the current model, in which Tessera is infrastructure, Eranos and one overview site are the only public surfaces, and everything else, agent kits included, is nouns and verbs in seed packs; the exploitation and scam surface it describes is archived, and its nouns and verbs are now a pack in the [pack library](https://github.com/ta-amps/pack-contributions).
+
 Where the work stands as of Oct 26, 2026, how to verify every guarantee from a fresh clone, what sits in
 `briefs/` for the next workers, and how Shamash and Eranos connect to the fabric.
 

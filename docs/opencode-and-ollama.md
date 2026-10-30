@@ -1,9 +1,10 @@
 # Bilateral swarm testing with OpenCode & Ollama Cloud (`muse-spark-open`)
 
 Before switching to hosted Meta Model API keys (`https://api.meta.ai/v1`), you can exercise every
-Tessera, Eranos, and Shamash workflow locally and bilaterally using **OpenCode** (`opencode v2.x`
-over Streamable HTTP `/mcp`) and **Meta's open-weight `muse-spark-open`** on **Ollama Cloud**
-(`https://ollama.com/v1`) or a local Ollama server.
+Tessera and Eranos workflow, and the verbs in seed packs, locally and bilaterally using **OpenCode**
+(`opencode v2.x` over Streamable HTTP `/mcp`) and **Meta's open-weight `muse-spark-open`** on
+**Ollama Cloud** (`https://ollama.com/v1`) or a local Ollama server. Tessera is infrastructure; Eranos and one
+overview site are the only public surfaces, and everything else is nouns and verbs in seed packs.
 
 ## 1. Connect OpenCode directly to Tessera `/mcp`
 
@@ -77,10 +78,10 @@ OLLAMA_API_KEY=<your-ollama-key> \
   uv run python tools/opencode_bilateral.py --live-ollama --live-opencode
 ```
 
-## 3. Test Meta `/v1/responses` callers (including Shamash) via `meta_open_bridge.py`
+## 3. Test Meta `/v1/responses` callers via `meta_open_bridge.py`
 
-Product surfaces such as [Shamash](https://github.com/ta-amps/shamash) speak strictly to Meta's
-`/v1/responses` contract in Standard mode. `tools/meta_open_bridge.py` exposes `/v1/responses`,
+Some callers speak strictly to Meta's `/v1/responses` contract in Standard mode.
+`tools/meta_open_bridge.py` exposes `/v1/responses`,
 `/v1/responses/{id}`, `/v1/responses/{id}/cancel`, and `/v1/models` locally on `127.0.0.1:7799` and
 bridges requests to `muse-spark-open` (still refusing any `-contributor` model id):
 
@@ -88,9 +89,8 @@ bridges requests to `muse-spark-open` (still refusing any `-contributor` model i
 # Terminal 1: start the local Meta Responses -> muse-spark-open bridge
 OLLAMA_API_KEY=<your-ollama-key> uv run python tools/meta_open_bridge.py --port 7799
 
-# Terminal 2: run Shamash's unmodified Meta Model API smoke call against the bridge
-cd ../shamash
-MODEL_API_BASE=http://127.0.0.1:7799/v1 MODEL_API_KEY=local-bridge uv run shamash muse-smoke
+# Terminal 2: point any Responses API caller at the bridge instead of https://api.meta.ai/v1
+MODEL_API_BASE=http://127.0.0.1:7799/v1 MODEL_API_KEY=local-bridge <your caller's smoke command>
 ```
 
 See [expansion.md](expansion.md) for the staged noun-store design (`seeds` → `proposals` →

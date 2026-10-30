@@ -2,7 +2,8 @@
 
 How a Muse Code agent, MCP client, or Meta Model API worker (`muse-spark-1.3`, `muse-wonder-1.0` in
 Standard mode) safely **adds new atomic nouns and verbs and processes them end to end** without unbounded
-fan-out or unreviewed store pollution.
+fan-out or unreviewed store pollution. Tessera is infrastructure; Eranos and one overview site are the only
+public surfaces, and everything else, agent kits included, is nouns and verbs in seed packs.
 
 For source-discovery meta-seeds and proposed daily collection, use the newer
 [research seed authoring tool](research-seeds.md). It creates bounded worker
@@ -12,7 +13,8 @@ general recurring research scheduler is not installed by either workflow.
 ## Why dedicated `seed` and `expand` queues + staged noun stores?
 
 If any swarm worker could recursively spawn tasks on execution queues or write directly into canonical
-stores (`shamash` statute cards, `eranos.catalog` NGO kits), two failure modes appear immediately:
+stores (rule cards in a seed pack, or `eranos.catalog` agent kits for NGOs), two failure modes appear
+immediately:
 
 1. **Runaway fan-out:** an agent splits tasks that split tasks indefinitely, burning donated or budgeted
    tokens.
@@ -36,7 +38,7 @@ flowchart LR
 
 | Store | Key shape | Who writes | Guarantees |
 |---|---|---|---|
-| `seeds` | `<seed-id>` | Operator or seed-scoped intake key (`expected_version=None`) | Holds the topic, target namespace (`shamash.harm_pack`, `eranos.kit`, etc.), safety rules, and explicit fan-out budget (`max_depth` ≤ 3, `max_children` ≤ 8) |
+| `seeds` | `<seed-id>` | Operator or seed-scoped intake key (`expected_version=None`) | Holds the topic, target namespace (for example `eranos.kit`), safety rules, and explicit fan-out budget (`max_depth` ≤ 3, `max_children` ≤ 8) |
 | `proposals` | `prop-<seed-id>` | Proposer & enricher workers (`expected_version=None` then `1, 2, ...`) | Staging noun enriched across child verbs using compare-and-set so concurrent workers never clobber one another; records `proposed_by_worker` and content-addressed `blob_sha256s` |
 | `canonical` | `<namespace>:<proposal-id>` | Independent reviewer (`reviewer != proposed_by_worker`) | Published only through a single atomic `put_records` batch that marks `proposals/<id>` `promoted` and creates `canonical/<ns>:<id>` together |
 

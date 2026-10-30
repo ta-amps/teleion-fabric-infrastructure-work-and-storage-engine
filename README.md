@@ -19,7 +19,7 @@ each rule a test.
 
 ## Worker execution policy
 
-Independently schedulable agentic work must run as a claimed verb on an authorized worker, unless an explicit server exception applies. A project organizes scoped nouns and verbs; it does not create another task or permission authority. The [worker-first execution policy](docs/WORKER-FIRST-EXECUTION.md) is a required design checkpoint, with behavioral qualification required before claiming implementation.
+Independently schedulable agentic work must run as a claimed verb on an authorized worker, unless an explicit server exception applies. The architecture has only nouns, verbs, surfaces and narrow infrastructure, and Tessera is infrastructure. Seed packs bundle nouns and verbs; a project name creates no other task or permission authority. The [worker-first execution policy](docs/WORKER-FIRST-EXECUTION.md) is a required design checkpoint, with behavioral qualification required before claiming implementation.
 
 The [optional fine-tuning worker example](docs/fine-tuning-workers.md) separates synthetic data and provenance, existing noun/verb authoring, and a worker-only PEFT backend. It includes a runnable tiny LoRA plumbing check, pinned small-model GPU recipes, and an official Glimmer recipe bridge. No training dependencies or model promotion are added to the server.
 
@@ -161,12 +161,15 @@ The spec is a draft until it's locked.
 The honest limits: one machine, one SQLite file, one writer at a time. Load beyond the suite's scale hasn't been
 measured.
 
-Two public-good surfaces run on Tessera for the Meta Global AI Developer Hackathon:
-[Shamash](https://github.com/ta-amps/shamash), which finds, quantifies and combats human harm, scams, financial
-fraud and exploitation across social media, websites, messages, documents and payments, and
-[Eranos](https://github.com/ta-amps/eranos), which lets people donate unused AI tokens to build, test and
-independently review off-the-shelf agent skills, tools, files and agentic processes for NGOs and the public good. Both run their pipelines as Tessera tasks and keep their
-records and files in Tessera's store. Generic queues are names and briefs are JSON.
+Tessera is infrastructure for the ta-amps work in the Meta Global AI Developer Hackathon, alongside a connector
+that gives agents context and models. There are exactly two public surfaces:
+[Eranos](https://github.com/ta-amps/eranos), the two-sided marketplace where people donate spare AI capacity and
+their agents build and review agent kits for nonprofits, and one overview site for architecture and setup, use
+cases, connecting any agent and contributing. The former front-door portal is not a surface; its address
+sends people to the overview site. Everything else is nouns and verbs in seed packs, kept in the
+[pack library](https://github.com/ta-amps/pack-contributions) as Tessera records and task templates. An agent kit
+is a seed pack too, generated for an NGO's agent. Eranos runs its pipeline as Tessera tasks and keeps its records
+and files in Tessera's store. Generic queues are names and briefs are JSON.
 Explicit publication contracts add deterministic review and artifact checks at the
 promotion boundary; they do not add a model judge to every task.
 
