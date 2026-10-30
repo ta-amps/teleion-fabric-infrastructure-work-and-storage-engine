@@ -81,8 +81,18 @@ blobs, captured the training execution and denied a different principal record,
 blob and execution reads. The GPU run used 3,584 trainable parameters, measured
 41,225,728 bytes peak allocated memory, and reloaded with zero probe-logit
 difference. Its synthetic test loss changed from 5.586128 to 5.396280. Those
-measurements qualify this tiny plumbing example only. Pretrained Llama, Glimmer,
-Kaggle and useful-task quality runs remain unrun.
+measurements qualify this tiny plumbing example only.
+
+Pretrained models have since been tuned on synthetic tasks: typed tool calls for
+Tessera's own tools. Their training rows came from repository templates, and no
+model wrote any of them. [Continuous tuning](continuous-tuning.md#measured-results)
+has the Llama 3.2 1B and 3B rounds. A Muse Glimmer 30B QLoRA adapter, trained on
+Kaggle's free GPUs, went from 93.3% to 99.3% exact match on a fresh synthetic test of
+150 rows whose hashes were registered before scoring. The
+[evidence](https://github.com/ta-amps/agora-public-overview-architecture-setup-and-contribution/tree/main/evidence/glimmer-30b-2026-10-29)
+is in Agora. These are synthetic tasks, not a measured improvement on real work.
+Nothing was promoted, admitted or registered, the adapter weights are not published,
+and useful-task quality runs remain unrun.
 
 The explicit `sequence_budget` is a memory recipe, not an inference response
 ceiling. Every full prompt and target must fit; over-length examples fail with
