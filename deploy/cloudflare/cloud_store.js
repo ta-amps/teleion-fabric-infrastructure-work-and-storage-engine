@@ -1,5 +1,5 @@
 import { initExecutions, checkedReport, prepareExecution, validatePrepared, captureExecution, recallExecution, getExecution, listExecutions } from "./cloud_executions.js";
-import { initAccess, principalMetadata, requestIdentity, mintAnonymous, seedDemo, ensureDemoSeeded, enforceAccess, audit, auditMode, countAccess, ownAudit, publicActivity, publicPrincipal } from "./cloud_access.js";
+import { initAccess, principalMetadata, requestIdentity, mintAnonymous, seedDemo, ensureDemoSeeded, enforceAccess, audit, auditMode, countAccess, ownAudit, publicActivity, publicPrincipal, CLOSED_TO_ANONYMOUS, openToAnonymous, usesOpenVerbs } from "./cloud_access.js";
 // TesseraCoordinator: single-writer SQLite Durable Object (`new_sqlite_classes`) implementing
 // 100% of Tessera Spec v0.2 (queues, 5 verbs, dependencies, waves, park/resume, model jobs,
 // counts, events, scoped keys, queryable CAS records, persistent named file buckets,
@@ -1438,10 +1438,22 @@ export class TesseraCoordinator extends DurableObject {
     };
   }
 
+  // Outside its own namespace an anonymous session reaches only verbs whose producer opened them;
+  // task visibility and enforceAccess decide which ones (same rule as KeyGrant.may_use_queue).
+  _mayUseQueue(grant, queue) {
+    return grant.is_admin || grant.allowsQueue(queue) || (usesOpenVerbs(grant, this.namespace) && !CLOSED_TO_ANONYMOUS.has(queue));
+  }
+
   _requireQueue(grant, queue) {
-    if (!(grant.is_admin || grant.allowsQueue(queue))) {
+    if (!this._mayUseQueue(grant, queue)) {
       throw forbid(`this key may not use queue '${queue}'`);
     }
+  }
+
+  // An open verb carries its whole input in its brief; its anonymous claimant sees the state of
+  // related tasks, never their outputs or the keys that completed them.
+  _leaseResults(grant, results) {
+    return usesOpenVerbs(grant, this.namespace) ? results.map(r => ({ ...r, output: null, completed_by_key: null })) : results;
   }
 
   _requireEffect(grant, effectClass) {
@@ -1502,6 +1514,8 @@ export class TesseraCoordinator extends DurableObject {
   _taskVisible(row, grant, viewerCtx) {
     if (grant.is_admin) return true;
     const tags = parseJsonSafe(row.tags, []);
+    // Deny by default: outside its own namespace an anonymous session sees only opened verbs.
+    if (usesOpenVerbs(grant, this.namespace)) return openToAnonymous(row.queue, tags, row.effect_class);
     if (tags.includes("status:quarantined") && viewerCtx.surface !== row.producer_surface) return false;
     if (row.visibility_scope === "private") return row.owner_key_id === grant.key_id;
     if (row.visibility_scope === "surface_only") return Boolean(viewerCtx.surface && viewerCtx.surface === row.producer_surface);
@@ -1882,7 +1896,7 @@ export class TesseraCoordinator extends DurableObject {
       else if (action === "listVerbs") {
         const rows=this._all("SELECT * FROM tasks WHERE namespace=? AND (?='' OR queue=?) AND (?='' OR state=?) ORDER BY created_at,id LIMIT 1000",ns,args.queue||"",args.queue||"",args.status||"ready",args.status||"ready");
         const view=this._viewerCtx(grant,args.surfaceHeader);
-        out={ok:true,status:200,data:{verbs:rows.filter(r=>this._taskVisible(r,grant,view)&&grant.queues.some(q=>globMatch(r.queue,q))).slice(0,Math.max(1,Math.min(Number(args.limit)||50,100))).map(r=>this._taskView(r.id))}};
+        out={ok:true,status:200,data:{verbs:rows.filter(r=>this._taskVisible(r,grant,view)&&this._mayUseQueue(grant,r.queue)).slice(0,Math.max(1,Math.min(Number(args.limit)||50,100))).map(r=>this._taskView(r.id))}};
       }
       else if (action === "claimEvents") {
         const row = this._taskRow(String(args.task_id));
@@ -2204,7 +2218,9 @@ export class TesseraCoordinator extends DurableObject {
         case "task": {
           const view = this._taskView(String(args.task_id));
           this._requireQueue(grant, view.queue);
-          if (
+          if (usesOpenVerbs(grant, this.namespace)) {
+            if (!this._taskVisible(this._taskRow(String(args.task_id)), grant, viewerCtx)) throw notFound(`task '${view.task_id}' does not exist`);
+          } else if (
             !canViewGoverned({
               visibility_scope: view.visibility_scope,
               producer_surface: view.producer_surface,
@@ -2328,8 +2344,8 @@ export class TesseraCoordinator extends DurableObject {
                 expires_at: expires,
                 hard_expires_at: hard,
                 heartbeat_seconds: config.heartbeat_seconds,
-                children: this._children(row.id),
-                dependencies: this._dependencies(row.id),
+                children: this._leaseResults(grant, this._children(row.id)),
+                dependencies: this._leaseResults(grant, this._dependencies(row.id)),
                 inputs: this._inputs(row.id),
               };
             });
@@ -2398,8 +2414,8 @@ export class TesseraCoordinator extends DurableObject {
               expires_at: expires,
               hard_expires_at: Number(row.hard_expires_at),
               heartbeat_seconds: config.heartbeat_seconds,
-              children: this._children(taskId),
-              dependencies: this._dependencies(taskId),
+              children: this._leaseResults(grant, this._children(taskId)),
+              dependencies: this._leaseResults(grant, this._dependencies(taskId)),
               inputs: this._inputs(taskId),
             };
           });

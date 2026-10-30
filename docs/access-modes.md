@@ -50,6 +50,8 @@ header using the client's secret mechanism, not a committed project file:
 | Request bytes | 65,536 |
 | Session mints per IP hash per hour | 10 |
 | Global session mints per hour | 1,000 |
+| Open-verb claims per session per hour | 5 |
+| Open-verb claims per IP hash per hour | 10 |
 
 Limits use persistent atomic counters. Rejected or repeated write attempts can
 consume quota. A limit returns `429` with `Retry-After`; an oversized anonymous
@@ -69,6 +71,33 @@ admin calls, production queues and other principals' namespaces are denied.
 Use synthetic examples and `example.com` addresses. Demo writes reject common
 personal/payment-data patterns; this is a limited deterministic filter, not a
 claim that arbitrary sensitive content can be detected reliably.
+
+## Open verbs
+
+A verb's producer can open it to tracked anonymous sessions by tagging it
+`open:anonymous`. Contributing is then ordinary work: a session selects the shared
+namespace with `X-Namespace: main` (or `/ns/main/v1/...`), lists open verbs, claims one,
+heartbeats, and submits its result as the verb's output. There is no separate
+contribution subsystem; the receipt and the execution record name the session, and every
+receipt carries the session's immutable `origin:anonymous` and `untrusted:true` labels.
+
+The rule is deny by default:
+
+| In the shared namespace an anonymous session may | It may never |
+| --- | --- |
+| list, claim, heartbeat and submit verbs tagged `open:anonymous` | claim `eq03`, `frontier.review` or `frontier.verify` verbs, whatever their tags |
+| read the task, results and events of verbs it claimed | read other verbs, results, nouns, blobs or principals |
+| use `/v1/me` and its own audit | enqueue, split, park, resume, cancel, write nouns or blobs |
+
+An open verb carries its whole input in its brief. The claimant sees the state of related
+tasks, never their outputs or the keys that completed them. A submitted result stays with
+its verb and keeps the verb's visibility and quarantine tags, so it is neither public nor
+in any catalog. Review is a separate verb for a different worker: the store refuses an
+approval completed by an anonymous session, as it refuses a drafter approving its own work.
+Personal-data patterns, request size, cumulative bytes and the hourly limits above apply as
+they do to demo writes. One claim may be live at a time in each namespace. Claim attempts
+count, including empty ones, so list first and claim when something is ready. Abandoned or
+failed attempts count toward the queue's dead-letter limit like any other attempt.
 
 ## A complete HTTP loop
 

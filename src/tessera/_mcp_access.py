@@ -96,7 +96,7 @@ def register_access_tools(
 
     @server.tool(
         name="list_verbs",
-        description="List authorized atomic verbs by queue and state. Requires a session or key. Anonymous callers see only their private demo verbs.",
+        description="List authorized atomic verbs by queue and state. Requires a session or key. Anonymous callers see their private demo verbs, and in the main namespace only verbs tagged open:anonymous.",
     )
     async def verbs(
         queue: str | None = None, status: str = "ready", limit: int = 100

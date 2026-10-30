@@ -22,6 +22,7 @@ from tessera.errors import (
     NotFound,
     StaleLease,
 )
+from tessera.grants import OPEN_VERB_NAMESPACE
 from tessera.models import (
     EFFECT_RANK,
     MAX_DEPENDENCIES,
@@ -336,7 +337,7 @@ class TaskOps(GraphOps):
             )
             return Lease(
                 namespace=ns,
-                labels=anonymous_labels(json.loads(row["tags"]), self.current_scope().labels),
+                labels=self._actor_labels(json.loads(row["tags"])),
                 claim_receipt=claim_receipt_hash(ns, row["id"], token, now),
                 task_id=row["id"],
                 queue=queue,
@@ -350,10 +351,22 @@ class TaskOps(GraphOps):
                 expires_at=expires,
                 hard_expires_at=hard,
                 heartbeat_seconds=config.heartbeat_seconds,
-                children=self._children(c, ns, row["id"]),
-                dependencies=self._dependencies(c, ns, row["id"]),
+                children=self._lease_results(self._children(c, ns, row["id"])),
+                dependencies=self._lease_results(self._dependencies(c, ns, row["id"])),
                 inputs=self._inputs(c, ns, row["id"]),
             )
+
+    def _actor_labels(self, tags: list[str]) -> dict[str, Any]:
+        ctx = self.current_scope()
+        return anonymous_labels(tags, ctx.labels, actor_anonymous=ctx.anonymous)
+
+    def _lease_results(self, results: list[ChildResult]) -> list[ChildResult]:
+        """An open verb carries its whole input in its brief. Its anonymous claimant sees the
+        state of related tasks, never their outputs or the keys that completed them."""
+        ctx = self.current_scope()
+        if not (ctx.anonymous and ctx.namespace == OPEN_VERB_NAMESPACE):
+            return results
+        return [r.model_copy(update={"output": None, "completed_by_key": None}) for r in results]
 
     def heartbeat(self, task_id: str, fencing_token: int, *, namespace: str | None = None) -> Lease:
         """Extend a live lease. A lapsed or superseded lease raises StaleLease."""
@@ -395,7 +408,7 @@ class TaskOps(GraphOps):
                 )
                 lease = Lease(
                     namespace=ns,
-                    labels=anonymous_labels(json.loads(task["tags"]), self.current_scope().labels),
+                    labels=self._actor_labels(json.loads(task["tags"])),
                     claim_receipt=claim_receipt_hash(ns, task_id, fencing_token, row["claimed_at"]),
                     task_id=task_id,
                     queue=task["queue"],
@@ -409,8 +422,8 @@ class TaskOps(GraphOps):
                     expires_at=expires,
                     hard_expires_at=row["hard_expires_at"],
                     heartbeat_seconds=config.heartbeat_seconds,
-                    children=self._children(c, ns, task_id),
-                    dependencies=self._dependencies(c, ns, task_id),
+                    children=self._lease_results(self._children(c, ns, task_id)),
+                    dependencies=self._lease_results(self._dependencies(c, ns, task_id)),
                     inputs=self._inputs(c, ns, task_id),
                 )
         if lease is None:
@@ -493,7 +506,7 @@ class TaskOps(GraphOps):
                 task = self._task_row(c, ns, task_id)
                 config = self._queue_config(c, ns, task["queue"])
                 digest = receipt_hash(task_id, fencing_token, ok, output, error)
-                labels = anonymous_labels(json.loads(task["tags"]), self.current_scope().labels)
+                labels = self._actor_labels(json.loads(task["tags"]))
                 effective_completed_by = actor_key if actor_key is not None else row["key_id"]
                 if task["queue"] == "eq03" and ok and effective_completed_by:
                     review_proof(c, ns, task_id, effective_completed_by, output)

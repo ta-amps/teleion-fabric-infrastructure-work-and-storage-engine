@@ -7,7 +7,31 @@ export const DEMO_QUOTAS = Object.freeze({
   session_seconds: 3600, retention_seconds: 86400, claims_per_hour: 20,
   concurrent_claims: 1, storage_bytes: 1048576, requests_per_hour: 300,
   request_bytes: 65536, sessions_per_ip_hour: 10,
+  open_claims_per_hour: 5, open_claims_per_ip_hour: 10,
 });
+// Open verbs (same rule as src/tessera/grants.py). A producer opens a verb to tracked anonymous
+// sessions by tagging it open:anonymous; such a session may then claim, heartbeat and submit it in
+// the shared namespace and read only its own work there. Review, approval and publication verbs
+// stay closed whatever their tags say.
+export const OPEN_VERB_TAG = "open:anonymous";
+export const OPEN_VERB_NAMESPACE = "main";
+export const CLOSED_TO_ANONYMOUS = new Set(["eq03", "frontier.review", "frontier.verify"]);
+const OPEN_VERB_EFFECTS = new Set(["read", "write-internal"]);
+export const OPEN_VERB_ACTIONS = new Set(["claim", "heartbeat", "submit", "task", "results", "claimEvents", "listVerbs", "me", "my_audit"]);
+const OWN_WORK_ACTIONS = new Set(["task", "results", "claimEvents"]);
+export function openToAnonymous(queue, tags, effectClass) {
+  return Array.isArray(tags) && tags.includes(OPEN_VERB_TAG) && !CLOSED_TO_ANONYMOUS.has(queue) && OPEN_VERB_EFFECTS.has(effectClass);
+}
+export function usesOpenVerbs(grant, ns) {
+  return grant?.principal_kind === "anonymous" && ns === OPEN_VERB_NAMESPACE && grant.namespace !== ns;
+}
+export function openVerbsDescription() {
+  return { namespace: OPEN_VERB_NAMESPACE, tag: OPEN_VERB_TAG,
+    how: "Send X-Namespace: main (or call /ns/main/v1/...) to list, claim, heartbeat and submit verbs whose producer tagged them open:anonymous.",
+    actions: [...OPEN_VERB_ACTIONS].sort(), closed_queues: [...CLOSED_TO_ANONYMOUS].sort(),
+    claimant_sees: "the verb's brief, its own receipts and the state of related tasks; never other outputs, nouns or principals",
+    review: "A submitted result stays quarantined with its verb. A different keyed worker or a person reviews it; anonymous sessions never approve or publish." };
+}
 export const ANON_LABELS = Object.freeze({ origin: "anonymous", demo: true, untrusted: true });
 export const GLOBAL_SESSIONS_PER_HOUR = 1000;
 const ANON_ACTIONS = new Set(["recallExecution", "getExecution", "listExecutions",
@@ -113,6 +137,10 @@ export function namespaceAllowed(grant, ns) {
   if (grant?.is_admin || scopes.includes("admin")) return true;
   const namespaceScopes = scopes.filter(s => s.startsWith("namespace:"));
   return namespaceScopes.length ? namespaceScopes.some(s => s === `namespace:${ns}` || s === "namespace:*") : ns === "main";
+}
+// A namespace a principal may reach at all: its grants, or the shared namespace's open verbs.
+export function namespaceReachable(grant, ns) {
+  return namespaceAllowed(grant, ns) || usesOpenVerbs(grant, ns);
 }
 
 // Counters are buffered in object memory and written when their minute has passed, when the
@@ -259,7 +287,8 @@ export async function ensureDemoSeeded(c, grant, ns) {
 
 export function enforceAccess(c, grant, action, args) {
   const ns = args.namespace || "main";
-  if (!namespaceAllowed(grant, ns)) throw error(403, "scope_denied", "this principal may not access this namespace");
+  const openVerbs = usesOpenVerbs(grant, ns);
+  if (!openVerbs && !namespaceAllowed(grant, ns)) throw error(403, "scope_denied", "this principal may not access this namespace");
   const fineScopes = grant.scopes.some(s => s.includes(":") && !s.startsWith("surface:") && !s.startsWith("namespace:"));
   const required = SCOPES[action] || (READ_ACTIONS.has(action) ? "nouns:read" : null);
   if (!grant.is_admin && fineScopes && required && !grant.scopes.includes(required)) throw error(403, "scope_denied", `missing ${required} scope`);
@@ -273,9 +302,16 @@ export function enforceAccess(c, grant, action, args) {
   checkGov(args);
   for (const w of args.writes || []) checkGov(w);
   if (grant.principal_kind !== "anonymous") return args;
-  if (!ANON_ACTIONS.has(action)) throw error(403, "scope_denied", "anonymous sessions may only use isolated demo nouns and verbs");
-  if (args.queue && !String(args.queue).startsWith("demo.")) throw error(403, "scope_denied", "anonymous sessions cannot access production verbs");
-  if (args.store && !String(args.store).startsWith("demo.")) throw error(403, "scope_denied", "anonymous sessions cannot access production nouns");
+  if (openVerbs) {
+    if (!OPEN_VERB_ACTIONS.has(action)) throw error(403, "scope_denied", "outside its own namespace an anonymous session may only claim, heartbeat and submit open verbs");
+    if (args.queue && CLOSED_TO_ANONYMOUS.has(String(args.queue))) throw error(403, "scope_denied", "review, approval and publication verbs are closed to anonymous");
+    if (OWN_WORK_ACTIONS.has(action) && !c._one("SELECT 1 AS own FROM leases WHERE namespace=? AND task_id=? AND key_id=? UNION ALL SELECT 1 AS own FROM results WHERE namespace=? AND task_id=? AND completed_by_key=? LIMIT 1", ns, String(args.task_id || ""), grant.key_id, ns, String(args.task_id || ""), grant.key_id))
+      throw error(404, "not_found", "task does not exist");
+  } else {
+    if (!ANON_ACTIONS.has(action)) throw error(403, "scope_denied", "anonymous sessions may only use isolated demo nouns and verbs");
+    if (args.queue && !String(args.queue).startsWith("demo.")) throw error(403, "scope_denied", "anonymous sessions cannot access production verbs");
+    if (args.store && !String(args.store).startsWith("demo.")) throw error(403, "scope_denied", "anonymous sessions cannot access production nouns");
+  }
   const governed = value => ({ ...value, namespace: ns, producer_surface: "surface:tessera", owner_key_id: grant.key_id,
     visibility_scope: "private", allowed_surfaces: [], target_cohorts: ["all"],
     tags: [...new Set([...(value.tags || []).filter(t => !/^(status|origin|demo|untrusted):/.test(t)), "origin:anonymous", "demo:true", "untrusted:true"])] });
@@ -299,6 +335,16 @@ export function enforceAccess(c, grant, action, args) {
     const active = c._one("SELECT COUNT(*) n FROM leases WHERE namespace=? AND key_id=? AND expires_at>? AND hard_expires_at>?", ns, grant.key_id, now, now).n;
     if (row.requests >= DEMO_QUOTAS.requests_per_hour || (action === "claim" && (row.claims >= DEMO_QUOTAS.claims_per_hour || active >= DEMO_QUOTAS.concurrent_claims)) || (WRITE_ACTIONS.has(action) && total + bytes > DEMO_QUOTAS.storage_bytes))
       throw error(429, "rate_limited", "demo quota exceeded", { retry_after: Math.ceil(action === "claim" && active ? 30 : 3600 - now % 3600) });
+    if (openVerbs && action === "claim") {
+      // Open verbs are shared work: cap claim attempts per session and per IP hash.
+      const caps = [[`open:${grant.key_id}`, DEMO_QUOTAS.open_claims_per_hour], [`open-ip:${args.access_meta?.ip_hash || "unknown"}`, DEMO_QUOTAS.open_claims_per_ip_hour]];
+      for (const [capSubject, ceiling] of caps) {
+        c.ctx.storage.sql.exec("INSERT OR IGNORE INTO access_limits(subject,window) VALUES (?,?)", capSubject, window);
+        if (c._one("SELECT claims FROM access_limits WHERE subject=? AND window=?", capSubject, window).claims >= ceiling)
+          throw error(429, "rate_limited", "open verb claim quota exceeded", { retry_after: Math.ceil(3600 - now % 3600) });
+      }
+      for (const [capSubject] of caps) c.ctx.storage.sql.exec("UPDATE access_limits SET claims=claims+1 WHERE subject=? AND window=?", capSubject, window);
+    }
     c.ctx.storage.sql.exec("UPDATE access_limits SET requests=requests+1,claims=claims+?,bytes=bytes+? WHERE subject=? AND window=?", action === "claim" ? 1 : 0, WRITE_ACTIONS.has(action) ? bytes : 0, subject, window);
   });
   return args;

@@ -20,6 +20,7 @@ from typing import Any
 from tessera._legacy_privacy import harden_task_tombstones
 from tessera.clock import Clock, SystemClock
 from tessera.errors import Forbidden, InvalidRequest, NotFound
+from tessera.grants import OPEN_VERB_NAMESPACE, open_to_anonymous
 from tessera.models import (
     QueueConfig,
     TaskView,
@@ -270,6 +271,10 @@ class StoreBase:
         if ctx.is_admin:
             return True
         tags = json.loads(row["tags"])
+        if ctx.anonymous and ctx.namespace == OPEN_VERB_NAMESPACE:
+            # Deny by default: outside its own namespace an anonymous session sees only verbs
+            # whose producer opened them, and never review or publication verbs.
+            return open_to_anonymous(row["queue"], tags, row["effect_class"])
         if "status:quarantined" in tags and ctx.surface != row["producer_surface"]:
             return False
         if row["visibility_scope"] == "private":

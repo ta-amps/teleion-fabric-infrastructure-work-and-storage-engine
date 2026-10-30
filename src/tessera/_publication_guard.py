@@ -30,6 +30,11 @@ def review_proof(
     drafter = dep["completed_by_key"]
     if not drafter or drafter == actor:
         raise Forbidden("an independent authenticated reviewer is required")
+    reviewer = c.execute(
+        "SELECT principal_kind FROM access_principals WHERE key_id=?", (actor,)
+    ).fetchone()
+    if reviewer is not None and reviewer["principal_kind"] == "anonymous":
+        raise Forbidden("an anonymous session never approves; a keyed reviewer or a person must")
     if (
         output.get("review_task_id") != task_id
         or output.get("drafter_key_id") != drafter

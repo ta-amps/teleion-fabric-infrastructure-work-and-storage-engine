@@ -68,7 +68,7 @@ def list_verbs(
     verbs = []
     with store._read() as c:
         for row in c.execute(sql, params):
-            if (grant.is_admin or grant.allows_queue(row["queue"])) and store._task_visible(row):
+            if grant.may_use_queue(row["queue"], ns) and store._task_visible(row):
                 verbs.append(store._task_view(c, ns, row["id"]).model_dump(mode="json"))
                 if len(verbs) >= max(1, min(limit, 200)):
                     break

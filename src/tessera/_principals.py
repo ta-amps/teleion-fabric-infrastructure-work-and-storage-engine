@@ -12,8 +12,8 @@ import secrets
 from typing import TYPE_CHECKING, Any, cast
 
 from tessera._access_schema import AccessSchemaOps
-from tessera.errors import InvalidRequest, RateLimited, ScopeDenied
-from tessera.grants import KeyGrant
+from tessera.errors import InvalidRequest, NotFound, RateLimited, ScopeDenied
+from tessera.grants import CLOSED_TO_ANONYMOUS, KeyGrant
 from tessera.models import QueueConfig, RecordWrite, TaskSpec
 
 if TYPE_CHECKING:
@@ -28,6 +28,8 @@ DEMO_QUOTAS = {
     "requests_per_hour": 300,
     "request_bytes": 65536,
     "sessions_per_ip_hour": 10,
+    "open_claims_per_hour": 5,
+    "open_claims_per_ip_hour": 10,
 }
 ANON_LABELS: dict[str, Any] = {"origin": "anonymous", "demo": True, "untrusted": True}
 # Successful actions keep one audit row each, reads included. Denied, failed and no-op
@@ -121,6 +123,21 @@ ANON_ACTIONS = {
     "my_audit",
 }
 WRITE_ACTIONS = {"putRecords", "submit", "enqueue"}
+# Outside its own namespace an anonymous session may only work an open verb and read its own work.
+OPEN_VERB_ACTIONS = frozenset(
+    {
+        "claim",
+        "heartbeat",
+        "submit",
+        "task",
+        "results",
+        "claimEvents",
+        "listVerbs",
+        "me",
+        "my_audit",
+    }
+)
+OWN_WORK_ACTIONS = frozenset({"task", "results", "claimEvents"})
 
 
 class DemoPayloadTooLarge(InvalidRequest):
@@ -317,9 +334,16 @@ class PrincipalOps(AccessSchemaOps):
         }
 
     def enforce_principal(
-        self, grant: KeyGrant, action: str, args: dict[str, Any], namespace: str
+        self,
+        grant: KeyGrant,
+        action: str,
+        args: dict[str, Any],
+        namespace: str,
+        *,
+        ip_hash: str | None = None,
     ) -> None:
-        if not grant.allows_namespace(namespace):
+        open_verbs = grant.uses_open_verbs(namespace)
+        if not (open_verbs or grant.allows_namespace(namespace)):
             raise ScopeDenied("this principal may not access this namespace")
         fine = any(":" in s and not s.startswith(("surface:", "namespace:")) for s in grant.scopes)
         required = SCOPES.get(action, "nouns:read" if action in READ_ACTIONS else None)
@@ -327,11 +351,14 @@ class PrincipalOps(AccessSchemaOps):
             raise ScopeDenied(f"missing {required} scope")
         if not grant.anonymous:
             return
-        if action not in ANON_ACTIONS:
+        if open_verbs:
+            self._enforce_open_verb(grant, action, args, namespace)
+        elif action not in ANON_ACTIONS:
             raise ScopeDenied("anonymous sessions may only use isolated demo nouns and verbs")
-        for name in ("queue", "store", "store_name"):
-            if args.get(name) and not str(args[name]).startswith("demo."):
-                raise ScopeDenied("anonymous sessions cannot access production nouns or verbs")
+        else:
+            for name in ("queue", "store", "store_name"):
+                if args.get(name) and not str(args[name]).startswith("demo."):
+                    raise ScopeDenied("anonymous sessions cannot access production nouns or verbs")
         writes = args.get("writes", [])
         if not isinstance(writes, list):
             raise InvalidRequest("writes must be a list")
@@ -378,6 +405,28 @@ class PrincipalOps(AccessSchemaOps):
                 or (action in WRITE_ACTIONS and total + size > DEMO_QUOTAS["storage_bytes"])
             ):
                 raise RateLimited("demo quota exceeded", 3600 - now % 3600)
+            if open_verbs and action == "claim":
+                # Open verbs are shared work: cap claim attempts per session and per IP hash.
+                caps = (
+                    (f"open:{grant.key_id}", DEMO_QUOTAS["open_claims_per_hour"]),
+                    (f"open-ip:{ip_hash or 'unknown'}", DEMO_QUOTAS["open_claims_per_ip_hour"]),
+                )
+                for subject, ceiling in caps:
+                    c.execute(
+                        "INSERT OR IGNORE INTO access_limits(subject,window) VALUES (?,?)",
+                        (subject, window),
+                    )
+                    used = c.execute(
+                        "SELECT claims FROM access_limits WHERE subject=? AND window=?",
+                        (subject, window),
+                    ).fetchone()[0]
+                    if used >= ceiling:
+                        raise RateLimited("open verb claim quota exceeded", 3600 - now % 3600)
+                for subject, _ in caps:
+                    c.execute(
+                        "UPDATE access_limits SET claims=claims+1 WHERE subject=? AND window=?",
+                        (subject, window),
+                    )
             c.execute(
                 "UPDATE access_limits SET requests=requests+1,claims=claims+?,bytes=bytes+? WHERE subject=? AND window=?",
                 (
@@ -387,6 +436,29 @@ class PrincipalOps(AccessSchemaOps):
                     window,
                 ),
             )
+
+    def _enforce_open_verb(
+        self, grant: KeyGrant, action: str, args: dict[str, Any], namespace: str
+    ) -> None:
+        """Deny by default: claim, heartbeat and submit open verbs, and read only one's own work."""
+        if action not in OPEN_VERB_ACTIONS:
+            raise ScopeDenied(
+                "outside its own namespace an anonymous session may only claim, heartbeat and"
+                " submit open verbs"
+            )
+        if args.get("queue") and str(args["queue"]) in CLOSED_TO_ANONYMOUS:
+            raise ScopeDenied("review, approval and publication verbs are closed to anonymous")
+        if action in OWN_WORK_ACTIONS:
+            task_id = str(args.get("task_id") or "")
+            with self._read() as c:
+                own = c.execute(
+                    "SELECT 1 FROM leases WHERE namespace=? AND task_id=? AND key_id=?"
+                    " UNION ALL SELECT 1 FROM results"
+                    " WHERE namespace=? AND task_id=? AND completed_by_key=? LIMIT 1",
+                    (namespace, task_id, grant.key_id, namespace, task_id, grant.key_id),
+                ).fetchone()
+            if own is None:
+                raise NotFound("task does not exist")
 
     def audit_access(
         self,

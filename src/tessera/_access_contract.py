@@ -7,7 +7,24 @@ import json
 from typing import Any
 
 from tessera import pages
-from tessera._principals import ANON_LABELS, DEMO_QUOTAS
+from tessera._principals import ANON_LABELS, DEMO_QUOTAS, OPEN_VERB_ACTIONS
+from tessera.grants import CLOSED_TO_ANONYMOUS, OPEN_VERB_NAMESPACE, OPEN_VERB_TAG
+
+
+def open_verbs_description() -> dict[str, Any]:
+    """How a tracked anonymous session works an open verb; the Worker publishes the same."""
+    return {
+        "namespace": OPEN_VERB_NAMESPACE,
+        "tag": OPEN_VERB_TAG,
+        "how": "Send X-Namespace: main (or call /ns/main/v1/...) to list, claim, heartbeat and"
+        " submit verbs whose producer tagged them open:anonymous.",
+        "actions": sorted(OPEN_VERB_ACTIONS),
+        "closed_queues": sorted(CLOSED_TO_ANONYMOUS),
+        "claimant_sees": "the verb's brief, its own receipts and the state of related tasks;"
+        " never other outputs, nouns or principals",
+        "review": "A submitted result stays quarantined with its verb. A different keyed worker"
+        " or a person reviews it; anonymous sessions never approve or publish.",
+    }
 
 
 def access_description(public_url: str, enabled: bool) -> dict[str, Any]:
@@ -24,6 +41,7 @@ def access_description(public_url: str, enabled: bool) -> dict[str, Any]:
             "labels": ANON_LABELS,
             "namespace": "Server assigned demo.<principal_id>; bearer routes automatically",
             "persistence": "Session-private demo state expires after 24 hours.",
+            "open_verbs": open_verbs_description(),
             "supported_clients": [
                 "coding harness",
                 "personal assistant",

@@ -8,6 +8,7 @@ export function reviewProof(c, taskId, actor, output, deny) {
   const draft = JSON.parse(dep.output);
   const drafter = dep.completed_by_key;
   if (!drafter || drafter === actor) throw deny("an independent authenticated reviewer is required");
+  if (c._one("SELECT principal_kind FROM access_principals WHERE key_id=?", actor)?.principal_kind === "anonymous") throw deny("an anonymous session never approves; a keyed reviewer or a person must");
   if (output.review_task_id !== taskId || output.drafter_key_id !== drafter || output.reviewer_key_id !== actor || output.draft_sha256 !== draft.blob_sha256 || output.kit_id !== draft.draft?.kit_id || draft.verification?.passed !== true) throw deny("review approval does not match its authenticated draft evidence");
 }
 export function publicationProof(c, store, value, deny) {

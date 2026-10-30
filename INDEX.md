@@ -307,7 +307,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [src/tessera/store.py](src/tessera/store.py) | The in-process Tessera store: the reference implementation of SPEC.md. |
 | [src/tessera/testing.py](src/tessera/testing.py) | Factories the conformance suite loads by name (TESSERABACKENDFACTORY="module:function"). |
 
-## tests/ (58)
+## tests/ (60)
 
 | File | What it is |
 |---|---|
@@ -352,6 +352,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [tests/test_intelligence.py](tests/test_intelligence.py) | Tests for progressive L0 scent search, HTTP 206 byte ranges, delta feeds, dead-end tombstones, and 0-call dua… |
 | [tests/test_legacy_tombstone_migration.py](tests/test_legacy_tombstone_migration.py) | Existing diagnostic heads are restricted on upgrade, not only newly failed tasks. |
 | [tests/test_ontology_and_reconcile.py](tests/test_ontology_and_reconcile.py) | Tests for Tessera Wave-2 Categorized Ontology, Empirical-Bayes Rankings, Fragility Decay, 3-Way CAS Reconcili… |
+| [tests/test_open_verbs.py](tests/test_open_verbs.py) | Open verbs: a tracked anonymous session claims, heartbeats and submits only verbs whose producer opened them,… |
 | [tests/test_phase4_atomicity_and_vectors.py](tests/test_phase4_atomicity_and_vectors.py) | Phase 4 atomicity, migration, T22 gates, L26 receipt vectors, and Edge parity tests. |
 | [tests/test_research_seed.py](tests/test_research_seed.py) | Bounded authoring, pinned inputs and a real local task loop; no provider calls. |
 | [tests/test_service.py](tests/test_service.py) | The HTTP service: keys, scopes, POST-only writes, holders, rate limits, the edge lock, the agent door, the we… |
@@ -366,6 +367,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [tests/workerd_blob_identity.mjs](tests/workerd_blob_identity.mjs) | Real Worker/SQLite: content identity comes from the uploaded bytes, never from a client header. |
 | [tests/workerd_execution_history.mjs](tests/workerd_execution_history.mjs) | Actual Worker handlers and ephemeral SQLite Durable Objects; no provider or cloud access. |
 | [tests/workerd_execution_learning.mjs](tests/workerd_execution_learning.mjs) | Actual Worker and SQLite Durable Objects: learning reports, observations and row costs. |
+| [tests/workerd_open_verbs.mjs](tests/workerd_open_verbs.mjs) | Real Worker/SQLite: a tracked anonymous session claims, heartbeats and submits only verbs whose |
 | [tests/workerd_reaper.mjs](tests/workerd_reaper.mjs) | Real Worker/SQLite: the lease reaper keeps running in the main namespace even when an alarm |
 | [tests/workerd_storage_exhaustion.mjs](tests/workerd_storage_exhaustion.mjs) | Real Worker/SQLite under a faithful storage-exhaustion simulation: after the provider's daily |
 | [tests/workerd_storage_quota.mjs](tests/workerd_storage_quota.mjs) | Real Worker/SQLite behavior; fixture-only RPC methods never ship in the product. |

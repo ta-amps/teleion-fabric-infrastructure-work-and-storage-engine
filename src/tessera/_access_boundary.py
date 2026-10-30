@@ -291,7 +291,14 @@ async def access_dispatch(
         meta["namespace"] = namespace
         if grant:
             if not public:
-                await run_in_threadpool(store.enforce_principal, grant, action, args, namespace)
+                await run_in_threadpool(
+                    store.enforce_principal,
+                    grant,
+                    action,
+                    args,
+                    namespace,
+                    ip_hash=meta.get("ip_hash"),
+                )
             elif not grant.allows_namespace(namespace):
                 from tessera.errors import ScopeDenied
 

@@ -134,9 +134,10 @@ class Gate:
         if not grant.is_admin:
             raise Forbidden("this needs a key with the admin scope")
 
-    @staticmethod
-    def queue(grant: KeyGrant, queue: str) -> None:
-        if not (grant.is_admin or grant.allows_queue(queue)):
+    def queue(self, grant: KeyGrant, queue: str) -> None:
+        # Outside its own namespace an anonymous session reaches only verbs whose producer
+        # opened them; task visibility and the access boundary decide which ones.
+        if not grant.may_use_queue(queue, self.store.current_scope().namespace):
             raise Forbidden(f"this key may not use queue '{queue}'")
 
     @staticmethod

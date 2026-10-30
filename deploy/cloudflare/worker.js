@@ -1,6 +1,6 @@
 import { agentStartAsset, withAgentStart } from "./agent_start.js";
 import { storageQuotaFailure } from "./storage_quota.js";
-import { namespaceAllowed, publicPrincipal } from "./cloud_access.js";
+import { namespaceReachable, publicPrincipal } from "./cloud_access.js";
 import { accessDiscoveryRoute, accessRoute, accessDescription } from "./cloud_access_routes.js";
 // Tessera Cloud Worker: 24/7 native cloud execution on Cloudflare Durable Object SQLite + D1
 // (`STORAGE_MODE = "cloud"`, the default) with optional Fly.io origin reverse-proxy fallback
@@ -491,7 +491,7 @@ const worker = {
         const grant = await principalFor(secret);
         if (!grant) return { ok: false, status: 401, code: "unauthorized", detail: secret ? "the key is unknown, expired or revoked" : "a bearer key is required", extra: {} };
         const target = normalizeNamespace(args.namespace || "main");
-        if (!namespaceAllowed(grant, target)) {
+        if (!namespaceReachable(grant, target)) {
           const denied = { ok: false, status: 403, code: "scope_denied", detail: "this principal may not access this namespace", extra: {} };
           ctx.waitUntil(primary.countAccessEvent(publicPrincipal(grant), action, { namespace: target }, denied, meta));
           return denied;
