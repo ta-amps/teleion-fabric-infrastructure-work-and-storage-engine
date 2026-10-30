@@ -93,6 +93,8 @@ const STATUS_TITLES = {
 };
 
 const POST_ONLY_EXACT = new Set([
+  "/v1/session/anonymous",
+  "/v1/session/requester",
   "/v1/queues/define",
   "/v1/tasks",
   "/v1/tasks/claim",
@@ -533,7 +535,9 @@ const worker = {
       return problem(
         405,
         "method_not_allowed",
-        "writes are POST only; this path changes nothing on GET"
+        "writes are POST only; this path changes nothing on GET",
+        {},
+        { allow: "POST" }
       );
     }
 
@@ -1501,7 +1505,8 @@ const worker = {
       });
     }
 
-    return problem(404, "not_found", `no route matches ${method} ${path}`);
+    // Echo at most 200 characters of an unknown path (H-55).
+    return problem(404, "not_found", `no route matches ${method} ${path.length > 200 ? `${path.slice(0, 200)}...` : path}`);
   },
 
   async scheduled(event, env, ctx) {
@@ -1534,6 +1539,8 @@ const onboardingApplication = {
     const headers = { "access-control-allow-origin": "*", "access-control-allow-methods": "GET, HEAD, POST, PUT, DELETE, OPTIONS", "access-control-allow-headers": "Authorization, Content-Type, If-Match, X-Request-Id, X-Agent-Label, Idempotency-Key, X-Namespace, X-Tessera-Namespace, X-Surface-Id, MCP-Protocol-Version, MCP-Session-Id", "access-control-expose-headers": "ETag, Retry-After, X-Request-Id, MCP-Session-Id", "x-request-id": requestId, "cache-control": "no-store" };
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers });
     try {
+      // A broken percent escape anywhere in the path is refused up front (H-54).
+      decodeURIComponent(new URL(request.url).pathname);
       const h = new Headers(request.headers); h.set("x-request-id", requestId);
       if (request.body) {
         const route = bodyRoute(new URL(request.url).pathname);
@@ -1557,6 +1564,8 @@ const onboardingApplication = {
       for (const [k,v] of Object.entries(headers)) outHeaders.set(k,v);
       return new Response(response.body, { status: response.status, headers: outHeaders });
     } catch (e) {
+      // A path segment with a broken percent escape is the client's mistake, not a fault (H-54).
+      if (e instanceof URIError) return problem(400, "invalid_request", "the path has a malformed percent escape", {}, headers);
       const quota = storageQuotaFailure(e);
       if (quota) return problem(quota.status, quota.code, quota.detail, quota.extra, { ...headers, "retry-after": String(quota.extra.retry_after) });
       return problem(e.status || 500, e.code || "internal_error", e.detail || "request could not be completed", {}, headers);
@@ -1564,9 +1573,19 @@ const onboardingApplication = {
   },
 };
 
+async function serve(request, env, ctx) {
+  return agentStartAsset(request) || withAgentStart(request, await onboardingApplication.fetch(request, env, ctx));
+}
+
 export default {
   ...onboardingApplication,
+  // HEAD answers wherever GET does, with GET's status and headers and no body (H-53). /mcp keeps
+  // its own method rules, since a GET there opens an event stream.
   async fetch(request, env, ctx) {
-    return agentStartAsset(request) || withAgentStart(request, await onboardingApplication.fetch(request, env, ctx));
+    if (request.method === "HEAD" && !/^(?:\/ns\/[^/]+)?\/mcp$/.test(new URL(request.url).pathname)) {
+      const got = await serve(new Request(request, { method: "GET" }), env, ctx);
+      return new Response(null, { status: got.status, statusText: got.statusText, headers: got.headers });
+    }
+    return serve(request, env, ctx);
   },
 };

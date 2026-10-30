@@ -123,8 +123,8 @@ def run_step(
     for index in range(step.get("repeat", 1)):
         saved["rep"] = {"i": index}
         path = fill(step["path"], saved)
-        if step["method"] == "GET":
-            response = client.get(path, headers=headers)
+        if step["method"] in {"GET", "HEAD"}:
+            response = client.request(step["method"], path, headers=headers)
         elif "raw" in step:  # exactly these bytes, with this Content-Type or none
             if step.get("content_type"):
                 headers["Content-Type"] = step["content_type"]
@@ -132,6 +132,12 @@ def run_step(
         else:
             response = client.post(path, json=fill(step.get("body", {}), saved), headers=headers)
         assert response.status_code == step["status"], (where, path, response.text[:400])
+        for name, part in step.get("headers_include", {}).items():
+            assert part in response.headers.get(name, ""), (where, name, response.headers.get(name))
+        if step["method"] == "HEAD":
+            assert response.content == b"", (where, "a HEAD answer has no body")
+        for part in step.get("text_lacks", []):
+            assert part not in response.text, (where, "the answer repeats", part[:40])
     try:
         body = response.json() if response.content else None
     except ValueError:  # an MCP door may answer as an event stream

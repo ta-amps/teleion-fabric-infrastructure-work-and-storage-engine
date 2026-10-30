@@ -66,12 +66,12 @@ async function fabric() {
     const response = await worker.fetch("https://tessera.example" + path, {
       method,
       headers: { ...base, "cf-connecting-ip": "192.0.2.40", ...(token ? { Authorization: "Bearer " + token } : {}), ...headers },
-      ...(method === "GET" ? {} : { body: raw ? new TextEncoder().encode(raw.text) : JSON.stringify(body ?? {}) }),
+      ...(method === "GET" || method === "HEAD" ? {} : { body: raw ? new TextEncoder().encode(raw.text) : JSON.stringify(body ?? {}) }),
     });
     const text = await response.text();
     let data = null;
     try { data = text ? JSON.parse(text) : null; } catch { data = text; }
-    return { status: response.status, data };
+    return { status: response.status, data, text, headers: response.headers };
   };
   const issued = await request("POST", "/v1/admin/keys", { label: "synthetic-operator", queues: ["*"], scopes: ["admin", "store"], effect_classes: ["read", "write-internal"] }, undefined, { "X-Bootstrap-Secret": BOOTSTRAP });
   assert.equal(issued.status, 201, JSON.stringify(issued.data));
@@ -114,6 +114,9 @@ async function runStep({ request, saved }, step, where) {
     const raw = "raw" in step ? { text: step.raw, contentType: step.content_type || null } : undefined;
     response = await request(step.method, path, fill(step.body || {}, saved), token, fill(step.headers || {}, saved), raw);
     assert.equal(response.status, step.status, `${where}: ${path} ${JSON.stringify(response.data)?.slice(0, 400)}`);
+    for (const [name, part] of Object.entries(step.headers_include || {})) assert.ok((response.headers.get(name) || "").includes(part), `${where}: ${name} ${response.headers.get(name)}`);
+    if (step.method === "HEAD") assert.equal(response.text, "", `${where}: a HEAD answer has no body`);
+    for (const part of step.text_lacks || []) assert.ok(!response.text.includes(part), `${where}: the answer repeats ${part.slice(0, 40)}...`);
   }
   if (step.save) saved[step.save] = response.data;
   check(where, response.data, fill(step.expect || {}, saved));

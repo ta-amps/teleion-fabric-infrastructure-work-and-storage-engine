@@ -2759,6 +2759,134 @@
           }
         }
       ]
+    },
+    {
+      "id": "H-53-head-answers-like-get",
+      "finding": "H-53 (hunt)",
+      "title": "HEAD answers wherever GET does, with GET's status and no body",
+      "steps": [
+        {
+          "as": "admin",
+          "method": "POST",
+          "path": "/v1/tasks",
+          "status": 201,
+          "body": {
+            "queue": "eq02",
+            "task_id": "head-1",
+            "brief": {}
+          }
+        },
+        {
+          "as": "none",
+          "method": "HEAD",
+          "path": "/connect.json",
+          "status": 200
+        },
+        {
+          "as": "none",
+          "method": "HEAD",
+          "path": "/v1/health",
+          "status": 200
+        },
+        {
+          "as": "admin",
+          "method": "HEAD",
+          "path": "/v1/tasks/head-1",
+          "status": 200
+        },
+        {
+          "as": "admin",
+          "method": "HEAD",
+          "path": "/v1/tasks/no-such-task",
+          "status": 404
+        }
+      ]
+    },
+    {
+      "id": "H-54-broken-escapes-answer-400",
+      "finding": "H-54 (hunt)",
+      "title": "A path with a cut-short or non-UTF-8 percent escape is the client's mistake, not a 500",
+      "steps": [
+        {
+          "as": "admin",
+          "method": "GET",
+          "path": "/v1/feeds/%E0%A4%A",
+          "status": 400
+        },
+        {
+          "as": "admin",
+          "method": "GET",
+          "path": "/v1/tasks/%E0%A4%A",
+          "status": 400
+        },
+        {
+          "as": "admin",
+          "method": "GET",
+          "path": "/v1/blobs/%E0%A4%A",
+          "status": 400
+        },
+        {
+          "as": "admin",
+          "method": "GET",
+          "path": "/v1/tasks/%zz",
+          "status": 400
+        },
+        {
+          "as": "none",
+          "method": "GET",
+          "path": "/ns/%E0%A4%A/v1/health",
+          "status": 400
+        },
+        {
+          "as": "admin",
+          "method": "GET",
+          "path": "/v1/tasks/%E0%A4%A4",
+          "status": 404
+        }
+      ]
+    },
+    {
+      "id": "H-55-write-routes-answer-405-with-allow",
+      "finding": "H-55 (hunt)",
+      "title": "Write routes answer other methods with 405 and Allow: POST, and an unknown path is not echoed at length",
+      "steps": [
+        {
+          "as": "none",
+          "method": "GET",
+          "path": "/v1/session/anonymous",
+          "status": 405,
+          "headers_include": {
+            "allow": "POST"
+          }
+        },
+        {
+          "as": "none",
+          "method": "GET",
+          "path": "/v1/session/requester",
+          "status": 405,
+          "headers_include": {
+            "allow": "POST"
+          }
+        },
+        {
+          "as": "admin",
+          "method": "GET",
+          "path": "/v1/tasks/claim",
+          "status": 405,
+          "headers_include": {
+            "allow": "POST"
+          }
+        },
+        {
+          "as": "admin",
+          "method": "GET",
+          "path": "/v1/no-such-route/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "status": 404,
+          "text_lacks": [
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          ]
+        }
+      ]
     }
   ]
 }
