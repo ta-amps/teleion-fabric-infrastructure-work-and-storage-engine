@@ -639,13 +639,20 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
 
     # -- the agent door and pages -------------------------------------------------------------
 
+    async def served_tools() -> list[dict[str, Any]]:
+        """Exactly what MCP `tools/list` returns; every page that lists tools renders from it."""
+        return [
+            tool.model_dump(mode="json", by_alias=True, exclude_none=True)
+            for tool in await mcp_server.list_tools()
+        ]
+
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
     @app.get("/connect", response_class=HTMLResponse, include_in_schema=False)
     async def connect() -> str:
         return connect_html(
             settings.public_url,
             settings.anonymous_access_enabled,
-            len(await mcp_server.list_tools()),
+            len(await served_tools()),
         )
 
     @app.get("/favicon.svg", include_in_schema=False)
@@ -654,31 +661,19 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
 
     @app.get("/llms.txt", response_class=PlainTextResponse, include_in_schema=False)
     async def llms() -> str:
-        tools = await mcp_server.list_tools()
-        intro = pages.llms_txt(settings).replace(
-            "You need a key from the operator. One key per agent; keys are scoped to queues and expire.",
-            "Discovery is public. Personal assistants and coding agents can mint a tracked demo session at /v1/session/anonymous when enabled. Private or privileged work needs an operator-issued scoped key.",
-        )
-        intro = intro.replace("26 tools", f"{len(tools)} tools")
         return (
-            intro
-            + "\n## Access modes\nMachine-readable contract: /connect.json. Tools: "
-            + ", ".join(t.name for t in tools)
-            + "\nAnonymous sessions last one hour; private demo artifacts and access audit expire after 24 hours. Bearer tokens never belong in URLs.\n"
+            pages.llms_txt(settings, await served_tools())
+            + "\n## Access modes\nMachine-readable contract: /connect.json.\n"
+            + "Anonymous sessions last one hour; private demo artifacts and access audit expire after 24 hours. Bearer tokens never belong in URLs.\n"
         )
 
     @app.get("/llms-full.txt", response_class=PlainTextResponse, include_in_schema=False)
-    def llms_full() -> str:
-        return pages.llms_full_txt(settings)
+    async def llms_full() -> str:
+        return await run_in_threadpool(pages.llms_full_txt, settings, await served_tools())
 
     @app.get("/.well-known/agent-card.json", include_in_schema=False)
     async def agent_card() -> dict[str, Any]:
-        card = pages.agent_card(settings)
-        tools = await mcp_server.list_tools()
-        card["tools"] = [t.model_dump(mode="json", exclude_none=True) for t in tools]
-        card["skills"] = [
-            {"id": t.name, "name": t.name, "description": t.description or ""} for t in tools
-        ]
+        card = pages.agent_card(settings, await served_tools())
         card["capabilities"] = {"streaming": "long-poll", "pushNotifications": False}
         card["security"] = [{}, {"bearer": []}]
         card["accessModesUrl"] = f"{settings.public_url}/connect.json"

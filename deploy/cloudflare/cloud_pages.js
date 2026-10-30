@@ -97,7 +97,21 @@ export function renderFaviconSvg() {
   return FAVICON_SVG;
 }
 
-export function renderLlmsTxt(publicUrl, repoUrl) {
+// Pages never keep their own tool list: callers pass the registry that `tools/list` serves
+// (MCP_TOOLS in cloud_mcp.js), so a page cannot name more or fewer tools than an agent can call.
+function servedTools(tools) {
+  if (!Array.isArray(tools) || !tools.length || tools.some((tool) => typeof tool?.name !== "string")) {
+    throw new TypeError("pass the served MCP tool registry");
+  }
+  return tools;
+}
+
+function oneLine(text) {
+  return String(text ?? "").replace(/\s+/g, " ").trim();
+}
+
+export function renderLlmsTxt(publicUrl, repoUrl, tools) {
+  const names = servedTools(tools).map((tool) => tool.name);
   return `# Tessera: atomic work queue and persistent cloud storage for agent swarms
 
 > Everything is either a verb (every task a tile: claimed once under a lease, finished once, and receipted)
@@ -115,7 +129,8 @@ export function renderLlmsTxt(publicUrl, repoUrl) {
 - Tasks never ask you to post, send, deploy or publish. Those need a person.
 
 ## Connect
-- MCP (Streamable HTTP, 26 tools): ${publicUrl}/mcp with header \`Authorization: Bearer <key>\`. Verb tools: queues, enqueue, claim, heartbeat, submit, split, park, resume. Noun, bucket, feed, reflex & handshake tools (26 tools total): search_nouns, match_reflex, handshake, list_feeds, poll_feed, publish_feed, list_stores, list_records, put_record, put_records, get_record, record_history, define_bucket, buckets, put_object, get_object (supports offset/max_bytes L2 slicing), list_objects, object_history.
+- MCP (Streamable HTTP, ${names.length} tools): ${publicUrl}/mcp with header \`Authorization: Bearer <key>\`. The list below is generated from the registry that \`tools/list\` serves, in the same order.
+- MCP tools: ${names.join(", ")}.
 - HTTP: ${publicUrl}/v1/search (\`?q=&store=&bucket=&tag=&category=&cohort=&surface=\`), /v1/reflexes/match, /v1/handshake, /v1/feeds, /v1/feeds/{feed}, /v1/tasks, /v1/tasks/claim, /v1/tasks/heartbeat, /v1/tasks/submit, /v1/tasks/split, /v1/tasks/park, /v1/tasks/resume, /v1/stores, /v1/stores/{store}/records, /v1/stores/{store}/records/{key}, /v1/buckets, /v1/buckets/{bucket}/objects/{key} (supports \`Range: bytes=start-end\` -> HTTP 206), /v1/blobs/{sha256}, and \`/ns/{namespace}/v1/...\` or \`X-Namespace\` for isolated namespaces.
 - Browser only: ${publicUrl}/work has forms that ask for your key on every step.
 
@@ -128,8 +143,15 @@ export function renderLlmsTxt(publicUrl, repoUrl) {
 `;
 }
 
-export function renderLlmsFullTxt(publicUrl, repoUrl) {
-  return `${renderLlmsTxt(publicUrl, repoUrl)}
+export function renderLlmsFullTxt(publicUrl, repoUrl, tools) {
+  const reference = servedTools(tools)
+    .map((tool) => `- \`${tool.name}\`: ${oneLine(tool.description)}`)
+    .join("\n");
+  return `${renderLlmsTxt(publicUrl, repoUrl, tools)}
+## MCP tool reference
+Generated from the registry that \`tools/list\` serves, in the same order. \`tools/list\` also gives each tool's input schema.
+${reference}
+
 ## Architecture & Protocol Summary (v${TESSERA_VERSION})
 - **Verbs (Tasks)**: Enqueued with \`queue\`, \`brief\`, \`kind\`, \`effect_class\` (\`read\`, \`write-internal\`, \`write-repo\`, \`public\`), \`depends_on\`, optional \`idempotency_key\`, and 6-field governance metadata (\`producer_surface\`, \`visibility_scope\`, \`allowed_surfaces\`, \`target_cohorts\`, \`tags\`, \`owner_key_id\`). \`write-repo\` and \`public\` require \`admin\` to enqueue or resume (\`T22\`).
 - **Leases & Receipts (\`L26\`)**: SQL-fenced \`claim\`, \`heartbeat\`, \`park\`, \`submit\`, and \`split\`. Every \`submit\` computes a canonical JSON SHA-256 \`receipt_hash\` over \`{error, fencing_token, ok, output, task_id}\` and records \`completed_by_key\`.
@@ -138,7 +160,8 @@ export function renderLlmsFullTxt(publicUrl, repoUrl) {
 `;
 }
 
-export function renderConnectHtml(publicUrl, repoUrl) {
+export function renderConnectHtml(publicUrl, repoUrl, tools) {
+  const names = servedTools(tools).map((tool) => tool.name);
   const mcpConfig = esc(
     JSON.stringify(
       {
@@ -170,8 +193,8 @@ export function renderConnectHtml(publicUrl, repoUrl) {
 <pre>${agentPrompt}</pre>
 <h2>1. Get a scoped key</h2>
 <p>Each agent worker receives its own bearer key (<code>tsk_...</code>), scoped to queues, kinds, effect classes, and optional <code>store</code> or <code>surface:&lt;slug&gt;</code> scope. Keep it secret: never paste it into a task, page, or chat.</p>
-<h2>2. Connect over MCP (Streamable HTTP · 26 tools)</h2>
-<p>Point OpenCode, Claude Code, Muse Code, Codex, or any MCP client at <code>${esc(publicUrl)}/mcp</code>. Verb tools: <code>queues</code>, <code>enqueue</code>, <code>claim</code>, <code>heartbeat</code>, <code>submit</code>, <code>split</code>, <code>park</code>, <code>resume</code>. Noun, bucket, handshake &amp; 0-call intelligence tools (26 tools total): <code>search_nouns</code>, <code>match_reflex</code>, <code>handshake</code>, <code>list_feeds</code>, <code>poll_feed</code>, <code>publish_feed</code>, <code>list_stores</code>, <code>list_records</code>, <code>put_record</code>, <code>put_records</code>, <code>get_record</code>, <code>record_history</code>, <code>define_bucket</code>, <code>buckets</code>, <code>put_object</code>, <code>get_object</code>, <code>list_objects</code>, <code>object_history</code>.</p>
+<h2>2. Connect over MCP (Streamable HTTP · ${names.length} tools)</h2>
+<p>Point OpenCode, Claude Code, Muse Code, Codex, or any MCP client at <code>${esc(publicUrl)}/mcp</code>. MCP tools, generated from the registry that <code>tools/list</code> serves: ${names.map((name) => `<code>${esc(name)}</code>`).join(", ")}.</p>
 <pre>${mcpConfig}</pre>
 <h2>3. Connect over HTTP (0-Call L0 Search, Reflexes, Verbs &amp; HTTP 206 Buckets)</h2>
 <pre>${claimCmd}</pre>
@@ -185,7 +208,8 @@ export function renderConnectHtml(publicUrl, repoUrl) {
   );
 }
 
-export function renderAgentCard(publicUrl, repoUrl) {
+export function renderAgentCard(publicUrl, repoUrl, tools) {
+  const served = servedTools(tools);
   return {
     name: "Tessera",
     description:
@@ -203,13 +227,9 @@ export function renderAgentCard(publicUrl, repoUrl) {
       { url: `${publicUrl}/mcp`, transport: "mcp-streamable-http" },
       { url: `${publicUrl}/v1`, transport: "http-json" },
     ],
-    skills: [
-      { id: "claim", name: "Claim a task", description: "Lease the next ready task in a queue.", tags: ["queue", "lease"] },
-      { id: "heartbeat", name: "Heartbeat", description: "Extend a lease while working.", tags: ["lease"] },
-      { id: "submit", name: "Submit a result", description: "Store a result once and get a receipt.", tags: ["receipt", "idempotency"] },
-      { id: "split", name: "Split a task", description: "Break a task into child tasks.", tags: ["decompose"] },
-      { id: "buckets", name: "Read & write bucket files", description: "Persist and version reusable files in named cloud buckets.", tags: ["storage", "buckets", "cas"] },
-    ],
+    skills: served.map((tool) => ({ id: tool.name, name: tool.name, description: tool.description })),
+    tools: served,
+    tool_count: served.length,
   };
 }
 
