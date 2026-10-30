@@ -90,8 +90,11 @@ async function runStep({ request, saved }, step, where) {
   if (step.signup) {
     const profile = { display_name: "Synthetic Food Bank", organization_type: "Food pantry", ...(step.profile || {}) };
     const made = await request("POST", "/v1/session/requester", { profile });
-    assert.equal(made.status, 201, `${where}: ${JSON.stringify(made.data)}`);
-    saved[step.signup] = { ...made.data, token: made.data.key };
+    assert.equal(made.status, step.status || 201, `${where}: ${JSON.stringify(made.data)}`);
+    if (made.status === 201) {
+      saved[step.signup] = { ...made.data, token: made.data.key };
+      check(where, made.data, fill(step.expect || {}, saved));
+    }
     return;
   }
   if (step.key) {

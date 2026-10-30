@@ -11,8 +11,8 @@ existing key, principal, audit and limit machinery with one more principal kind.
 from __future__ import annotations
 
 import json
-import re
 import secrets
+import unicodedata
 from typing import TYPE_CHECKING, Any, cast
 
 from tessera._principals import (
@@ -53,25 +53,47 @@ OWN_ACTIONS = frozenset(
 SHARED_ACTIONS = frozenset({"enqueue", "task", "results", "claimEvents", "me", "my_audit"})
 # In the shared namespace these read one request verb, which must be one the key filed.
 FOLLOW_ACTIONS = frozenset({"task", "results", "claimEvents"})
-_TEXT = re.compile(r"[^\w .,&'()/:+-]", re.UNICODE)
+# A profile's fields, as /connect.json publishes them (same rules as the Worker). Text is NFC
+# normalized; letters, combining marks and digits of any script and the symbols below are kept and
+# anything else is removed before the length is counted in code points. Control and format
+# characters are refused, except the zero-width joiners that Persian and Indic names need.
+PROFILE_FIELDS: dict[str, dict[str, int]] = {
+    "display_name": {"min_length": 2, "max_length": 80},
+    "organization_type": {"min_length": 3, "max_length": 120},
+    "cause": {"min_length": 2, "max_length": 40},
+}
+MAX_CAUSES = 8
+PROFILE_SYMBOLS = "_ .,&'()/:+-"
+PROFILE_JOINERS = "\u200c\u200d"
+RAW_LENGTH_FACTOR = 4  # input longer than four times a field's limit is refused unread
 
 
-def _clean(value: Any, field: str, low: int, high: int) -> str:
-    text = _TEXT.sub("", str(value or "")).strip()
-    if not low <= len(text) <= high:
+def _clean(value: Any, field: str) -> str:
+    low, high = PROFILE_FIELDS[field]["min_length"], PROFILE_FIELDS[field]["max_length"]
+    text = unicodedata.normalize("NFC", str(value or ""))
+    if len(text) > high * RAW_LENGTH_FACTOR:
         raise InvalidRequest(f"profile {field} must be {low} to {high} characters")
-    return text
+    if any(unicodedata.category(ch) in {"Cc", "Cf"} and ch not in PROFILE_JOINERS for ch in text):
+        raise InvalidRequest(f"profile {field} must not contain control or format characters")
+    kept = "".join(
+        ch
+        for ch in text
+        if ch in PROFILE_SYMBOLS or ch in PROFILE_JOINERS or unicodedata.category(ch)[0] in "LMN"
+    ).strip()
+    if not low <= len(kept) <= high:
+        raise InvalidRequest(f"profile {field} must be {low} to {high} characters")
+    return kept
 
 
 def clean_profile(profile: dict[str, Any]) -> dict[str, Any]:
     """An organization profile noun: a display name, an organization type and causes, nothing more."""
     causes = profile.get("causes") or []
-    if not isinstance(causes, list) or len(causes) > 8:
-        raise InvalidRequest("profile causes must be a list of at most 8 short phrases")
+    if not isinstance(causes, list) or len(causes) > MAX_CAUSES:
+        raise InvalidRequest(f"profile causes must be a list of at most {MAX_CAUSES} short phrases")
     clean = {
-        "display_name": _clean(profile.get("display_name"), "display_name", 2, 80),
-        "organization_type": _clean(profile.get("organization_type"), "organization_type", 3, 120),
-        "causes": [_clean(c, "cause", 2, 40) for c in causes],
+        "display_name": _clean(profile.get("display_name"), "display_name"),
+        "organization_type": _clean(profile.get("organization_type"), "organization_type"),
+        "causes": [_clean(c, "cause") for c in causes],
     }
     if has_personal_data(json.dumps(clean, ensure_ascii=False)):
         raise InvalidRequest("profiles must not contain personal or payment data")

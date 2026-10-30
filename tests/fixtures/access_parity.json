@@ -1573,6 +1573,139 @@
           }
         }
       ]
+    },
+    {
+      "id": "H-05-names-in-every-script",
+      "finding": "H-05 (hunt)",
+      "title": "Sign-up keeps vowel signs and other combining marks (Devanagari, Tamil, Thai)",
+      "steps": [
+        {
+          "signup": "hindi",
+          "profile": {
+            "display_name": "सेवा संस्था"
+          },
+          "expect": {
+            "equals": {
+              "profile.display_name": "सेवा संस्था",
+              "labels.display_name": "सेवा संस्था"
+            }
+          }
+        },
+        {
+          "signup": "tamil",
+          "profile": {
+            "display_name": "சேவை அமைப்பு"
+          },
+          "expect": {
+            "equals": {
+              "profile.display_name": "சேவை அமைப்பு",
+              "labels.display_name": "சேவை அமைப்பு"
+            }
+          }
+        },
+        {
+          "signup": "thai",
+          "profile": {
+            "display_name": "องค์กรช่วยเหลือ"
+          },
+          "expect": {
+            "equals": {
+              "profile.display_name": "องค์กรช่วยเหลือ",
+              "labels.display_name": "องค์กรช่วยเหลือ"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "H-05-harakat-accents-and-joiners",
+      "finding": "H-05 (hunt)",
+      "title": "Sign-up keeps Arabic harakat, composes decomposed accents (NFC) and keeps zero-width joiners",
+      "steps": [
+        {
+          "signup": "arabic",
+          "profile": {
+            "display_name": "جَمْعِيَّةُ الْخَيْرِ"
+          },
+          "expect": {
+            "equals": {
+              "profile.display_name": "جَمْعِيَّةُ الْخَيْرِ",
+              "labels.display_name": "جَمْعِيَّةُ الْخَيْرِ"
+            }
+          }
+        },
+        {
+          "signup": "latin",
+          "profile": {
+            "display_name": "José Food Bank"
+          },
+          "expect": {
+            "equals": {
+              "profile.display_name": "José Food Bank",
+              "labels.display_name": "José Food Bank"
+            }
+          }
+        },
+        {
+          "signup": "persian",
+          "profile": {
+            "display_name": "خانه‌ی امید"
+          },
+          "expect": {
+            "equals": {
+              "profile.display_name": "خانه‌ی امید",
+              "labels.display_name": "خانه‌ی امید"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "H-05-control-and-format-characters",
+      "finding": "H-05 (hunt)",
+      "title": "Sign-up still refuses control and format characters, and drops other symbols as before",
+      "steps": [
+        {
+          "signup": "bell",
+          "profile": {
+            "display_name": "Food\u0007Bank"
+          },
+          "status": 400
+        },
+        {
+          "signup": "override",
+          "profile": {
+            "display_name": "Food‮Bank"
+          },
+          "status": 400
+        },
+        {
+          "signup": "tab",
+          "profile": {
+            "display_name": "Food\tBank"
+          },
+          "status": 400
+        },
+        {
+          "signup": "hash",
+          "profile": {
+            "display_name": "Org #5"
+          },
+          "expect": {
+            "equals": {
+              "profile.display_name": "Org 5",
+              "labels.display_name": "Org 5"
+            }
+          }
+        },
+        {
+          "signup": "emoji",
+          "profile": {
+            "display_name": "🍎🍏"
+          },
+          "status": 400
+        }
+      ]
     }
   ]
 }

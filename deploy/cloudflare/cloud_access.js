@@ -104,16 +104,33 @@ export function storedPayload(action, args) {
 const DEFAULT_PRIORITY = 50; // requests always get the default priority (models.DEFAULT_PRIORITY)
 // In the shared namespace these read one request verb, which must be one the key filed.
 const REQUESTER_FOLLOW_ACTIONS = new Set(["task", "results", "claimEvents"]);
+// A profile's fields, as /connect.json publishes them (same rules as _requesters.PROFILE_FIELDS).
+// Text is NFC normalized; letters, combining marks and digits of any script and the symbols below
+// are kept and anything else is removed before the length is counted in code points. Control and
+// format characters are refused, except the zero-width joiners that Persian and Indic names need.
+export const PROFILE_FIELDS = Object.freeze({
+  display_name: Object.freeze({ min_length: 2, max_length: 80 }),
+  organization_type: Object.freeze({ min_length: 3, max_length: 120 }),
+  cause: Object.freeze({ min_length: 2, max_length: 40 }),
+});
+export const MAX_CAUSES = 8;
+const PROFILE_SYMBOLS = "_ .,&'()/:+-";
+const RAW_LENGTH_FACTOR = 4; // input longer than four times a field's limit is refused unread
 export function cleanProfile(profile) {
-  const text = (value, field, low, high) => {
-    const clean = String(value ?? "").replace(/[^\p{L}\p{N}_ .,&'()/:+-]/gu, "").trim();
-    if (clean.length < low || clean.length > high) throw error(400, "invalid_request", `profile ${field} must be ${low} to ${high} characters`);
+  const text = (value, field) => {
+    const { min_length: low, max_length: high } = PROFILE_FIELDS[field];
+    const raw = String(value ?? "").normalize("NFC");
+    if ([...raw].length > high * RAW_LENGTH_FACTOR) throw error(400, "invalid_request", `profile ${field} must be ${low} to ${high} characters`);
+    if (/[\p{Cc}\p{Cf}]/u.test(raw.replace(/[\u200C\u200D]/gu, ""))) throw error(400, "invalid_request", `profile ${field} must not contain control or format characters`);
+    const clean = [...raw].filter(ch => PROFILE_SYMBOLS.includes(ch) || ch === "\u200C" || ch === "\u200D" || /^[\p{L}\p{M}\p{N}]$/u.test(ch)).join("").trim();
+    const length = [...clean].length;
+    if (length < low || length > high) throw error(400, "invalid_request", `profile ${field} must be ${low} to ${high} characters`);
     return clean;
   };
   if (!profile || typeof profile !== "object" || Array.isArray(profile)) throw error(400, "invalid_request", "profile must be an object");
   const causes = profile.causes ?? [];
-  if (!Array.isArray(causes) || causes.length > 8) throw error(400, "invalid_request", "profile causes must be a list of at most 8 short phrases");
-  const clean = { display_name: text(profile.display_name, "display_name", 2, 80), organization_type: text(profile.organization_type, "organization_type", 3, 120), causes: causes.map(c => text(c, "cause", 2, 40)) };
+  if (!Array.isArray(causes) || causes.length > MAX_CAUSES) throw error(400, "invalid_request", `profile causes must be a list of at most ${MAX_CAUSES} short phrases`);
+  const clean = { display_name: text(profile.display_name, "display_name"), organization_type: text(profile.organization_type, "organization_type"), causes: causes.map(c => text(c, "cause")) };
   if (hasPersonalData(JSON.stringify(clean))) throw error(400, "invalid_request", "profiles must not contain personal or payment data");
   return clean;
 }

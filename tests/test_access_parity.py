@@ -100,8 +100,10 @@ def run_step(
             **step.get("profile", {}),
         }
         made = client.post("/v1/session/requester", json={"profile": profile})
-        assert made.status_code == 201, (where, made.text)
-        saved[step["signup"]] = {**made.json(), "token": made.json()["key"]}
+        assert made.status_code == step.get("status", 201), (where, made.text)
+        if made.status_code == 201:
+            saved[step["signup"]] = {**made.json(), "token": made.json()["key"]}
+            check(where, made.json(), fill(step.get("expect", {}), saved))
         return
     if "key" in step:
         grant = step["grant"]

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+Fixes from the annoyance hunt (`hunt/HUNT-REPORT.md`), with cases in `tests/fixtures/access_parity.json`:
+
+- Sign-up keeps names in every script (H-05). Profile text is NFC normalized and keeps combining marks, so Hindi, Tamil, Thai and Arabic names keep their vowel signs and harakat, and a decomposed "José" stays José. Control and format characters are refused (the zero-width joiners Persian and Indic names need are kept), other symbols are still removed, and lengths count code points in both implementations.
+
 Access follow-ups after the re-review:
 
 - Every access description agrees with the switches (F-054). On the Worker the agent card, `llms-full.txt`, MCP `explain_access_modes` and the MCP sign-in hint said `requester.enabled: false` while `/connect.json` said `true`, because they built the description without the requester switch; the Python connect page did the same. All of them now read both switches from one place.

@@ -36,10 +36,12 @@ class AnonymousBody(BaseModel):
 
 
 class RequesterProfile(BaseModel):
+    """Only the shape is checked here; clean_profile applies the published field rules."""
+
     model_config = ConfigDict(extra="forbid")
-    display_name: str = Field(min_length=2, max_length=80)
-    organization_type: str = Field(min_length=3, max_length=120)
-    causes: list[str] = Field(default_factory=list, max_length=8)
+    display_name: str = ""
+    organization_type: str = ""
+    causes: list[str] = Field(default_factory=list)
 
 
 class RequesterBody(BaseModel):
