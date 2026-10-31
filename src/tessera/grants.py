@@ -25,7 +25,9 @@ _SURFACE_SCOPE_RE = re.compile(rf"^surface:({SURFACE_ID_PATTERN[1:-1]})$")
 # effect class stays within the anonymous grant. Nothing else in the shared namespace opens.
 OPEN_VERB_TAG = "open:anonymous"
 OPEN_VERB_NAMESPACE = "main"
-CLOSED_TO_ANONYMOUS: frozenset[str] = frozenset({"eq03", "frontier.review", "frontier.verify"})
+CLOSED_TO_ANONYMOUS: frozenset[str] = frozenset(
+    {"eq03", "frontier.review", "frontier.verify", "library.propose", "library.review"}
+)
 OPEN_VERB_EFFECTS: frozenset[str] = frozenset({"read", "write-internal"})
 
 

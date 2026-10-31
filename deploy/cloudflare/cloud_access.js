@@ -15,7 +15,7 @@ export const DEMO_QUOTAS = Object.freeze({
 // stay closed whatever their tags say.
 export const OPEN_VERB_TAG = "open:anonymous";
 export const OPEN_VERB_NAMESPACE = "main";
-export const CLOSED_TO_ANONYMOUS = new Set(["eq03", "frontier.review", "frontier.verify"]);
+export const CLOSED_TO_ANONYMOUS = new Set(["eq03", "frontier.review", "frontier.verify", "library.propose", "library.review"]);
 const OPEN_VERB_EFFECTS = new Set(["read", "write-internal"]);
 // Claim events would show other attempts on the verb, so they stay closed (same rule as Python).
 export const OPEN_VERB_ACTIONS = new Set(["claim", "heartbeat", "submit", "task", "results", "listVerbs", "me", "my_audit"]);
@@ -93,7 +93,10 @@ const MIN_CITED_QUOTE = 20; // characters: a quote at least this long counts as 
 // Arabic-Indic, Devanagari or full-width digits are caught the same way in both implementations.
 // Unicode encodes each digit set as a run of ten from zero, so a digit's value is its place in its run.
 export function screenText(text) {
-  return String(text).normalize("NFKC").replace(/\p{Nd}/gu, ch => {
+  text = String(text);
+  // ASCII is already NFKC and its only decimal digits are 0-9, so it screens as written.
+  if (!/[^\x00-\x7f]/.test(text)) return text;
+  return text.normalize("NFKC").replace(/\p{Nd}/gu, ch => {
     if (ch >= "0" && ch <= "9") return ch;
     const cp = ch.codePointAt(0);
     let k = 0;

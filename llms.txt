@@ -30,6 +30,7 @@
 - [docs/generalizing.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/generalizing.md): Tessera: generalizing it
 - [docs/glossary.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/glossary.md): Tessera: glossary
 - [docs/handoff.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/handoff.md): Tessera: handoff
+- [docs/library-submissions.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/library-submissions.md): Library submissions: one propose path, several doors
 - [docs/making-of.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/making-of.md): The making-of
 - [docs/opencode-and-ollama.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/opencode-and-ollama.md): Bilateral swarm testing with OpenCode & Ollama Cloud (muse-spark-open)
 - [docs/operations.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/operations.md): Operations
