@@ -43,13 +43,13 @@ matched text) and a digest of the refused body, and is counted in the access aud
 
 | Rule | Limit |
 |---|---|
-| `schema` | a registered noun or verb category, slugs, titles, steps (1 to 40), acceptance checks (1 to 20), pack id and version |
+| `schema` | a registered noun or verb category, slugs, titles of at most 400 characters, steps (1 to 40), acceptance checks (1 to 20), pack id and version |
 | `size` | one item 32 KiB; a pack 512 KiB with a contributor key, 256 KiB from a tracked session; 64 files of at most 128 KiB; 120 nouns and 40 verbs |
 | `license` | MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, CC0-1.0 or CC-BY-4.0 |
 | `file_type` | `README.md` and `code/...` only; plain relative paths with no hidden folders such as `.github/` (a `.gitignore` file is allowed); text types only (md, txt, json, jsonl, yaml, yml, toml, csv, tsv, py, js, mjs, cjs, ts, sh, cfg, ini, lock, Makefile) |
 | `hidden_characters` | no control characters and no bidirectional overrides |
 | `secrets` | private keys, cloud, code-host, chat, payment, model-provider and Tessera keys, JWTs, bearer headers, credentials in URLs and quoted secret assignments |
-| `personal_data` | the fabric's existing screen for email addresses, phone numbers, street addresses, identity, card and IBAN numbers |
+| `personal_data` | the fabric's existing screen for email addresses, phone numbers, street addresses, identity, card and IBAN numbers, after removing what cannot be personal: @names with no local part (decorators), mail at reserved names (example.com/net/org, .example, .invalid, .test, .localhost), 555-01xx and 555-area numbers, and 13 to 19 digit runs that fail the Luhn check |
 
 Rates: a tracked session files at most 3 proposals an hour (6 per address hash, 60 for all
 sessions); a contributor key 30 an hour. Attempts count, so a refused body costs an attempt. A

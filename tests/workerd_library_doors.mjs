@@ -63,7 +63,7 @@ async function setup(enabled = "true") {
     task_id: lease.task_id, fencing_token: lease.fencing_token,
     output: { schema: "ta-amps.library.review.v1", proposal_id: lease.brief.proposal_id, item_sha256: lease.brief.item_sha256, reviewer_key_id: who.key_id, approved, reasons, checks: [{ id: "library-rules", passed: approved }], ...extra },
   }, who.key, { "Idempotency-Key": `${lease.task_id}:${lease.fencing_token}` });
-  const fastReviews = () => request("/v1/queues/define", { name: "library.review", lease_seconds: 60, heartbeat_seconds: 1, miss_limit: 1, max_attempts: 10, backoff_base_seconds: 0, backoff_cap_seconds: 1 }, admin);
+  const fastReviews = () => request("/v1/queues/define", { name: "library.review", lease_seconds: 60, heartbeat_seconds: 3, miss_limit: 1, max_attempts: 10, backoff_base_seconds: 0, backoff_cap_seconds: 1 }, admin);
   return { request, admin, key, session, propose, mcp, a2a, claim, review, fastReviews };
 }
 
@@ -138,7 +138,8 @@ test("HTTP: a contributor's noun reaches the public proposals store and a differ
 
 test("the proposer, its account and anonymous sessions never complete a review", async () => {
   const t = await setup();
-  assert.equal((await t.fastReviews()).status, 200);
+  const fast = await t.fastReviews();
+  assert.equal(fast.status, 200, fast.text);
   const both = await t.key("synthetic-both", ["library.propose", "library.review"], "contributor:synthetic-c");
   const sameAccount = await t.key("synthetic-same-account", ["library.review"], "contributor:synthetic-c");
   const reviewer = await t.key("synthetic-reviewer", ["library.review"], "reviewer:synthetic-d");
@@ -151,14 +152,14 @@ test("the proposer, its account and anonymous sessions never complete a review",
     assert.equal(refused.status, 403, refused.text);
     assert.match(refused.data.detail, /proposer cannot review/);
   }
-  await sleep(1200);
+  await sleep(3500);
   lease = await t.claim(sameAccount);
   assert.equal(lease.status, 200, lease.text);
   const sameRefused = await t.review(sameAccount, lease.data, true);
   assert.equal(sameRefused.status, 403);
   assert.match(sameRefused.data.detail, /different account/);
   // A forged digest or actor is refused as well.
-  await sleep(1200);
+  await sleep(3500);
   lease = await t.claim(reviewer);
   assert.equal((await t.review(reviewer, lease.data, true, ["x"], { item_sha256: "0".repeat(64) })).status, 403);
   assert.equal((await t.review(reviewer, lease.data, true, ["x"], { reviewer_key_id: both.key_id })).status, 403);
@@ -262,7 +263,10 @@ test("a whole pack: checked, stored as text, admitted as nouns and verb template
     assert.equal(r.status, 422, `${rule}: ${r.text}`);
     assert.ok(r.data.findings.some(f => f.rule === rule), `${rule}: ${JSON.stringify(r.data.findings)}`);
   }
-  const filed = await t.propose(contributor, { type: "pack", bundle: bundle({ files: [{ path: "code/.gitignore", content: "__pycache__/\n" }] }), provenance: "Synthetic test pack." });
+  // Code and synthetic fixtures that only look personal pass: a decorator, reserved mail domains,
+  // fiction-reserved numbers and a large constant that is no payment card.
+  const fixtures = "import unittest\n\n@unittest.skipIf(False, 'synthetic')\ndef test_rows():\n    rows = ['lead@example.invalid', 'ops@example.org', 'call 555-0123', '(212) 555-0187']\n    assert 9007199254740991 > 1000000000000\n";
+  const filed = await t.propose(contributor, { type: "pack", bundle: bundle({ files: [{ path: "code/.gitignore", content: "__pycache__/\n" }, { path: "code/tests/test_rows.py", content: fixtures }] }), provenance: "Synthetic test pack." });
   assert.equal(filed.status, 201, filed.text);
   assert.deepEqual(filed.data.catalog.map(e => e.key), ["pack:intake-helpers.v0.1.0", "noun:intake-helpers.v0.1.0.pack", "noun:intake-helpers.v0.1.0.checklist", "verb:intake-helpers.v0.1.0.check-intake-form"]);
   const lease = await t.claim(reviewer);

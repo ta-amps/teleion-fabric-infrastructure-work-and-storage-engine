@@ -72,6 +72,31 @@ function strings(value, path, out, depth = 0) {
   return out;
 }
 
+// Library content is code and synthetic fixtures. Before the fabric's own personal-data screen
+// runs, remove only what cannot be personal data: @names with no local part (decorators such as
+// @unittest.skipIf), mail at reserved names (RFC 2606 and 6761: example.com, example.net,
+// example.org and the .example, .invalid, .test and .localhost domains), the 555-0100 to 555-0199
+// numbers reserved for fiction and numbers in the unassigned 555 area code, and 13 to 19 digit runs that fail the Luhn check, so they are no
+// payment card. Everything else still goes through hasPersonalData unchanged.
+const NO_LOCAL_PART = /(^|[^A-Za-z0-9._%+-])@[A-Za-z_][A-Za-z0-9_.-]*/g;
+const RESERVED_MAIL = /[A-Za-z0-9._%+-]+@(?:[A-Za-z0-9-]+\.)*(?:example\.(?:com|net|org)|[A-Za-z0-9-]+\.(?:example|invalid|test|localhost))(?![A-Za-z0-9.-])/gi;
+const FICTION_PHONE = /(?<![\w+])(?:\+?1[ .-]?)?(?:(?:\(\d{3}\)[ .-]?|\d{3}[ .-])?555[ .-]01\d{2}|\(?555\)?[ .-]?\d{3}[ .-]\d{4})(?![\w-])/g;
+const DIGIT_RUN = /\b(?:\d[ -]?){13,19}\b/g;
+function luhn(digits) {
+  let sum = 0;
+  for (let i = digits.length - 1, alt = false; i >= 0; i--, alt = !alt) {
+    let d = digits.charCodeAt(i) - 48;
+    if (alt && (d *= 2) > 9) d -= 9;
+    sum += d;
+  }
+  return sum % 10 === 0;
+}
+export function libraryPersonalData(t) {
+  const cleaned = t.replace(RESERVED_MAIL, " ").replace(NO_LOCAL_PART, "$1 ").replace(FICTION_PHONE, " ")
+    .replace(DIGIT_RUN, run => (luhn(run.replace(/[ -]/g, "")) ? run : " "));
+  return hasPersonalData(cleaned);
+}
+
 function lineOf(textValue, index) {
   let line = 1;
   for (let i = 0; i < index; i++) if (textValue.charCodeAt(i) === 10) line++;
@@ -88,7 +113,7 @@ export function screenStrings(value, rootPath, findings) {
       const m = re.exec(t);
       if (m) finding(findings, "secrets", `${path}${t.includes("\n") ? ` line ${lineOf(t, m.index)}` : ""}`, `looks like a credential (${rule}); remove it and use a placeholder such as <your-key>`);
     }
-    if (hasPersonalData(t)) finding(findings, "personal_data", path, "looks like personal or payment data; use synthetic example.com data");
+    if (libraryPersonalData(t)) finding(findings, "personal_data", path, "looks like personal or payment data; use synthetic data at example.com or a .invalid domain");
   }
 }
 
@@ -96,7 +121,7 @@ function checkNoun(n, where, findings) {
   if (!isObj(n)) return finding(findings, "schema", where, "a noun is a JSON object");
   if (!(typeof n.slug === "string" && SLUG_RE.test(n.slug) && n.slug.length <= 80)) finding(findings, "schema", `${where}.slug`, "lowercase words joined by hyphens or dots, at most 80 characters");
   if (!(typeof n.category === "string" && Object.hasOwn(NOUN_CATEGORIES, n.category))) finding(findings, "schema", `${where}.category`, "a registered Tessera noun category (GET /v1/categories)");
-  if (!text(n.title, 200)) finding(findings, "schema", `${where}.title`, "a title of 1 to 200 characters");
+  if (!text(n.title, 400)) finding(findings, "schema", `${where}.title`, "a title of 1 to 400 characters");
   if (n.role !== undefined && !text(n.role, 64)) finding(findings, "schema", `${where}.role`, "a role of 1 to 64 characters");
   if (!isObj(n.value)) finding(findings, "schema", `${where}.value`, "the noun's value is a JSON object");
 }
@@ -105,7 +130,7 @@ function checkVerb(v, where, findings) {
   if (!isObj(v)) return finding(findings, "schema", where, "a verb template is a JSON object");
   if (!(typeof v.slug === "string" && SLUG_RE.test(v.slug) && v.slug.length <= 80)) finding(findings, "schema", `${where}.slug`, "lowercase words joined by hyphens or dots, at most 80 characters");
   if (!(typeof v.kind === "string" && Object.hasOwn(VERB_CATEGORIES, v.kind))) finding(findings, "schema", `${where}.kind`, "a registered Tessera verb category (GET /v1/categories)");
-  if (!text(v.title, 200)) finding(findings, "schema", `${where}.title`, "a title of 1 to 200 characters");
+  if (!text(v.title, 400)) finding(findings, "schema", `${where}.title`, "a title of 1 to 400 characters");
   for (const field of ["summary", "outcome"]) if (v[field] !== undefined && !text(v[field], 2000)) finding(findings, "schema", `${where}.${field}`, "1 to 2,000 characters");
   if (!(Array.isArray(v.steps) && v.steps.length >= 1 && v.steps.length <= LIBRARY_LIMITS.steps && v.steps.every(s => text(s, 2000))))
     finding(findings, "schema", `${where}.steps`, `1 to ${LIBRARY_LIMITS.steps} steps, each a string of at most 2,000 characters`);
