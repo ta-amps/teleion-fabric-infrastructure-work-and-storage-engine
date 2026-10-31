@@ -286,6 +286,38 @@ test("a whole pack: checked, stored as text, admitted as nouns and verb template
   assert.equal(dup.status, 409, dup.text);
 });
 
+test("a pack that repeats an admitted item reuses it; other content under the same key is refused", async () => {
+  const t = await setup();
+  const contributor = await t.key("synthetic-contributor", ["library.propose"], "contributor:synthetic-n");
+  const other = await t.key("synthetic-other", ["library.propose"], "contributor:synthetic-o");
+  const reviewer = await t.key("synthetic-reviewer", ["library.review"], "reviewer:synthetic-p");
+  const single = { ...verb(), pack: "intake-helpers", version: "0.1.0" };
+  assert.equal((await t.propose(contributor, single)).status, 201);
+  let lease = await t.claim(reviewer);
+  assert.equal((await t.review(reviewer, lease.data, true)).status, 200);
+  // The whole pack carries the same verb, byte for byte: it is accepted and reuses the admitted noun.
+  const pack = await t.propose(contributor, { type: "pack", bundle: bundle() });
+  assert.equal(pack.status, 201, pack.text);
+  lease = await t.claim(reviewer);
+  assert.equal((await t.review(reviewer, lease.data, true)).status, 200);
+  const decided = (await t.request(`/v1/library/proposals/${pack.data.proposal_id}`)).data;
+  assert.equal(decided.status, "admitted");
+  assert.deepEqual(decided.decision.already_in_catalog, ["verb:intake-helpers.v0.1.0.check-intake-form"]);
+  const template = (await t.request(`/v1/library/catalog/${encodeURIComponent("verb:intake-helpers.v0.1.0.check-intake-form")}`)).data;
+  assert.equal(template.catalog_version, 1);
+  assert.notEqual(template.proposal_id, pack.data.proposal_id, "the reused noun keeps its first provenance");
+  // Other content under an admitted key needs a new version; nothing new at all is refused too.
+  const changed = bundle();
+  changed.source.verbs[0].steps = [...changed.source.verbs[0].steps, "Then compare twice."];
+  changed.source.nouns[1].title = "Intake checklist, revised";
+  const clash = await t.propose(other, { type: "pack", bundle: changed });
+  assert.equal(clash.status, 409, clash.text);
+  assert.match(clash.data.detail, /other content/);
+  const dup = await t.propose(other, single);
+  assert.equal(dup.status, 409, dup.text);
+  assert.match(dup.data.detail, /already in the library catalog/);
+});
+
 test("the secret scan blocks a planted fake key and the size limits hold", async () => {
   const t = await setup();
   const contributor = await t.key("synthetic-contributor", ["library.propose"], "contributor:synthetic-j");

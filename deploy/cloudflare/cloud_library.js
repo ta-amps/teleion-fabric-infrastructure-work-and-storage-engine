@@ -126,7 +126,12 @@ export async function proposeToLibrary(c, secret, body, meta = {}) {
       ensureQueues(c, now);
       if (head(c, LIBRARY.proposals, proposal_id)) { result = { ...proposalView(c, proposal_id), replayed: true }; return; }
       if (c._one("SELECT 1 AS taken FROM tasks WHERE namespace=? AND id IN (?, ?)", NS, propose_task_id, review_task_id)) throw err(409, "conflict", "a task already uses this proposal's ids");
-      for (const e of catalog) if (head(c, LIBRARY.catalog, e.key)) throw err(409, "catalog_key_exists", `${e.key} is already in the library catalog; propose a new version`);
+      // Identical content under an existing key is the same noun and is reused on admission;
+      // different content needs a new version, and a proposal with nothing new is refused.
+      const present = catalog.map(e => head(c, LIBRARY.catalog, e.key));
+      const clash = catalog.find((e, i) => present[i] && present[i].value?.item_sha256 !== e.sha256);
+      if (clash) throw err(409, "catalog_key_exists", `${clash.key} is already in the library catalog with other content; propose a new version`);
+      if (present.every(Boolean)) throw err(409, "catalog_key_exists", "every item of this proposal is already in the library catalog");
       if (anonymous) {
         const used = c._one("SELECT COALESCE(SUM(bytes),0) n FROM access_limits WHERE subject=?", grant.key_id).n;
         if (used + bytes > DEMO_QUOTAS.storage_bytes) throw err(429, "rate_limited", "demo quota exceeded", { retry_after: Math.ceil(3600 - now % 3600) });
@@ -194,7 +199,10 @@ export function libraryReviewOutcome(c, task, grant, output, receipt, now, d1) {
     const provenance = { proposal_id: proposal.proposal_id, proposal_sha256: proposal.item_sha256, propose_task_id: proposal.propose.task_id, propose_receipt: proposal.propose.receipt_hash,
       review_task_id: task.id, review_receipt: receipt, proposer_key_id: proposal.proposer.key_id, reviewer_key_id: grant.key_id, admitted_at: now };
     const packKey = proposal.type === "pack" ? proposal.catalog[0].key : null;
+    const reused = [];
     for (const entry of proposal.catalog) {
+      const existing = head(c, LIBRARY.catalog, entry.key);
+      if (existing && existing.value?.item_sha256 === entry.sha256) { reused.push(entry.key); continue; }
       const item = catalogItem(proposal.item, entry);
       const category = entry.kind === "noun" ? item.category : entry.kind === "verb_template" ? item.kind : "noun.skill_pack";
       const value = { schema: "ta-amps.library.catalog-item.v1", key: entry.key, item_kind: entry.kind, pack: proposal.pack, version: proposal.version, license: proposal.license,
@@ -204,6 +212,7 @@ export function libraryReviewOutcome(c, task, grant, output, receipt, now, d1) {
       writes.push(writeRecord(c, LIBRARY.catalog, entry.key, 0, value, gov(["kind:library_item", `item:${entry.kind}`, `pack:${proposal.pack}`, `category:${category}`, `spdx:${proposal.license}`, `origin:${origin}`, "status:admitted", "review:independent"], grant.key_id), now, d1));
     }
     decision.catalog_keys = proposal.catalog.map(e => e.key);
+    decision.already_in_catalog = reused;
   }
   const { item, ...kept } = proposal;
   const status = output.approved ? "admitted" : "rejected";

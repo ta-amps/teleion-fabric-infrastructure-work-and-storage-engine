@@ -171,6 +171,27 @@ def review_once(
         {**ref, "output": output},
         {"Idempotency-Key": f"{ref['task_id']}:{ref['fencing_token']}"},
     )
+    if status == 409 and output["approved"]:
+        # The catalog changed after the proposal (another proposal took a key with other
+        # content), so the approval cannot be admitted: record why as a rejection instead of
+        # letting the lease lapse into retries.
+        detail = str((receipt or {}).get("detail") or "a catalog key is taken")[:300]
+        output = {
+            **output,
+            "approved": False,
+            "reasons": [
+                f"Fits the library's rules but cannot be admitted: {detail}. Propose a new version."
+            ],
+            "checks": [*output["checks"], {"id": "catalog", "passed": False, "detail": detail}][
+                :50
+            ],
+        }
+        status, receipt = fabric.call(
+            "POST",
+            "/v1/tasks/submit",
+            {**ref, "output": output},
+            {"Idempotency-Key": f"{ref['task_id']}:{ref['fencing_token']}:catalog"},
+        )
     return {
         "event": "submitted" if status == 200 else "submit_refused",
         "task_id": ref["task_id"],

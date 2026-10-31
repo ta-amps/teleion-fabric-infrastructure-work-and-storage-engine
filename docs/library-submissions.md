@@ -52,8 +52,10 @@ matched text) and a digest of the refused body, and is counted in the access aud
 | `personal_data` | the fabric's existing screen for email addresses, phone numbers, street addresses, identity, card and IBAN numbers, after removing what cannot be personal: @names with no local part (decorators), mail at reserved names (example.com/net/org, .example, .invalid, .test, .localhost), 555-01xx and 555-area numbers, and 13 to 19 digit runs that fail the Luhn check |
 
 Rates: a tracked session files at most 3 proposals an hour (6 per address hash, 60 for all
-sessions); a contributor key 30 an hour. Attempts count, so a refused body costs an attempt. A
-catalog key that already exists is refused (409): a revision is a new version.
+sessions); a contributor key 30 an hour. Attempts count, so a refused body costs an attempt. An
+item already in the catalog with identical content is reused on admission (a pack may repeat a
+verb admitted on its own); the same key with other content is refused (409), so a revision is a
+new version, and a proposal with nothing new is refused too.
 
 ## The review verb
 
