@@ -1,13 +1,15 @@
-// Deterministic checks for library proposals: shape, size, licence, file types, secrets and
-// personal data. Pure functions over JSON. Nothing submitted is parsed as code, imported or run;
-// file contents are only measured and scanned as text.
+// Deterministic checks for library proposals: shape, size, nesting, licence, file types, hidden
+// characters, secrets and personal data. Pure functions over JSON. Nothing submitted is parsed as
+// code, imported or run; file contents are only measured and scanned as text. Every pattern here
+// runs in linear time: quantifiers are bounded, and the shapes that need more context (JWTs, mail
+// addresses, digit runs) are found by one pass over tokens, never by backtracking.
 import { hasPersonalData } from "./cloud_access.js";
 import { NOUN_CATEGORIES, VERB_CATEGORIES } from "./ontology_engine.js";
 
 export const LIBRARY_LIMITS = Object.freeze({
   item_bytes: 32768, // one noun or one verb template, the same ceiling as a filed request
   pack_bytes: 524288, // a whole pack sent with a contributor key
-  pack_bytes_anonymous: 262144, // a whole pack sent from a tracked anonymous session
+  pack_bytes_anonymous: 61440, // a whole pack from a tracked session, whose requests the fabric caps at 64 KiB
   pack_files: 64,
   file_bytes: 131072,
   pack_nouns: 120,
@@ -16,7 +18,10 @@ export const LIBRARY_LIMITS = Object.freeze({
   acceptance: 20,
   path_chars: 200,
   path_depth: 8,
+  json_depth: 32, // the library's deepest pack nests 19 levels
   findings: 50,
+  scan_chars: 16777216, // characters the screens may read for one proposal, all rules together
+  check_ms: 2000, // wall-clock budget for one inspection; the door also times out the call
 });
 // Licences the library can carry next to its own MIT licence.
 export const LIBRARY_LICENSES = Object.freeze(["MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC", "CC0-1.0", "CC-BY-4.0"]);
@@ -31,30 +36,52 @@ const SEGMENT_RE = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,99}$/;
 const SLUG_RE = /^[a-z0-9]+(?:[-.][a-z0-9]+)*$/;
 const PACK_ID_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const VERSION_RE = /^\d{1,4}\.\d{1,4}\.\d{1,4}$/;
-// Control characters other than tab, newline and carriage return, and the bidirectional
-// overrides and isolates that can make code read differently from how it runs.
-const HIDDEN_RE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f‪-‮⁦-⁩]/;
-// Credential shapes. A finding names the rule and where it is, never the matched text.
-export const SECRET_RULES = Object.freeze([
-  ["private-key", /-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----/],
-  ["aws-access-key", /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/],
-  ["github-token", /\bgh[pousr]_[A-Za-z0-9]{36,}\b|\bgithub_pat_[A-Za-z0-9_]{50,}\b/],
-  ["slack-token", /\bxox[abposr]-[A-Za-z0-9-]{10,}\b/],
-  ["provider-api-key", /\bsk-(?:ant-|proj-|svcacct-|admin-)?[A-Za-z0-9_-]{20,}\b/],
-  ["google-api-key", /\bAIza[0-9A-Za-z_-]{35}\b/],
-  ["stripe-key", /\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}\b|\bwhsec_[A-Za-z0-9]{24,}\b/],
-  ["huggingface-token", /\bhf_[A-Za-z0-9]{30,}\b/],
-  ["meta-model-api-key", /\bLLM_[A-Za-z0-9_-]{20,}/],
-  ["npm-token", /\bnpm_[A-Za-z0-9]{36}\b/],
-  ["tessera-key", /\b(?:tsk|tan)_[A-Za-z0-9_-]{16,}\b/],
-  ["jwt", /\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/],
-  ["bearer-header", /\bBearer\s+[A-Za-z0-9._~+/-]{24,}={0,2}/],
-  ["url-credentials", /\b[a-z][a-z0-9+.-]{1,15}:\/\/[^\s/:@'"]{1,64}:[^\s/@'"]{6,128}@/i],
-  ["assigned-secret", /\b(?:api[_-]?key|secret|token|password|passwd|access[_-]?key)\b["']?\s*[:=]\s*["'][A-Za-z0-9_\-+/=.]{20,}["']/i],
-]);
+// Invisible and format characters: every control (Cc) except tab, newline and carriage return,
+// every format character (Cf: zero-width spaces and joiners, LRM, RLM, ALM, the BOM, the word
+// joiner, the soft hyphen, bidirectional overrides and isolates, Unicode tag characters), the
+// variation selectors, the combining grapheme joiner, Mongolian free variation selectors, the Khmer
+// inherent vowels and the Hangul fillers. A literal BOM in code can be written as the ﻿ escape.
+const HIDDEN_RE = /(?![\t\n\r])[\p{Cc}\p{Cf}͏ᅟᅠ឴឵᠋-᠏ㅤ︀-️ﾠ\u{E0000}-\u{E007F}\u{E0100}-\u{E01EF}]/u;
 
-// Every rule above needs one of these fragments, so text without them skips the full scan.
-const SECRET_HINT = /PRIVATE KEY|AKIA|ASIA|gh[pousr]_|github_pat_|xox|sk-|AIza|_live_|_test_|whsec_|hf_|LLM_|npm_|tsk_|tan_|eyJ|Bearer|:\/\/|key|secret|token|passw/i;
+// Credential shapes, each a prefix plus a bounded run, so one test costs at most a few dozen steps
+// per position. A finding names the rule and where it is, never the matched text.
+const RULE_RES = [
+  ["private-key", /-----BEGIN [A-Z0-9 ]{0,40}PRIVATE KEY-----/],
+  ["aws-access-key", /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/],
+  ["github-token", /\bgh[pousr]_[A-Za-z0-9]{36}|\bgithub_pat_[A-Za-z0-9_]{50}/],
+  ["slack-token", /\bxox[abposr]-[A-Za-z0-9-]{10}/],
+  ["provider-api-key", /\bsk-(?:ant-|proj-|svcacct-|admin-)?[A-Za-z0-9_-]{20}/],
+  ["google-api-key", /\bAIza[0-9A-Za-z_-]{35}/],
+  ["stripe-key", /\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16}|\bwhsec_[A-Za-z0-9]{24}/],
+  ["huggingface-token", /\bhf_[A-Za-z0-9]{30}/],
+  ["meta-model-api-key", /\bLLM_[A-Za-z0-9_-]{20}/],
+  ["npm-token", /\bnpm_[A-Za-z0-9]{36}/],
+  ["tessera-key", /\b(?:tsk|tan)_[A-Za-z0-9_-]{16}/],
+  ["herma-key", /\bhmk_[A-Za-z0-9_-]{16}/],
+  ["bearer-header", /\bBearer[ \t]{1,8}[A-Za-z0-9._~+/-]{24}/],
+  ["url-credentials", /\b[a-z][a-z0-9+.-]{1,15}:\/\/[^\s/:@'"]{1,64}:[^\s/@'"]{6,128}@/i],
+  ["assigned-secret", /\b(?:api[_-]?key|secret|token|password|passwd|access[_-]?key)\b["']?[ \t]{0,8}[:=][ \t]{0,8}["'][A-Za-z0-9_\-+/=.]{20,256}["']/i],
+];
+// A JWT is three dot-separated segments, the first two starting with eyJ (base64 of '{"'). Runs of
+// its alphabet are matched once each (a maximal run is consumed and never rescanned), then split on
+// the dots and tested with anchored patterns.
+const JWT_RUN = /[A-Za-z0-9_.-]{38,}/g;
+const JWT_HEAD = /(?:^|[^A-Za-z0-9])eyJ[A-Za-z0-9_-]{10}[A-Za-z0-9_-]*$/;
+const JWT_BODY = /^eyJ[A-Za-z0-9_-]{10}/;
+const JWT_SIG = /^[A-Za-z0-9_-]{10}/;
+function jwtAt(t) {
+  JWT_RUN.lastIndex = 0;
+  for (let m; (m = JWT_RUN.exec(t));) {
+    const parts = m[0].split(".");
+    for (let i = 0; i + 2 < parts.length; i++)
+      if (JWT_BODY.test(parts[i + 1]) && JWT_SIG.test(parts[i + 2]) && JWT_HEAD.test(parts[i])) return m.index;
+  }
+  return -1;
+}
+export const SECRET_RULES = Object.freeze([...RULE_RES.map(([id, re]) => [id, t => { const m = re.exec(t); return m ? m.index : -1; }]), ["jwt", jwtAt]]);
+// Every rule needs one of these fragments, so text without them skips the full scan.
+const SECRET_HINT = /PRIVATE KEY|AKIA|ASIA|gh[pousr]_|github_pat_|xox|sk-|AIza|_live_|_test_|whsec_|hf_|LLM_|npm_|tsk_|tan_|hmk_|eyJ|Bearer|:\/\/|key|secret|token|passw/i;
+
 const isObj = v => v !== null && typeof v === "object" && !Array.isArray(v);
 const text = (v, max) => typeof v === "string" && v.trim().length > 0 && [...v].length <= max;
 const bytesOf = v => new TextEncoder().encode(JSON.stringify(v)).length;
@@ -63,25 +90,60 @@ function finding(findings, rule, where, detail) {
   if (findings.length < LIBRARY_LIMITS.findings) findings.push({ rule, where, detail });
 }
 
-// Every string in a value, keys included, with a readable path.
-function strings(value, path, out, depth = 0) {
-  if (depth > 64) return out.push({ path, text: "", tooDeep: true });
+// Nesting is measured without recursion, before anything stringifies, clones or walks the value.
+export function withinDepth(value, max = LIBRARY_LIMITS.json_depth) {
+  const stack = [[value, 1]];
+  while (stack.length) {
+    const [v, d] = stack.pop();
+    if (v === null || typeof v !== "object") continue;
+    if (d > max) return false;
+    for (const x of Array.isArray(v) ? v : Object.values(v)) if (x !== null && typeof x === "object") stack.push([x, d + 1]);
+  }
+  return true;
+}
+
+// Every string in a value, keys included, with a readable path (depth is already bounded).
+function strings(value, path, out) {
   if (typeof value === "string") out.push({ path, text: value });
-  else if (Array.isArray(value)) value.forEach((v, i) => strings(v, `${path}[${i}]`, out, depth + 1));
-  else if (isObj(value)) for (const [k, v] of Object.entries(value)) { out.push({ path: `${path}.${k} (key)`, text: k }); strings(v, `${path}.${k}`, out, depth + 1); }
+  else if (Array.isArray(value)) value.forEach((v, i) => strings(v, `${path}[${i}]`, out));
+  else if (isObj(value)) for (const [k, v] of Object.entries(value)) { out.push({ path: `${path}.${k} (key)`, text: k }); strings(v, `${path}.${k}`, out); }
   return out;
 }
 
-// Library content is code and synthetic fixtures. Before the fabric's own personal-data screen
-// runs, remove only what cannot be personal data: @names with no local part (decorators such as
+// Library content is code and example fixtures. Before the fabric's own personal-data screen runs,
+// remove only what cannot be personal data: @names with no local part (decorators such as
 // @unittest.skipIf), mail at reserved names (RFC 2606 and 6761: example.com, example.net,
-// example.org and the .example, .invalid, .test and .localhost domains), the 555-0100 to 555-0199
-// numbers reserved for fiction and numbers in the unassigned 555 area code, and 13 to 19 digit runs that fail the Luhn check, so they are no
-// payment card. Everything else still goes through hasPersonalData unchanged.
-const NO_LOCAL_PART = /(^|[^A-Za-z0-9._%+-])@[A-Za-z_][A-Za-z0-9_.-]*/g;
-const RESERVED_MAIL = /[A-Za-z0-9._%+-]+@(?:[A-Za-z0-9-]+\.)*(?:example\.(?:com|net|org)|[A-Za-z0-9-]+\.(?:example|invalid|test|localhost))(?![A-Za-z0-9.-])/gi;
+// example.org and the .example, .invalid, .test and .localhost domains), numbers reserved for
+// fiction (555-0100 to 555-0199) or in the unassigned 555 area code, and 13 to 19 digit runs that
+// fail the Luhn check, unless the run itself holds an SSN or phone shape. Everything else goes
+// through hasPersonalData unchanged.
+const LOCAL_CHAR = /[A-Za-z0-9._%+-]/;
+const DOMAIN_CHAR = /[A-Za-z0-9.-]/;
+const RESERVED_TLDS = new Set(["example", "invalid", "test", "localhost"]);
+const RESERVED_BASES = ["example.com", "example.net", "example.org"];
+function reservedDomain(domain) {
+  const d = domain.toLowerCase(), dot = d.lastIndexOf(".");
+  if (dot < 1) return false;
+  return RESERVED_TLDS.has(d.slice(dot + 1)) || RESERVED_BASES.some(base => d === base || d.endsWith("." + base));
+}
+// One pass over the @ signs: each looks back at most 64 characters and forward at most 255.
+function stripMail(t) {
+  if (t.indexOf("@") < 0) return t;
+  let out = "", last = 0;
+  for (let at = t.indexOf("@"); at >= 0; at = t.indexOf("@", at + 1)) {
+    let start = at;
+    while (start > last && at - start < 64 && LOCAL_CHAR.test(t[start - 1])) start--;
+    let end = at + 1;
+    while (end < t.length && end - at <= 255 && DOMAIN_CHAR.test(t[end])) end++;
+    const domain = t.slice(at + 1, end).replace(/\.+$/, "");
+    if (start === at && /^[A-Za-z_]/.test(domain)) { out += t.slice(last, at) + " "; last = at + 1 + domain.length; }
+    else if (start < at && reservedDomain(domain)) { out += t.slice(last, start) + " "; last = at + 1 + domain.length; }
+  }
+  return out + t.slice(last);
+}
 const FICTION_PHONE = /(?<![\w+])(?:\+?1[ .-]?)?(?:(?:\(\d{3}\)[ .-]?|\d{3}[ .-])?555[ .-]01\d{2}|\(?555\)?[ .-]?\d{3}[ .-]\d{4})(?![\w-])/g;
 const DIGIT_RUN = /\b(?:\d[ -]?){13,19}\b/g;
+const SSN_OR_PHONE_SHAPE = /(?<!\d)\d{3}-\d{2}-\d{4}(?!\d)|(?<!\d)(?:\(\d{3}\)[ .-]?|\d{3}[ .-])\d{3}[ .-]\d{4}(?!\d)/;
 function luhn(digits) {
   let sum = 0;
   for (let i = digits.length - 1, alt = false; i >= 0; i--, alt = !alt) {
@@ -92,8 +154,8 @@ function luhn(digits) {
   return sum % 10 === 0;
 }
 export function libraryPersonalData(t) {
-  const cleaned = t.replace(RESERVED_MAIL, " ").replace(NO_LOCAL_PART, "$1 ").replace(FICTION_PHONE, " ")
-    .replace(DIGIT_RUN, run => (luhn(run.replace(/[ -]/g, "")) ? run : " "));
+  const cleaned = stripMail(t).replace(FICTION_PHONE, " ")
+    .replace(DIGIT_RUN, run => (luhn(run.replace(/[ -]/g, "")) || SSN_OR_PHONE_SHAPE.test(run) ? run : " "));
   return hasPersonalData(cleaned);
 }
 
@@ -103,17 +165,22 @@ function lineOf(textValue, index) {
   return line;
 }
 
-// Secret, hidden-character and personal-data screens over every string of the payload.
-export function screenStrings(value, rootPath, findings) {
-  for (const { path, text: t, tooDeep } of strings(value, rootPath, [])) {
-    if (tooDeep) { finding(findings, "schema", path, "nested more than 64 levels deep"); continue; }
+// Hidden-character, secret and personal-data screens over every string of the payload, under a
+// scan budget and a wall-clock budget; past either, the proposal is refused, never waved through.
+export function screenStrings(value, rootPath, findings, budget = { chars: 0, started: Date.now() }) {
+  for (const { path, text: t } of strings(value, rootPath, [])) {
     if (!t) continue;
-    if (HIDDEN_RE.test(t)) finding(findings, "hidden_characters", path, "control or bidirectional override characters are not accepted");
-    if (SECRET_HINT.test(t)) for (const [rule, re] of SECRET_RULES) {
-      const m = re.exec(t);
-      if (m) finding(findings, "secrets", `${path}${t.includes("\n") ? ` line ${lineOf(t, m.index)}` : ""}`, `looks like a credential (${rule}); remove it and use a placeholder such as <your-key>`);
+    budget.chars += t.length * (SECRET_HINT.test(t) ? SECRET_RULES.length + 4 : 4);
+    if (budget.chars > LIBRARY_LIMITS.scan_chars || Date.now() - budget.started > LIBRARY_LIMITS.check_ms) {
+      finding(findings, "complexity", path, "the proposal is too large or too complex to check within the door's budget; split it or send less");
+      return;
     }
-    if (libraryPersonalData(t)) finding(findings, "personal_data", path, "looks like personal or payment data; use synthetic data at example.com or a .invalid domain");
+    if (HIDDEN_RE.test(t)) finding(findings, "hidden_characters", path, "invisible or format characters are not accepted (zero-width, bidirectional, tag, variation selector or control characters)");
+    if (SECRET_HINT.test(t)) for (const [rule, find] of SECRET_RULES) {
+      const at = find(t);
+      if (at >= 0) finding(findings, "secrets", `${path}${t.includes("\n") ? ` line ${lineOf(t, at)}` : ""}`, `looks like a credential (${rule}); remove it and use a placeholder such as <your-key>`);
+    }
+    if (libraryPersonalData(t)) finding(findings, "personal_data", path, "looks like personal or payment data; use example data at example.com or a .invalid domain");
   }
 }
 
@@ -182,11 +249,13 @@ function checkBundle(bundle, anonymous, findings) {
   if (anonymous && bytesOf(bundle) > LIBRARY_LIMITS.pack_bytes_anonymous) finding(findings, "size", "bundle", `a tracked session sends packs of at most ${LIBRARY_LIMITS.pack_bytes_anonymous} bytes; use a contributor key for larger ones`);
 }
 
-// Returns {findings, payload, catalog, bytes, sizeRefusal}. payload is the normalized proposal the
-// digest covers; catalog lists the keys an approval would admit. Findings never echo secret text.
+// Returns {findings, payload, catalog, bytes, sizeRefusal, depthRefusal}. payload is the normalized
+// proposal the digest covers; catalog lists the keys an approval would admit. Findings never echo
+// secret text.
 export function inspectProposal(body, { anonymous = false } = {}) {
   const findings = [];
-  if (!isObj(body)) return { findings: [{ rule: "schema", where: "body", detail: "a proposal is a JSON object" }] };
+  if (!isObj(body)) return { findings: [{ rule: "schema", where: "body", detail: "a proposal is a JSON object" }], depthRefusal: true };
+  if (!withinDepth(body)) return { findings: [{ rule: "schema", where: "body", detail: `JSON nests at most ${LIBRARY_LIMITS.json_depth} levels deep` }], depthRefusal: true };
   const type = body.type;
   if (!["noun", "verb", "pack"].includes(type)) return { findings: [{ rule: "schema", where: "type", detail: "type is noun (a task object), verb (a task template) or pack" }] };
   const bytes = bytesOf(body);

@@ -404,7 +404,9 @@
         "deploy/cloudflare/cloud_library.js",
         "deploy/cloudflare/library_checks.js",
         "deploy/cloudflare/library_contract.js",
-        "deploy/cloudflare/cloud_a2a.js"
+        "deploy/cloudflare/cloud_a2a.js",
+        "deploy/cloudflare/cloud_library_reads.js",
+        "deploy/cloudflare/library_io.js"
       ],
       "kind": "edge",
       "domain": "neutral",

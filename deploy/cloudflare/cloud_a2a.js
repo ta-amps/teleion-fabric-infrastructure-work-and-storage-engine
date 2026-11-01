@@ -1,7 +1,9 @@
 // A thin A2A (JSON-RPC 2.0) adapter for the library door. message/send becomes the same propose
 // verb HTTP and MCP use, under the caller's own key or tracked session; tasks/get reads the
-// proposal's public status. No agent, queue or model sits behind it.
-const MAX_BODY = 600 * 1024;
+// proposal's status (a stub, or the full proposal for its proposer and reviewers). No agent, queue
+// or model sits behind it.
+import { LIBRARY_BODY_LIMIT, readCappedBody } from "./library_io.js";
+
 const RPC = { parse: -32700, invalid: -32600, method: -32601, params: -32602, internal: -32603, notFound: -32001, notCancelable: -32002, unsupported: -32004, contentType: -32005 };
 const isObj = v => v !== null && typeof v === "object" && !Array.isArray(v);
 
@@ -45,7 +47,8 @@ function taskFrom(view, message = null) {
 }
 
 function storeFailure(id, out) {
-  const data = { http_status: out.status, code: out.code, detail: out.detail, ...(out.extra?.findings ? { findings: out.extra.findings, refusal_sha256: out.extra.refusal_sha256 } : {}), ...(out.extra?.retry_after != null ? { retry_after: out.extra.retry_after } : {}) };
+  const data = { http_status: out.status, code: out.code, detail: out.detail, ...(out.extra?.findings ? { findings: out.extra.findings, refusal_sha256: out.extra.refusal_sha256 } : {}),
+    ...(out.extra?.retry_after != null ? { retry_after: out.extra.retry_after } : {}), ...(out.extra?.budget ? { budget: out.extra.budget } : {}) };
   if (out.status === 401 || out.status === 403) return failure(id, RPC.invalid, out.status === 401 ? "Authentication required" : "Not permitted", data, out.status);
   if ([400, 404, 409, 413, 422].includes(out.status)) return failure(id, out.status === 404 ? RPC.notFound : RPC.params, out.detail, data);
   return failure(id, RPC.internal, out.detail || "the library door could not take this message", data);
@@ -53,10 +56,10 @@ function storeFailure(id, out) {
 
 export async function handleA2a(request, { bearer, propose, read, sessionUrl }) {
   if (request.method !== "POST") return new Response(null, { status: 405, headers: { allow: "POST" } });
-  const raw = await request.text();
-  if (raw.length > MAX_BODY) return failure(null, RPC.invalid, `a message holds at most ${MAX_BODY} bytes`, null, 413);
+  const raw = await readCappedBody(request, LIBRARY_BODY_LIMIT);
+  if (raw.status) return failure(null, raw.status === 413 ? RPC.invalid : RPC.parse, raw.detail, null, raw.status);
   let msg;
-  try { msg = JSON.parse(raw); } catch { return failure(null, RPC.parse, "Parse error", null, 400); }
+  try { msg = JSON.parse(raw.text); } catch { return failure(null, RPC.parse, "Parse error", null, 400); }
   if (!isObj(msg) || msg.jsonrpc !== "2.0" || typeof msg.method !== "string") return failure(isObj(msg) ? msg.id : null, RPC.invalid, "one JSON-RPC 2.0 request object; batches are not accepted");
   const { id, method, params } = msg;
   if (method === "message/send" || method === "tasks/send") {

@@ -883,7 +883,7 @@ export async function handleMcpRequest(
       else if (toolName === "cancel") out = await stub.rpcCall(bearerSecret, "cancel", { ...toolArgs, ...routeCtx });
       else if (toolName === "list_verbs") out = await stub.rpcCall(bearerSecret, "listVerbs", { ...toolArgs, ...routeCtx });
       else if (toolName === "claim_events") out = await stub.rpcCall(bearerSecret, "claimEvents", { ...toolArgs, ...routeCtx });
-      else if (toolName === "proposal_status") out = await stub.libraryRead("proposal", { proposal_id: toolArgs.proposal_id });
+      else if (toolName === "proposal_status") out = await stub.libraryRead("proposal", { proposal_id: toolArgs.proposal_id }, bearerSecret || null);
       else if (LIBRARY_TOOL_NAMES.has(toolName)) out = bearerSecret ? await stub.libraryPropose(bearerSecret, libraryToolBody(toolName, toolArgs), "mcp") : { ok: false, status: 401, code: "unauthorized", detail: "a contributor key or a tracked session (open_anonymous_session) is required to propose" };
       else out = await callTool(stub, env, ctx, bearerSecret, toolName, toolArgs, routeCtx);
       if (!out.ok) {
@@ -892,7 +892,7 @@ export async function handleMcpRequest(
           id,
           result: {
             content: [{ type: "text", text: `${out.code}: ${out.detail}` }],
-            structuredContent: { error: { code: out.code, status: out.status, detail: out.detail, ...(out.code === "storage_quota_exhausted" ? { retry_after: out.extra?.retry_after, reset_at: out.extra?.reset_at } : {}), ...(out.extra?.findings ? { findings: out.extra.findings, refusal_sha256: out.extra.refusal_sha256 } : {}), ...(out.code === "rate_limited" ? { retry_after: out.extra?.retry_after ?? null } : {}) }, access: out.status === 401 ? accessDescriptionFor(env.PUBLIC_URL || new URL(request.url).origin, env) : undefined },
+            structuredContent: { error: { code: out.code, status: out.status, detail: out.detail, ...(out.code === "storage_quota_exhausted" ? { retry_after: out.extra?.retry_after, reset_at: out.extra?.reset_at } : {}), ...(out.extra?.findings ? { findings: out.extra.findings, refusal_sha256: out.extra.refusal_sha256 } : {}), ...(out.code === "rate_limited" ? { retry_after: out.extra?.retry_after ?? null, ...(out.extra?.budget ? { budget: out.extra.budget } : {}) } : {}) }, access: out.status === 401 ? accessDescriptionFor(env.PUBLIC_URL || new URL(request.url).origin, env) : undefined },
             isError: true,
           },
         };

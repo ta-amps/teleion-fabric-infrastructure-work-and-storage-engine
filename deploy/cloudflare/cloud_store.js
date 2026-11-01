@@ -9,7 +9,8 @@ import { initAccess, principalMetadata, requestIdentity, mintAnonymous, mintRequ
 import { canonicalSha256, planFragilityRechecks } from "./ontology_engine.js";
 import { reviewProof, publicationProof } from "./cloud_publication.js";
 import { frontierVerificationProof, frontierReviewProof, frontierPublicationProof } from "./cloud_frontier_publication.js";
-import { libraryGuard, libraryReviewOutcome, proposeToLibrary, readLibrary } from "./cloud_library.js";
+import { inspectForLibrary, libraryAttempt as attemptLibrary, libraryGuard, libraryRefusal as refuseLibrary, libraryReviewOutcome, writeProposal } from "./cloud_library.js";
+import { readLibrary } from "./cloud_library_reads.js";
 import { LIBRARY } from "./library_contract.js";
 import { DurableObject } from "cloudflare:workers";
 import { TESSERA_VERSION } from "./cloud_pages.js";
@@ -1953,9 +1954,13 @@ export class TesseraCoordinator extends DurableObject {
     try { this.ctx.storage.transactionSync(() => chargeClaimCaps(this, [[who.key_id, 0, "", null]])); return { ok: true }; } catch (e) { return this._errOut(e); }
   }
   publicActivity() { return publicActivity(this); }
-  // The seed-pack library door (cloud_library.js); always the shared namespace.
-  async libraryPropose(secret, body, meta) { return proposeToLibrary(this, secret, body, meta); }
-  libraryRead(what, args) { return readLibrary(this, what, args); }
+  // The seed-pack library door (cloud_library.js). Attempts, writes and reads run in the primary
+  // object; libraryInspect runs only in the separate library-checks instance and touches no storage.
+  async libraryAttempt(secret, meta) { return attemptLibrary(this, secret, meta); }
+  async libraryInspect(body, opts) { return inspectForLibrary(this, body, opts); }
+  async libraryPropose(secret, inspected, meta) { return writeProposal(this, secret, inspected, meta); }
+  async libraryRefusal(secret, out, meta) { return refuseLibrary(this, secret, out, meta); }
+  async libraryRead(what, args, secret) { return readLibrary(this, what, args, secret); }
   recordAccessEvent(grant, action, args, out, meta) { audit(this, grant, action, args, out, meta); }
   countAccessEvent(grant, action, args, out, meta) { countAccess(this, grant, action, args, out, meta); }
   async auditForToken(secret, args = {}) {

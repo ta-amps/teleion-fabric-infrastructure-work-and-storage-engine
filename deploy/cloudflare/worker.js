@@ -3,7 +3,8 @@ import { storageQuotaFailure } from "./storage_quota.js";
 import { namespaceReachable, publicPrincipal } from "./cloud_access.js";
 import { accessDiscoveryRoute, accessRoute, accessDescriptionFor } from "./cloud_access_routes.js";
 import { handleA2a } from "./cloud_a2a.js";
-import { renderA2aCard } from "./library_contract.js";
+import { LIBRARY_CHECKER, libraryEnabled, renderA2aCard } from "./library_contract.js";
+import { LIBRARY_BODY_LIMIT, parseJsonBody, proposeThroughDoors, readCappedBody } from "./library_io.js";
 // Tessera Cloud Worker: 24/7 native cloud execution on Cloudflare Durable Object SQLite + D1
 // (`STORAGE_MODE = "cloud"`, the default) with optional Fly.io origin reverse-proxy fallback
 // (`STORAGE_MODE = "origin"`). Serves all Tessera Spec v0.2 HTTP routes (`/v1/*` and
@@ -412,7 +413,7 @@ function discoveryResponse(path, method, env, publicUrl, repoUrl) {
       { noStore: false }
     );
   }
-  if (path === "/.well-known/agent.json") return jsonResp(renderA2aCard(publicUrl, repoUrl));
+  if (path === "/.well-known/agent.json") return libraryEnabled(env) ? jsonResp(renderA2aCard(publicUrl, repoUrl, env)) : problem(404, "not_found", "the library door is not enabled on this fabric");
   if (path === "/.well-known/agent-card.json") {
     return jsonResp({ ...renderAgentCard(publicUrl, repoUrl, MCP_TOOLS), authentication: { discovery: "none", demo: "tan_ bearer session", keyed: "tsk_ bearer key" }, capabilities: { streaming: "long-poll", tools: true }, access: accessDescriptionFor(publicUrl, env) });
   }
@@ -445,13 +446,14 @@ const STORAGELESS_STUB = new Proxy({}, { get: (_target, name) => () => { throw n
 
 
 // The seed-pack library door. POST /v1/library/proposals files one proposal (a noun, a verb template
-// or a whole pack) under the caller's own key or tracked session; the GET routes read the public
-// proposals, catalog and instruction nouns without a key. /a2a maps A2A message/send to the same path.
-const LIBRARY_BODY_LIMIT = 600 * 1024;
+// or a whole pack) under the caller's own key or tracked session; the GET routes read proposal
+// status stubs, the public catalog and the instruction nouns without a key, and a proposal's content
+// with its proposer's or a reviewer's key. /a2a maps A2A message/send to the same path.
 function libraryOut(out) {
   if (out.ok) return jsonResp(out.data, out.status || 200);
   const extra = {};
   if (out.extra?.findings) Object.assign(extra, { findings: out.extra.findings, refusal_sha256: out.extra.refusal_sha256 });
+  if (out.extra?.budget) extra.budget = out.extra.budget;
   if (out.code === "version_conflict") extra.current_version = out.extra?.current_version ?? null;
   const headers = out.code === "rate_limited" && out.extra?.retry_after != null ? { "retry-after": String(Math.max(1, Math.ceil(Number(out.extra.retry_after)))) } : {};
   if (out.code === "rate_limited") extra.retry_after = out.extra?.retry_after ?? null;
@@ -460,16 +462,15 @@ function libraryOut(out) {
 async function libraryRoute(request, path, url, method, bearer, stub, publicUrl) {
   if (path === "/a2a") {
     if (method !== "POST") return problem(405, "method_not_allowed", "A2A JSON-RPC accepts POST /a2a", {}, { allow: "POST" });
-    return withSecurity(await handleA2a(request, { bearer, propose: body => stub.libraryPropose(bearer, body, "a2a"), read: (what, args) => stub.libraryRead(what, args), sessionUrl: `${publicUrl}/v1/session/anonymous` }), { isWrite: true });
+    return withSecurity(await handleA2a(request, { bearer, propose: body => stub.libraryPropose(bearer, body, "a2a"), read: (what, args) => stub.libraryRead(what, args, bearer), sessionUrl: `${publicUrl}/v1/session/anonymous` }), { isWrite: true });
   }
   if (path !== "/v1/library" && !path.startsWith("/v1/library/")) return null;
   if (path === "/v1/library/proposals" && method === "POST") {
-    const raw = await request.text();
-    if (raw.length > LIBRARY_BODY_LIMIT) return problem(413, "payload_too_large", `a proposal request holds at most ${LIBRARY_BODY_LIMIT} bytes`);
-    let body;
-    try { body = JSON.parse(raw); } catch { return problem(400, "invalid_request", "request body must be valid JSON"); }
-    if (!bearer) return problem(401, "unauthorized", "send Authorization: Bearer <contributor key or tracked session token>; POST /v1/session/anonymous opens a tracked session without secrets");
-    return libraryOut(await stub.libraryPropose(bearer, body, "http"));
+    const read = await readCappedBody(request);
+    if (read.status) return problem(read.status, read.code, read.detail);
+    const parsed = parseJsonBody(read.text);
+    if (parsed.status) return problem(parsed.status, parsed.code, parsed.detail);
+    return libraryOut(await stub.libraryPropose(bearer, parsed.body, "http"));
   }
   if (method !== "GET" && method !== "HEAD") return problem(405, "method_not_allowed", "library reads are GET; proposals are POST /v1/library/proposals", {}, { allow: path === "/v1/library/proposals" ? "GET, HEAD, POST" : "GET, HEAD" });
   const q = name => url.searchParams.get(name);
@@ -481,7 +482,7 @@ async function libraryRoute(request, path, url, method, bearer, stub, publicUrl)
   if (one) {
     let id;
     try { id = decodeURIComponent(one[2]); } catch { return problem(400, "invalid_request", "bad escape in path"); }
-    return libraryOut(await stub.libraryRead(one[1] === "proposals" ? "proposal" : "catalog_item", one[1] === "proposals" ? { proposal_id: id } : { key: id }));
+    return libraryOut(await stub.libraryRead(one[1] === "proposals" ? "proposal" : "catalog_item", one[1] === "proposals" ? { proposal_id: id } : { key: id }, bearer));
   }
   return problem(404, "not_found", "no such library resource");
 }
@@ -551,9 +552,10 @@ const worker = {
       bootstrapOrIssueKey: (secret, bootstrap, body) => primary.bootstrapOrIssueKey(secret, bootstrap, { ...body, access_meta: meta }),
       openAnonymousSession: body => primary.openAnonymousSession(body, meta),
       auditForToken: (secret, args) => primary.auditForToken(secret, args),
-      // The library door always works in the shared namespace, under the caller's own principal.
-      libraryPropose: (secret, body, door) => primary.libraryPropose(secret, body, { ...meta, door }),
-      libraryRead: (what, args) => primary.libraryRead(what, args),
+      // The library door always works in the shared namespace, under the caller's own principal;
+      // its content checks run in the separate library-checks object, never in the primary one.
+      libraryPropose: (secret, body, door) => proposeThroughDoors({ primary, checker: coordBinding.get(coordBinding.idFromName(LIBRARY_CHECKER)), secret, body, meta: { ...meta, door } }),
+      libraryRead: (what, args, secret = null) => primary.libraryRead(what, args, secret),
     };
     const bearer = requestBearer;
     const surfaceHeader = (request.headers.get("x-surface-id") || "").trim();
@@ -1579,6 +1581,7 @@ const worker = {
 // routes themselves, not to any path that contains "/blobs" (H-65); Python applies the same caps.
 export function bodyRoute(pathname) {
   const path = pathname.replace(/^\/ns\/[^/]+(?=\/)/, "");
+  if (path === "/v1/library/proposals" || path === "/a2a") return { kind: "json", limit: LIBRARY_BODY_LIMIT };
   if (path === "/v1/blobs") return { kind: "bytes", limit: 16 * 1024 * 1024 };
   if (/^\/v1\/buckets\/[^/]+\/objects\/./.test(path)) return { kind: "bytes", limit: 16 * 1024 * 1024 };
   if (path === "/work" || path.startsWith("/work/")) return { kind: "form", limit: 1024 * 1024 };
@@ -1601,6 +1604,8 @@ const onboardingApplication = {
       if (request.body) {
         const route = bodyRoute(new URL(request.url).pathname);
         const limit = (h.get("authorization") || "").startsWith("Bearer tan_") ? 65536 : route.limit;
+        // A declared length over the limit is refused before a byte is read.
+        if (h.has("content-length") && !(Number(h.get("content-length")) <= limit)) return problem(413, "payload_too_large", "request exceeds byte limit", {}, headers);
         const reader = request.body.getReader(); const chunks = []; let size = 0;
         while (true) {
           const { done, value } = await reader.read(); if (done) break;
