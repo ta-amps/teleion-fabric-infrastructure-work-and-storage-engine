@@ -437,7 +437,13 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
     @app.get("/v1/tasks/{task_id}")
     def task(task_id: str, grant: KeyGrant = key) -> dict[str, Any]:
         view = store.task(task_id)
-        gate.queue(grant, view.queue)
+        bound = grant.bound_surface()
+        if not (
+            bound is not None
+            and view.visibility_scope == "allowlist_surfaces"
+            and f"surface:{bound}" in view.allowed_surfaces
+        ):
+            gate.queue(grant, view.queue)
         return view.model_dump(mode="json")
 
     @app.get("/v1/tasks/{task_id}/results")

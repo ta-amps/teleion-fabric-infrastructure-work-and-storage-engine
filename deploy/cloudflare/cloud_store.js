@@ -2327,7 +2327,6 @@ export class TesseraCoordinator extends DurableObject {
 
         case "task": {
           const view = this._taskView(String(args.task_id));
-          this._requireQueue(grant, view.queue);
           if (usesOpenVerbs(grant, this.namespace) || filesRequests(grant, this.namespace)) {
             if (!this._taskVisible(this._taskRow(String(args.task_id)), grant, viewerCtx)) throw notFound(`task '${view.task_id}' does not exist`);
           } else if (
@@ -2345,6 +2344,12 @@ export class TesseraCoordinator extends DurableObject {
           ) {
             throw notFound(`task '${view.task_id}' does not exist`);
           }
+          const surfaceAllowed =
+            view.visibility_scope === "allowlist_surfaces" &&
+            Boolean(grant.bound_surface) &&
+            Array.isArray(view.allowed_surfaces) &&
+            view.allowed_surfaces.includes(`surface:${grant.bound_surface}`);
+          if (!surfaceAllowed) this._requireQueue(grant, view.queue);
           return { ok: true, status: 200, data: this._viewerTaskView(grant, view) };
         }
 
