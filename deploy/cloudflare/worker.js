@@ -512,7 +512,7 @@ const worker = {
     const requestBearer = extractBearer(request);
     // Unauthenticated public reads of the main namespace need no identity or key lookup.
     if (!requestBearer && namespace === "main" && (method === "GET" || method === "HEAD")) {
-      if (["/v1/health", "/api/health", "/healthz"].includes(path)) return jsonResp(await primary.publicHealthAndBoard(false, "main"));
+      if (["/v1/health", "/api/health", "/healthz", "/health"].includes(path)) return jsonResp(await primary.publicHealthAndBoard(false, "main"));
       if (path === "/board") {
         const info = await primary.publicHealthAndBoard(true, "main");
         return htmlResp(renderBoardHtml(info.health, info.snapshot, repoUrl));
@@ -558,7 +558,7 @@ const worker = {
     const bearer = requestBearer;
     const surfaceHeader = (request.headers.get("x-surface-id") || "").trim();
     const baseRpc = { namespace, isPrimary, surfaceHeader };
-    if (namespace !== "main" && ["/board", "/healthz", "/v1/health", "/api/health"].includes(path)) {
+    if (namespace !== "main" && ["/board", "/healthz", "/health", "/v1/health", "/api/health"].includes(path)) {
       const access = await stub.rpcCall(bearer, "verifyKey", baseRpc);
       if (!access.ok) return rpcResponse(access);
     }
@@ -596,7 +596,7 @@ const worker = {
 
     // 3. Public health & agent door pages
     if (
-      (path === "/v1/health" || path === "/api/health" || path === "/healthz") &&
+      (path === "/v1/health" || path === "/api/health" || path === "/healthz" || path === "/health") &&
       (method === "GET" || method === "HEAD")
     ) {
       const health = await stub.publicHealthAndBoard(false, namespace);
