@@ -341,9 +341,11 @@ def test_meta_open_bridge_translates_responses_and_refuses_contributor() -> None
 
 def test_opencode_bilateral_dry_suite_verifies_park_resume_and_canonical() -> None:
     bilateral = load("opencode_bilateral")
-    cfg = bilateral.build_opencode_config("http://127.0.0.1:7700/mcp")
+    cfg = bilateral.build_opencode_config(
+        "http://127.0.0.1:7700/mcp", base_url="http://127.0.0.1:11434/v1"
+    )
     assert cfg["mcp"]["tessera"]["headers"]["Authorization"] == "Bearer {env:TESSERA_KEY}"
-    assert cfg["provider"]["ollama-cloud"]["models"]["muse-spark-open"]["tool_call"] is True
+    assert cfg["provider"]["open-weights"]["models"]["muse-spark-open"]["tool_call"] is True
 
     summary = bilateral.run_bilateral_suite(dry_model=True)
     assert summary["ok"] is True

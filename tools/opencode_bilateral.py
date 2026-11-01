@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Bilateral multi-agent test harness for Tessera over MCP (`/mcp`) + HTTP (`/v1/*`),
-pairing OpenCode (`opencode v2.x` CLI) and Ollama Cloud (`muse-spark-open`) workers.
+pairing OpenCode (`opencode v2.x` CLI) and Meta's open-weight Muse model (`muse-spark-open`) workers.
 
 Verifies two bilateral multi-agent protocols on one shared Tessera fabric:
 1. Bilateral `park` <-> `resume` Q&A handshake (`T19` + `T21` non-self-resume):
@@ -18,8 +18,8 @@ Usage:
     # Deterministic offline CI run (no external network or API key required):
     uv run python tools/opencode_bilateral.py --dry-model
 
-    # Live Ollama Cloud (`muse-spark-open`) + live `opencode` CLI over Streamable HTTP `/mcp`:
-    OLLAMA_API_KEY=<key> uv run python tools/opencode_bilateral.py --live-ollama --live-opencode
+    # Live `muse-spark-open` on an OpenAI-compatible host + live `opencode` CLI over Streamable HTTP `/mcp`:
+    OPEN_WEIGHTS_API_BASE=<host>/v1 OPEN_WEIGHTS_API_KEY=<key> uv run python tools/opencode_bilateral.py --live-model --live-opencode
 """
 
 from __future__ import annotations
@@ -63,29 +63,29 @@ def build_opencode_config(
     mcp_url: str,
     *,
     model: str = "muse-spark-open",
-    base_url: str = "https://ollama.com/v1",
+    base_url: str,
 ) -> dict[str, Any]:
     """Generate an isolated `opencode.json` referencing keys strictly via `{env:...}` placeholders."""
     return {
         "$schema": "https://opencode.ai/config.json",
         "provider": {
-            "ollama-cloud": {
+            "open-weights": {
                 "npm": "@ai-sdk/openai-compatible",
-                "name": "Ollama Cloud",
+                "name": "Open-weights endpoint",
                 "options": {
                     "baseURL": base_url,
-                    "apiKey": "{env:OLLAMA_API_KEY}",
+                    "apiKey": "{env:OPEN_WEIGHTS_API_KEY}",
                 },
                 "models": {
                     model: {
-                        "name": f"{model} (Ollama Cloud)",
+                        "name": f"{model} (open-weights endpoint)",
                         "tool_call": True,
                     }
                 },
             }
         },
-        "model": f"ollama-cloud/{model}",
-        "small_model": f"ollama-cloud/{model}",
+        "model": f"open-weights/{model}",
+        "small_model": f"open-weights/{model}",
         "mcp": {
             "tessera": {
                 "type": "remote",
@@ -153,7 +153,7 @@ def _run_opencode_prompt(
     xdg_dir: Path,
     *,
     tessera_key: str,
-    ollama_key: str,
+    model_key: str,
     model: str,
     prompt: str,
 ) -> str:
@@ -164,7 +164,7 @@ def _run_opencode_prompt(
         **os.environ,
         "XDG_CONFIG_HOME": str(xdg_dir),
         "TESSERA_KEY": tessera_key,
-        "OLLAMA_API_KEY": ollama_key,
+        "OPEN_WEIGHTS_API_KEY": model_key,
     }
     proc = subprocess.run(
         [
@@ -173,7 +173,7 @@ def _run_opencode_prompt(
             "--standalone",
             "--auto",
             "--model",
-            f"ollama-cloud/{model}",
+            f"open-weights/{model}",
             prompt,
         ],
         cwd=work_dir,
@@ -189,19 +189,23 @@ def _run_opencode_prompt(
 def run_bilateral_suite(
     *,
     dry_model: bool = True,
-    live_ollama: bool = False,
+    live_model: bool = False,
     live_opencode: bool = False,
     model: str = "muse-spark-open",
-    ollama_base: str = "https://ollama.com/v1",
+    model_base: str = "",
 ) -> dict[str, Any]:
     expander = _load_expander()
     expander.check_model(model)
 
-    use_dry = dry_model and not live_ollama
-    ollama_key = os.environ.get("OLLAMA_API_KEY") or os.environ.get("MODEL_API_KEY") or ""
-    if (live_ollama or live_opencode) and not ollama_key:
+    use_dry = dry_model and not live_model
+    model_key = os.environ.get("OPEN_WEIGHTS_API_KEY") or os.environ.get("MODEL_API_KEY") or ""
+    if not use_dry and not model_base:
         raise RuntimeError(
-            "OLLAMA_API_KEY (or MODEL_API_KEY) is required for --live-ollama/--live-opencode"
+            "OPEN_WEIGHTS_API_BASE or --model-base names the open-weights host for a live run"
+        )
+    if (live_model or live_opencode) and not model_key:
+        raise RuntimeError(
+            "OPEN_WEIGHTS_API_KEY (or MODEL_API_KEY) is required for --live-model/--live-opencode"
         )
 
     port = _free_port()
@@ -222,7 +226,7 @@ def run_bilateral_suite(
             scopes=["store", "surface:tessera"],
         )
         k_agent_b, _ = store.issue_key(
-            "ollama-peer-b",
+            "open-weights-peer-b",
             queues=["seed", "expand", "research", "draft", "review"],
             effect_classes=["read", "write-internal"],
             scopes=["store", "surface:tessera"],
@@ -298,7 +302,7 @@ def run_bilateral_suite(
                 work_dir = tmp_path / "work"
                 (xdg_dir / "opencode").mkdir(parents=True, exist_ok=True)
                 work_dir.mkdir(parents=True, exist_ok=True)
-                cfg_json = build_opencode_config(mcp_url, model=model, base_url=ollama_base)
+                cfg_json = build_opencode_config(mcp_url, model=model, base_url=model_base)
                 (xdg_dir / "opencode" / "opencode.json").write_text(
                     json.dumps(cfg_json, indent=2), encoding="utf-8"
                 )
@@ -310,7 +314,7 @@ def run_bilateral_suite(
                         work_dir,
                         xdg_dir,
                         tessera_key=k_agent_a,
-                        ollama_key=ollama_key,
+                        model_key=model_key,
                         model=model,
                         prompt=(
                             "Use the tessera MCP tools: 1) call claim on queue 'research' with "
@@ -378,7 +382,7 @@ def run_bilateral_suite(
                     # Agent B answers the parked question via resume!
                     answer_payload = {
                         "escalation_phone_ext": "x4102 (EXAMPLE on-site shift captain)",
-                        "answered_by": "ollama-peer-b",
+                        "answered_by": "open-weights-peer-b",
                     }
                     resumed_view = client_b.resume("intake-clarify-01", answer_payload)
                     assert resumed_view.state == "ready"
@@ -425,9 +429,9 @@ def run_bilateral_suite(
                     )["structuredContent"]["receipt"]
 
                     # --- PROTOCOL 2: Bilateral Seed -> Proposals -> Independent Review -> Canonical ---
-                    prev_key = os.environ.get("OLLAMA_API_KEY")
-                    if ollama_key:
-                        os.environ["OLLAMA_API_KEY"] = ollama_key
+                    prev_key = os.environ.get("OPEN_WEIGHTS_API_KEY")
+                    if model_key:
+                        os.environ["OPEN_WEIGHTS_API_KEY"] = model_key
                     try:
                         s_expand = expander.step_once(
                             client_a,
@@ -436,7 +440,7 @@ def run_bilateral_suite(
                             model=model,
                             dry_model=use_dry,
                             api_mode="chat",
-                            base_url=ollama_base,
+                            base_url=model_base,
                         )
                         s_res = expander.step_once(
                             client_a,
@@ -445,7 +449,7 @@ def run_bilateral_suite(
                             model=model,
                             dry_model=use_dry,
                             api_mode="chat",
-                            base_url=ollama_base,
+                            base_url=model_base,
                         )
                         s_draft = expander.step_once(
                             client_a,
@@ -454,22 +458,22 @@ def run_bilateral_suite(
                             model=model,
                             dry_model=use_dry,
                             api_mode="chat",
-                            base_url=ollama_base,
+                            base_url=model_base,
                         )
                         s_rev = expander.step_once(
                             client_b,
                             queue="review",
-                            worker="ollama-peer-b",
+                            worker="open-weights-peer-b",
                             model=model,
                             dry_model=use_dry,
                             api_mode="chat",
-                            base_url=ollama_base,
+                            base_url=model_base,
                         )
                     finally:
                         if prev_key is None:
-                            os.environ.pop("OLLAMA_API_KEY", None)
+                            os.environ.pop("OPEN_WEIGHTS_API_KEY", None)
                         else:
-                            os.environ["OLLAMA_API_KEY"] = prev_key
+                            os.environ["OPEN_WEIGHTS_API_KEY"] = prev_key
 
                     canonical = client_b.get_record(
                         "canonical", "eranos.kit:prop-seed-eranos-ngo-intake"
@@ -487,9 +491,9 @@ def run_bilateral_suite(
                             and s_rev
                             and s_rev["ok"]
                         ),
-                        "mode": "live-ollama+opencode"
+                        "mode": "live-model+opencode"
                         if live_opencode
-                        else ("live-ollama" if live_ollama else "dry-model"),
+                        else ("live-model" if live_model else "dry-model"),
                         "model": model,
                         "park_resume_handshake": {
                             "self_resume_blocked": self_resume_blocked,
@@ -498,7 +502,7 @@ def run_bilateral_suite(
                         },
                         "bilateral_expansion": {
                             "proposer": "opencode-agent-a",
-                            "reviewer": "ollama-peer-b",
+                            "reviewer": "open-weights-peer-b",
                             "proposal_versions": len(prop_hist),
                             "canonical_key": canonical.key,
                             "canonical_version": canonical.version,
@@ -526,23 +530,23 @@ def main() -> int:
     )
     p.add_argument("--dry-model", action="store_true", help="deterministic offline mode")
     p.add_argument(
-        "--live-ollama", action="store_true", help="call live Ollama Cloud chat/completions"
+        "--live-model",
+        action="store_true",
+        help="call the live open-weights chat/completions endpoint",
     )
     p.add_argument(
         "--live-opencode", action="store_true", help="invoke live `opencode run` CLI over /mcp"
     )
     p.add_argument("--model", default="muse-spark-open")
-    p.add_argument(
-        "--ollama-base", default=os.environ.get("OLLAMA_API_BASE", "https://ollama.com/v1")
-    )
+    p.add_argument("--model-base", default=os.environ.get("OPEN_WEIGHTS_API_BASE", ""))
     args = p.parse_args()
 
     res = run_bilateral_suite(
-        dry_model=args.dry_model or not (args.live_ollama or args.live_opencode),
-        live_ollama=args.live_ollama or args.live_opencode,
+        dry_model=args.dry_model or not (args.live_model or args.live_opencode),
+        live_model=args.live_model or args.live_opencode,
         live_opencode=args.live_opencode,
         model=args.model,
-        ollama_base=args.ollama_base,
+        model_base=args.model_base,
     )
     print(json.dumps(res, indent=2))
     return 0 if res["ok"] else 1

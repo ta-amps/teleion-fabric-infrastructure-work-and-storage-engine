@@ -152,12 +152,22 @@ def test_wrong_report_cannot_attach_to_different_dataset(tmp_path: Path) -> None
         payloads(tmp_path / "data", RECIPE, report_path=report)
 
 
-def test_pretrained_recipes_pin_weights_and_explicit_resource_allowance() -> None:
-    for name in ("llama-1b-qlora", "llama-3b-qlora"):
-        recipe = recipe_from(RECIPE.with_name(name + ".json"))
-        assert recipe["quantization"] == "nf4" and recipe["device"] == "cuda"
-        assert len(recipe["revision"]) == 40 and recipe["steps"] > 0
-        assert recipe["sequence_budget"] > 0
+def test_pretrained_recipes_pin_weights_and_explicit_resource_allowance(tmp_path: Path) -> None:
+    # A pretrained recipe names the model it trains. This one is made up, so nothing is downloaded.
+    path = tmp_path / "pretrained.json"
+    path.write_text(json.dumps({
+        "version": 1, "mode": "pretrained", "model_id": "example-org/example-1b-instruct",
+        "revision": "0" * 40, "license": "Example license; existing authorized access required",
+        "quantization": "nf4", "device": "cuda", "sequence_budget": 1536, "steps": 8,
+        "gradient_accumulation": 4, "learning_rate": 0.0002, "rank": 8, "seed": 17,
+        "target_modules": ["q_proj", "v_proj"],
+        "hardware_target": "One 16 GB GPU; verify actual peak memory locally, not a fit guarantee",
+        "purpose": "Bounded example plumbing run; not a quality benchmark",
+    }))  # fmt: skip
+    recipe = recipe_from(path)
+    assert recipe["quantization"] == "nf4" and recipe["device"] == "cuda"
+    assert len(recipe["revision"]) == 40 and recipe["steps"] > 0
+    assert recipe["sequence_budget"] > 0
 
 
 def test_glimmer_bridge_keeps_test_separate_and_tracking_disabled(tmp_path: Path) -> None:

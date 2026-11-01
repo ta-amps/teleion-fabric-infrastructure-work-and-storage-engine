@@ -47,7 +47,8 @@ from examples.continuous_tuning.tools import (  # noqa: E402
 )
 
 HERE = ROOT / "examples/continuous_tuning"
-BASE = HERE / "recipes/base-llama-3.2-1b-instruct.json"
+# A made-up base description: the fixture backend never loads weights.
+BASE = ROOT / "tests/fixtures/continuous_tuning_base.json"
 # The rule was committed before round 1; editing it must be a visible, deliberate act.
 # Revised once for wording only (one limitation sentence, 2026-11-01); the rule itself is unchanged.
 RULE_SHA256 = "4526698009cb5c7d69c380ddb8c67f56d0f7cc03d07b55e166da1a91857b39cc"
@@ -346,6 +347,9 @@ def test_pack_is_deterministic_offline_and_valid_against_tessera(
     research = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = research
     spec.loader.exec_module(research)
+    # A supplied base adds its description and one tick verb seed.
+    pack = pack_module.build_pack(bases=[BASE])
+    assert len(pack["tasks"]) == 1
     keys = {record["key"]: record for record in pack["records"]}
     for record in pack["records"]:
         RecordWrite.model_validate(record)
@@ -374,7 +378,7 @@ def test_pack_seed_runs_a_baseline_round_through_the_worker(tmp_path: Path) -> N
     from examples.continuous_tuning.fabric import QUEUE, WORKER, Fabric
     from examples.finetuning.data import digest
 
-    pack = pack_module.build_pack()
+    pack = pack_module.build_pack(bases=[BASE])
     spec = json.loads((HERE / "learner_spec.json").read_bytes())
     backend = FixtureBackend(TOOLS, spec["data_plan"])
     fabric = Fabric(tmp_path)

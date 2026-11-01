@@ -32,7 +32,7 @@
 - [docs/handoff.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/handoff.md): Tessera: handoff
 - [docs/library-submissions.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/library-submissions.md): Library submissions: one propose path, several doors
 - [docs/making-of.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/making-of.md): The making-of
-- [docs/opencode-and-ollama.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/opencode-and-ollama.md): Bilateral swarm testing with OpenCode & Ollama Cloud (muse-spark-open)
+- [docs/opencode-bilateral.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/opencode-bilateral.md): Bilateral swarm testing with OpenCode and Meta's open-weight Muse model (muse-spark-open)
 - [docs/operations.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/operations.md): Operations
 - [docs/opportunity-lab.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/opportunity-lab.md): Opportunity Lab
 - [docs/raw-blob-governance.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/raw-blob-governance.md): Raw blob governance and the first uploader

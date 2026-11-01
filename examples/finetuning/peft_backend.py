@@ -77,8 +77,8 @@ def run(
         AutoModelForCausalLM,
         AutoTokenizer,
         BitsAndBytesConfig,
-        LlamaConfig,
-        LlamaForCausalLM,
+        OPTConfig,
+        OPTForCausalLM,
     )
 
     manifest, splits = load(dataset)
@@ -109,13 +109,15 @@ def run(
     )
     if smoke:
         tokenizer = ByteTokenizer()
-        config = LlamaConfig(
+        # A random tiny decoder exercises the LoRA plumbing only; the architecture does not matter.
+        config = OPTConfig(
             vocab_size=tokenizer.vocab_size,
             hidden_size=64,
-            intermediate_size=128,
+            word_embed_proj_dim=64,
+            ffn_dim=128,
             num_hidden_layers=2,
             num_attention_heads=4,
-            num_key_value_heads=2,
+            dropout=0.0,
             max_position_embeddings=recipe["sequence_budget"],
             bos_token_id=1,
             eos_token_id=2,
@@ -123,7 +125,7 @@ def run(
             attention_dropout=0.0,
             use_cache=False,
         )
-        base = LlamaForCausalLM(config).to(device)
+        base = OPTForCausalLM(config).to(device)
         base.save_pretrained(output / "base", safe_serialization=True)
 
         def fresh_base() -> Any:

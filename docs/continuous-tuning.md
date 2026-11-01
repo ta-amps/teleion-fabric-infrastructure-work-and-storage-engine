@@ -14,12 +14,12 @@ this in the field by writing objects and numbers as strings (`"fencing_token": "
 `"metadata": "{\"rows\": 3}"`), so strict servers reject the call.
 
 **In brief.** On a frozen test of 150 requests over tool families it never trained
-on, unchanged Llama 3.2 1B Instruct gave exactly the right typed call 12% of the time,
+on, an unchanged 1B open-weight instruct model gave exactly the right typed call 12% of the time,
 and 8% of its calls stringified a typed value. One round on 63 owned examples lifted it to 43% with no stringified values. The next round, with twice the
 data, did not beat that, and the pre-registered rule kept the champion. A round that
 continued from the champion reached 51%, again beating the champion on a fresh holdout.
 A fourth round raised dev but not test, and the rule kept it out. On the same frozen
-test, Llama 3.2 3B Instruct went from 52% to 73% after one round. Its second round
+test, a 3B open-weight instruct model went from 52% to 73% after one round. Its second round
 scored 79% but cut schema validity past a pre-registered limit, so it was kept out. This
 is one example task with one seed per configuration on one GPU. It shows the loop
 measuring and keeping real gains from little data; it does not show general
@@ -224,9 +224,9 @@ Today the tick runs on demand:
 
 ```bash
 PYTHONPATH=src:. python -m examples.continuous_tuning.cli tick \
-  --root /private/tuning-runs/llama-3.2-1b \
-  --base examples/continuous_tuning/recipes/base-llama-3.2-1b-instruct.json \
-  --base-path /private/models/llama-3.2-1b-instruct --backend hf
+  --root /private/tuning-runs/base-1b \
+  --base /private/bases/base-1b.json \
+  --base-path /private/models/base-1b --backend hf
 ```
 
 Later, Tessera's flag-gated `scheduled()` handler (the Cloudflare cron that already
@@ -262,7 +262,7 @@ Each specialist is its own learner spec, champion pointer and set of adapter nou
 the base-model noun is shared, and the holdouts are shared too when the data is the
 same, because content-digest keys make identical nouns identical. Serving loads the
 base once and attaches adapters by name (PEFT `load_adapter` and `set_adapter`; vLLM
-and llama.cpp have multi-LoRA equivalents), choosing per request from the specialist's
+has a multi-LoRA equivalent), choosing per request from the specialist's
 champion pointer and falling back to the plain base when the pointer says `base`. A
 rank-16 adapter on every projection is about 45 MB for the 1B model and 97 MB for the
 3B, so many fit beside one 2.5 GB or 6.4 GB base. Swapping a specialist is a pointer change; adding one is a new spec
@@ -274,17 +274,20 @@ the base with adapters disabled (80 of 80), at 4.75 GB peak, the memory of one m
 
 ## Swapping the base model
 
-The base is a noun: `recipes/base-llama-3.2-1b-instruct.json` pins every file's
-SHA-256, the pad and end-of-turn tokens, LoRA targets and chat-template arguments.
-`recipes/base-llama-3.2-3b-instruct.json` is the second base: it pins two weight
-shards and adds only memory settings (gradient checkpointing, an evaluation batch of
+The base is a noun, and it is configuration: a worker writes a base-model description
+for a model it is licensed to train and passes it with `--base` (and to `pack --base`
+for a seed pack). The description pins every file's SHA-256, the pad and end-of-turn
+tokens, LoRA targets and chat-template arguments. The 3B base of the October 29 runs
+pinned two weight shards and added only memory settings (gradient checkpointing, an evaluation batch of
 8) so the 3B fits one 12 GB card in bf16 with the same recipe and hyperparameters; no
 quantization is used. The learner key includes the base id, so each base has its own
 champion pointer, while the frozen holdouts are byte-identical across bases (the
 evaluation runs record the same set digests). The worker verifies every weight file
-against the noun once per process before the first load. The Llama 3.2 Community License and Acceptable Use Policy apply to the
-base and to every derived adapter ("Built with Llama"). Base weights and adapters stay
-private: the pack, the evidence and this repository carry neither.
+against the noun once per process before the first load. The base's own license and acceptable use policy apply to the
+base and to every derived adapter. Base weights and adapters stay private: the pack,
+the evidence and this repository carry neither. The two descriptions used on
+October 29, a 1B and a 3B base, are in this repository's history at commit `95e434e` under
+`examples/continuous_tuning/recipes/`.
 
 ## The seed pack
 
@@ -323,7 +326,7 @@ pack.
 
 ## Measured results
 
-Llama 3.2 1B Instruct, bf16 LoRA (rank 16, every projection, 11.3 M trainable
+A 1B open-weight instruct base, bf16 LoRA (rank 16, every projection, 11.3 M trainable
 parameters), one RTX 3060 12 GB, greedy decoding, one seed. "Test" is the frozen
 150-row test over tool families the adapter never trained on; "fresh" is that round's
 new 48-row holdout from the same families; "sanity" is the 40-row general set.
@@ -384,10 +387,10 @@ One interruption: round 4's holdout evaluation lost its worker when the session 
 stopped, and its lease lapsed. The reaper returned it for a single retry (the queue's
 `max_attempts` raised to 2 for that one reap, then restored to 1), and the retry
 completed; the lapsed attempt stays in the event log, and nothing earlier in round 4
-was rerun. The public summary is
-[`evidence/llama-3.2-1b-instruct-2026-10-29.json`](../examples/continuous_tuning/evidence/llama-3.2-1b-instruct-2026-10-29.json).
+was rerun. The public summary is in this repository's history at commit `95e434e`,
+under `examples/continuous_tuning/evidence/`.
 
-### Second base: Llama 3.2 3B Instruct
+### Second base: a 3B open-weight instruct model
 
 Same frozen dev, test and sanity sets (identical digests), same recipe, search and
 rule; bf16 LoRA with gradient checkpointing (24.3 M trainable parameters), evaluation
@@ -411,13 +414,13 @@ matched random control in round 2; on test, the analysis-only mined adapters sco
 allocated (11.8 GB reserved). Rounds 0 to 2 took about 51 GPU-minutes. All 27 verbs
 succeeded, and a final sweep denied all 193 reads by another principal. Training then
 stopped at the owner's request (see "Data before training"); round 3 was never started.
-The public summary is
-[`evidence/llama-3.2-3b-instruct-2026-10-29.json`](../examples/continuous_tuning/evidence/llama-3.2-3b-instruct-2026-10-29.json).
+The public summary is in this repository's history at commit `95e434e`,
+under `examples/continuous_tuning/evidence/`.
 
 | Base | Round 0 | Round 1 | Round 2 | Round 3 | Round 4 |
 | --- | --- | --- | --- | --- | --- |
-| Llama 3.2 1B | 0.120 | **0.433** promoted | 0.433 kept | **0.507** promoted | 0.507 kept |
-| Llama 3.2 3B | 0.520 | **0.727** promoted | 0.793 kept (schema guard) | not run | not run |
+| 1B base | 0.120 | **0.433** promoted | 0.433 kept | **0.507** promoted | 0.507 kept |
+| 3B base | 0.520 | **0.727** promoted | 0.793 kept (schema guard) | not run | not run |
 
 ## Data before training
 

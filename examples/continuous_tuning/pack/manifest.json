@@ -1,9 +1,8 @@
 {
- "base_model_license": "Any base weights a worker supplies keep their own license (Llama 3.2 Community License and Acceptable Use Policy for the pinned bases); the pack carries none.",
+ "base_model_license": "Any base weights a worker supplies keep their own license and acceptable use policy; the pack carries none.",
  "categories": {
   "noun.code_node": 14,
   "noun.mcp_server": 1,
-  "noun.model_spec": 2,
   "noun.skill_pack": 1
  },
  "does_not": [
@@ -23,20 +22,12 @@
  "example_only": true,
  "files": [
   {
-   "path": "records/base_model.35f7440ce8870ef2.json",
-   "sha256": "541ae5b47e803f68e49b9cf134980eb7caaf48de728421c941adf2a57f1f4d62"
+   "path": "records/learner_spec.e0eac5dd3fe06608.json",
+   "sha256": "4e75cc1a4ed9eab16831c79a7be5a7ae98569e0b6a81f98f919fb3b5f075adf3"
   },
   {
-   "path": "records/base_model.a7110b742efbc097.json",
-   "sha256": "1a5158cfb17dc9087262436d6c129ea6047d73f8c846397a83d0095fc7a6c30e"
-  },
-  {
-   "path": "records/learner_spec.cce5b4efe6a62bd6.json",
-   "sha256": "376b6e77711f394c487e1eb51561b057941793fd56c3ed0bf1e57b4885f221b6"
-  },
-  {
-   "path": "records/pack_index.ac76481b862cdfbf.json",
-   "sha256": "053ccb31c769418e1feb0977a3102db0c3378326f838ed5f74e90b8cf4bfa3e5"
+   "path": "records/pack_index.e2e6c6b957e38a59.json",
+   "sha256": "66333bfe7b9da668ad33f1ba8edf413cba2331a0b62fd06a0e9a52f22d7a7d1d"
   },
   {
    "path": "records/promotion_rule.515680228c2832d6.json",
@@ -93,14 +84,6 @@
   {
    "path": "records/verb_template.f7654361e9bb3583.json",
    "sha256": "8087ccb291b309946ca68089f30ac4230991c1c33b072d008684ce99f723eab1"
-  },
-  {
-   "path": "tasks/tick.llama-3.2-1b-instruct.json",
-   "sha256": "b6c9669544bf09d6d5ffde3eff896c834270d39126c759cb3c9e4d408b527826"
-  },
-  {
-   "path": "tasks/tick.llama-3.2-3b-instruct.json",
-   "sha256": "d7d812d7e4197a4343a6fe515f87d1a951d5bdcc2b4d4aed24639fb608405574"
   }
  ],
  "format": "tessera.continuous-tuning.seed-pack.v1",
@@ -108,8 +91,8 @@
  "importer_reason": "No manifest endpoint or generic importer exists. An owner writes the records with the batch-record API, verifies version-1 readback, then explicitly enqueues a tick seed in an existing queue.",
  "license": "MIT",
  "pack_id": "continuous-tuning.tool-call-specialist",
- "records": 18,
+ "records": 16,
  "status": "offline_candidate",
- "tasks": 2,
+ "tasks": 0,
  "version": "1.0.0"
 }

@@ -109,7 +109,7 @@ def execute(dataset: Path, output: Path, recipe_path: Path) -> dict[str, Any]:
                     "model": report["base_model"],
                     "summaries": {
                         "problem": "Verify optional worker-side adapter plumbing",
-                        "solution": "Real random tiny Llama LoRA training, saved adapter and fresh-base reload; quality unmeasured",
+                        "solution": "Real random tiny-decoder LoRA training, saved adapter and fresh-base reload; quality unmeasured",
                     },
                     "contract": {
                         "context_hash": manifest["dataset_sha256"],

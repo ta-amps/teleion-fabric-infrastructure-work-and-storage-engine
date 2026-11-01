@@ -185,7 +185,7 @@ promotion boundary; they do not add a model judge to every task.
 | [docs/setup.md](docs/setup.md) | Every setting, deployment, troubleshooting |
 | [docs/expansion.md](docs/expansion.md) | How Muse and Meta Model API swarms add atomic nouns and verbs safely (`seeds` -> `proposals` -> `canonical`) |
 | [docs/research-seeds.md](docs/research-seeds.md) | Bounded source-discovery, collector, schedule-proposal and single-scan verbs, with pinned nouns and explicit enqueue |
-| [docs/opencode-and-ollama.md](docs/opencode-and-ollama.md) | Bilateral multi-agent testing with OpenCode (`/mcp`) & Ollama Cloud (`muse-spark-open`) |
+| [docs/opencode-bilateral.md](docs/opencode-bilateral.md) | Bilateral multi-agent testing with OpenCode (`/mcp`) and Meta's open-weight `muse-spark-open` |
 | [docs/comparison.md](docs/comparison.md) | How it differs from SQS, Celery, Temporal, the Postgres queues and others, with 125 sources |
 | [docs/generalizing.md](docs/generalizing.md) | Using it for something else, with a worked example |
 | [docs/review.md](docs/review.md) | What we'd most like checked, and a prompt for model reviewers |

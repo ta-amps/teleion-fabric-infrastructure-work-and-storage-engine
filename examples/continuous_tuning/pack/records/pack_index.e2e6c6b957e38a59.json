@@ -1,7 +1,7 @@
 {
  "allowed_surfaces": [],
  "expected_version": 0,
- "key": "pack_index.ac76481b862cdfbf18dbc2e8232772ef21d68546d4d0348ce0763eb734a96a6c",
+ "key": "pack_index.e2e6c6b957e38a59b112649a8b9b205777a61a9595ff0ad18bc07c561170b907",
  "namespace": "conformance-tuning",
  "store": "tuning.specs",
  "tags": [
@@ -30,7 +30,7 @@
    "determinism": 1,
    "evidence_grounding": 1,
    "safety_compliance": 1,
-   "token_efficiency": 0.944275,
+   "token_efficiency": 0.950256,
    "verification_tier": "deterministic_gate"
   },
   "pack": "continuous-tuning.tool-call-specialist",
@@ -40,18 +40,6 @@
     "relation": "requires_noun",
     "target_category": "noun.mcp_server",
     "target_id": "tool_snapshot.eee4fbf3d5b22f9ac713d5cbfc331c4a151438a4ee04cf90e6fc60f8b47fc566"
-   },
-   {
-    "note": "uses base:llama-3.2-1b-instruct",
-    "relation": "requires_noun",
-    "target_category": "noun.model_spec",
-    "target_id": "base_model.35f7440ce8870ef2dc89fc096e61e222fc897ac9bf3521d974f3ea31a49cc768"
-   },
-   {
-    "note": "uses base:llama-3.2-3b-instruct",
-    "relation": "requires_noun",
-    "target_category": "noun.model_spec",
-    "target_id": "base_model.a7110b742efbc097f7a049f858482e808121c07c12b8e45a247836cdeae2ded5"
    },
    {
     "note": "uses trigger",
@@ -135,7 +123,7 @@
     "note": "uses learner_spec",
     "relation": "requires_noun",
     "target_category": "noun.code_node",
-    "target_id": "learner_spec.cce5b4efe6a62bd6accb99b8b451af0efa4ad26e696465a62184472665e91cf7"
+    "target_id": "learner_spec.e0eac5dd3fe06608f5a1ddbdf4fbc9aa0955eb8bb89bba2f46785394e64a6007"
    }
   ],
   "role": "pack_index",

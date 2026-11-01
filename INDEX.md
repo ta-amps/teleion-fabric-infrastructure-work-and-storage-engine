@@ -112,7 +112,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [deploy/fly/README.md](deploy/fly/README.md) | Fly.io: the Tessera service |
 | [deploy/fly/fly.toml](deploy/fly/fly.toml) | Tessera service on one Fly.io machine with a volume (brief L20), reached through the Cloudflare edge |
 
-## docs/ (31)
+## docs/ (30)
 
 | File | What it is |
 |---|---|
@@ -125,7 +125,6 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [docs/comparison.md](docs/comparison.md) | Tessera: comparison |
 | [docs/continuous-tuning.md](docs/continuous-tuning.md) | Continuous tuning, learning and evaluation |
 | [docs/decisions.md](docs/decisions.md) | Tessera: decisions |
-| [docs/evidence/native-history-observation.json](docs/evidence/native-history-observation.json) | JSON object: schema_version, observed_date, source_revision, worker_version, harness, provider |
 | [docs/execution-learning.md](docs/execution-learning.md) | Execution learning: observations, fingerprints and swappable learners |
 | [docs/execution-memory.md](docs/execution-memory.md) | Execution reports and permitted recall |
 | [docs/expansion.md](docs/expansion.md) | Seeding & expanding atomic nouns and verbs with Muse / Meta agents |
@@ -136,7 +135,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [docs/handoff.md](docs/handoff.md) | Tessera: handoff |
 | [docs/library-submissions.md](docs/library-submissions.md) | Library submissions: one propose path, several doors |
 | [docs/making-of.md](docs/making-of.md) | The making-of |
-| [docs/opencode-and-ollama.md](docs/opencode-and-ollama.md) | Bilateral swarm testing with OpenCode & Ollama Cloud (muse-spark-open) |
+| [docs/opencode-bilateral.md](docs/opencode-bilateral.md) | Bilateral swarm testing with OpenCode and Meta's open-weight Muse model (muse-spark-open) |
 | [docs/operations.md](docs/operations.md) | Operations |
 | [docs/opportunity-lab.md](docs/opportunity-lab.md) | Opportunity Lab |
 | [docs/raw-blob-governance.md](docs/raw-blob-governance.md) | Raw blob governance and the first uploader |
@@ -148,7 +147,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [docs/work-design-and-evidence.md](docs/work-design-and-evidence.md) | Nouns, verbs and evidence |
 | [docs/work-routing.md](docs/work-routing.md) | Route agent work through nouns and verbs |
 
-## examples/ (73)
+## examples/ (62)
 
 | File | What it is |
 |---|---|
@@ -159,8 +158,6 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [examples/continuous_tuning/cli.py](examples/continuous_tuning/cli.py) | Command line surface: tick on demand, show status and the learning curve, build the pack. |
 | [examples/continuous_tuning/dataset.py](examples/continuous_tuning/dataset.py) | Curation: fingerprints, deduplication, contamination checks and dataset manifests. |
 | [examples/continuous_tuning/decide.py](examples/continuous_tuning/decide.py) | The promotion verb: apply the pre-registered rule and move the champion pointer. |
-| [examples/continuous_tuning/evidence/llama-3.2-1b-instruct-2026-10-29.json](examples/continuous_tuning/evidence/llama-3.2-1b-instruct-2026-10-29.json) | JSON object: benchmark_tools_sha256, captured, code, curve, format, hardware |
-| [examples/continuous_tuning/evidence/llama-3.2-3b-instruct-2026-10-29.json](examples/continuous_tuning/evidence/llama-3.2-3b-instruct-2026-10-29.json) | JSON object: benchmark_tools_sha256, captured, code, curve, format, frozen_sets_sha256 |
 | [examples/continuous_tuning/fabric.py](examples/continuous_tuning/fabric.py) | The learner's use of a local Tessera store: principals, private nouns, blobs and claims. |
 | [examples/continuous_tuning/fixture_backend.py](examples/continuous_tuning/fixture_backend.py) | A deterministic, dependency-free stand-in for the model backend (tests and CPU demos). |
 | [examples/continuous_tuning/learner_spec.json](examples/continuous_tuning/learner_spec.json) | JSON object: format, learner, strategy, version, facet, reads |
@@ -172,10 +169,8 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [examples/continuous_tuning/model_verbs.py](examples/continuous_tuning/model_verbs.py) | Model verbs: tune hyperparameters, train adapters and evaluate through a swappable backend. |
 | [examples/continuous_tuning/pack.py](examples/continuous_tuning/pack.py) | Seed pack: the learner's nouns (spec, trigger, rule, recipes, base models, tool snapshot, verb templates) as… |
 | [examples/continuous_tuning/pack/manifest.json](examples/continuous_tuning/pack/manifest.json) | JSON object: base_model_license, categories, does_not, evaluation, example_only, files |
-| [examples/continuous_tuning/pack/records/base_model.35f7440ce8870ef2.json](examples/continuous_tuning/pack/records/base_model.35f7440ce8870ef2.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
-| [examples/continuous_tuning/pack/records/base_model.a7110b742efbc097.json](examples/continuous_tuning/pack/records/base_model.a7110b742efbc097.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
-| [examples/continuous_tuning/pack/records/learner_spec.cce5b4efe6a62bd6.json](examples/continuous_tuning/pack/records/learner_spec.cce5b4efe6a62bd6.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
-| [examples/continuous_tuning/pack/records/pack_index.ac76481b862cdfbf.json](examples/continuous_tuning/pack/records/pack_index.ac76481b862cdfbf.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
+| [examples/continuous_tuning/pack/records/learner_spec.e0eac5dd3fe06608.json](examples/continuous_tuning/pack/records/learner_spec.e0eac5dd3fe06608.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
+| [examples/continuous_tuning/pack/records/pack_index.e2e6c6b957e38a59.json](examples/continuous_tuning/pack/records/pack_index.e2e6c6b957e38a59.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
 | [examples/continuous_tuning/pack/records/promotion_rule.515680228c2832d6.json](examples/continuous_tuning/pack/records/promotion_rule.515680228c2832d6.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
 | [examples/continuous_tuning/pack/records/search_space.099ed35b5dcc4f07.json](examples/continuous_tuning/pack/records/search_space.099ed35b5dcc4f07.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
 | [examples/continuous_tuning/pack/records/tool_snapshot.eee4fbf3d5b22f9a.json](examples/continuous_tuning/pack/records/tool_snapshot.eee4fbf3d5b22f9a.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
@@ -190,12 +185,8 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [examples/continuous_tuning/pack/records/verb_template.8459a01edb35cd10.json](examples/continuous_tuning/pack/records/verb_template.8459a01edb35cd10.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
 | [examples/continuous_tuning/pack/records/verb_template.aa85127ec175f228.json](examples/continuous_tuning/pack/records/verb_template.aa85127ec175f228.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
 | [examples/continuous_tuning/pack/records/verb_template.f7654361e9bb3583.json](examples/continuous_tuning/pack/records/verb_template.f7654361e9bb3583.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
-| [examples/continuous_tuning/pack/tasks/tick.llama-3.2-1b-instruct.json](examples/continuous_tuning/pack/tasks/tick.llama-3.2-1b-instruct.json) | JSON object: allowed_surfaces, brief, effect_class, idempotency_key, kind, namespace |
-| [examples/continuous_tuning/pack/tasks/tick.llama-3.2-3b-instruct.json](examples/continuous_tuning/pack/tasks/tick.llama-3.2-3b-instruct.json) | JSON object: allowed_surfaces, brief, effect_class, idempotency_key, kind, namespace |
 | [examples/continuous_tuning/promotion.py](examples/continuous_tuning/promotion.py) | The pre-registered promotion rule, applied to candidate and champion evaluations. |
 | [examples/continuous_tuning/promotion_rule.json](examples/continuous_tuning/promotion_rule.json) | JSON object: format, rule_id, version, registered, selection, promotion |
-| [examples/continuous_tuning/recipes/base-llama-3.2-1b-instruct.json](examples/continuous_tuning/recipes/base-llama-3.2-1b-instruct.json) | JSON object: format, base_id, model_id, source, files_sha256, license |
-| [examples/continuous_tuning/recipes/base-llama-3.2-3b-instruct.json](examples/continuous_tuning/recipes/base-llama-3.2-3b-instruct.json) | JSON object: format, base_id, model_id, source, weights, files_sha256 |
 | [examples/continuous_tuning/recipes/lora-sft-r16.json](examples/continuous_tuning/recipes/lora-sft-r16.json) | JSON object: format, recipe_id, version, method, rank, alpha |
 | [examples/continuous_tuning/recipes/search-lr3.json](examples/continuous_tuning/recipes/search-lr3.json) | JSON object: format, search_id, version, objective, max_trials, trials |
 | [examples/continuous_tuning/report.py](examples/continuous_tuning/report.py) | Read-only learning curve from the stored nouns and tick logs: no model, no writes. |
@@ -210,13 +201,10 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [examples/finetuning/author.py](examples/finetuning/author.py) | Preview fine-tuning artifact nouns and worker verbs using existing Tessera contracts. |
 | [examples/finetuning/data.py](examples/finetuning/data.py) | Owned example research observations and family-separated dataset manifests. |
 | [examples/finetuning/encoding.py](examples/finetuning/encoding.py) | Completion-only tokenization with explicit fit checks and no truncation. |
-| [examples/finetuning/evidence/smoke-2026-10-29.json](examples/finetuning/evidence/smoke-2026-10-29.json) | JSON object: format, checked_at, verification, scope, runs, not_run |
 | [examples/finetuning/glimmer.py](examples/finetuning/glimmer.py) | Prepare, but do not launch, a pinned official Glimmer QLoRA recipe on an H100 worker. |
 | [examples/finetuning/kaggle.sh](examples/finetuning/kaggle.sh) | Run inside an already authorized Kaggle GPU session; this script starts no notebook or paid job. |
 | [examples/finetuning/local_worker.py](examples/finetuning/local_worker.py) | Run a real tiny training verb through a private, task-owned local Tessera store. |
 | [examples/finetuning/peft_backend.py](examples/finetuning/peft_backend.py) | Optional torch/PEFT backend; never imported by Tessera's service or data authoring. |
-| [examples/finetuning/recipes/llama-1b-qlora.json](examples/finetuning/recipes/llama-1b-qlora.json) | JSON object: version, mode, model_id, revision, license, quantization |
-| [examples/finetuning/recipes/llama-3b-qlora.json](examples/finetuning/recipes/llama-3b-qlora.json) | JSON object: version, mode, model_id, revision, license, quantization |
 | [examples/finetuning/recipes/tiny-smoke.json](examples/finetuning/recipes/tiny-smoke.json) | JSON object: version, mode, model_id, revision, license, quantization |
 | [examples/finetuning/requirements.txt](examples/finetuning/requirements.txt) | Optional worker environment only. |
 | [examples/finetuning/run.py](examples/finetuning/run.py) | Prepare example data or run one explicitly bounded optional worker training job. |
@@ -315,7 +303,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [src/tessera/store.py](src/tessera/store.py) | The in-process Tessera store: the reference implementation of SPEC.md. |
 | [src/tessera/testing.py](src/tessera/testing.py) | Factories the conformance suite loads by name (TESSERABACKENDFACTORY="module:function"). |
 
-## tests/ (75)
+## tests/ (76)
 
 | File | What it is |
 |---|---|
@@ -332,6 +320,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [tests/edge_execution_mcp.mjs](tests/edge_execution_mcp.mjs) | MCP adapter fixture only: authorization/storage are covered by the real runtime suite. |
 | [tests/edge_frontier_publication.mjs](tests/edge_frontier_publication.mjs) |  |
 | [tests/fixtures/access_parity.json](tests/fixtures/access_parity.json) | JSON object: about, steps, queues, cases |
+| [tests/fixtures/continuous_tuning_base.json](tests/fixtures/continuous_tuning_base.json) | JSON object: format, base_id, model_id, source, files_sha256, license |
 | [tests/fixtures/execution_learning_vectors.json](tests/fixtures/execution_learning_vectors.json) | JSON object: fingerprints, learning_invalid, learning_valid, observations, profile, reports |
 | [tests/fixtures/execution_matching_vectors.json](tests/fixtures/execution_matching_vectors.json) | JSON object: profile, valid, invalid |
 | [tests/test_access_modes.py](tests/test_access_modes.py) | Full anonymous/keyed agent loops, durable limits and adversarial isolation. |
@@ -373,7 +362,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [tests/test_showcase_seed.py](tests/test_showcase_seed.py) | Creative seeds remain bounded and idempotent through actual Store operations. |
 | [tests/test_spec_events.py](tests/test_spec_events.py) | SPEC §5.5 lists every event type, and the code emits only listed types: a new event can't ship without a line… |
 | [tests/test_tools.py](tests/test_tools.py) | The Muse worker keeps its safety flags whatever the brief says, and briefs load in dependency order. |
-| [tests/test_wording_guard.py](tests/test_wording_guard.py) | No tracked file uses the word the owner ruled out, apart from listed compatibility aliases. |
+| [tests/test_wording_guard.py](tests/test_wording_guard.py) | No tracked file uses the words the owner ruled out, apart from listed compatibility aliases. |
 | [tests/test_work_routing.py](tests/test_work_routing.py) | Explicit grants, team-private routing and owner-only negative controls. |
 | [tests/workerd_access_descriptions.mjs](tests/workerd_access_descriptions.mjs) | Real Worker: every published access description (connect.json, the agent card, llms-full.txt, |
 | [tests/workerd_access_parity.mjs](tests/workerd_access_parity.mjs) | Real Worker/SQLite: the access cases in tests/fixtures/accessparity.json, which |
@@ -403,7 +392,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [tools/learner.py](tools/learner.py) | Learner seed-pack and run helper; offline commands are the default. |
 | [tools/library_reviewer.py](tools/library_reviewer.py) | Claim library.review verbs with a reviewer key and submit the library's offline decision. |
 | [tools/load_briefs.py](tools/load_briefs.py) | Put briefs on the build queue once their dependencies are done. |
-| [tools/meta_open_bridge.py](tools/meta_open_bridge.py) | Local Meta Model API /v1/responses bridge backed by Meta open-weight models (muse-spark-open) on any OpenAI/O… |
+| [tools/meta_open_bridge.py](tools/meta_open_bridge.py) | Local Meta Model API /v1/responses bridge backed by Meta's open-weight Muse model (muse-spark-open) on an Ope… |
 | [tools/muse_worker.py](tools/muse_worker.py) | Run one Muse Code worker on one Tessera brief. |
 | [tools/opencode_bilateral.py](tools/opencode_bilateral.py) | Bilateral multi-agent test harness for Tessera over MCP (/mcp) + HTTP (/v1/), pairing OpenCode (opencode v2.x… |
 | [tools/research_seed.py](tools/research_seed.py) | Prepare one bounded research seed verb; preview is the default. |

@@ -37,7 +37,7 @@ from tessera.client import Client
 
 MODEL_API_BASE = os.environ.get("MODEL_API_BASE", "https://api.meta.ai/v1")
 MODEL_API_KEY_ENV = "MODEL_API_KEY"
-OLLAMA_API_KEY_ENV = "OLLAMA_API_KEY"
+OPEN_WEIGHTS_API_KEY_ENV = "OPEN_WEIGHTS_API_KEY"
 DEFAULT_MODEL = "muse-spark-1.3"
 HARD_MAX_DEPTH = 3
 HARD_MAX_CHILDREN = 8
@@ -104,7 +104,8 @@ def resolve_api_mode(api_mode: str, base_url: str) -> str:
     if env_mode in {"responses", "chat"}:
         return env_mode
     lowered = base_url.lower()
-    if "ollama.com" in lowered or ":11434" in lowered:
+    # A local open-weights runner listens on 11434; set MODEL_API_MODE=chat for a hosted one.
+    if ":11434" in lowered:
         return "chat"
     return "responses"
 
@@ -120,7 +121,7 @@ def call_meta_model(
     base_url: str | None = None,
     transport: httpx.BaseTransport | None = None,
 ) -> dict[str, Any]:
-    """Call Meta's Responses API (`/responses`) or an OpenAI/Ollama-compatible open-weights endpoint
+    """Call Meta's Responses API (`/responses`) or an OpenAI-compatible open-weights endpoint
     (`/chat/completions`, e.g. `muse-spark-open`) in Standard mode, registering and updating the job
     against the active Tessera lease."""
     check_model(model)
@@ -144,11 +145,11 @@ def call_meta_model(
     effective_base = (base_url or os.environ.get("MODEL_API_BASE") or MODEL_API_BASE).rstrip("/")
     mode = resolve_api_mode(api_mode, effective_base)
     api_key = os.environ.get(MODEL_API_KEY_ENV) or (
-        os.environ.get(OLLAMA_API_KEY_ENV) if mode == "chat" else None
+        os.environ.get(OPEN_WEIGHTS_API_KEY_ENV) if mode == "chat" else None
     )
     if not api_key:
         env_hint = (
-            f"{MODEL_API_KEY_ENV} (or {OLLAMA_API_KEY_ENV} in chat mode)"
+            f"{MODEL_API_KEY_ENV} (or {OPEN_WEIGHTS_API_KEY_ENV} in chat mode)"
             if mode == "chat"
             else MODEL_API_KEY_ENV
         )
@@ -724,7 +725,7 @@ def main() -> int:
         "--api-mode",
         choices=("auto", "responses", "chat"),
         default="auto",
-        help="Meta /responses or OpenAI/Ollama-compatible /chat/completions (auto-detected from MODEL_API_BASE)",
+        help="Meta /responses or OpenAI-compatible /chat/completions (auto-detected from MODEL_API_BASE)",
     )
     p.add_argument(
         "--dry-model", action="store_true", help="synthesize deterministic offline outputs"

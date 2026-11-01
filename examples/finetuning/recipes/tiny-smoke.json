@@ -1,7 +1,7 @@
 {
   "version": 1,
   "mode": "smoke",
-  "model_id": "random-initialized-tiny-Llama",
+  "model_id": "random-initialized-tiny-decoder",
   "revision": "local-seed-17",
   "license": "Random parameters; repository-owned example data",
   "quantization": "none",
