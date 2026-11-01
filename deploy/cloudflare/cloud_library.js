@@ -119,6 +119,9 @@ export async function proposeToLibrary(c, secret, body, meta = {}) {
     const origin = anonymous ? "anonymous" : "contributor";
     const proposeOutput = { schema: "ta-amps.library.propose-receipt.v1", proposal_id, proposal_store: LIBRARY.proposals, proposal_version: 1, item_sha256, review_task_id, catalog_keys: catalog.map(e => e.key) };
     const proposeReceipt = await receiptHash(propose_task_id, 1, true, proposeOutput, null);
+    // Helpers read this.namespace, and the awaits above let other requests run: pin it again.
+    c.namespace = NS;
+    c.isPrimary = true;
     c._ensureNamespaceSeeded(NS, now);
     let result = null;
     const d1 = [];
