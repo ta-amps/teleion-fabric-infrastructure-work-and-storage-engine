@@ -24,8 +24,7 @@ const LOGO_SVG =
   "</svg>";
 
 const STYLE = `<style>
-:root{color-scheme:light dark;--bg:#fff;--fg:#15181d;--muted:#59616e;--line:#dde1e7;--accent:#3b4fd8;--surface:#f7f8fa}
-@media (prefers-color-scheme:dark){:root{--bg:#0e1014;--fg:#e7eaee;--muted:#a2aab6;--line:#2b303a;--accent:#8c9bff;--surface:#161920}}
+:root{color-scheme:only light;--bg:#F5F2EA;--fg:#11161F;--muted:#4E5663;--line:#DCD6C8;--accent:#2846B8;--surface:#FFFDF8}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,-apple-system,sans-serif}
 header.site-hdr{border-bottom:1px solid var(--line);background:var(--surface)}
@@ -71,6 +70,7 @@ function page(title, body, refresh = null, repoUrl = "https://github.com/ta-amps
   const meta = refresh ? `<meta http-equiv="refresh" content="${Number(refresh)}">` : "";
   return (
     `<!doctype html><html lang='en'><head><meta charset='utf-8'>` +
+    `<meta name='color-scheme' content='only light'>` +
     `<meta name='viewport' content='width=device-width,initial-scale=1'>${meta}` +
     `<link rel='icon' href='/favicon.svg' type='image/svg+xml'>` +
     `<title>${esc(title)}</title>${STYLE}</head><body>` +

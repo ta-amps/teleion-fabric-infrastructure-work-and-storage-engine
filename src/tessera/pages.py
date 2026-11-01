@@ -45,8 +45,7 @@ LOGO_SVG = (
 )
 
 STYLE = """<style>
-:root{color-scheme:light dark;--bg:#fff;--fg:#15181d;--muted:#59616e;--line:#dde1e7;--accent:#3b4fd8;--surface:#f7f8fa}
-@media (prefers-color-scheme:dark){:root{--bg:#0e1014;--fg:#e7eaee;--muted:#a2aab6;--line:#2b303a;--accent:#8c9bff;--surface:#161920}}
+:root{color-scheme:only light;--bg:#F5F2EA;--fg:#11161F;--muted:#4E5663;--line:#DCD6C8;--accent:#2846B8;--surface:#FFFDF8}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,-apple-system,sans-serif}
 header.site-hdr{border-bottom:1px solid var(--line);background:var(--surface)}
@@ -90,6 +89,7 @@ def _page(
     esc_repo = html.escape(repo_url)
     return (
         f"<!doctype html><html lang='en'><head><meta charset='utf-8'>"
+        f"<meta name='color-scheme' content='only light'>"
         f"<meta name='viewport' content='width=device-width,initial-scale=1'>{meta}"
         f"<link rel='icon' href='/favicon.svg' type='image/svg+xml'>"
         f"<title>{html.escape(title)}</title>{STYLE}</head><body>"
