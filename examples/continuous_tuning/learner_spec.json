@@ -183,7 +183,7 @@
     "mine_hard_examples"
   ],
   "limits": [
-    "Synthetic, owned data from repository templates; labels are computed, never model-written",
+    "Example, owned data from repository templates; labels are computed, never model-written",
     "No provider outputs, Muse API outputs, private histories or execution reports are training data",
     "Adapters stay private nouns; promotion moves only a local pointer"
   ],

@@ -235,7 +235,7 @@ def run_bilateral_suite(
                 task_id="intake-clarify-01",
                 kind="clarify_sop",
                 brief={
-                    "kit": "SYNTHETIC Community Pantry Cold-Weather SOP",
+                    "kit": "EXAMPLE Community Pantry Cold-Weather SOP",
                     "missing_field": "escalation_phone_ext",
                 },
             )
@@ -249,7 +249,7 @@ def run_bilateral_suite(
                         "seed_id": "seed-eranos-ngo-intake",
                         "surface": "eranos",
                         "target_namespace": "eranos.kit",
-                        "title": "SYNTHETIC Multilingual NGO Shelter & Pantry Intake Triage Kit",
+                        "title": "EXAMPLE Multilingual NGO Shelter & Pantry Intake Triage Kit",
                         "budget": {"max_depth": 2, "max_children": 3},
                     },
                     expected_version=None,
@@ -377,7 +377,7 @@ def run_bilateral_suite(
 
                     # Agent B answers the parked question via resume!
                     answer_payload = {
-                        "escalation_phone_ext": "x4102 (SYNTHETIC on-site shift captain)",
+                        "escalation_phone_ext": "x4102 (EXAMPLE on-site shift captain)",
                         "answered_by": "ollama-peer-b",
                     }
                     resumed_view = client_b.resume("intake-clarify-01", answer_payload)
@@ -406,7 +406,7 @@ def run_bilateral_suite(
                             "value": {
                                 "status": "clarified",
                                 "escalation_phone_ext": received_ext,
-                                "synthetic": True,
+                                "example_only": True,
                             },
                             "expected_version": None,
                         },

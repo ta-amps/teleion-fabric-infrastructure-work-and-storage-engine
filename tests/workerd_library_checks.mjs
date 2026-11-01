@@ -4,7 +4,7 @@
 // planted credentials are assembled at run time.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { inspectProposal, libraryPersonalData, LIBRARY_LIMITS } from "../deploy/cloudflare/library_checks.js";
+import { inspectProposal, libraryPersonalData, LIBRARY_LIMITS, lookAlikeTitle } from "../deploy/cloudflare/library_checks.js";
 import { inspectForLibrary } from "../deploy/cloudflare/cloud_library.js";
 import { parseJsonBody, readCappedBody } from "../deploy/cloudflare/library_io.js";
 
@@ -103,4 +103,16 @@ test("a request body is measured in bytes before it is buffered", async () => {
   assert.equal((await readCappedBody(wide, 600 * KB)).status, 413);
   const fine = new Request("https://door.example/", { method: "POST", body: JSON.stringify(noun({ a: 1 })) });
   assert.equal(JSON.parse((await readCappedBody(fine, 600 * KB)).text).type, "noun");
+});
+
+test("a title word that mixes Latin, Cyrillic or Greek letters is refused as a look-alike", () => {
+  const lookAlike = noun({ a: 1 }, "P\u0430ypal intake checklist");
+  assert.ok(rules(inspectProposal(lookAlike)).includes("look_alike"));
+  for (const title of ["Список дел", "Caf\u00e9 menu", "\u03b2-blocker dosing", "\u00b5s latency guide", "Intake form checklist"]) {
+    assert.equal(lookAlikeTitle(title), false, title);
+    assert.ok(!rules(inspectProposal(noun({ a: 1 }, title))).includes("look_alike"), title);
+  }
+  const pack = { type: "pack", bundle: { format: "ta-amps.seed-pack.bundle.v1", license: "MIT", source: { pack_id: "probe-pack", title: "\u0421ommunity pack", version: "0.1.0", summary: "Probe pack summary.",
+    nouns: [{ slug: "pack", category: "noun.recovery_playbook", title: "Probe", value: { a: 1 } }] }, files: [{ path: "README.md", content: "# Probe\n" }] } };
+  assert.ok(rules(inspectProposal(pack)).includes("look_alike"));
 });

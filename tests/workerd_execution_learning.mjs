@@ -45,7 +45,7 @@ before(async () => {
     name: "tessera", modules: true, script: built.outputFiles[0].text, compatibilityDate: "2026-10-01",
     durableObjects: { COORDINATOR: { className: "FixtureCoordinator", useSQLite: true } },
     d1Databases: ["FABRIC_DB", "BUCKETS_DB"],
-    bindings: { STORAGE_MODE: "cloud", ANONYMOUS_ACCESS_ENABLED: "false", FRAGILITY_PLANNER_ENABLED: "false", BOOTSTRAP_SECRET: "synthetic-learning-bootstrap" },
+    bindings: { STORAGE_MODE: "cloud", ANONYMOUS_ACCESS_ENABLED: "false", FRAGILITY_PLANNER_ENABLED: "false", BOOTSTRAP_SECRET: "example-learning-bootstrap" },
     outboundService: () => { throw new Error("External requests are prohibited in this fixture"); },
   }] }));
   worker = await runtime.getWorker("tessera");
@@ -62,9 +62,9 @@ async function request(path, body, token, headers = {}) {
   });
   return { status: response.status, data: await response.json() };
 }
-async function key(queues, label = "synthetic-learning", admin = false) {
+async function key(queues, label = "example-learning", admin = false) {
   const scopes = admin ? ["admin", "store"] : ["store"];
-  const issued = await request("/v1/admin/keys", { label, queues, scopes, effect_classes: ["read", "write-internal"] }, undefined, { "X-Bootstrap-Secret": "synthetic-learning-bootstrap" });
+  const issued = await request("/v1/admin/keys", { label, queues, scopes, effect_classes: ["read", "write-internal"] }, undefined, { "X-Bootstrap-Secret": "example-learning-bootstrap" });
   assert.equal(issued.status, 201, JSON.stringify(issued.data));
   return issued.data.key;
 }
@@ -80,17 +80,17 @@ async function observe(token, args) { return plain(await primary.testObservation
 const verbRows = {};
 async function claimOne(token, goal, measure = false) {
   if (measure) await primary.testRowsStart();
-  const created = await request("/v1/tasks", { queue: "conformance-learn", kind: "verb.solve_draft", brief: { goal, contract: "tessera.synthetic.v1" }, visibility_scope: "private" }, token);
+  const created = await request("/v1/tasks", { queue: "conformance-learn", kind: "verb.solve_draft", brief: { goal, contract: "tessera.example_only.v1" }, visibility_scope: "private" }, token);
   assert.equal(created.status, 201, JSON.stringify(created.data));
   if (measure) { verbRows.enqueue = plain(await primary.testRowsStop()); await primary.testRowsStart(); }
-  const lease = await request("/v1/tasks/claim", { queue: "conformance-learn", worker: "synthetic-workerd" }, token);
+  const lease = await request("/v1/tasks/claim", { queue: "conformance-learn", worker: "example-workerd" }, token);
   assert.equal(lease.status, 200, JSON.stringify(lease.data));
   if (measure) verbRows.claim = plain(await primary.testRowsStop());
   return lease.data;
 }
 async function submit(token, lease, report, measure = false) {
   if (measure) await primary.testRowsStart();
-  const result = await request("/v1/tasks/submit", { task_id: lease.task_id, fencing_token: lease.fencing_token, output: { synthetic: true }, execution_report: report }, token, { "Idempotency-Key": "learn:" + (++counter) });
+  const result = await request("/v1/tasks/submit", { task_id: lease.task_id, fencing_token: lease.fencing_token, output: { example_only: true }, execution_report: report }, token, { "Idempotency-Key": "learn:" + (++counter) });
   return { ...result, rows: measure ? plain(await primary.testRowsStop()) : null };
 }
 const learning = {
@@ -100,14 +100,14 @@ const learning = {
   unknowns: [{ field: "duration_seconds", reason: "not timed" }, { field: "cost", reason: "not metered" }],
   advice: [{ learner: "memory", strategy: "minhash-lsh", version: 1, store: "learn.memory", key: "memory:minhash-lsh:v1:q:head", record_version: 1 }],
 };
-const summaries = { problem: "SYNTHETIC convert an mp4 clip into png frames" };
+const summaries = { problem: "EXAMPLE convert an mp4 clip into png frames" };
 
 test("workerd accepts the optional learning block and a null model without extra rows", async t => {
-  const admin = await key(["*"], "synthetic-admin", true);
+  const admin = await key(["*"], "example-admin", true);
   await define(admin);
-  const plain = await submit(admin, await claimOne(admin, "SYNTHETIC rows plain"), { summaries }, true);
-  const learned = await submit(admin, await claimOne(admin, "SYNTHETIC rows learned"), { summaries, model: null, learning }, true);
-  const bare = await submit(admin, await claimOne(admin, "SYNTHETIC rows bare", true), undefined, true);
+  const plain = await submit(admin, await claimOne(admin, "EXAMPLE rows plain"), { summaries }, true);
+  const learned = await submit(admin, await claimOne(admin, "EXAMPLE rows learned"), { summaries, model: null, learning }, true);
+  const bare = await submit(admin, await claimOne(admin, "EXAMPLE rows bare", true), undefined, true);
   for (const result of [plain, learned, bare]) assert.equal(result.status, 200, JSON.stringify(result.data));
   // The learning block is stored in the existing execution row: same rows, same tables.
   assert.deepEqual(learned.rows, plain.rows);
@@ -120,7 +120,7 @@ test("workerd accepts the optional learning block and a null model without extra
   t.diagnostic(`by table (with learning): ${JSON.stringify(learned.rows.byTable)}`);
   t.diagnostic(`rows written to enqueue one private verb: ${verbRows.enqueue.total} ${JSON.stringify(verbRows.enqueue.byTable)}; to claim it: ${verbRows.claim.total} ${JSON.stringify(verbRows.claim.byTable)}`);
 
-  const lease = await claimOne(admin, "SYNTHETIC invalid learning");
+  const lease = await claimOne(admin, "EXAMPLE invalid learning");
   for (const bad of [{ outcome: "great" }, { duration_seconds: null }, { advice: [{}] }, { surprise: 1 }]) {
     const rejected = await submit(admin, lease, { learning: bad });
     assert.equal(rejected.status, 400, JSON.stringify(rejected.data));
@@ -133,11 +133,11 @@ test("workerd accepts the optional learning block and a null model without extra
 });
 
 test("workerd MCP submit records the learning block", async () => {
-  const admin = await key(["*"], "synthetic-admin", true);
+  const admin = await key(["*"], "example-admin", true);
   await define(admin);
-  const lease = await claimOne(admin, "SYNTHETIC mcp learning");
+  const lease = await claimOne(admin, "EXAMPLE mcp learning");
   const called = await request("/mcp", { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "submit", arguments: {
-    task_id: lease.task_id, fencing_token: lease.fencing_token, output: { synthetic: true }, idempotency_key: "mcp:" + lease.task_id,
+    task_id: lease.task_id, fencing_token: lease.fencing_token, output: { example_only: true }, idempotency_key: "mcp:" + lease.task_id,
     execution_report: { model: null, learning: { outcome: "no_change", path: { shim: "mcp-native" } } } } } }, admin);
   assert.equal(called.status, 200);
   assert.equal(called.data.result.isError, false, JSON.stringify(called.data.result.structuredContent));
@@ -148,10 +148,10 @@ test("workerd MCP submit records the learning block", async () => {
 });
 
 test("workerd observation read is permission filtered, paginated and matches the Python shape", async () => {
-  const owner = await key(["conformance-learn"], "synthetic-owner");
-  const admin = await key(["*"], "synthetic-admin", true);
+  const owner = await key(["conformance-learn"], "example-owner");
+  const admin = await key(["*"], "example-admin", true);
   await define(admin);
-  for (const goal of ["SYNTHETIC one", "SYNTHETIC two", "SYNTHETIC three"]) {
+  for (const goal of ["EXAMPLE one", "EXAMPLE two", "EXAMPLE three"]) {
     const result = await submit(owner, await claimOne(owner, goal), { summaries: { problem: goal }, learning: { outcome: "succeeded" } });
     assert.equal(result.status, 200, JSON.stringify(result.data));
   }
@@ -169,16 +169,16 @@ test("workerd observation read is permission filtered, paginated and matches the
   assert.equal(new Set(all.map(o => o.run_id)).size, 3);
   const item = all[0];
   assert.equal(item.observation, "execution-observation-v1");
-  assert.equal(item.brief.template, "tessera.synthetic.v1");
+  assert.equal(item.brief.template, "tessera.example_only.v1");
   assert.equal(item.report.learning.outcome, "succeeded");
   assert.equal(item.input_snapshot, undefined);
   assert.ok(all.every(o => o.task_id && o.queue === "conformance-learn" && o.category === "verb.solve_draft"));
   // Another key with the same queue grant cannot see private runs it does not own.
-  const stranger = await key(["conformance-learn"], "synthetic-stranger");
+  const stranger = await key(["conformance-learn"], "example-stranger");
   const hidden = await observe(stranger, { queue: "conformance-learn", limit: 100 });
   assert.equal(hidden.ok, true);
   assert.ok(hidden.data.observations.every(o => !all.some(a => a.run_id === o.run_id)));
-  const refused = await observe(await key(["conformance-elsewhere"], "synthetic-elsewhere"), { queue: "conformance-learn" });
+  const refused = await observe(await key(["conformance-elsewhere"], "example-elsewhere"), { queue: "conformance-learn" });
   assert.equal(refused.ok, false);
   assert.equal(refused.status, 403);
   for (const args of [{ queue: "" }, { queue: "conformance-learn", after: "x" }, { queue: "conformance-learn", limit: 101 }]) {
@@ -188,7 +188,7 @@ test("workerd observation read is permission filtered, paginated and matches the
 });
 
 test("workerd learner output writes cost the same rows however many runs a segment indexes", async t => {
-  const admin = await key(["*"], "synthetic-admin", true);
+  const admin = await key(["*"], "example-admin", true);
   await define(admin);
   const entry = i => ({ run_id: "run_" + String(i).padStart(64, "0"), minhash: "0".repeat(256), bands: ["m0:" + "0".repeat(16)], ok: true });
   const costs = [];

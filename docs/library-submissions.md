@@ -63,6 +63,7 @@ session), and JSON nested past 64 levels is a 400 at the edge, past 32 a 400 at 
 | `license` | MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, CC0-1.0 or CC-BY-4.0 |
 | `file_type` | `README.md` and `code/...` only; plain relative paths with no hidden folders such as `.github/` (a `.gitignore` file is allowed); text types only (md, txt, json, jsonl, yaml, yml, toml, csv, tsv, py, js, mjs, cjs, ts, sh, cfg, ini, lock, Makefile) |
 | `hidden_characters` | no controls but tab, newline and return (`\p{Cc}`), no format characters (`\p{Cf}`: zero-width spaces and joiners, LRM, RLM, ALM, the BOM, the word joiner, the soft hyphen, bidirectional controls, Unicode tag characters), no variation selectors, grapheme joiner, Mongolian selectors, Khmer inherent vowels or Hangul fillers. Code writes a BOM as the `\ufeff` escape |
+| `look_alike` | no word in a title mixes Latin, Cyrillic or Greek letters (a Cyrillic "а" inside a Latin word); separate words in different scripts are fine |
 | `secrets` | private keys, cloud, code-host, chat, payment, model-provider, Tessera and Herma keys, JWTs, bearer headers, credentials in URLs and quoted secret assignments |
 | `personal_data` | the fabric's existing screen for email addresses, phone numbers, street addresses, identity, card and IBAN numbers, after removing what cannot be personal: @names with no local part (decorators), mail at reserved names (example.com/net/org, .example, .invalid, .test, .localhost), 555-01xx and 555-area numbers, and 13 to 19 digit runs that fail the Luhn check, unless the run holds an SSN or phone shape |
 
@@ -72,11 +73,18 @@ item already in the catalog with identical content is reused on admission (a pac
 verb admitted on its own); the same key with other content is refused (409), so a revision is a
 new version, and a proposal with nothing new is refused too.
 
-Daily byte budgets, charged inside the write transaction before anything is stored: 32 MiB a UTC day
-for all proposals, 4 MiB for tracked sessions together and 8 MiB per account. They are configurable as
+Daily byte budgets, charged inside the write transaction before anything is stored: 8 MiB a UTC day
+for all proposals, 4 MiB for tracked sessions together and 8 MiB per account (at 8 MiB a day, abuse
+would take about two months to fill the 500 MB free database, not two weeks). They are configurable as
 `LIBRARY_DAILY_BYTES`, `LIBRARY_ANON_DAILY_BYTES` and `LIBRARY_ACCOUNT_DAILY_BYTES`. A spent budget
 answers 429 with `Retry-After` to midnight UTC and the budget's name. Each refusal is counted per budget
-and day, and `GET /v1/library` reports the day's bytes and refusals.
+and day.
+
+To watch usage, read `GET /v1/library` (no key). `budgets_today.bytes` and `anonymous_bytes` are
+the bytes stored since midnight UTC next to their `daily_bytes` and `anonymous_daily_bytes` ceilings,
+and `budgets_today.refused` counts refusals per budget. `proposals` counts proposals by status and
+`catalog` counts admitted items by kind. A day that ends near a ceiling, or a run of refusals, calls
+for a look at the access audit (`GET /v1/admin/audit`, `library_propose` events).
 
 ## The review verb
 
@@ -107,6 +115,8 @@ and, for tracked sessions, `LIBRARY_ANON_PROPOSALS_ENABLED`.
   stays private at every version, and only an approval publishes, as `library.catalog` items.
 - Storage is bounded: hourly attempt limits, per-item and per-pack sizes, and the daily byte budgets.
 - Content checks never run in the primary fabric object, so a slow check cannot hold `main`.
+- While `LIBRARY_PROPOSALS_ENABLED` is off, the library tools leave `tools/list`, the agent pages and
+  `connect.json`, and the A2A card answers 404.
 - Generic writes cannot touch the library: enqueue and split into the library queues are refused,
   put_records into `library.proposals` and `library.catalog` is refused for every key including
   admins, and `library.instructions` takes admin writes only (`cloud_library.js:libraryGuard`).

@@ -40,7 +40,7 @@ Private previews require a verifier key. No generated code is executed by this p
 
 Verification is an accountable attestation, not proof of an LLM's general ability.
 Native harness evidence must exist and be independently inspected before promotion.
-Synthetic storage tests exercise the gate without claiming native model results.
+Example storage tests exercise the gate without claiming native model results.
 There is no automatic publication or per-artifact revocation in this version;
 operators can disable the hosted connector flag while retaining immutable evidence.
 

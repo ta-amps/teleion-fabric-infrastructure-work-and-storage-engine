@@ -1,6 +1,6 @@
 // Real Worker: body limits follow the route itself (H-65). The 16 MiB cap is the blob upload
 // route's; a task posted to a namespace that merely contains "blobs" gets the 1 MiB JSON cap.
-// Synthetic data only.
+// Example data only.
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { build } from "esbuild";
@@ -22,7 +22,7 @@ test("the 16 MiB cap belongs to the blob upload route, not to any path containin
     compatibilityDate: "2026-10-01",
     durableObjects: { COORDINATOR: { className: "FixtureCoordinator", useSQLite: true } },
     d1Databases: ["FABRIC_DB", "BUCKETS_DB"],
-    bindings: { STORAGE_MODE: "cloud", ANONYMOUS_ACCESS_ENABLED: "true", FRAGILITY_PLANNER_ENABLED: "false", BOOTSTRAP_SECRET: "synthetic-body-limits-bootstrap" },
+    bindings: { STORAGE_MODE: "cloud", ANONYMOUS_ACCESS_ENABLED: "true", FRAGILITY_PLANNER_ENABLED: "false", BOOTSTRAP_SECRET: "example-body-limits-bootstrap" },
     outboundService: () => { throw new Error("External requests are prohibited in this fixture"); },
   }] }));
   runtimes.push(runtime);
@@ -31,8 +31,8 @@ test("the 16 MiB cap belongs to the blob upload route, not to any path containin
     method: "POST", headers: { ...(token ? { authorization: "Bearer " + token } : {}), ...headers }, body,
   })).status;
   const issued = await worker.fetch("https://tessera.example/v1/admin/keys", {
-    method: "POST", headers: { "content-type": "application/json", "x-bootstrap-secret": "synthetic-body-limits-bootstrap" },
-    body: JSON.stringify({ label: "synthetic-operator", queues: ["*"], scopes: ["admin", "store"], effect_classes: ["read", "write-internal"] }),
+    method: "POST", headers: { "content-type": "application/json", "x-bootstrap-secret": "example-body-limits-bootstrap" },
+    body: JSON.stringify({ label: "example-operator", queues: ["*"], scopes: ["admin", "store"], effect_classes: ["read", "write-internal"] }),
   });
   const admin = (await issued.json()).key;
   const big = "x".repeat(1536 * 1024);

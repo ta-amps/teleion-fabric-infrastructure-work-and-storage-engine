@@ -35,9 +35,9 @@ def test_labels_never_grant_surface_permissions(tmp_path: Path, label: str) -> N
         with TestClient(create_app(store, ServiceSettings(db_path=store.path))) as client:
             for key, expected in [(unbound, 403), (bound, 200)]:
                 response = client.post(
-                    "/v1/stores/shamash.fixture/records/synthetic",
+                    "/v1/stores/shamash.fixture/records/example",
                     headers={"Authorization": "Bearer " + key, "X-Surface-Id": "shamash"},
-                    json={"value": {"synthetic": True}, "expected_version": 0},
+                    json={"value": {"example_only": True}, "expected_version": 0},
                 )
                 assert response.status_code == expected
     finally:
@@ -68,7 +68,7 @@ def test_queue_kind_effect_and_namespace_are_independent_gates(
                     kind="verb.solve_draft",
                     producer_surface="surface:fixture",
                     visibility_scope="surface_only",
-                    brief={"synthetic": True},
+                    brief={"example_only": True},
                 )
             )
         grant: dict[str, Any] = {

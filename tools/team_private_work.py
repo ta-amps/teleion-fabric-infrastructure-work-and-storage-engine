@@ -23,7 +23,7 @@ from tessera.receipts import canonical_json
 from tessera.service import create_app
 
 NAMESPACE = "conformance-routing"
-SURFACE = "surface:synthetic_team"
+SURFACE = "surface:example_team"
 QUEUE = "conformance-work"
 SERVER_QUEUE = "conformance-server"
 KIND = "verb.solve_draft"
@@ -31,7 +31,7 @@ KIND = "verb.solve_draft"
 
 class Input(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    synthetic: Literal[True]
+    example_only: Literal[True]
     values: list[StrictInt] = Field(min_length=1, max_length=4)
 
 
@@ -65,20 +65,20 @@ def run_demo() -> dict[str, Any]:
             store.define_queue(QueueConfig(name=queue), namespace=NAMESPACE)
         common = ["namespace:" + NAMESPACE, "nouns:read"]
         requester, request_grant = store.issue_key(
-            "synthetic-member",
+            "example-member",
             queues=[QUEUE],
             kinds=[KIND],
             effect_classes=["write-internal"],
             scopes=[*common, SURFACE, "cas:write", "verbs:submit"],
-            account_id="synthetic-team",
+            account_id="example-team",
         )
         worker, work_grant = store.issue_key(
-            "synthetic-member",
+            "example-member",
             queues=[QUEUE],
             kinds=[KIND],
             effect_classes=["write-internal"],
             scopes=[*common, SURFACE, "cas:write", "verbs:claim", "verbs:submit"],
-            account_id="synthetic-team",
+            account_id="example-team",
         )
         outsider, _ = store.issue_key(
             SURFACE,
@@ -86,7 +86,7 @@ def run_demo() -> dict[str, Any]:
             kinds=[KIND],
             effect_classes=["write-internal"],
             scopes=[*common, "verbs:claim", "cas:write"],
-            account_id="synthetic-team",
+            account_id="example-team",
         )
         controls: dict[str, bool] = {}
         receipts: list[str] = []
@@ -123,7 +123,7 @@ def run_demo() -> dict[str, Any]:
                             "value": value,
                             "visibility_scope": visibility,
                             "tags": [
-                                "synthetic:true",
+                                "example:true",
                                 "category:" + value.get("category_id", "noun.seed_hypothesis"),
                             ],
                         },
@@ -147,7 +147,7 @@ def run_demo() -> dict[str, Any]:
                     return call(
                         "/v1/tasks/claim",
                         token,
-                        {"queue": QUEUE, "worker": "synthetic-member", "kinds": [KIND]},
+                        {"queue": QUEUE, "worker": "example-member", "kinds": [KIND]},
                         expected=expected,
                     )
 
@@ -162,7 +162,7 @@ def run_demo() -> dict[str, Any]:
                     receipts.append(receipt["receipt_hash"])
 
                 contract_ref = put("work.contracts", "sum-squares", CONTRACT, requester)
-                input_ref = put("work.inputs", "numbers", {"synthetic": True}, requester)
+                input_ref = put("work.inputs", "numbers", {"example_only": True}, requester)
                 brief = {
                     "contract": "tessera.work.example.v1",
                     "category_id": KIND,
@@ -177,7 +177,7 @@ def run_demo() -> dict[str, Any]:
                     kind=KIND,
                     brief=brief,
                     idempotency_key="sum-squares",
-                    tags=["synthetic:true", "category:" + KIND],
+                    tags=["example:true", "category:" + KIND],
                 )
                 task_id = call("/v1/tasks", requester, spec.model_dump(mode="json"), expected=201)[
                     "task_id"
@@ -188,7 +188,7 @@ def run_demo() -> dict[str, Any]:
                 call(
                     "/v1/tasks/claim",
                     worker,
-                    {"queue": SERVER_QUEUE, "worker": "synthetic"},
+                    {"queue": SERVER_QUEUE, "worker": "example"},
                     expected=403,
                 )
                 controls["external_key_cannot_claim_server_queue"] = True
@@ -210,13 +210,13 @@ def run_demo() -> dict[str, Any]:
                     worker,
                     {
                         **fence(lease),
-                        "reason": "SYNTHETIC: provide the numbers as a versioned input noun",
+                        "reason": "EXAMPLE: provide the numbers as a versioned input noun",
                     },
                 )
                 input_ref = put(
                     "work.inputs",
                     "numbers",
-                    {"synthetic": True, "values": [2, 3]},
+                    {"example_only": True, "values": [2, 3]},
                     requester,
                     version=1,
                 )
@@ -296,7 +296,7 @@ def run_demo() -> dict[str, Any]:
                     task_id,
                     {
                         "category_id": "noun.eval_run",
-                        "synthetic": True,
+                        "example_only": True,
                         "method": "deterministic_sum_squares",
                         "passed": result.result == expected,
                         "contract_ref": contract_ref,
@@ -323,7 +323,7 @@ def run_demo() -> dict[str, Any]:
                 put(
                     "work.inputs",
                     "owner-only",
-                    {"synthetic": True},
+                    {"example_only": True},
                     requester,
                     visibility="private",
                 )
@@ -332,10 +332,10 @@ def run_demo() -> dict[str, Any]:
                 call(
                     "/v1/tasks/cancel",
                     requester,
-                    {"task_id": private_id, "reason": "SYNTHETIC control complete"},
+                    {"task_id": private_id, "reason": "EXAMPLE control complete"},
                 )
                 report = {
-                    "scope": "local_http_handlers_synthetic_example",
+                    "scope": "local_http_handlers_example",
                     "namespace": NAMESPACE,
                     "requester_key_id": request_grant.key_id,
                     "worker_key_id": work_grant.key_id,

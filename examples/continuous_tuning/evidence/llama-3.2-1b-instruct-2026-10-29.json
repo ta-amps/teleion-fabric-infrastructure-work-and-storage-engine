@@ -1624,7 +1624,7 @@
   "The interrupted tick never wrote its own tick log, so its eight verbs appear here only through the store; the full privacy sweep above covers them."
  ],
  "limits": [
-  "One synthetic task, one seed per configuration, one GPU; no variance across seeds was measured",
+  "One example task, one seed per configuration, one GPU; no variance across seeds was measured",
   "The frozen test is reused across rounds; per-round fresh holdouts are the guard",
   "Worker-reported telemetry; adapters are private and nothing was deployed, admitted or served"
  ],

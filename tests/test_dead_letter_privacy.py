@@ -31,31 +31,31 @@ def test_http_dead_letters_are_owner_private(
     tmp_path: Path, visibility: VisibilityScope, quarantined: bool
 ) -> None:
     store = Store(tmp_path / "failures.db")
-    ns, queue, task_id = "conformance-failures", "conformance-private", "synthetic-failure"
+    ns, queue, task_id = "conformance-failures", "conformance-private", "example-failure"
     with store.scope_context(namespace=ns):
         store.define_queue(QueueConfig(name=queue, max_attempts=1))
         # Previously emitted public versions must also become unreadable to others.
         store.put_record(
             "negative.knowledge",
             task_id,
-            {"synthetic": True},
+            {"example_only": True},
             expected_version=0,
             producer_surface="surface:memory_team",
         )
     scopes = ["nouns:read", "verbs:claim", "verbs:submit", "surface:memory_team", f"namespace:{ns}"]
-    owner, owner_grant = store.issue_key("synthetic-owner", queues=[queue], scopes=scopes)
-    other, _ = store.issue_key("synthetic-peer", queues=[queue], scopes=scopes)
+    owner, owner_grant = store.issue_key("example-owner", queues=[queue], scopes=scopes)
+    other, _ = store.issue_key("example-peer", queues=[queue], scopes=scopes)
     noun_only, _ = store.issue_key(
-        "synthetic-noun-reader",
+        "example-noun-reader",
         queues=["conformance-unrelated"],
         scopes=["nouns:read", "surface:memory_team", f"namespace:{ns}"],
     )
     cross_surface, _ = store.issue_key(
-        "synthetic-allowlisted",
+        "example-allowlisted",
         queues=[queue],
         scopes=["nouns:read", "surface:other_team", f"namespace:{ns}"],
     )
-    tags = ["origin:synthetic", "status:verified"] + (["status:quarantined"] if quarantined else [])
+    tags = ["origin:example", "status:verified"] + (["status:quarantined"] if quarantined else [])
     app = create_app(store, ServiceSettings(db_path=store.path, reaper_seconds=3600))
     with TestClient(app) as client:
         prefix = f"/ns/{ns}"
@@ -66,7 +66,7 @@ def test_http_dead_letters_are_owner_private(
             json={
                 "queue": queue,
                 "task_id": task_id,
-                "brief": {"title": "SYNTHETIC confidential failure"},
+                "brief": {"title": "EXAMPLE confidential failure"},
                 "visibility_scope": visibility,
                 "producer_surface": "surface:memory_team",
                 "allowed_surfaces": ["surface:other_team"],
@@ -76,16 +76,16 @@ def test_http_dead_letters_are_owner_private(
         )
         assert response.status_code == 201, response.text
         lease = client.post(
-            prefix + "/v1/tasks/claim", headers=auth, json={"queue": queue, "worker": "synthetic"}
+            prefix + "/v1/tasks/claim", headers=auth, json={"queue": queue, "worker": "example"}
         ).json()
         response = client.post(
             prefix + "/v1/tasks/submit",
-            headers={**auth, "Idempotency-Key": "synthetic"},
+            headers={**auth, "Idempotency-Key": "example"},
             json={
                 "task_id": task_id,
                 "fencing_token": lease["fencing_token"],
                 "ok": False,
-                "error": "SYNTHETIC private diagnostic",
+                "error": "EXAMPLE private diagnostic",
             },
         )
         assert response.status_code == 200, response.text
@@ -100,10 +100,10 @@ def test_http_dead_letters_are_owner_private(
         assert noun["producer_surface"] == "surface:memory_team"
         assert noun["allowed_surfaces"] == []
         assert noun["target_cohorts"] == ["cohort:memory"]
-        assert "origin:synthetic" in noun["tags"]
+        assert "origin:example" in noun["tags"]
         assert "status:verified" not in noun["tags"]
         assert ("status:quarantined" in noun["tags"]) == quarantined
-        assert noun["value"]["reason"] == "SYNTHETIC private diagnostic"
+        assert noun["value"]["reason"] == "EXAMPLE private diagnostic"
         assert len(client.get(path + "/history", headers=auth).json()["versions"]) == 2
         for token in (other, noun_only, cross_surface):
             denied_auth = {"Authorization": "Bearer " + token}
@@ -129,14 +129,16 @@ def test_unowned_embedded_failure_is_admin_only(tmp_path: Path) -> None:
     store = Store(tmp_path / "embedded.db")
     try:
         store.define_queue(QueueConfig(name="conformance-embedded", max_attempts=1))
-        task_id = store.enqueue(TaskSpec(queue="conformance-embedded", brief={"synthetic": True}))
-        lease = store.claim("conformance-embedded", "synthetic")
+        task_id = store.enqueue(
+            TaskSpec(queue="conformance-embedded", brief={"example_only": True})
+        )
+        lease = store.claim("conformance-embedded", "example")
         assert lease is not None
-        store.submit(task_id, lease.fencing_token, None, idempotency_key="synthetic", ok=False)
+        store.submit(task_id, lease.fencing_token, None, idempotency_key="example", ok=False)
         with pytest.raises(NotFound):
             store.get_record("negative.knowledge", task_id)
         with (
-            store.scope_context(key_id="synthetic-reader", surface="tessera"),
+            store.scope_context(key_id="example-reader", surface="tessera"),
             pytest.raises(NotFound),
         ):
             store.get_record("negative.knowledge", task_id)

@@ -97,7 +97,7 @@ class Fabric:
             value=value,
             expected_version=0,
             visibility_scope="private",
-            tags=sorted({*tags, f"role:{role}", "data:synthetic"}),
+            tags=sorted({*tags, f"role:{role}", "data:example"}),
         )
         try:
             record = self.store.put_records([write])[0]
@@ -153,7 +153,7 @@ class Fabric:
             value=value,
             expected_version=expected_version,
             visibility_scope="private",
-            tags=["role:champion_pointer", "data:synthetic", "status:local_only"],
+            tags=["role:champion_pointer", "data:example", "status:local_only"],
         )
         record = self.store.put_records([write])[0]
         return noun_ref(record, value)

@@ -1,4 +1,4 @@
-// No remote HTTP, credentials, or persistent production data: real Worker handlers, synthetic SQLite.
+// No remote HTTP, credentials, or persistent production data: real Worker handlers, example SQLite.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { DatabaseSync } from "node:sqlite";
@@ -135,7 +135,7 @@ function harness() {
   const env = {
     STORAGE_MODE: "cloud",
     ANONYMOUS_ACCESS_ENABLED: "true",
-    BOOTSTRAP_SECRET: "synthetic-bootstrap-only",
+    BOOTSTRAP_SECRET: "example-bootstrap-only",
     PUBLIC_URL: "https://tessera.example",
     FABRIC_DB: d1("../deploy/cloudflare/d1-fabric.sql"),
     BUCKETS_DB: d1("../deploy/cloudflare/d1-buckets.sql"),
@@ -165,7 +165,7 @@ function harness() {
     { token, method = "GET", body, headers = {} } = {},
   ) => {
     const h = {
-      "user-agent": "SYNTHETIC test harness",
+      "user-agent": "EXAMPLE test harness",
       "cf-connecting-ip": "203.0.113.21",
       ...headers,
     };
@@ -200,7 +200,7 @@ function harness() {
   };
   const post = (path, body, token, headers) =>
     req(path, { method: "POST", body, token, headers });
-  const mint = async (label = "SYNTHETIC assistant") => {
+  const mint = async (label = "EXAMPLE assistant") => {
     const r = await post("/v1/session/anonymous", { agent_label: label });
     assert.equal(r.status, 201, "anonymous mint " + r.data?.code);
     assert.match(r.data.session_token, /^tan_/);
@@ -210,7 +210,7 @@ function harness() {
     const r = await post(
       "/v1/admin/keys",
       {
-        label: "SYNTHETIC operator",
+        label: "EXAMPLE operator",
         queues: ["*"],
         scopes: ["admin", "store"],
         effect_classes: ["read", "write-internal", "write-repo"],
@@ -225,7 +225,7 @@ function harness() {
     const r = await post(
       "/v1/keys",
       {
-        label: "SYNTHETIC key",
+        label: "EXAMPLE key",
         queues: ["conformance-agent", "demo.*"],
         effect_classes: ["read", "write-internal"],
         scopes: [
@@ -277,7 +277,7 @@ async function test(name, fn) {
 const grantTags = ["origin:anonymous", "demo:true", "untrusted:true"];
 
 await test("anonymous HTTP full noun verb loop and audit", async (h) => {
-  const a = await h.mint("<SYNTHETIC> assistant");
+  const a = await h.mint("<EXAMPLE> assistant");
   assert.equal(a.labels.origin, "anonymous");
   assert.equal(a.labels.untrusted, true);
   assert.ok(!a.labels.agent_label.includes("<"));
@@ -287,7 +287,7 @@ await test("anonymous HTTP full noun verb loop and audit", async (h) => {
   assert.equal(search.status, 200);
   const claim = await h.post(
     "/v1/tasks/claim",
-    { queue: "demo.ping", worker: "synthetic-agent" },
+    { queue: "demo.ping", worker: "example-agent" },
     a.session_token,
   );
   assert.equal(claim.status, 200, "claim " + claim.data?.code);
@@ -303,7 +303,7 @@ await test("anonymous HTTP full noun verb loop and audit", async (h) => {
   const put = await h.post(
     "/v1/stores/demo.artifacts/records/result",
     {
-      value: { synthetic: true, note: "SYNTHETIC example.com" },
+      value: { example_only: true, note: "Example.com" },
       expected_version: 0,
       visibility_scope: "public_commons",
       tags: ["demo:false", "untrusted:false"],
@@ -319,13 +319,13 @@ await test("anonymous HTTP full noun verb loop and audit", async (h) => {
       task_id: lease.task_id,
       fencing_token: lease.fencing_token,
       output: {
-        synthetic: true,
+        example_only: true,
         artifact: "demo.artifacts/result",
         version: put.data.version,
       },
     },
     a.session_token,
-    { "Idempotency-Key": "synthetic-submit" },
+    { "Idempotency-Key": "example-submit" },
   );
   assert.equal(submit.status, 200, "submit " + submit.data?.code);
   assert.equal(submit.data.labels.origin, "anonymous");
@@ -368,7 +368,7 @@ await test("anonymous isolation, production/admin denial, content and immutable 
     (
       await h.post(
         "/v1/stores/demo.artifacts/records/private",
-        { expected_version: 0, value: { synthetic: true } },
+        { expected_version: 0, value: { example_only: true } },
         ta,
       )
     ).status,
@@ -392,7 +392,7 @@ await test("anonymous isolation, production/admin denial, content and immutable 
     (
       await h.post(
         "/v1/tasks/claim",
-        { queue: "seed", worker: "synthetic" },
+        { queue: "seed", worker: "example" },
         ta,
       )
     ).status,
@@ -403,7 +403,7 @@ await test("anonymous isolation, production/admin denial, content and immutable 
     (
       await h.post(
         "/v1/keys",
-        { label: "SYNTHETIC escalation", queues: ["*"], scopes: ["admin"] },
+        { label: "EXAMPLE escalation", queues: ["*"], scopes: ["admin"] },
         ta,
       )
     ).status,
@@ -411,11 +411,11 @@ await test("anonymous isolation, production/admin denial, content and immutable 
   );
   const bad = await h.post(
     "/v1/stores/demo.artifacts/records/disallowed",
-    { expected_version: 0, value: { email: "synthetic@not-an-example.test" } },
+    { expected_version: 0, value: { email: "example@not-an-example.test" } },
     ta,
   );
   assert.equal(bad.status, 400);
-  assert.equal(bad.data.code, "synthetic_only");
+  assert.equal(bad.data.code, "example_only");
   const otherAudit = await h.req("/v1/me/audit", { token: tb });
   assert.ok(
     otherAudit.data.events.every((e) => e.principal_id === b.principal_id),
@@ -428,7 +428,7 @@ await test("anonymous quotas and browser CORS", async (h) => {
     (
       await h.post(
         "/v1/tasks/claim",
-        { queue: "demo.ping", worker: "synthetic" },
+        { queue: "demo.ping", worker: "example" },
         a.session_token,
       )
     ).status,
@@ -436,7 +436,7 @@ await test("anonymous quotas and browser CORS", async (h) => {
   );
   const quota = await h.post(
     "/v1/tasks/claim",
-    { queue: "demo.echo", worker: "synthetic" },
+    { queue: "demo.echo", worker: "example" },
     a.session_token,
   );
   assert.equal(quota.status, 429);
@@ -464,8 +464,8 @@ await test("anonymous quotas and browser CORS", async (h) => {
 
 await test("keyed production loop, accounts, ownership and revocation", async (h) => {
   const operator = await h.admin(),
-    a = await h.key(operator, "synthetic-account-a"),
-    b = await h.key(operator, "synthetic-account-b");
+    a = await h.key(operator, "example-account-a"),
+    b = await h.key(operator, "example-account-b");
   assert.equal(
     (
       await h.post(
@@ -480,22 +480,22 @@ await test("keyed production loop, accounts, ownership and revocation", async (h
     "/v1/tasks",
     {
       queue: "conformance-agent",
-      task_id: "synthetic-production",
-      brief: { synthetic: true },
+      task_id: "example-production",
+      brief: { example_only: true },
     },
     a.key,
   );
   assert.equal(task.status, 201);
   const lease = await h.post(
     "/v1/tasks/claim",
-    { queue: "conformance-agent", worker: "synthetic-agent" },
+    { queue: "conformance-agent", worker: "example-agent" },
     a.key,
   );
   assert.equal(lease.status, 200);
   const put = await h.post(
-    "/v1/stores/synthetic.records/records/private",
+    "/v1/stores/example.records/records/private",
     {
-      value: { synthetic: true },
+      value: { example_only: true },
       expected_version: 0,
       visibility_scope: "private",
     },
@@ -504,15 +504,15 @@ await test("keyed production loop, accounts, ownership and revocation", async (h
   assert.equal(put.status, 200);
   assert.equal(
     (
-      await h.req("/v1/stores/synthetic.records/records/private", {
+      await h.req("/v1/stores/example.records/records/private", {
         token: b.key,
       })
     ).status,
     404,
   );
   const overwrite = await h.post(
-    "/v1/stores/synthetic.records/records/private",
-    { value: { synthetic: true, other: true }, expected_version: 1 },
+    "/v1/stores/example.records/records/private",
+    { value: { example_only: true, other: true }, expected_version: 1 },
     b.key,
   );
   assert.equal(overwrite.status, 403);
@@ -521,10 +521,10 @@ await test("keyed production loop, accounts, ownership and revocation", async (h
     {
       task_id: lease.data.task_id,
       fencing_token: lease.data.fencing_token,
-      output: { synthetic: true },
+      output: { example_only: true },
     },
     a.key,
-    { "Idempotency-Key": "synthetic-keyed-submit" },
+    { "Idempotency-Key": "example-keyed-submit" },
   );
   assert.equal(done.status, 200);
   const audit = await h.req("/v1/me/audit", { token: a.key });
@@ -533,13 +533,13 @@ await test("keyed production loop, accounts, ownership and revocation", async (h
       (e) =>
         e.action === "submit" &&
         e.key_id === a.key_id &&
-        e.account_id === "synthetic-account-a",
+        e.account_id === "example-account-a",
     ),
   );
   const list = await h.req("/v1/keys", { token: a.key });
   assert.equal(list.status, 200);
   assert.ok(
-    list.data.keys.every((k) => k.account_id === "synthetic-account-a"),
+    list.data.keys.every((k) => k.account_id === "example-account-a"),
   );
   assert.ok(!JSON.stringify(list.data).includes(a.key));
   assert.equal(list.data.keys[0].key_prefix.length, 8);
@@ -582,7 +582,7 @@ await test("MCP discovery card agreement and anonymous MCP loop", async (h) => {
     listed.data.result.tools.map((t) => t.name).sort(),
   );
   const opened = await call("open_anonymous_session", {
-    agent_label: "SYNTHETIC personal assistant",
+    agent_label: "EXAMPLE personal assistant",
   });
   assert.equal(opened.status, 200);
   assert.equal(opened.data.result.isError, false);
@@ -592,7 +592,7 @@ await test("MCP discovery card agreement and anonymous MCP loop", async (h) => {
   assert.equal(who.data.result.structuredContent.principal_kind, "anonymous");
   const claim = await call(
     "claim",
-    { queue: "demo.ping", worker: "synthetic-mcp-agent" },
+    { queue: "demo.ping", worker: "example-mcp-agent" },
     session.session_token,
   );
   assert.equal(claim.data.result.isError, false);
@@ -603,7 +603,7 @@ await test("MCP discovery card agreement and anonymous MCP loop", async (h) => {
     {
       store_name: "demo.artifacts",
       key: "mcp-result",
-      value: { synthetic: true },
+      value: { example_only: true },
       expected_version: 0,
     },
     session.session_token,
@@ -614,8 +614,8 @@ await test("MCP discovery card agreement and anonymous MCP loop", async (h) => {
     {
       task_id: lease.task_id,
       fencing_token: lease.fencing_token,
-      idempotency_key: "synthetic-mcp-submit",
-      output: { synthetic: true },
+      idempotency_key: "example-mcp-submit",
+      output: { example_only: true },
     },
     session.session_token,
   );
@@ -633,7 +633,7 @@ await test("same-task claim races across anonymous and keyed principals", async 
     Array.from({ length: 20 }, (_, i) =>
       h.post(
         "/v1/tasks/claim",
-        { queue: "demo.ping", worker: "synthetic-race-" + i },
+        { queue: "demo.ping", worker: "example-race-" + i },
         i % 2 ? a.session_token : k.key,
         i % 2 ? {} : { "X-Namespace": a.namespace },
       ),
@@ -644,7 +644,7 @@ await test("same-task claim races across anonymous and keyed principals", async 
   // Distinct anonymous sessions may not contend for each other's task at all.
   const denied = await h.post(
     "/v1/tasks/claim",
-    { queue: "demo.ping", worker: "synthetic-other-session" },
+    { queue: "demo.ping", worker: "example-other-session" },
     b.session_token,
     { "X-Namespace": a.namespace },
   );
@@ -654,7 +654,7 @@ await test("same-task claim races across anonymous and keyed principals", async 
     Array.from({ length: 10 }, () =>
       h.post(
         "/v1/tasks/claim",
-        { queue: "demo.ping", worker: "synthetic-double" },
+        { queue: "demo.ping", worker: "example-double" },
         c.session_token,
       ),
     ),
@@ -674,18 +674,18 @@ await test("same-task claim races across anonymous and keyed principals", async 
     "/v1/tasks",
     {
       queue: "conformance-agent",
-      task_id: "synthetic-race-task",
-      brief: { synthetic: true },
+      task_id: "example-race-task",
+      brief: { example_only: true },
     },
     operator.key,
   );
-  const k1 = await h.key(operator, "synthetic-race-1"),
-    k2 = await h.key(operator, "synthetic-race-2");
+  const k1 = await h.key(operator, "example-race-1"),
+    k2 = await h.key(operator, "example-race-2");
   const keyedRace = await Promise.all(
     Array.from({ length: 20 }, (_, i) =>
       h.post(
         "/v1/tasks/claim",
-        { queue: "conformance-agent", worker: "synthetic-keyed-" + i },
+        { queue: "conformance-agent", worker: "example-keyed-" + i },
         i % 2 ? k1.key : k2.key,
       ),
     ),
@@ -700,7 +700,7 @@ await test("CAS race stale lease fencing and numeric validation", async (h) => {
     (
       await h.post(
         "/v1/stores/demo.artifacts/records/cas",
-        { expected_version: 0, value: { synthetic: true } },
+        { expected_version: 0, value: { example_only: true } },
         token,
       )
     ).status,
@@ -710,7 +710,7 @@ await test("CAS race stale lease fencing and numeric validation", async (h) => {
     Array.from({ length: 20 }, (_, i) =>
       h.post(
         "/v1/stores/demo.artifacts/records/cas",
-        { expected_version: 1, value: { synthetic: true, writer: i } },
+        { expected_version: 1, value: { example_only: true, writer: i } },
         token,
       ),
     ),
@@ -719,7 +719,7 @@ await test("CAS race stale lease fencing and numeric validation", async (h) => {
   assert.equal(race.filter((r) => r.status === 409).length, 19);
   const claim = await h.post(
     "/v1/tasks/claim",
-    { queue: "demo.ping", worker: "synthetic-stale" },
+    { queue: "demo.ping", worker: "example-stale" },
     token,
   );
   assert.equal(claim.status, 200);
@@ -730,29 +730,29 @@ await test("CAS race stale lease fencing and numeric validation", async (h) => {
       {
         task_id: lease.task_id,
         fencing_token: lease.fencing_token + 1,
-        output: { synthetic: true },
+        output: { example_only: true },
       },
       token,
-      { "Idempotency-Key": "synthetic-stale-" + action },
+      { "Idempotency-Key": "example-stale-" + action },
     );
     assert.equal(stale.status, 409);
   }
   const numeric = await h.post(
     "/v1/stores/demo.artifacts/records/unsafe",
-    '{"expected_version":0,"value":{"synthetic":true,"integer":9007199254740993}}',
+    '{"expected_version":0,"value":{"example_only":true,"integer":9007199254740993}}',
     token,
   );
   assert.equal(numeric.status, 400);
   const missing = await h.req("/v1/me"),
-    unknown = await h.req("/v1/me", { token: ["synthetic", "unknown", "bearer"].join("-") });
+    unknown = await h.req("/v1/me", { token: ["example_only", "unknown", "bearer"].join("-") });
   assert.equal(missing.status, 401);
   assert.equal(unknown.status, 401);
   assert.notEqual(missing.data.detail, unknown.data.detail);
   assert.equal(canonicalJson({ value: 1e20 }), '{"value":1e+20}');
   assert.equal(
-    await receiptHash("synthetic", 1, true, { value: 1e20 }, null),
+    await receiptHash("example", 1, true, { value: 1e20 }, null),
     await receiptHash(
-      "synthetic",
+      "example",
       1,
       true,
       { value: 100000000000000000000 },
@@ -763,7 +763,7 @@ await test("CAS race stale lease fencing and numeric validation", async (h) => {
 
 await test("delegated keys cannot escalate effect grants", async (h) => {
   const operator = await h.admin();
-  const issuer = await h.key(operator, "synthetic-delegator", {
+  const issuer = await h.key(operator, "example-delegator", {
     effect_classes: ["read"],
     kinds: ["demo"],
     scopes: ["admin:keys", "store", "nouns:read", "verbs:claim"],
@@ -771,12 +771,12 @@ await test("delegated keys cannot escalate effect grants", async (h) => {
   const forged = await h.post(
     "/v1/keys",
     {
-      label: "SYNTHETIC delegation",
+      label: "EXAMPLE delegation",
       queues: ["conformance-agent"],
       kinds: ["demo"],
       effect_classes: ["write-repo"],
       scopes: ["store", "nouns:read"],
-      account_id: "synthetic-delegator",
+      account_id: "example-delegator",
     },
     issuer.key,
   );
@@ -788,7 +788,7 @@ await test("delegated keys cannot escalate effect grants", async (h) => {
 });
 await test("delegated keys cannot expand task kinds or implicit defaults", async (h) => {
   const operator = await h.admin();
-  const issuer = await h.key(operator, "synthetic-delegator", {
+  const issuer = await h.key(operator, "example-delegator", {
     effect_classes: ["read"],
     kinds: ["demo"],
     scopes: ["admin:keys", "store", "nouns:read", "verbs:claim"],
@@ -796,7 +796,7 @@ await test("delegated keys cannot expand task kinds or implicit defaults", async
   const forged = await h.post(
     "/v1/keys",
     {
-      label: "SYNTHETIC delegation",
+      label: "EXAMPLE delegation",
       queues: ["conformance-agent"],
       effect_classes: ["read"],
       scopes: ["store", "nouns:read"],
@@ -811,7 +811,7 @@ await test("delegated keys cannot expand task kinds or implicit defaults", async
 });
 await test("delegated account identity and expiry stay within issuer authority", async (h) => {
   const operator = await h.admin();
-  const issuer = await h.key(operator, "synthetic-delegator", {
+  const issuer = await h.key(operator, "example-delegator", {
     days: 1,
     effect_classes: ["read"],
     scopes: ["admin:keys", "store", "nouns:read"],
@@ -819,11 +819,11 @@ await test("delegated account identity and expiry stay within issuer authority",
   const other = await h.post(
     "/v1/keys",
     {
-      label: "SYNTHETIC delegation",
+      label: "EXAMPLE delegation",
       queues: ["conformance-agent"],
       effect_classes: ["read"],
       scopes: ["store"],
-      account_id: "synthetic-other-account",
+      account_id: "example-other-account",
       days: 1,
     },
     issuer.key,
@@ -836,7 +836,7 @@ await test("delegated account identity and expiry stay within issuer authority",
   const longer = await h.post(
     "/v1/keys",
     {
-      label: "SYNTHETIC delegation",
+      label: "EXAMPLE delegation",
       queues: ["conformance-agent"],
       effect_classes: ["read"],
       scopes: ["store"],
@@ -854,9 +854,9 @@ await test("audit verb identifiers, claim receipts and request metadata are exac
   const a = await h.mint();
   const claimed = await h.post(
     "/v1/tasks/claim",
-    { queue: "demo.ping", worker: "synthetic-audit" },
+    { queue: "demo.ping", worker: "example-audit" },
     a.session_token,
-    { "X-Request-Id": "synthetic-claim-request" },
+    { "X-Request-Id": "example-claim-request" },
   );
   assert.equal(claimed.status, 200);
   const lease = claimed.data;
@@ -872,21 +872,21 @@ await test("audit verb identifiers, claim receipts and request metadata are exac
     "claim audit must identify exact claimed verb, not its queue",
   );
   assert.equal(claim.receipt_id, lease.claim_receipt);
-  assert.equal(claim.request_id, "synthetic-claim-request");
+  assert.equal(claim.request_id, "example-claim-request");
   assert.match(claim.ip_hash, /^[a-f0-9]{64}$/);
   assert.match(claim.ua_hash, /^[a-f0-9]{64}$/);
   assert.ok(!JSON.stringify(audit.data).includes("203.0.113.21"));
 });
 await test("fine-grained scopes and service-binding attribution remain enforced", async (h) => {
   const operator = await h.admin();
-  const readonly = await h.key(operator, "synthetic-reader", {
+  const readonly = await h.key(operator, "example-reader", {
     scopes: ["store", "nouns:read"],
   });
   assert.equal(
     (
       await h.post(
         "/v1/tasks/claim",
-        { queue: "conformance-agent", worker: "synthetic" },
+        { queue: "conformance-agent", worker: "example" },
         readonly.key,
       )
     ).status,
@@ -895,27 +895,27 @@ await test("fine-grained scopes and service-binding attribution remain enforced"
   assert.equal(
     (
       await h.post(
-        "/v1/stores/synthetic.records/records/no",
-        { expected_version: 0, value: { synthetic: true } },
+        "/v1/stores/example.records/records/no",
+        { expected_version: 0, value: { example_only: true } },
         readonly.key,
       )
     ).status,
     403,
   );
-  const author = await h.key(operator, "synthetic-author", {
+  const author = await h.key(operator, "example-author", {
     scopes: ["store", "cas:write"],
   });
   assert.equal(
-    (await h.req("/v1/search?q=synthetic", { token: author.key })).status,
+    (await h.req("/v1/search?q=example", { token: author.key })).status,
     403,
   );
   assert.equal(
     (
       await h.post(
-        "/v1/stores/synthetic.records/records/forged",
+        "/v1/stores/example.records/records/forged",
         {
           expected_version: 0,
-          value: { synthetic: true },
+          value: { example_only: true },
           producer_surface: "surface:eranos",
         },
         author.key,
@@ -926,10 +926,10 @@ await test("fine-grained scopes and service-binding attribution remain enforced"
   assert.equal(
     (
       await h.post(
-        "/v1/stores/synthetic.records/records/forged",
+        "/v1/stores/example.records/records/forged",
         {
           expected_version: 0,
-          value: { synthetic: true },
+          value: { example_only: true },
           tags: ["status:verified"],
         },
         author.key,
@@ -937,7 +937,7 @@ await test("fine-grained scopes and service-binding attribution remain enforced"
     ).status,
     403,
   );
-  const service = await h.key(operator, "synthetic-service", {
+  const service = await h.key(operator, "example-service", {
     scopes: ["store", "surface:eranos"],
   });
   const principal = await h.req("/v1/me", { token: service.key });
@@ -959,7 +959,7 @@ await test("feature flag, session expiry and retention purge fail closed", async
   const a = await h.mint();
   const lease = await h.post(
     "/v1/tasks/claim",
-    { queue: "demo.ping", worker: "synthetic-expiry" },
+    { queue: "demo.ping", worker: "example-expiry" },
     a.session_token,
   );
   assert.equal(lease.status, 200);
@@ -967,7 +967,7 @@ await test("feature flag, session expiry and retention purge fail closed", async
     (
       await h.post(
         "/v1/stores/demo.artifacts/records/expire",
-        { expected_version: 0, value: { synthetic: true } },
+        { expected_version: 0, value: { example_only: true } },
         a.session_token,
       )
     ).status,
@@ -980,10 +980,10 @@ await test("feature flag, session expiry and retention purge fail closed", async
         {
           task_id: lease.data.task_id,
           fencing_token: lease.data.fencing_token,
-          output: { synthetic: true },
+          output: { example_only: true },
         },
         a.session_token,
-        { "Idempotency-Key": "synthetic-expiring-submit" },
+        { "Idempotency-Key": "example-expiring-submit" },
       )
     ).status,
     200,
@@ -1007,7 +1007,7 @@ await test("feature flag, session expiry and retention purge fail closed", async
     );
 });
 await test("verb discovery and public observer never reveal private demo details", async (h) => {
-  const a = await h.mint("SYNTHETIC private agent label");
+  const a = await h.mint("EXAMPLE private agent label");
   const verbs = await h.req("/v1/verbs?queue=demo.ping&status=ready", {
     token: a.session_token,
   });
@@ -1016,7 +1016,7 @@ await test("verb discovery and public observer never reveal private demo details
   const taskId = verbs.data.verbs[0].task_id;
   const claim = await h.post(
     "/v1/tasks/claim",
-    { queue: "demo.ping", worker: "synthetic-observer" },
+    { queue: "demo.ping", worker: "example-observer" },
     a.session_token,
   );
   assert.equal(claim.data.task_id, taskId);
@@ -1032,7 +1032,7 @@ await test("verb discovery and public observer never reveal private demo details
     "/v1/stores/demo.artifacts/records/hidden",
     {
       expected_version: 0,
-      value: { synthetic: true, note: "SYNTHETIC HIDDEN ARTIFACT MARKER" },
+      value: { example_only: true, note: "EXAMPLE HIDDEN ARTIFACT MARKER" },
     },
     a.session_token,
   );
@@ -1049,7 +1049,7 @@ await test("verb discovery and public observer never reveal private demo details
       a.namespace,
       a.principal_id,
       taskId,
-      "SYNTHETIC HIDDEN ARTIFACT MARKER",
+      "EXAMPLE HIDDEN ARTIFACT MARKER",
       "203.0.113.21",
     ])
       assert.ok(!content.includes(hidden), path + " exposed private detail");
@@ -1057,7 +1057,7 @@ await test("verb discovery and public observer never reveal private demo details
 });
 await test("anonymous artifact byte budget is cumulative and returns retry metadata", async (h) => {
   const a = await h.mint();
-  const value = { synthetic: true, text: "x".repeat(60000) };
+  const value = { example_only: true, text: "x".repeat(60000) };
   for (let i = 0; i < 17; i++)
     assert.equal(
       (

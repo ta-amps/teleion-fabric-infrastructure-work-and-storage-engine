@@ -486,6 +486,7 @@ test("tracked sessions cannot propose until their own switch is on; contributor 
   const contract = (await t.request("/connect.json")).data.library;
   assert.equal(contract.enabled, true);
   assert.equal(contract.anonymous_enabled, false);
+  assert.deepEqual(contract.limits.budgets, { daily_bytes: 8388608, anonymous_daily_bytes: 4194304, account_daily_bytes: 8388608 });
   assert.match(contract.who_may_propose, /tracked sessions cannot propose here yet/);
   assert.match((await t.request("/.well-known/agent.json")).data.securitySchemes.bearer.description, /tracked sessions cannot propose/);
 });
@@ -500,5 +501,9 @@ test("with the door switched off it refuses, the card is withdrawn and the publi
   assert.equal((await t.request("/.well-known/agent.json")).status, 404);
   const contract = await t.request("/connect.json");
   assert.equal(contract.data.library.enabled, false);
-  assert.deepEqual(contract.data.library.mcp_tools, ["propose_task_object", "propose_task", "submit_pack", "proposal_status"]);
+  assert.deepEqual(contract.data.library.mcp_tools, []);
+  // The library tools leave tools/list and every page that names tools while the door is off.
+  const listed = (await t.mcp(undefined, null, {}, "tools/list")).tools.map(tool => tool.name);
+  for (const name of ["propose_task_object", "propose_task", "submit_pack", "proposal_status"]) assert.ok(!listed.includes(name), name);
+  for (const path of ["/llms.txt", "/.well-known/agent-card.json"]) assert.ok(!(await t.request(path)).text.includes("propose_task_object"), path);
 });

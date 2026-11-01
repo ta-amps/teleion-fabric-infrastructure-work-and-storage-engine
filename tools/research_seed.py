@@ -99,7 +99,7 @@ STAGES = {
         "categories": ["noun.code_node", "noun.seed_hypothesis"],
         "checks": [
             "Prefer an existing compatible collector. Pin its code/dependency digests, source license, input/output contract and bounded execution environment.",
-            "Test ordinary, duplicate, malformed, empty, rate-limited, timeout and changed-source cases with synthetic fixtures. Enforce destination, redirect, size and duration bounds without executing source content.",
+            "Test ordinary, duplicate, malformed, empty, rate-limited, timeout and changed-source cases with test fixtures. Enforce destination, redirect, size and duration bounds without executing source content.",
             "Use stable item identities and content hashes, conditional retrieval where supported, and explicit incomplete/error outcomes. Record source dates separately from retrieval dates.",
         ],
     },

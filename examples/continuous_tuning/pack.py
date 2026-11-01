@@ -120,7 +120,7 @@ def build_pack(namespace: str = NAMESPACE, queue: str = QUEUE) -> dict[str, Any]
                 "key": key,
                 "expected_version": 0,
                 "value": value,
-                "tags": [f"category:{category}", f"role:{role}", "status:proposal", "data:synthetic", "spdx:MIT"],
+                "tags": [f"category:{category}", f"role:{role}", "status:proposal", "data:example", "spdx:MIT"],
             }
         )  # fmt: skip
         refs[name] = {"store": STORE, "key": key, "version": 1, "value_sha256": digest(value)}
@@ -194,7 +194,7 @@ def build_pack(namespace: str = NAMESPACE, queue: str = QUEUE) -> dict[str, Any]
                 "kind": "verb.decompose_dag",
                 "effect_class": "write-internal",
                 "idempotency_key": "continuous-tuning-seed:" + digest({"queue": queue, "brief": brief}),
-                "tags": ["category:verb.decompose_dag", "stage:tick", "status:proposal", "data:synthetic"],
+                "tags": ["category:verb.decompose_dag", "stage:tick", "status:proposal", "data:example"],
                 "brief": brief,
             }
         )  # fmt: skip
@@ -203,7 +203,7 @@ def build_pack(namespace: str = NAMESPACE, queue: str = QUEUE) -> dict[str, Any]
         "pack_id": PACK_ID,
         "version": PACK_VERSION,
         "status": "offline_candidate",
-        "synthetic": True,
+        "example_only": True,
         "license": "MIT",
         "importer": None,
         "importer_reason": "No manifest endpoint or generic importer exists. An owner writes the records with the batch-record API, verifies version-1 readback, then explicitly enqueues a tick seed in an existing queue.",

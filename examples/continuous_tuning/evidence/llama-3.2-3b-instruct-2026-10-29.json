@@ -859,7 +859,7 @@
   "vram_bytes": 12481003520
  },
  "limits": [
-  "One synthetic task, one seed per configuration, one GPU; no variance across seeds was measured",
+  "One example task, one seed per configuration, one GPU; no variance across seeds was measured",
   "The first search trial records weights_verified false because the environment was read before the first load; that load verified the weights",
   "Worker-reported telemetry; adapters are private and nothing was deployed, admitted or served"
  ],

@@ -28,7 +28,7 @@ flowchart LR
   S[("Noun store: seeds/*<br/>compact topic + budget")] --> Q1["Verb queue: expand<br/>depth &lt; max_depth"]
   Q1 --> P[("Noun store: proposals/*<br/>v1 candidate noun (CAS)")]
   Q1 --> Q2["Verb queues: research + draft<br/>enrich_proposal"]
-  Q2 --> B[("Blobs: SHA-256<br/>SYNTHETIC fixtures")]
+  Q2 --> B[("Blobs: SHA-256<br/>Test fixtures")]
   Q2 --> P2[("Noun store: proposals/*<br/>v2..v3 enriched (CAS)")]
   Q2 --> Q3["Verb queue: review<br/>depends_on research+draft<br/>reviewer != proposer"]
   Q3 --> C[("Noun store: canonical/*<br/>atomic put_records batch")]

@@ -1,6 +1,6 @@
 // Real Worker/SQLite: the lease reaper keeps running in the main namespace even when an alarm
 // chain was lost (for example after alarm handlers failed during a storage outage).
-// Fixture-only methods never ship in the product. Synthetic keys and data only.
+// Fixture-only methods never ship in the product. Example keys and data only.
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -33,7 +33,7 @@ async function setup(persist) {
     compatibilityDate: "2026-10-01",
     durableObjects: { COORDINATOR: { className: "FixtureCoordinator", useSQLite: true } },
     d1Databases: ["FABRIC_DB", "BUCKETS_DB"],
-    bindings: { STORAGE_MODE: "cloud", ANONYMOUS_ACCESS_ENABLED: "false", FRAGILITY_PLANNER_ENABLED: "false", BOOTSTRAP_SECRET: "synthetic-reaper-bootstrap" },
+    bindings: { STORAGE_MODE: "cloud", ANONYMOUS_ACCESS_ENABLED: "false", FRAGILITY_PLANNER_ENABLED: "false", BOOTSTRAP_SECRET: "example-reaper-bootstrap" },
     outboundService: () => { throw new Error("External requests are prohibited in this fixture"); },
   }] }));
   runtimes.add(runtime);
@@ -52,13 +52,13 @@ async function setup(persist) {
 }
 
 async function leasedTask(env) {
-  const issued = await env.request("/v1/admin/keys", { label: "synthetic-operator", queues: ["*"], scopes: ["admin", "store"], effect_classes: ["read", "write-internal"] }, undefined, { "X-Bootstrap-Secret": "synthetic-reaper-bootstrap" });
+  const issued = await env.request("/v1/admin/keys", { label: "example-operator", queues: ["*"], scopes: ["admin", "store"], effect_classes: ["read", "write-internal"] }, undefined, { "X-Bootstrap-Secret": "example-reaper-bootstrap" });
   assert.equal(issued.status, 201, JSON.stringify(issued.data));
   const key = issued.data.key;
   assert.equal((await env.request("/v1/queues/define", { name: "conformance-reaper" }, key)).status, 200);
-  const task = await env.request("/v1/tasks", { queue: "conformance-reaper", brief: { synthetic: true }, idempotency_key: "reaper-1" }, key);
+  const task = await env.request("/v1/tasks", { queue: "conformance-reaper", brief: { example_only: true }, idempotency_key: "reaper-1" }, key);
   assert.equal(task.status, 201, JSON.stringify(task.data));
-  const claim = await env.request("/v1/tasks/claim", { queue: "conformance-reaper", worker: "synthetic-worker" }, key);
+  const claim = await env.request("/v1/tasks/claim", { queue: "conformance-reaper", worker: "example-worker" }, key);
   assert.equal(claim.status, 200, JSON.stringify(claim.data));
   assert.ok(await env.primary.testAlarmAt(), "a granted lease schedules the reaper alarm");
   return { key, taskId: task.data.task_id };

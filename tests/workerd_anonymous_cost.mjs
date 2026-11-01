@@ -1,5 +1,5 @@
 // Real Worker/SQLite: anonymous sessions stay available but cost little until used, and one
-// IPv6 subscriber prefix cannot multiply the per-address session limit. Synthetic data only.
+// IPv6 subscriber prefix cannot multiply the per-address session limit. Example data only.
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { build } from "esbuild";
@@ -25,7 +25,7 @@ async function setup() {
     compatibilityDate: "2026-10-01",
     durableObjects: { COORDINATOR: { className: "FixtureCoordinator", useSQLite: true } },
     d1Databases: ["FABRIC_DB", "BUCKETS_DB"],
-    bindings: { STORAGE_MODE: "cloud", ANONYMOUS_ACCESS_ENABLED: "true", FRAGILITY_PLANNER_ENABLED: "false", BOOTSTRAP_SECRET: "synthetic-anonymous-bootstrap" },
+    bindings: { STORAGE_MODE: "cloud", ANONYMOUS_ACCESS_ENABLED: "true", FRAGILITY_PLANNER_ENABLED: "false", BOOTSTRAP_SECRET: "example-anonymous-bootstrap" },
     outboundService: () => { throw new Error("External requests are prohibited in this fixture"); },
   }] }));
   runtimes.push(runtime);
@@ -64,20 +64,20 @@ test("one /64 shares the per-address limit and an unused session creates no name
   const { request, primary, idOf } = await setup();
   const sessions = [];
   for (let i = 1; i <= 10; i++) {
-    const minted = await request("/v1/session/anonymous", { agent_label: "synthetic" }, undefined, { "cf-connecting-ip": `2001:db8:1:2::${i.toString(16)}` });
+    const minted = await request("/v1/session/anonymous", { agent_label: "example" }, undefined, { "cf-connecting-ip": `2001:db8:1:2::${i.toString(16)}` });
     assert.equal(minted.status, 201, JSON.stringify(minted.data));
     sessions.push(minted.data);
   }
-  const rotated = await request("/v1/session/anonymous", { agent_label: "synthetic" }, undefined, { "cf-connecting-ip": "2001:db8:1:2:aaaa:bbbb:cccc:dddd" });
+  const rotated = await request("/v1/session/anonymous", { agent_label: "example" }, undefined, { "cf-connecting-ip": "2001:db8:1:2:aaaa:bbbb:cccc:dddd" });
   assert.equal(rotated.status, 429);
   assert.ok(Number(rotated.headers.get("retry-after")) > 0);
-  const neighbour = await request("/v1/session/anonymous", { agent_label: "synthetic" }, undefined, { "cf-connecting-ip": "2001:db8:1:3::1" });
+  const neighbour = await request("/v1/session/anonymous", { agent_label: "example" }, undefined, { "cf-connecting-ip": "2001:db8:1:3::1" });
   assert.equal(neighbour.status, 201);
   const constructed = await primary.testConstructed();
   for (const session of sessions) assert.ok(!constructed.includes(idOf(`ns:${session.namespace}`)), "minting alone creates no demo object");
   // First use seeds the practice tasks and the session works end to end.
   const token = sessions[0].session_token;
-  const claim = await request("/v1/tasks/claim", { queue: "demo.ping", worker: "synthetic-agent" }, token);
+  const claim = await request("/v1/tasks/claim", { queue: "demo.ping", worker: "example-agent" }, token);
   assert.equal(claim.status, 200, JSON.stringify(claim.data));
   assert.equal(claim.data.labels.demo, true);
   const record = await request("/v1/stores/demo.instructions/records/welcome", undefined, token);

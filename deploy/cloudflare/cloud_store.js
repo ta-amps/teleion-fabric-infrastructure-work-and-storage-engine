@@ -459,7 +459,7 @@ const DEFAULT_BUCKETS = [
   ["nouns", "Canonical and proposed atomic noun schemas, packs, and structured artifacts"],
   ["verbs", "Atomic verb briefs, worker recipes, and multi-stage workflow templates"],
   ["kits", "Eranos agent kits: nouns and verbs made for nonprofits' agents, with their checks"],
-  ["cases", "Synthetic multi-document harm bundles and deterministic verdicts"],
+  ["cases", "Example multi-document harm bundles and deterministic verdicts"],
   ["provisions", "Herma coding-harness rule packs, prompt fragments, and URI documents"],
   ["traces", "Bilateral agent execution traces, audit logs, and SHA-256 receipts"],
 ];

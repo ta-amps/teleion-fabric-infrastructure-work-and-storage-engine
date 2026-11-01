@@ -32,7 +32,7 @@ def test_stores_and_buckets_roundtrip_and_cas(tmp_path: Path) -> None:
         info = store.define_bucket(BucketConfig(name="kits", description="Verified NGO kits"))
         assert info.name == "kits" and info.objects == 0
 
-        v1_bytes = b"# SYNTHETIC Kit v1\n"
+        v1_bytes = b"# EXAMPLE Kit v1\n"
         m1 = store.put_object(
             "kits",
             "ngo-intake/SKILL.md",
@@ -50,7 +50,7 @@ def test_stores_and_buckets_roundtrip_and_cas(tmp_path: Path) -> None:
             store.put_object("kits", "ngo-intake/SKILL.md", b"conflict", expected_version=None)
         assert exc.value.current_version == 1
 
-        v2_bytes = b"# SYNTHETIC Kit v2 (reviewed)\n"
+        v2_bytes = b"# EXAMPLE Kit v2 (reviewed)\n"
         m2 = store.put_object(
             "kits",
             "ngo-intake/SKILL.md",
@@ -135,14 +135,14 @@ def test_http_client_mcp_and_admin_keys_for_buckets(tmp_path: Path) -> None:
                 saved = client.put_object(
                     "nouns",
                     "packs/social-harm.json",
-                    b'{"synthetic":true}',
+                    b'{"example_only":true}',
                     content_type="application/json",
                     metadata={"stage": "canonical"},
                     expected_version=None,
                 )
                 assert saved.version == 1
                 meta, raw = client.get_object("nouns", "packs/social-harm.json")
-                assert meta.sha256 == saved.sha256 and raw == b'{"synthetic":true}'
+                assert meta.sha256 == saved.sha256 and raw == b'{"example_only":true}'
                 assert len(client.list_objects("nouns", prefix="packs/")) == 1
                 assert [
                     v.version for v in client.object_history("nouns", "packs/social-harm.json")
@@ -194,7 +194,7 @@ def test_http_client_mcp_and_admin_keys_for_buckets(tmp_path: Path) -> None:
                     "arguments": {
                         "bucket": "nouns",
                         "key": "packs/mcp-note.md",
-                        "content": "SYNTHETIC bilateral note",
+                        "content": "EXAMPLE bilateral note",
                         "expected_version": None,
                     },
                 },
@@ -209,7 +209,7 @@ def test_http_client_mcp_and_admin_keys_for_buckets(tmp_path: Path) -> None:
                 },
                 ver,
             )
-            assert get_res["structuredContent"]["content"] == "SYNTHETIC bilateral note"
+            assert get_res["structuredContent"]["content"] == "EXAMPLE bilateral note"
     finally:
         store.close()
 
@@ -232,7 +232,7 @@ def test_client_keeps_storage_outage_retry_guidance(monkeypatch: pytest.MonkeyPa
     problem = {"content-type": "application/problem+json"}
     quota = {"code": "storage_quota_exhausted", "detail": "allowance spent"}
     quota |= {"status": 503, "reset_at": "2026-10-30T00:00:00.000Z"}
-    client = Client("http://testserver", key="synthetic", transport=httpx.MockTransport(dispatch))
+    client = Client("http://testserver", key="example", transport=httpx.MockTransport(dispatch))
     replies.append(httpx.Response(503, json=quota, headers={**problem, "retry-after": "20793"}))
     with pytest.raises(StorageQuotaExhausted) as raised:
         client.counts()

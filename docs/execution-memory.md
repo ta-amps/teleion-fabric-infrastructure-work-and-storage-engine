@@ -45,7 +45,7 @@ Example recall body, using the actual id and fence from a claim:
   "limit": 5,
   "execution_report": {
     "version": 1,
-    "summaries": {"problem": "SYNTHETIC typed integer addition"}
+    "summaries": {"problem": "EXAMPLE typed integer addition"}
   }
 }
 ```
@@ -103,7 +103,7 @@ Usage counts are nonnegative safe integers or `null`. A supplied null count requ
   "harness": {"name": "custom-worker", "version": "1.0"},
   "model": {"provider": "not-used", "invocation_origin": "worker_direct"},
   "summaries": {
-    "problem": "SYNTHETIC integer addition",
+    "problem": "EXAMPLE integer addition",
     "input": "Two validated integers from a pinned input record",
     "solution": "Computed the sum and checked the output type"
   },

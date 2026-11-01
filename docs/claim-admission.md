@@ -79,4 +79,4 @@ cancellation, queue bounds, expiry, latency reduction and recovery. The explicit
 legacy-quota test remains unchanged. `make test-worker` runs the actual Worker
 and SQLite Durable Object: one hundred simultaneous keyed claims, distinct
 alternative outputs, heartbeats and idempotent submissions. These are bounded
-synthetic tests, not a sustained capacity claim.
+example tests, not a sustained capacity claim.

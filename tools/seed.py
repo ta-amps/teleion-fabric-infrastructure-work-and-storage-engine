@@ -34,7 +34,7 @@ BUCKETS = [
     ),
     BucketConfig(
         name="cases",
-        description="Shamash synthetic multi-document harm bundles and deterministic verdicts",
+        description="Shamash example multi-document harm bundles and deterministic verdicts",
     ),
     BucketConfig(
         name="provisions",
@@ -113,7 +113,7 @@ SEED_NOUNS: dict[str, dict[str, Any]] = {
         "goal": "Decompose cross-surface online harm (social-media post -> external website -> direct message -> payment demand) into candidate statute cards, observable GREP indicators, and matched legitimate look-alike twins.",
         "budget": {"max_depth": 2, "max_children": 3},
         "rules": [
-            "Synthetic examples only (SYNTHETIC mark, invented entities, example.com).",
+            "Examples only (EXAMPLE mark, invented entities, example.com).",
             "Never scrape or monitor live social-media platforms.",
             "Cite dated primary statutes or regulator sources.",
             "No banned party-accusation words.",
@@ -124,10 +124,10 @@ SEED_NOUNS: dict[str, dict[str, Any]] = {
         "surface": "eranos",
         "target_namespace": "eranos.kit",
         "title": "Off-the-shelf NGO helpline triage checklist, skill, and read-only lookup tool",
-        "goal": "Decompose a nonprofit helpline intake need into an off-the-shelf AgentSkillSpec, read-only MCPToolSpec JSON Schema, Markdown SOP checklist, and SYNTHETIC self-test fixture with human_only interview and safety-plan steps.",
+        "goal": "Decompose a nonprofit helpline intake need into an off-the-shelf AgentSkillSpec, read-only MCPToolSpec JSON Schema, Markdown SOP checklist, and EXAMPLE self-test fixture with human_only interview and safety-plan steps.",
         "budget": {"max_depth": 2, "max_children": 3},
         "rules": [
-            "Synthetic test fixtures only (SYNTHETIC mark, invented entities, example.com).",
+            "Example test fixtures only (EXAMPLE mark, invented entities, example.com).",
             "Interviews, crisis safety planning, and decisions about people must stay human_only.",
             "Independent review required (proposer != reviewer) before promotion.",
         ],
@@ -147,7 +147,7 @@ RULES = [
     "Cite primary sources (statutes, regulators, official reports) with the URL and the date you checked.",
     "Recognition only: indicators, evidence and legitimate look-alikes; never instructions for running a scheme.",
     "Never name a real person or business as a wrongdoer unless an official enforcement record says so; then quote only that record.",
-    "Synthetic data only; nothing about minors in any sexual context, ever.",
+    "Example data only; nothing about minors in any sexual context, ever.",
     "Do not post, send, deploy or publish anything.",
 ]
 
@@ -206,7 +206,7 @@ def seed_tasks() -> list[TaskSpec]:
                     "people, companies and numbers.",
                     "output": "One JSON object per case: id, kind (camouflaged, twin or thin), the documents it "
                     "contains, the facts that decide it, and the expected route (T1 clear, T2 verify, "
-                    "T3 hold, T4 refer). Mark every case SYNTHETIC.",
+                    "T3 hold, T4 refer). Mark every case EXAMPLE.",
                     "rules": RULES,
                 },
             )
@@ -272,7 +272,7 @@ def seed_nouns(store: Store) -> int:
             "noun.promotions",
             {"seeded_nouns": sorted(SEED_NOUNS), "seeded_reflexes": sorted(STARTER_REFLEXES)},
             kind="seed_ready",
-            summary="Initial SYNTHETIC seed nouns and 0-call muscle-memory reflexes ready for swarm pickup.",
+            summary="Initial EXAMPLE seed nouns and 0-call muscle-memory reflexes ready for swarm pickup.",
         )
     return written
 

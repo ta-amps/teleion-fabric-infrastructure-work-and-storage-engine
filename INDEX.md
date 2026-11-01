@@ -171,14 +171,14 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [examples/continuous_tuning/mining.py](examples/continuous_tuning/mining.py) | Hard-example mining: turn dev failures into new, labeled training rows. |
 | [examples/continuous_tuning/model_verbs.py](examples/continuous_tuning/model_verbs.py) | Model verbs: tune hyperparameters, train adapters and evaluate through a swappable backend. |
 | [examples/continuous_tuning/pack.py](examples/continuous_tuning/pack.py) | Seed pack: the learner's nouns (spec, trigger, rule, recipes, base models, tool snapshot, verb templates) as… |
-| [examples/continuous_tuning/pack/manifest.json](examples/continuous_tuning/pack/manifest.json) | JSON object: base_model_license, categories, does_not, evaluation, files, format |
+| [examples/continuous_tuning/pack/manifest.json](examples/continuous_tuning/pack/manifest.json) | JSON object: base_model_license, categories, does_not, evaluation, example_only, files |
 | [examples/continuous_tuning/pack/records/base_model.35f7440ce8870ef2.json](examples/continuous_tuning/pack/records/base_model.35f7440ce8870ef2.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
 | [examples/continuous_tuning/pack/records/base_model.a7110b742efbc097.json](examples/continuous_tuning/pack/records/base_model.a7110b742efbc097.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
-| [examples/continuous_tuning/pack/records/learner_spec.c4fc7ab6d0eb99c5.json](examples/continuous_tuning/pack/records/learner_spec.c4fc7ab6d0eb99c5.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
-| [examples/continuous_tuning/pack/records/pack_index.0adb151fcd9eae2d.json](examples/continuous_tuning/pack/records/pack_index.0adb151fcd9eae2d.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
-| [examples/continuous_tuning/pack/records/promotion_rule.520abffa83ef6080.json](examples/continuous_tuning/pack/records/promotion_rule.520abffa83ef6080.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
+| [examples/continuous_tuning/pack/records/learner_spec.cce5b4efe6a62bd6.json](examples/continuous_tuning/pack/records/learner_spec.cce5b4efe6a62bd6.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
+| [examples/continuous_tuning/pack/records/pack_index.ac76481b862cdfbf.json](examples/continuous_tuning/pack/records/pack_index.ac76481b862cdfbf.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
+| [examples/continuous_tuning/pack/records/promotion_rule.515680228c2832d6.json](examples/continuous_tuning/pack/records/promotion_rule.515680228c2832d6.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
 | [examples/continuous_tuning/pack/records/search_space.099ed35b5dcc4f07.json](examples/continuous_tuning/pack/records/search_space.099ed35b5dcc4f07.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
-| [examples/continuous_tuning/pack/records/tool_snapshot.04b90e2ce2e7b3b0.json](examples/continuous_tuning/pack/records/tool_snapshot.04b90e2ce2e7b3b0.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
+| [examples/continuous_tuning/pack/records/tool_snapshot.eee4fbf3d5b22f9a.json](examples/continuous_tuning/pack/records/tool_snapshot.eee4fbf3d5b22f9a.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
 | [examples/continuous_tuning/pack/records/training_recipe.c538f95f751732b8.json](examples/continuous_tuning/pack/records/training_recipe.c538f95f751732b8.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
 | [examples/continuous_tuning/pack/records/trigger.06b5614255fea258.json](examples/continuous_tuning/pack/records/trigger.06b5614255fea258.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
 | [examples/continuous_tuning/pack/records/verb_template.090e0a551bfb3b91.json](examples/continuous_tuning/pack/records/verb_template.090e0a551bfb3b91.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
@@ -187,7 +187,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [examples/continuous_tuning/pack/records/verb_template.10b97ac15340c5ee.json](examples/continuous_tuning/pack/records/verb_template.10b97ac15340c5ee.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
 | [examples/continuous_tuning/pack/records/verb_template.34d9a5878c6d511a.json](examples/continuous_tuning/pack/records/verb_template.34d9a5878c6d511a.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
 | [examples/continuous_tuning/pack/records/verb_template.3dbf10fcd634a9fd.json](examples/continuous_tuning/pack/records/verb_template.3dbf10fcd634a9fd.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
-| [examples/continuous_tuning/pack/records/verb_template.a625527e2177c54e.json](examples/continuous_tuning/pack/records/verb_template.a625527e2177c54e.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
+| [examples/continuous_tuning/pack/records/verb_template.8459a01edb35cd10.json](examples/continuous_tuning/pack/records/verb_template.8459a01edb35cd10.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
 | [examples/continuous_tuning/pack/records/verb_template.aa85127ec175f228.json](examples/continuous_tuning/pack/records/verb_template.aa85127ec175f228.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
 | [examples/continuous_tuning/pack/records/verb_template.f7654361e9bb3583.json](examples/continuous_tuning/pack/records/verb_template.f7654361e9bb3583.json) | JSON object: allowed_surfaces, expected_version, key, namespace, store, tags |
 | [examples/continuous_tuning/pack/tasks/tick.llama-3.2-1b-instruct.json](examples/continuous_tuning/pack/tasks/tick.llama-3.2-1b-instruct.json) | JSON object: allowed_surfaces, brief, effect_class, idempotency_key, kind, namespace |
@@ -208,7 +208,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [examples/continuous_tuning/verbs.py](examples/continuous_tuning/verbs.py) | Deterministic verbs: generate examples, curate datasets and mine hard examples. |
 | [examples/finetuning/__init__.py](examples/finetuning/__init__.py) |  |
 | [examples/finetuning/author.py](examples/finetuning/author.py) | Preview fine-tuning artifact nouns and worker verbs using existing Tessera contracts. |
-| [examples/finetuning/data.py](examples/finetuning/data.py) | Owned synthetic research observations and family-separated dataset manifests. |
+| [examples/finetuning/data.py](examples/finetuning/data.py) | Owned example research observations and family-separated dataset manifests. |
 | [examples/finetuning/encoding.py](examples/finetuning/encoding.py) | Completion-only tokenization with explicit fit checks and no truncation. |
 | [examples/finetuning/evidence/smoke-2026-10-29.json](examples/finetuning/evidence/smoke-2026-10-29.json) | JSON object: format, checked_at, verification, scope, runs, not_run |
 | [examples/finetuning/glimmer.py](examples/finetuning/glimmer.py) | Prepare, but do not launch, a pinned official Glimmer QLoRA recipe on an H100 worker. |
@@ -219,7 +219,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [examples/finetuning/recipes/llama-3b-qlora.json](examples/finetuning/recipes/llama-3b-qlora.json) | JSON object: version, mode, model_id, revision, license, quantization |
 | [examples/finetuning/recipes/tiny-smoke.json](examples/finetuning/recipes/tiny-smoke.json) | JSON object: version, mode, model_id, revision, license, quantization |
 | [examples/finetuning/requirements.txt](examples/finetuning/requirements.txt) | Optional worker environment only. |
-| [examples/finetuning/run.py](examples/finetuning/run.py) | Prepare synthetic data or run one explicitly bounded optional worker training job. |
+| [examples/finetuning/run.py](examples/finetuning/run.py) | Prepare example data or run one explicitly bounded optional worker training job. |
 | [examples/research/collector.json](examples/research/collector.json) | JSON object: version, namespace, queue, output_store, stage, profile |
 | [examples/research/discover.json](examples/research/discover.json) | JSON object: version, namespace, queue, output_store, stage, profile |
 | [examples/research/scan.json](examples/research/scan.json) | JSON object: version, namespace, queue, output_store, stage, profile |
@@ -315,19 +315,19 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [src/tessera/store.py](src/tessera/store.py) | The in-process Tessera store: the reference implementation of SPEC.md. |
 | [src/tessera/testing.py](src/tessera/testing.py) | Factories the conformance suite loads by name (TESSERABACKENDFACTORY="module:function"). |
 
-## tests/ (73)
+## tests/ (75)
 
 | File | What it is |
 |---|---|
 | [tests/agent_start.test.mjs](tests/agent_start.test.mjs) |  |
 | [tests/claim_admission.test.mjs](tests/claim_admission.test.mjs) |  |
-| [tests/edge_access_harness.mjs](tests/edge_access_harness.mjs) | No remote HTTP, credentials, or persistent production data: real Worker handlers, synthetic SQLite. |
+| [tests/edge_access_harness.mjs](tests/edge_access_harness.mjs) | No remote HTTP, credentials, or persistent production data: real Worker handlers, example SQLite. |
 | [tests/edge_access_loader.mjs](tests/edge_access_loader.mjs) | Minimal Cloudflare DurableObject class for deterministic Node SQLite tests. |
 | [tests/edge_access_publication.mjs](tests/edge_access_publication.mjs) | Storage-level approvals bind an authenticated draft, reviewer, receipt, and exact catalog value. |
 | [tests/edge_access_review.mjs](tests/edge_access_review.mjs) | Regressions for authorization before durable writes and public observation boundaries. |
-| [tests/edge_category_queries.mjs](tests/edge_category_queries.mjs) | Actual coordinator, SQL and Worker ranking handlers; temporary synthetic data only. |
-| [tests/edge_core_boundaries.mjs](tests/edge_core_boundaries.mjs) | Actual Worker routes with the harness's synthetic in-memory SQLite bindings. |
-| [tests/edge_dead_letter_privacy.mjs](tests/edge_dead_letter_privacy.mjs) | Real tombstone SQL and shared Worker ACL/search code; only synthetic local state. |
+| [tests/edge_category_queries.mjs](tests/edge_category_queries.mjs) | Actual coordinator, SQL and Worker ranking handlers; temporary example data only. |
+| [tests/edge_core_boundaries.mjs](tests/edge_core_boundaries.mjs) | Actual Worker routes with the harness's example in-memory SQLite bindings. |
+| [tests/edge_dead_letter_privacy.mjs](tests/edge_dead_letter_privacy.mjs) | Real tombstone SQL and shared Worker ACL/search code; only example local state. |
 | [tests/edge_execution_history.mjs](tests/edge_execution_history.mjs) |  |
 | [tests/edge_execution_mcp.mjs](tests/edge_execution_mcp.mjs) | MCP adapter fixture only: authorization/storage are covered by the real runtime suite. |
 | [tests/edge_frontier_publication.mjs](tests/edge_frontier_publication.mjs) |  |
@@ -345,6 +345,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [tests/test_check_public.py](tests/test_check_public.py) | checkpublic finds secrets and private names, masks them, and honours the allow marker. |
 | [tests/test_claim_admission.py](tests/test_claim_admission.py) | Real async cancellation, fairness, resource bounds and HTTP default admission. |
 | [tests/test_client_addresses.py](tests/test_client_addresses.py) | Per-IP limits key on an address the client cannot choose (finding 6), counted in the hour its daily-rotated h… |
+| [tests/test_client_error_codes.py](tests/test_client_error_codes.py) | The client maps the Worker's exampleonly refusal, and the code it replaced, to InvalidRequest. |
 | [tests/test_continuous_tuning.py](tests/test_continuous_tuning.py) | Continuous tuning example: real tool definitions, held-out splits, contamination checks, strict metrics, mini… |
 | [tests/test_core_boundaries.py](tests/test_core_boundaries.py) | Privacy over version history, strict outcomes, deadline boundaries and category plans. |
 | [tests/test_dead_letter_privacy.py](tests/test_dead_letter_privacy.py) | Failure diagnostics remain private even when the source verb was shared. |
@@ -372,6 +373,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [tests/test_showcase_seed.py](tests/test_showcase_seed.py) | Creative seeds remain bounded and idempotent through actual Store operations. |
 | [tests/test_spec_events.py](tests/test_spec_events.py) | SPEC §5.5 lists every event type, and the code emits only listed types: a new event can't ship without a line… |
 | [tests/test_tools.py](tests/test_tools.py) | The Muse worker keeps its safety flags whatever the brief says, and briefs load in dependency order. |
+| [tests/test_wording_guard.py](tests/test_wording_guard.py) | No tracked file uses the word the owner ruled out, apart from listed compatibility aliases. |
 | [tests/test_work_routing.py](tests/test_work_routing.py) | Explicit grants, team-private routing and owner-only negative controls. |
 | [tests/workerd_access_descriptions.mjs](tests/workerd_access_descriptions.mjs) | Real Worker: every published access description (connect.json, the agent card, llms-full.txt, |
 | [tests/workerd_access_parity.mjs](tests/workerd_access_parity.mjs) | Real Worker/SQLite: the access cases in tests/fixtures/accessparity.json, which |

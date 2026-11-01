@@ -1,7 +1,7 @@
 """The access cases in tests/fixtures/access_parity.json, run against the Python service.
 
 tests/workerd_access_parity.mjs runs the same file against the Worker, so each case holds for both
-implementations or fails in the one that differs. Synthetic data only."""
+implementations or fails in the one that differs. Example data only."""
 
 from __future__ import annotations
 
@@ -95,7 +95,7 @@ def run_step(
         return
     if "signup" in step:
         profile = {
-            "display_name": "Synthetic Food Bank",
+            "display_name": "Example Food Bank",
             "organization_type": "Food pantry",
             **step.get("profile", {}),
         }

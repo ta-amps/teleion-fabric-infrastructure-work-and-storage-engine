@@ -1,6 +1,6 @@
 // Real Worker/SQLite with persisted objects: a requester sign-up writes only the primary object; the
 // key's own namespace object appears on its first call there, and expired keys and namespaces are
-// purged. Same rules as tests/test_requester_keys.py. Synthetic data only.
+// purged. Same rules as tests/test_requester_keys.py. Example data only.
 import assert from "node:assert/strict";
 import { mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -43,8 +43,8 @@ export class FixtureCoordinator extends TesseraCoordinator {
 }
 `;
 const built = await build({ stdin: { contents: fixture, resolveDir: process.cwd(), sourcefile: "requester-storage-fixture.mjs" }, bundle: true, format: "esm", platform: "browser", write: false, external: ["cloudflare:workers"] });
-const PROFILE = { display_name: "Synthetic Food Bank", organization_type: "Food pantry", causes: ["food security"] };
-const BOOTSTRAP = "synthetic-requester-storage-bootstrap";
+const PROFILE = { display_name: "Example Food Bank", organization_type: "Food pantry", causes: ["food security"] };
+const BOOTSTRAP = "example-requester-storage-bootstrap";
 
 function objectFiles(dir) {
   const walk = d => readdirSync(d, { withFileTypes: true }).flatMap(e => e.isDirectory() ? walk(join(d, e.name)) : [join(d, e.name)]);
@@ -76,7 +76,7 @@ async function setup() {
     try { data = text ? JSON.parse(text) : null; } catch { data = text; }
     return { status: response.status, data };
   };
-  const issued = await request("/v1/admin/keys", { label: "synthetic-operator", queues: ["*"], scopes: ["admin", "store"], effect_classes: ["read", "write-internal"] }, undefined, { "X-Bootstrap-Secret": BOOTSTRAP });
+  const issued = await request("/v1/admin/keys", { label: "example-operator", queues: ["*"], scopes: ["admin", "store"], effect_classes: ["read", "write-internal"] }, undefined, { "X-Bootstrap-Secret": BOOTSTRAP });
   assert.equal(issued.status, 201, JSON.stringify(issued.data));
   const named = name => objects.get(objects.idFromName(name));
   return { request, admin: issued.data.key, persist, named };
@@ -86,7 +86,7 @@ test("a sign-up writes no namespace object; the key's first call there creates i
   const { request, persist } = await setup();
   const before = objectFiles(persist).length;
   const orgs = [];
-  for (const name of ["Synthetic Food Bank", "Synthetic Clinic", "Synthetic Shelter"]) {
+  for (const name of ["Example Food Bank", "Example Clinic", "Example Shelter"]) {
     const org = await request("/v1/session/requester", { profile: { ...PROFILE, display_name: name } });
     assert.equal(org.status, 201, JSON.stringify(org.data));
     orgs.push(org.data);
@@ -94,7 +94,7 @@ test("a sign-up writes no namespace object; the key's first call there creates i
   assert.equal(objectFiles(persist).length, before, "three sign-ups created namespace objects");
   const profile = await request("/v1/stores/org.profile/records/profile", undefined, orgs[0].key);
   assert.equal(profile.status, 200, JSON.stringify(profile.data));
-  assert.equal(profile.data.value.display_name, "Synthetic Food Bank");
+  assert.equal(profile.data.value.display_name, "Example Food Bank");
   assert.equal(profile.data.visibility_scope, "private");
   assert.ok(profile.data.tags.includes("origin:requester"));
   assert.equal(objectFiles(persist).length, before + 1, "the first call creates exactly its own object");
@@ -103,7 +103,7 @@ test("a sign-up writes no namespace object; the key's first call there creates i
 test("an expired requester key, its profile and its namespace are purged", async () => {
   const { request, named } = await setup();
   const org = (await request("/v1/session/requester", { profile: PROFILE })).data;
-  const own = await request("/v1/stores/org.requests/records/r1", { value: { job: "SYNTHETIC" }, expected_version: 0 }, org.key);
+  const own = await request("/v1/stores/org.requests/records/r1", { value: { job: "EXAMPLE" }, expected_version: 0 }, org.key);
   assert.equal(own.status, 200, JSON.stringify(own.data));
   const space = named(`ns:${org.namespace}`);
   assert.equal(await space.testRecordCount(), 2);
@@ -127,7 +127,7 @@ for (const kind of ["requester", "demo"]) {
       use = async () => {
         const profile = await request("/v1/stores/org.profile/records/profile", undefined, token);
         assert.equal(profile.status, 200, JSON.stringify(profile.data));
-        assert.equal(profile.data.value.display_name, "Synthetic Food Bank");
+        assert.equal(profile.data.value.display_name, "Example Food Bank");
       };
     } else {
       const session = (await request("/v1/session/anonymous", { agent_label: "purge-check" })).data;

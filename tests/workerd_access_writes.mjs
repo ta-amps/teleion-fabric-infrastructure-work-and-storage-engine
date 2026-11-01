@@ -34,7 +34,7 @@ export class FixtureCoordinator extends TesseraCoordinator {
   testStatements() { return state.statements; }
   testBackdateAudit(n) {
     const old = Date.now() / 1000 - 90000;
-    for (let i = 0; i < n; i++) this.ctx.storage.sql.exec("INSERT INTO access_events(request_id,ts,namespace,principal_kind,principal_id,action,labels,scopes_used) VALUES (?,?,?,?,?,?,?,?)", 'synthetic-old-' + i, old + i / 1000, 'main', 'keyed', 'synthetic-old', 'counts', '{}', '[]');
+    for (let i = 0; i < n; i++) this.ctx.storage.sql.exec("INSERT INTO access_events(request_id,ts,namespace,principal_kind,principal_id,action,labels,scopes_used) VALUES (?,?,?,?,?,?,?,?)", 'example-old-' + i, old + i / 1000, 'main', 'keyed', 'example-old', 'counts', '{}', '[]');
     return this._one("SELECT COUNT(*) n FROM access_events WHERE ts < ?", Date.now() / 1000 - 86400).n;
   }
   testExpiredAuditRows() { return this._one("SELECT COUNT(*) n FROM access_events WHERE ts < ?", Date.now() / 1000 - 86400).n; }
@@ -56,7 +56,7 @@ async function setup() {
     compatibilityDate: "2026-10-01",
     durableObjects: { COORDINATOR: { className: "FixtureCoordinator", useSQLite: true } },
     d1Databases: ["FABRIC_DB", "BUCKETS_DB"],
-    bindings: { STORAGE_MODE: "cloud", ANONYMOUS_ACCESS_ENABLED: "false", FRAGILITY_PLANNER_ENABLED: "false", BOOTSTRAP_SECRET: "synthetic-access-bootstrap" },
+    bindings: { STORAGE_MODE: "cloud", ANONYMOUS_ACCESS_ENABLED: "false", FRAGILITY_PLANNER_ENABLED: "false", BOOTSTRAP_SECRET: "example-access-bootstrap" },
     outboundService: () => { throw new Error("External requests are prohibited in this fixture"); },
   }] }));
   runtimes.push(runtime);
@@ -80,7 +80,7 @@ async function setup() {
     assert.equal(issued.status, 201, JSON.stringify(issued.data));
     return issued.data;
   };
-  const admin = await issue({ label: "synthetic-operator", queues: ["*"], scopes: ["admin", "store"] }, undefined, { "X-Bootstrap-Secret": "synthetic-access-bootstrap" });
+  const admin = await issue({ label: "example-operator", queues: ["*"], scopes: ["admin", "store"] }, undefined, { "X-Bootstrap-Secret": "example-access-bootstrap" });
   assert.equal((await request("/v1/counts", undefined, admin.key)).status, 200);
   return { request, primary, idOf, admin, issue };
 }
@@ -88,7 +88,7 @@ async function setup() {
 test("missing or invalid credentials write nothing and create no namespace object", async () => {
   const { request, primary, idOf } = await setup();
   const before = await primary.testWriteStatements();
-  const invalid = "synthetic-invalid-bearer";
+  const invalid = "example-invalid-bearer";
   assert.equal((await request("/ns/conformance-ghost-a/v1/counts")).status, 401);
   assert.equal((await request("/ns/conformance-ghost-b/v1/counts", undefined, invalid)).status, 401);
   assert.equal((await request("/ns/conformance-ghost-c/v1/tasks/claim", { queue: "conformance-ghost", worker: "w" }, invalid)).status, 401);
@@ -107,7 +107,7 @@ test("missing or invalid credentials write nothing and create no namespace objec
 
 test("a valid key cannot create an object for a namespace it has no grant for", async () => {
   const { request, primary, idOf, admin, issue } = await setup();
-  const scoped = await issue({ label: "synthetic-scoped", queues: ["*"], scopes: ["store", "nouns:read", "namespace:conformance-mine"] }, admin.key);
+  const scoped = await issue({ label: "example-scoped", queues: ["*"], scopes: ["store", "nouns:read", "namespace:conformance-mine"] }, admin.key);
   assert.equal((await request("/ns/conformance-mine/v1/counts", undefined, scoped.key)).status, 200);
   const denied = await request("/ns/conformance-elsewhere/v1/counts", undefined, scoped.key);
   assert.equal(denied.status, 403);
@@ -124,10 +124,10 @@ test("a valid key cannot create an object for a namespace it has no grant for", 
 test("denied and empty claims are counted per minute while successful actions keep one row each", async () => {
   const { request, primary, admin, issue } = await setup();
   assert.equal((await request("/v1/queues/define", { name: "conformance-counted" }, admin.key)).status, 200);
-  const worker = await issue({ label: "synthetic-worker", queues: ["conformance-counted"], scopes: ["verbs:claim", "verbs:submit", "nouns:read"] }, admin.key);
+  const worker = await issue({ label: "example-worker", queues: ["conformance-counted"], scopes: ["verbs:claim", "verbs:submit", "nouns:read"] }, admin.key);
   assert.equal((await request("/v1/counts", undefined, worker.key)).status, 200);
   const rows = await primary.testAuditRows(), writes = await primary.testWriteStatements();
-  for (let i = 0; i < 25; i++) assert.equal((await request("/v1/tasks/claim", { queue: "conformance-counted", worker: "synthetic-worker" }, worker.key)).status, 204);
+  for (let i = 0; i < 25; i++) assert.equal((await request("/v1/tasks/claim", { queue: "conformance-counted", worker: "example-worker" }, worker.key)).status, 204);
   for (let i = 0; i < 10; i++) assert.equal((await request("/v1/admin/reap", {}, worker.key)).status, 403);
   assert.equal(await primary.testAuditRows(), rows);
   // Only a counter flush after a minute boundary may write, never one statement per request.
@@ -138,16 +138,16 @@ test("denied and empty claims are counted per minute while successful actions ke
   assert.equal(counted["claim:empty"], 25);
   assert.equal(counted["reap:403:forbidden"], 10);
   assert.ok(audit.data.counters.some(c => c.action === "claim" && c.outcome === "empty"));
-  const task = await request("/v1/tasks", { queue: "conformance-counted", brief: { synthetic: true }, idempotency_key: "counted-1" }, admin.key);
+  const task = await request("/v1/tasks", { queue: "conformance-counted", brief: { example_only: true }, idempotency_key: "counted-1" }, admin.key);
   assert.equal(task.status, 201);
-  assert.equal((await request("/v1/tasks/claim", { queue: "conformance-counted", worker: "synthetic-worker" }, worker.key)).status, 200);
+  assert.equal((await request("/v1/tasks/claim", { queue: "conformance-counted", worker: "example-worker" }, worker.key)).status, 200);
   assert.equal(await primary.testAuditRows(), rows + 2);
 });
 
 test("an MCP batch runs each call through authentication and admission in order", async () => {
   const { request, admin } = await setup();
   assert.equal((await request("/v1/queues/define", { name: "conformance-batch" }, admin.key)).status, 200);
-  const calls = [["queues", {}], ["whoami", {}], ["claim", { queue: "conformance-batch", worker: "synthetic-worker" }]];
+  const calls = [["queues", {}], ["whoami", {}], ["claim", { queue: "conformance-batch", worker: "example-worker" }]];
   const batch = await request("/mcp", calls.map(([name, args], id) => ({ jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: args } })), admin.key);
   assert.equal(batch.status, 200);
   assert.deepEqual(batch.data.map(m => m.id), [0, 1, 2]);
@@ -157,17 +157,17 @@ test("an MCP batch runs each call through authentication and admission in order"
 test("idle polling gets a growing Retry-After hint that resets when work arrives", async () => {
   const { request, primary, admin, issue } = await setup();
   assert.equal((await request("/v1/queues/define", { name: "conformance-idle" }, admin.key)).status, 200);
-  const worker = await issue({ label: "synthetic-idle", queues: ["conformance-idle"], scopes: ["verbs:claim", "verbs:submit", "nouns:read"] }, admin.key);
-  const claim = () => request("/v1/tasks/claim", { queue: "conformance-idle", worker: "synthetic-idle" }, worker.key);
+  const worker = await issue({ label: "example-idle", queues: ["conformance-idle"], scopes: ["verbs:claim", "verbs:submit", "nouns:read"] }, admin.key);
+  const claim = () => request("/v1/tasks/claim", { queue: "conformance-idle", worker: "example-idle" }, worker.key);
   assert.equal((await request("/v1/counts", undefined, worker.key)).status, 200);
   const rows = await primary.testAuditRows();
   const hints = [];
   for (let i = 0; i < 6; i++) { const r = await claim(); assert.equal(r.status, 204); hints.push(r.headers.get("retry-after")); }
   assert.deepEqual(hints, ["5", "10", "20", "40", "60", "60"]);
-  const tool = await request("/mcp", { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "claim", arguments: { queue: "conformance-idle", worker: "synthetic-idle" } } }, worker.key);
+  const tool = await request("/mcp", { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "claim", arguments: { queue: "conformance-idle", worker: "example-idle" } } }, worker.key);
   assert.deepEqual(tool.data.result.structuredContent, { lease: null, retry_after: 60 });
   assert.equal(await primary.testAuditRows(), rows);
-  assert.equal((await request("/v1/tasks", { queue: "conformance-idle", brief: { synthetic: true }, idempotency_key: "idle-1" }, admin.key)).status, 201);
+  assert.equal((await request("/v1/tasks", { queue: "conformance-idle", brief: { example_only: true }, idempotency_key: "idle-1" }, admin.key)).status, 201);
   assert.equal((await claim()).status, 200);
   const after = await claim();
   assert.equal(after.status, 204);
@@ -177,7 +177,7 @@ test("idle polling gets a growing Retry-After hint that resets when work arrives
 test("a long-poll for claim events is audited once per request", async () => {
   const { request, primary, admin } = await setup();
   assert.equal((await request("/v1/queues/define", { name: "conformance-poll" }, admin.key)).status, 200);
-  const task = await request("/v1/tasks", { queue: "conformance-poll", brief: { synthetic: true }, idempotency_key: "poll-1" }, admin.key);
+  const task = await request("/v1/tasks", { queue: "conformance-poll", brief: { example_only: true }, idempotency_key: "poll-1" }, admin.key);
   assert.equal(task.status, 201);
   const rows = await primary.testAuditRows();
   const started = Date.now();
@@ -196,7 +196,7 @@ test("public health is served from a short snapshot that any state change refres
   assert.equal(again.status, 200);
   assert.equal(await primary.testStatements(), before, "a cached snapshot runs no SQL");
   assert.equal((await request("/v1/queues/define", { name: "conformance-health" }, admin.key)).status, 200);
-  assert.equal((await request("/v1/tasks", { queue: "conformance-health", brief: { synthetic: true }, idempotency_key: "health-1" }, admin.key)).status, 201);
+  assert.equal((await request("/v1/tasks", { queue: "conformance-health", brief: { example_only: true }, idempotency_key: "health-1" }, admin.key)).status, 201);
   const fresh = await request("/v1/health");
   const queue = fresh.data.queues.find(q => q.name === "conformance-health");
   assert.equal(queue.counts.ready, 1);

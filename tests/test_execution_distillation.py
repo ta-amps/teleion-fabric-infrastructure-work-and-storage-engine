@@ -130,12 +130,12 @@ def test_recorded_run_can_seed_one_private_distillation_verb(tmp_path: Path) -> 
     _, grant = store.issue_key(
         "fixture-worker", queues=[queue], scopes=["store", "namespace:" + namespace]
     )
-    report = {"version": 1, "summaries": {"problem": "SYNTHETIC typed integer addition"}}
+    report = {"version": 1, "summaries": {"problem": "EXAMPLE typed integer addition"}}
     try:
         with store.scope_context(namespace=namespace, key_id=grant.key_id):
             store.define_queue(QueueConfig(name=queue))
             store.enqueue(
-                TaskSpec(queue=queue, brief={"synthetic": True}, visibility_scope="private")
+                TaskSpec(queue=queue, brief={"example_only": True}, visibility_scope="private")
             )
             lease = store.claim(queue, "fixture-worker", key_id=grant.key_id)
             assert lease is not None
@@ -143,7 +143,7 @@ def test_recorded_run_can_seed_one_private_distillation_verb(tmp_path: Path) -> 
                 lease.task_id,
                 lease.fencing_token,
                 {"value": 3},
-                idempotency_key="synthetic-completion",
+                idempotency_key="example-completion",
                 execution_report=report,
             )
             run_id = "run_" + digest(

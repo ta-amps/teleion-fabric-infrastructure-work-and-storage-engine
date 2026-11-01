@@ -341,7 +341,7 @@ def run(
         "quality_evaluation": {
             "factual_grounding": None,
             "useful_task_decomposition": None,
-            "reason": "Not measured by this synthetic plumbing example; a reviewed held-out generation benchmark is required.",
+            "reason": "Not measured by this example plumbing example; a reviewed held-out generation benchmark is required.",
         },
         "promotion": "none; retain unchanged baseline until separate review and authorized admission",
     }

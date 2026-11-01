@@ -3,7 +3,7 @@
   "mode": "smoke",
   "model_id": "random-initialized-tiny-Llama",
   "revision": "local-seed-17",
-  "license": "Random parameters; repository-owned synthetic data",
+  "license": "Random parameters; repository-owned example data",
   "quantization": "none",
   "device": "cpu",
   "sequence_budget": 1536,

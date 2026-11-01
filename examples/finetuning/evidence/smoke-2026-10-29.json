@@ -2,7 +2,7 @@
   "format": "tessera.optional-training-smoke-evidence.v1",
   "checked_at": "2026-10-29",
   "verification": "worker-reported local reproduction, exact artifact readbacks and access-denial checks",
-  "scope": "One CPU and one local GPU run of a randomly initialized tiny Llama architecture, not pretrained Meta Llama or Muse Glimmer fine-tuning. Synthetic held-out loss is only a plumbing diagnostic.",
+  "scope": "One CPU and one local GPU run of a randomly initialized tiny Llama architecture, not pretrained Meta Llama or Muse Glimmer fine-tuning. Example held-out loss is only a plumbing diagnostic.",
   "runs": [
     {
       "name": "cpu",
@@ -79,7 +79,7 @@
         "promotion": "none; retain unchanged baseline until separate review and authorized admission",
         "quality_evaluation": {
           "factual_grounding": null,
-          "reason": "Not measured by this synthetic plumbing example; a reviewed held-out generation benchmark is required.",
+          "reason": "Not measured by this example plumbing example; a reviewed held-out generation benchmark is required.",
           "useful_task_decomposition": null
         },
         "recipe": {
@@ -87,7 +87,7 @@
           "gradient_accumulation": 1,
           "hardware_target": "CPU, or explicit --device cuda on a compatible GPU",
           "learning_rate": 0.003,
-          "license": "Random parameters; repository-owned synthetic data",
+          "license": "Random parameters; repository-owned example data",
           "mode": "smoke",
           "model_id": "random-initialized-tiny-Llama",
           "purpose": "Random architecture and LoRA plumbing only; not pretrained Meta model fine-tuning",
@@ -242,7 +242,7 @@
         "promotion": "none; retain unchanged baseline until separate review and authorized admission",
         "quality_evaluation": {
           "factual_grounding": null,
-          "reason": "Not measured by this synthetic plumbing example; a reviewed held-out generation benchmark is required.",
+          "reason": "Not measured by this example plumbing example; a reviewed held-out generation benchmark is required.",
           "useful_task_decomposition": null
         },
         "recipe": {
@@ -250,7 +250,7 @@
           "gradient_accumulation": 1,
           "hardware_target": "CPU, or explicit --device cuda on a compatible GPU",
           "learning_rate": 0.003,
-          "license": "Random parameters; repository-owned synthetic data",
+          "license": "Random parameters; repository-owned example data",
           "mode": "smoke",
           "model_id": "random-initialized-tiny-Llama",
           "purpose": "Random architecture and LoRA plumbing only; not pretrained Meta model fine-tuning",

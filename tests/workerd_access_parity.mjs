@@ -1,5 +1,5 @@
 // Real Worker/SQLite: the access cases in tests/fixtures/access_parity.json, which
-// tests/test_access_parity.py runs unchanged against the Python service. Synthetic data only.
+// tests/test_access_parity.py runs unchanged against the Python service. Example data only.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
@@ -14,7 +14,7 @@ import { TesseraCoordinator } from './deploy/cloudflare/cloud_store.js';
 export class FixtureCoordinator extends TesseraCoordinator {}
 `;
 const built = await build({ stdin: { contents: fixture, resolveDir: process.cwd(), sourcefile: "access-parity-fixture.mjs" }, bundle: true, format: "esm", platform: "browser", write: false, external: ["cloudflare:workers"] });
-const BOOTSTRAP = "synthetic-access-parity-bootstrap";
+const BOOTSTRAP = "example-access-parity-bootstrap";
 
 function lookup(value, path) {
   const parts = path.split(".");
@@ -79,7 +79,7 @@ async function fabric() {
     try { data = text ? JSON.parse(text) : null; } catch { data = text; }
     return { status: response.status, data, text, headers: response.headers };
   };
-  const issued = await request("POST", "/v1/admin/keys", { label: "synthetic-operator", queues: ["*"], scopes: ["admin", "store"], effect_classes: ["read", "write-internal"] }, undefined, { "X-Bootstrap-Secret": BOOTSTRAP });
+  const issued = await request("POST", "/v1/admin/keys", { label: "example-operator", queues: ["*"], scopes: ["admin", "store"], effect_classes: ["read", "write-internal"] }, undefined, { "X-Bootstrap-Secret": BOOTSTRAP });
   assert.equal(issued.status, 201, JSON.stringify(issued.data));
   for (const queue of PARITY.queues) {
     const defined = await request("POST", "/v1/queues/define", queue, issued.data.key);
@@ -96,7 +96,7 @@ async function runStep({ request, saved }, step, where) {
     return;
   }
   if (step.signup) {
-    const profile = { display_name: "Synthetic Food Bank", organization_type: "Food pantry", ...(step.profile || {}) };
+    const profile = { display_name: "Example Food Bank", organization_type: "Food pantry", ...(step.profile || {}) };
     const made = await request("POST", "/v1/session/requester", { profile });
     assert.equal(made.status, step.status || 201, `${where}: ${JSON.stringify(made.data)}`);
     if (made.status === 201) {

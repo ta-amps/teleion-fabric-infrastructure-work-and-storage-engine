@@ -14,5 +14,5 @@
   "seed": 17,
   "target_modules": ["q_proj", "v_proj"],
   "hardware_target": "One 16 GB T4 or 12 GB RTX 3060; verify actual peak memory locally, not a fit guarantee",
-  "purpose": "Bounded synthetic plumbing run; not a quality benchmark"
+  "purpose": "Bounded example plumbing run; not a quality benchmark"
 }

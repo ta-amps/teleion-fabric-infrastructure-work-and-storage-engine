@@ -33,7 +33,7 @@ def request_data() -> dict[str, Any]:
         "stage": "discover_sources",
         "profile": {
             "store": "research.profiles",
-            "key": "SYNTHETIC-profile",
+            "key": "EXAMPLE-profile",
             "version": 1,
             "value_sha256": "0" * 64,
         },
@@ -81,8 +81,8 @@ def test_unsafe_or_unbounded_request_fails(change: dict[str, Any]) -> None:
 def test_identity_normalizes_inputs_but_rejects_conflicting_pins() -> None:
     tool = module()
     data = request_data()
-    first = {**data["profile"], "key": "SYNTHETIC-source-a"}
-    second = {**first, "key": "SYNTHETIC-source-b"}
+    first = {**data["profile"], "key": "EXAMPLE-source-a"}
+    second = {**first, "key": "EXAMPLE-source-b"}
     a = tool.ResearchRequest.model_validate({**data, "inputs": [first, second, first]})
     b = tool.ResearchRequest.model_validate({**data, "inputs": [second, first]})
     assert tool.build_spec(a) == tool.build_spec(b)
@@ -125,13 +125,13 @@ def test_output_cannot_activate_widen_destination_or_fake_success() -> None:
     artifact = {**request_data()["profile"], "store": request.output_store}
     result = {
         "outcome": "candidates",
-        "reason": "SYNTHETIC source",
+        "reason": "EXAMPLE source",
         "candidates": [
             {
                 "category_id": "noun.feed_source",
                 "artifact": artifact,
                 "evidence": [request_data()["profile"]],
-                "limitations": ["Synthetic only"],
+                "limitations": ["Example data only"],
             }
         ],
     }
@@ -160,13 +160,13 @@ def test_real_local_seed_loop_and_input_drift(tmp_path: Path) -> None:
     namespace, queue = data["namespace"], data["queue"]
     store = Store(tmp_path / "research.db")
     _, grant = store.issue_key(
-        "synthetic-worker", queues=[queue], scopes=["store", "namespace:" + namespace]
+        "example-worker", queues=[queue], scopes=["store", "namespace:" + namespace]
     )
     try:
         with store.scope_context(namespace=namespace, key_id=grant.key_id):
             store.define_queue(QueueConfig(name=queue))
             value = {
-                "synthetic": True,
+                "example_only": True,
                 "topics": ["memory"],
                 "hardware": None,
                 "hardware_reason": "Unknown",
@@ -202,20 +202,20 @@ def test_real_local_seed_loop_and_input_drift(tmp_path: Path) -> None:
             )
             with pytest.raises(ValueError, match="pinned identity"):
                 tool.enqueue_verified(ScopedStore(), wrong)
-            lease = store.claim(queue, "synthetic-worker", key_id=grant.key_id)
+            lease = store.claim(queue, "example-worker", key_id=grant.key_id)
             assert lease and lease.task_id == task and lease.kind == "verb.probe_source"
             result = {
                 "outcome": "no_change",
                 "candidates": [],
-                "reason": "Synthetic fixture performs no research.",
+                "reason": "Test fixture performs no research.",
             }
             tool.check_output(request, result)
             receipt = store.submit(
-                lease.task_id, lease.fencing_token, result, idempotency_key="synthetic-result"
+                lease.task_id, lease.fencing_token, result, idempotency_key="example-result"
             )
             assert receipt.receipt_hash
             assert store.task(task).state == "done"
-            assert store.claim(queue, "synthetic-worker", key_id=grant.key_id) is None
+            assert store.claim(queue, "example-worker", key_id=grant.key_id) is None
     finally:
         store.close()
 

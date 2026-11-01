@@ -60,7 +60,7 @@ async function setup(bindings = {}) {
     compatibilityDate: "2026-10-01",
     durableObjects: { COORDINATOR: { className: "FixtureCoordinator", useSQLite: true } },
     d1Databases: ["FABRIC_DB", "BUCKETS_DB"],
-    bindings: { STORAGE_MODE: "cloud", ANONYMOUS_ACCESS_ENABLED: "false", FRAGILITY_PLANNER_ENABLED: "false", BOOTSTRAP_SECRET: "synthetic-quota-bootstrap", CLAIM_INITIAL_CONCURRENCY: "1", CLAIM_MAX_CONCURRENCY: "1", ...bindings },
+    bindings: { STORAGE_MODE: "cloud", ANONYMOUS_ACCESS_ENABLED: "false", FRAGILITY_PLANNER_ENABLED: "false", BOOTSTRAP_SECRET: "example-quota-bootstrap", CLAIM_INITIAL_CONCURRENCY: "1", CLAIM_MAX_CONCURRENCY: "1", ...bindings },
     outboundService: () => { throw new Error("External requests are prohibited in this fixture"); },
   }] }));
   runtimes.push(runtime);
@@ -77,7 +77,7 @@ async function setup(bindings = {}) {
   };
   request.raw = path => worker.fetch("https://tessera.example" + path);
   const admin = async () => {
-    const result = await request("/v1/admin/keys", { label: "synthetic-observer", queues: ["*"], scopes: ["admin", "store"], effect_classes: ["read", "write-internal"] }, undefined, { "X-Bootstrap-Secret": "synthetic-quota-bootstrap" });
+    const result = await request("/v1/admin/keys", { label: "example-observer", queues: ["*"], scopes: ["admin", "store"], effect_classes: ["read", "write-internal"] }, undefined, { "X-Bootstrap-Secret": "example-quota-bootstrap" });
     assert.equal(result.status, 201, JSON.stringify(result.data));
     return result.data;
   };
@@ -117,7 +117,7 @@ test("actual workerd quota caught inside a storage RPC retains retry details", a
   assert.equal(result.data.code, "storage_quota_exhausted");
   assert.equal(Number(result.headers.get("retry-after")), result.data.retry_after);
   assert.match(result.data.reset_at, /T00:00:00.000Z$/);
-  for (const [name, args] of [["queues", {}], ["claim", {queue:"conformance-quota", worker:"synthetic-worker"}]]) {
+  for (const [name, args] of [["queues", {}], ["claim", {queue:"conformance-quota", worker:"example-worker"}]]) {
     const tool = await request("/mcp", {jsonrpc:"2.0", id:"quota-fixture", method:"tools/call", params:{name, arguments:args}}, key.key);
     assert.equal(tool.status, 200); // Preserve the existing MCP tool-error envelope.
     assert.equal(tool.data.result.isError, true);
@@ -130,12 +130,12 @@ test("actual workerd quota caught inside a storage RPC retains retry details", a
 });
 
 test("unrelated workerd constructor failures retain generic 500 semantics", async () => {
-  const { request } = await setup({ TEST_COLD_ERROR: "Synthetic unrelated constructor failure" });
+  const { request } = await setup({ TEST_COLD_ERROR: "Example unrelated constructor failure" });
   const result = await request("/v1/counts");
   assert.equal(result.status, 500);
   assert.equal(result.data.code, "internal_error");
   assert.equal(result.headers.get("retry-after"), null);
-  assert.ok(!result.data.detail.includes("Synthetic unrelated"));
+  assert.ok(!result.data.detail.includes("Example unrelated"));
 });
 
 test("repeated reads coalesce profile writes while keeping every audit event", async () => {
@@ -172,10 +172,10 @@ test("namespace snapshots coalesce timestamps but propagate changed identity met
   const after = await local.testStats(key.key_id);
   assert.equal(after.grantWrites - before.grantWrites, 0);
   assert.equal(after.auditCount - before.auditCount, 3);
-  await primary.testAccount(key.key_id, "synthetic-updated-account");
+  await primary.testAccount(key.key_id, "example-updated-account");
   assert.equal((await request(path, undefined, key.key)).status, 200);
   const changed = await local.testStats(key.key_id);
-  assert.equal(changed.principal.account_id, "synthetic-updated-account");
+  assert.equal(changed.principal.account_id, "example-updated-account");
   assert.equal(changed.grantWrites - after.grantWrites, 1);
 });
 
@@ -183,10 +183,10 @@ test("a key revoked during claim pacing is rechecked and receives no lease", asy
   const { request, admin, stub } = await setup();
   const key = await admin(), primary = stub("primary");
   assert.equal((await request("/v1/queues/define", { name: "conformance-revocation" }, key.key)).status, 200);
-  const task = await request("/v1/tasks", {queue:"conformance-revocation", brief:{synthetic:true}, visibility_scope:"private", idempotency_key:"queued-revocation-test"}, key.key);
+  const task = await request("/v1/tasks", {queue:"conformance-revocation", brief:{example_only:true}, visibility_scope:"private", idempotency_key:"queued-revocation-test"}, key.key);
   assert.equal(task.status, 201);
   await primary.testHoldClaims();
-  const pending = request("/v1/tasks/claim", { queue: "conformance-revocation", worker: "synthetic-worker" }, key.key);
+  const pending = request("/v1/tasks/claim", { queue: "conformance-revocation", worker: "example-worker" }, key.key);
   let queued = false;
   for (let i = 0; i < 100; i++) {
     if ((await primary.testStats(key.key_id)).pending === 1) { queued = true; break; }
@@ -221,7 +221,7 @@ test("discovery and MCP tool discovery answer without touching any Durable Objec
   for (const path of ["/robots.txt", "/favicon.svg", "/llms.txt", "/llms-full.txt", "/.well-known/agent-card.json", "/connect.json", "/v1/openapi.json", "/", "/connect", "/ns/conformance-discovery/robots.txt"]) {
     assert.equal(await text(path), 200, path);
   }
-  for (const token of [undefined, "synthetic-bearer-not-a-key"]) {
+  for (const token of [undefined, "example-bearer-not-a-key"]) {
     const init = await request("/mcp", { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18" } }, token);
     assert.equal(init.status, 200);
     assert.equal(init.data.result.serverInfo.name, "tessera");
@@ -234,7 +234,7 @@ test("discovery and MCP tool discovery answer without touching any Durable Objec
     assert.equal(batch.data[1].result.isError, false);
   }
   // A storage-backed call still reports the provider outage honestly.
-  const storage = await request("/mcp", { jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "queues", arguments: {} } }, "synthetic-bearer-not-a-key");
+  const storage = await request("/mcp", { jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "queues", arguments: {} } }, "example-bearer-not-a-key");
   assert.equal(storage.status, 503);
   assert.equal(storage.data.code, "storage_quota_exhausted");
 });

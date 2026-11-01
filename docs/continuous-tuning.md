@@ -15,14 +15,13 @@ this in the field by writing objects and numbers as strings (`"fencing_token": "
 
 **In brief.** On a frozen test of 150 requests over tool families it never trained
 on, unchanged Llama 3.2 1B Instruct gave exactly the right typed call 12% of the time,
-and 8% of its calls stringified a typed value. One round on 63 owned synthetic
-examples lifted it to 43% with no stringified values. The next round, with twice the
+and 8% of its calls stringified a typed value. One round on 63 owned examples lifted it to 43% with no stringified values. The next round, with twice the
 data, did not beat that, and the pre-registered rule kept the champion. A round that
 continued from the champion reached 51%, again beating the champion on a fresh holdout.
 A fourth round raised dev but not test, and the rule kept it out. On the same frozen
 test, Llama 3.2 3B Instruct went from 52% to 73% after one round. Its second round
 scored 79% but cut schema validity past a pre-registered limit, so it was kept out. This
-is one synthetic task with one seed per configuration on one GPU. It shows the loop
+is one example task with one seed per configuration on one GPU. It shows the loop
 measuring and keeping real gains from little data; it does not show general
 improvement. The [measured results](#measured-results) have the details.
 
@@ -97,7 +96,7 @@ Each verb's learning block cites this spec in `advice` with those field names.
 
 ## The specialist task and its data
 
-All data is synthetic and owned: repository templates (MIT) fill slots from a SHA-256
+All data is made up and owned: repository templates (MIT) fill slots from a SHA-256
 counter, so a batch name always yields the same bytes on any Python version. Labels
 are computed: a call's arguments come from the template and must validate against the
 served schema, and a refusal's reason is fixed by the template. No model wrote any
@@ -426,7 +425,7 @@ Is there enough data, trace and evaluation to make training worth it? From these
 
 - **Checked rows.** Training families now hold 586 checked rows in the 1B run: lease 219,
   records 152, access 97, verb discovery 82 and unsupported-operation refusals 36. The
-  held-out families hold none, by design. All are synthetic template draws; there are
+  held-out families hold none, by design. All are example template draws; there are
   no real, verified tool-call traces for this task yet.
 - **What paid off.** About 16 rows per training family (2 to 3 per tool) taught the
   output contract and typed values: +0.31 for the 1B and +0.21 for the 3B, on families
@@ -474,7 +473,7 @@ Is there enough data, trace and evaluation to make training worth it? From these
 
 ## Limits
 
-- One narrow, synthetic task. A gain here says nothing about other tasks, real user
+- One narrow, example task. A gain here says nothing about other tasks, real user
   traffic or a harness's end-to-end success.
 - Two base models, one GPU, one seed per configuration; no variance across seeds was
   measured. The 3B ran rounds 0 to 2; training then stopped at the owner's request

@@ -12,7 +12,7 @@ function blobCounts(h) {
 export async function finalReviewTests(test) {
   await test("denied anonymous and read-only uploads never reach durable byte storage", async (h) => {
     const operator = await h.admin();
-    const reader = await h.key(operator, "synthetic-reader", {
+    const reader = await h.key(operator, "example-reader", {
       scopes: ["store", "nouns:read"],
     });
     const anon = await h.mint();
@@ -20,7 +20,7 @@ export async function finalReviewTests(test) {
     for (const token of [reader.key, anon.session_token]) {
       const blob = await h.post(
         "/v1/blobs",
-        { synthetic: true, note: "SYNTHETIC denied blob" },
+        { example_only: true, note: "EXAMPLE denied blob" },
         token,
       );
       assert.equal(blob.status, 403, blob.data?.detail);
@@ -31,7 +31,7 @@ export async function finalReviewTests(test) {
       );
       const object = await h.post(
         "/v1/buckets/nouns/objects/denied.json",
-        { synthetic: true },
+        { example_only: true },
         token,
       );
       assert.equal(object.status, 403, object.data?.detail);
@@ -51,7 +51,7 @@ export async function finalReviewTests(test) {
             arguments: {
               bucket: "nouns",
               key: "denied.txt",
-              content: "SYNTHETIC denied MCP object",
+              content: "EXAMPLE denied MCP object",
             },
           },
         },
@@ -69,18 +69,18 @@ export async function finalReviewTests(test) {
 
   await test("private bucket ownership cannot be replaced or bypassed for new objects", async (h) => {
     const operator = await h.admin();
-    const a = await h.key(operator, "synthetic-bucket-owner");
-    const b = await h.key(operator, "synthetic-bucket-other");
+    const a = await h.key(operator, "example-bucket-owner");
+    const b = await h.key(operator, "example-bucket-other");
     const defined = await h.post(
       "/v1/buckets/define",
-      { name: "synthetic-private-bucket", visibility_scope: "private" },
+      { name: "example-private-bucket", visibility_scope: "private" },
       a.key,
     );
     assert.equal(defined.status, 200);
     const before = blobCounts(h);
     const injected = await h.post(
-      "/v1/buckets/synthetic-private-bucket/objects/injected.json",
-      { synthetic: true },
+      "/v1/buckets/example-private-bucket/objects/injected.json",
+      { example_only: true },
       b.key,
     );
     assert.ok(
@@ -94,7 +94,7 @@ export async function finalReviewTests(test) {
     );
     const replaced = await h.post(
       "/v1/buckets/define",
-      { name: "synthetic-private-bucket", visibility_scope: "public_commons" },
+      { name: "example-private-bucket", visibility_scope: "public_commons" },
       b.key,
     );
     assert.equal(
@@ -105,7 +105,7 @@ export async function finalReviewTests(test) {
     const buckets = await h.req("/v1/buckets", { token: a.key });
     assert.equal(
       buckets.data.buckets.find(
-        (row) => row.name === "synthetic-private-bucket",
+        (row) => row.name === "example-private-bucket",
       ).owner_key_id,
       a.key_id,
     );
@@ -113,7 +113,7 @@ export async function finalReviewTests(test) {
 
   await test("public board omits private dependency identifiers", async (h) => {
     const operator = await h.admin();
-    const author = await h.key(operator, "synthetic-graph-owner");
+    const author = await h.key(operator, "example-graph-owner");
     assert.equal(
       (
         await h.post(
@@ -124,7 +124,7 @@ export async function finalReviewTests(test) {
       ).status,
       200,
     );
-    const hidden = "synthetic-private-dependency-identifier";
+    const hidden = "example-private-dependency-identifier";
     assert.equal(
       (
         await h.post(
@@ -132,7 +132,7 @@ export async function finalReviewTests(test) {
           {
             queue: "conformance-agent",
             task_id: hidden,
-            brief: { synthetic: true },
+            brief: { example_only: true },
             visibility_scope: "private",
           },
           author.key,
@@ -146,8 +146,8 @@ export async function finalReviewTests(test) {
           "/v1/tasks",
           {
             queue: "conformance-agent",
-            task_id: "synthetic-public-dependent",
-            brief: { synthetic: true },
+            task_id: "example-public-dependent",
+            brief: { example_only: true },
             visibility_scope: "public_commons",
             depends_on: [hidden],
           },
@@ -166,21 +166,21 @@ export async function finalReviewTests(test) {
 
   await test("public observer routes cannot bypass explicit namespace entitlements", async (h) => {
     const operator = await h.admin();
-    const scoped = await h.key(operator, "synthetic-namespaced-owner", {
+    const scoped = await h.key(operator, "example-namespaced-owner", {
       scopes: [
         "store",
         "nouns:read",
         "cas:write",
-        "namespace:synthetic_private_alpha",
+        "namespace:example_private_alpha",
       ],
     });
     assert.equal(
       (
         await h.post(
-          "/ns/synthetic_private_alpha/v1/stores/synthetic.namespace/records/entry",
+          "/ns/example_private_alpha/v1/stores/example.namespace/records/entry",
           {
             expected_version: 0,
-            value: { synthetic: true },
+            value: { example_only: true },
             visibility_scope: "public_commons",
           },
           scoped.key,
@@ -188,12 +188,12 @@ export async function finalReviewTests(test) {
       ).status,
       200,
     );
-    const board = await h.req("/ns/synthetic_private_alpha/board");
+    const board = await h.req("/ns/example_private_alpha/board");
     assert.ok(
       [401, 403, 404].includes(board.status),
       "public board must not expose a namespace without an authorized principal",
     );
-    const entitled = await h.req("/ns/synthetic_private_alpha/board", {
+    const entitled = await h.req("/ns/example_private_alpha/board", {
       token: scoped.key,
     });
     assert.equal(
@@ -204,7 +204,7 @@ export async function finalReviewTests(test) {
   });
   await test("delegation cannot drop fine scopes to recover legacy unrestricted rights", async (h) => {
     const operator = await h.admin();
-    const issuer = await h.key(operator, "synthetic-scope-issuer", {
+    const issuer = await h.key(operator, "example-scope-issuer", {
       days: 2,
       effect_classes: ["read"],
       scopes: ["store", "admin:keys", "nouns:read"],
@@ -212,7 +212,7 @@ export async function finalReviewTests(test) {
     const delegated = await h.post(
       "/v1/keys",
       {
-        label: "SYNTHETIC stripped scopes",
+        label: "EXAMPLE stripped scopes",
         days: 1,
         queues: ["conformance-agent"],
         effect_classes: ["read"],
@@ -223,10 +223,10 @@ export async function finalReviewTests(test) {
     if (delegated.status === 403) return;
     assert.equal(delegated.status, 201);
     const write = await h.post(
-      "/v1/stores/synthetic.records/records/escalation",
+      "/v1/stores/example.records/records/escalation",
       {
         expected_version: 0,
-        value: { synthetic: true },
+        value: { example_only: true },
       },
       delegated.data.key,
     );
@@ -239,20 +239,20 @@ export async function finalReviewTests(test) {
 
   await test("delegation cannot remove namespace bounds to gain main access", async (h) => {
     const operator = await h.admin();
-    const issuer = await h.key(operator, "synthetic-scope-issuer", {
+    const issuer = await h.key(operator, "example-scope-issuer", {
       days: 2,
       effect_classes: ["read"],
       scopes: [
         "store",
         "admin:keys",
         "nouns:read",
-        "namespace:synthetic_private_alpha",
+        "namespace:example_private_alpha",
       ],
     });
     const delegated = await h.post(
       "/v1/keys",
       {
-        label: "SYNTHETIC stripped namespace",
+        label: "EXAMPLE stripped namespace",
         days: 1,
         queues: ["conformance-agent"],
         effect_classes: ["read"],

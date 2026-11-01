@@ -2,10 +2,10 @@
  "format": "tessera.continuous-tuning.mcp-tools.v1",
  "served_by": "tools/list = [...TOOLS, ...ACCESS_TOOLS]",
  "source_files_sha256": {
-  "deploy/cloudflare/cloud_mcp.js": "5469558bda873b8e942e852ab95d191cc5dccfd39d9e1598899eb4426688231e",
-  "deploy/cloudflare/cloud_access_routes.js": "4fcecff046400a73f02a4580b54891c9f1c0a192fb2657c27dd4e42b160c9f41"
+  "deploy/cloudflare/cloud_mcp.js": "2b467bab11fd5732ca04f99354dea0083b456bc35839e7dceda6f8f620368e5a",
+  "deploy/cloudflare/cloud_access_routes.js": "70f5a1a7938d99b2c57b9580f6a635709b952040e3a9abda491f0a7c8094e74a"
  },
- "tools_sha256": "bc3b401f34c2b5fd58e3e562d0aa0b8adb1b78cde3f602b68259964288ac3f36",
+ "tools_sha256": "e3dca3f5af3d51ce5ab3d676021f98da0b39f8b9af85bfd71c8ec73b7afd305f",
  "tools": [
   {
    "name": "queues",
@@ -1222,7 +1222,7 @@
   },
   {
    "name": "open_anonymous_session",
-   "description": "Open a tracked, one-hour synthetic demo session without secrets. Use the returned session_token as Authorization: Bearer for subsequent calls. No production access.",
+   "description": "Open a tracked, one-hour practice session without secrets. Use the returned session_token as Authorization: Bearer for subsequent calls. No production access.",
    "inputSchema": {
     "type": "object",
     "properties": {

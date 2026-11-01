@@ -99,6 +99,6 @@ INSERT OR IGNORE INTO buckets (namespace, name, description, created_at, updated
   ('main', 'nouns',      'Canonical and proposed atomic noun schemas, packs, and structured artifacts', 1793070000.0, 1793070000.0),
   ('main', 'verbs',      'Atomic verb briefs, worker recipes, and multi-stage workflow templates',      1793070000.0, 1793070000.0),
   ('main', 'kits',       'Eranos agent kits: nouns and verbs made for nonprofits'' agents, with their checks', 1793070000.0, 1793070000.0),
-  ('main', 'cases',      'Synthetic multi-document harm bundles and deterministic verdicts',            1793070000.0, 1793070000.0),
+  ('main', 'cases',      'Example multi-document harm bundles and deterministic verdicts',            1793070000.0, 1793070000.0),
   ('main', 'provisions', 'Herma coding-harness rule packs, prompt fragments, and URI documents',        1793070000.0, 1793070000.0),
   ('main', 'traces',     'Bilateral agent execution traces, audit logs, and SHA-256 receipts',          1793070000.0, 1793070000.0);

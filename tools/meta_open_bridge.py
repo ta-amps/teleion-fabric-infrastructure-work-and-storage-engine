@@ -129,7 +129,7 @@ def create_bridge_app(
 
         if dry_upstream:
             text_out = (
-                json.dumps({"ok": True, "note": "SYNTHETIC dry bridge response"})
+                json.dumps({"ok": True, "note": "EXAMPLE dry bridge response"})
                 if want_json
                 else "ready"
             )

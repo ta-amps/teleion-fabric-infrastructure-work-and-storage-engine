@@ -1,5 +1,5 @@
 import { ACCESS_TOOLS, accessDescriptionFor } from "./cloud_access_routes.js";
-import { LIBRARY_TOOLS, LIBRARY_TOOL_NAMES, libraryToolBody } from "./library_contract.js";
+import { LIBRARY_TOOLS, LIBRARY_TOOL_NAMES, libraryEnabled, libraryToolBody } from "./library_contract.js";
 // Native Streamable HTTP MCP Door (`/mcp`) for Tessera Cloud.
 // Exposes tools across atomic verbs, queryable CAS nouns, persistent cloud buckets,
 // progressive L0 scent search, delta feeds, reflex recall, and Surface Handshake v1.0
@@ -423,6 +423,9 @@ export const TOOLS = [
 // The one served tool registry. `tools/list` returns exactly this array, and every agent page
 // (llms.txt, llms-full.txt, the agent card and the connect page) renders its tool list from it.
 export const MCP_TOOLS = Object.freeze([...TOOLS, ...ACCESS_TOOLS, ...LIBRARY_TOOLS]);
+const WITHOUT_LIBRARY = Object.freeze(MCP_TOOLS.filter(tool => !LIBRARY_TOOL_NAMES.has(tool.name)));
+// What tools/list and every page that names tools serve: the library tools only while the door is on.
+export const mcpToolsFor = env => (libraryEnabled(env) ? MCP_TOOLS : WITHOUT_LIBRARY);
 
 function b64ToBytes(b64) {
   const bin = atob(b64);
@@ -870,7 +873,7 @@ export async function handleMcpRequest(
       return { jsonrpc: "2.0", id, result: {} };
     }
     if (method === "tools/list") {
-      return { jsonrpc: "2.0", id, result: { tools: MCP_TOOLS } };
+      return { jsonrpc: "2.0", id, result: { tools: mcpToolsFor(env) } };
     }
     if (method === "tools/call") {
       const toolName = params?.name;

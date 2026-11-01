@@ -49,7 +49,8 @@ from examples.continuous_tuning.tools import (  # noqa: E402
 HERE = ROOT / "examples/continuous_tuning"
 BASE = HERE / "recipes/base-llama-3.2-1b-instruct.json"
 # The rule was committed before round 1; editing it must be a visible, deliberate act.
-RULE_SHA256 = "7777bed73c9305b74a526dc024bbac2d3c651ff49905412f565970b2ca716dbf"
+# Revised once for wording only (one limitation sentence, 2026-11-01); the rule itself is unchanged.
+RULE_SHA256 = "4526698009cb5c7d69c380ddb8c67f56d0f7cc03d07b55e166da1a91857b39cc"
 TOOLS = load_tools()
 
 

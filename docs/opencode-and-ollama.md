@@ -67,7 +67,7 @@ each with its own `tsk_*` key) across two bilateral protocols:
    submits with a SHA-256 receipt.
 2. **Seed → Proposals (`v1..v3`) → Independent Review → Canonical (`v1`):** Agent A expands a seed
    noun and enriches two child tasks using `muse-spark-open`; Agent B (`reviewer != proposer`)
-   verifies `SYNTHETIC` marks and atomically promotes to `canonical/*`.
+   verifies `EXAMPLE` marks and atomically promotes to `canonical/*`.
 
 ```bash
 # Deterministic offline verification (runs in CI without network or keys):

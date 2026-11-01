@@ -8,7 +8,7 @@
   "category:noun.code_node",
   "role:training_recipe",
   "status:proposal",
-  "data:synthetic",
+  "data:example",
   "spdx:MIT"
  ],
  "target_cohorts": [

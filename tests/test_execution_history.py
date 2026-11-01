@@ -19,8 +19,8 @@ NS = "conformance-memory"
 QUEUE = "conformance-work"
 REPORT: dict[str, Any] = {
     "version": 1,
-    "harness": {"name": "synthetic-harness", "version": "1"},
-    "model": {"name": "synthetic-model"},
+    "harness": {"name": "example-harness", "version": "1"},
+    "model": {"name": "example-model"},
     "contract": {
         "input_schema": {"type": "object"},
         "output_schema": {"type": "object"},
@@ -29,12 +29,12 @@ REPORT: dict[str, Any] = {
         "toolchain_hash": "c" * 64,
     },
     "summaries": {
-        "problem": "SYNTHETIC add two numbers",
+        "problem": "EXAMPLE add two numbers",
         "input": "one and two",
         "solution": "three",
     },
     "usage": {"source": "worker_reported", "input_tokens": None, "reason": "not measured"},
-    "blocks": [{"kind": "context", "text": "SYNTHETIC arithmetic fixture"}],
+    "blocks": [{"kind": "context", "text": "EXAMPLE arithmetic fixture"}],
 }
 
 
@@ -65,7 +65,7 @@ class MemoryHarness:
             ]
         )
         token, grant = self.store.issue_key(
-            "synthetic-memory", queues=queues or [QUEUE], scopes=scopes, days=30
+            "example-memory", queues=queues or [QUEUE], scopes=scopes, days=30
         )
         return Actor(token, grant.key_id, namespace)
 
@@ -102,7 +102,7 @@ class MemoryHarness:
             {
                 "queue": queue,
                 "task_id": task_id,
-                "brief": brief or {"synthetic": True, "input": [1, 2]},
+                "brief": brief or {"example_only": True, "input": [1, 2]},
                 "visibility_scope": visibility,
                 "depends_on": depends_on or [],
                 "tags": tags or [],
@@ -110,7 +110,7 @@ class MemoryHarness:
         )
         assert response.status_code == 201, response.text
         response = self.request(
-            actor, "POST", "/v1/tasks/claim", {"queue": queue, "worker": "synthetic-worker"}
+            actor, "POST", "/v1/tasks/claim", {"queue": queue, "worker": "example-worker"}
         )
         assert response.status_code == 200, response.text
         assert response.json()["task_id"] == task_id
@@ -132,9 +132,9 @@ class MemoryHarness:
             {
                 "task_id": lease["task_id"],
                 "fencing_token": lease["fencing_token"],
-                "output": {"synthetic": True, "sum": 3},
+                "output": {"example_only": True, "sum": 3},
                 "ok": ok,
-                "error": None if ok else "SYNTHETIC failed check",
+                "error": None if ok else "EXAMPLE failed check",
                 "execution_report": copy.deepcopy(REPORT if report is None else report),
             },
             {"Idempotency-Key": idem or lease["task_id"]},
@@ -215,7 +215,7 @@ def test_http_success_recall_and_immutable_report_replay(memory: MemoryHarness) 
     assert data["matches"][0]["match_kind"] == "exact_input"
     recalled = data["matches"][0]["execution"]
     assert recalled["report"] == REPORT
-    assert recalled["output"] == {"synthetic": True, "sum": 3}
+    assert recalled["output"] == {"example_only": True, "sum": 3}
     assert recalled["receipt_hash"] == accepted.json()["receipt_hash"]
     assert recalled["evidence"]["key_id"] == actor.key_id
     assert recalled["trust"]["telemetry"] == "worker_reported"
@@ -285,7 +285,7 @@ def test_run_requires_source_queue_and_source_identity(memory: MemoryHarness) ->
         {
             "task_id": source["task_id"],
             "fencing_token": source["fencing_token"],
-            "output": {"synthetic": "different output"},
+            "output": {"example_only": "different output"},
             "ok": True,
         },
         {"Idempotency-Key": source["task_id"]},
@@ -331,17 +331,17 @@ def test_artifact_version_and_current_head_acl_intersect(
     memory: MemoryHarness, original: str, current: str
 ) -> None:
     owner, peer = memory.actor(), memory.actor()
-    path = "/v1/stores/memory.artifacts/records/synthetic"
+    path = "/v1/stores/memory.artifacts/records/example"
     first = memory.request(
         owner,
         "POST",
         path,
-        {"expected_version": 0, "value": {"synthetic": 1}, "visibility_scope": original},
+        {"expected_version": 0, "value": {"example_only": 1}, "visibility_scope": original},
     )
     assert first.status_code == 200
     report = {
         **copy.deepcopy(REPORT),
-        "artifact_refs": [{"store": "memory.artifacts", "key": "synthetic", "version": 1}],
+        "artifact_refs": [{"store": "memory.artifacts", "key": "example", "version": 1}],
     }
     source = memory.claim(owner, "artifact-source", visibility="public_commons")
     assert memory.submit(owner, source, report=report).status_code == 200
@@ -351,7 +351,7 @@ def test_artifact_version_and_current_head_acl_intersect(
             owner,
             "POST",
             path,
-            {"expected_version": 1, "value": {"synthetic": 2}, "visibility_scope": current},
+            {"expected_version": 1, "value": {"example_only": 2}, "visibility_scope": current},
         ).status_code
         == 200
     )
@@ -381,7 +381,7 @@ def test_failed_result_is_a_warning_not_a_success(memory: MemoryHarness) -> None
     assert match["match_kind"] == "failure_warning"
     assert match["underlying_match_kind"] == "exact_input"
     assert match["execution"]["ok"] is False
-    assert match["execution"]["error"] == "SYNTHETIC failed check"
+    assert match["execution"]["error"] == "EXAMPLE failed check"
 
 
 def test_query_fingerprints_do_not_bypass_related_task_grants(memory: MemoryHarness) -> None:
@@ -395,7 +395,7 @@ def test_query_fingerprints_do_not_bypass_related_task_grants(memory: MemoryHarn
         {
             "task_id": "dependent",
             "queue": QUEUE,
-            "brief": {"synthetic": True},
+            "brief": {"example_only": True},
             "visibility_scope": "surface_only",
             "depends_on": ["dependency"],
         },
@@ -403,7 +403,7 @@ def test_query_fingerprints_do_not_bypass_related_task_grants(memory: MemoryHarn
     assert response.status_code == 201
     narrow = memory.actor()
     lease = memory.request(
-        narrow, "POST", "/v1/tasks/claim", {"queue": QUEUE, "worker": "synthetic"}
+        narrow, "POST", "/v1/tasks/claim", {"queue": QUEUE, "worker": "example"}
     ).json()
     denied = memory.recall(narrow, lease)
     assert denied.status_code in (403, 404)
@@ -411,12 +411,12 @@ def test_query_fingerprints_do_not_bypass_related_task_grants(memory: MemoryHarn
 
 
 def test_anonymous_memory_expires_and_all_indexes_are_purged(memory: MemoryHarness) -> None:
-    minted = memory.client.post("/v1/session/anonymous", json={"agent_label": "synthetic-memory"})
+    minted = memory.client.post("/v1/session/anonymous", json={"agent_label": "example-memory"})
     assert minted.status_code == 201
     session = minted.json()
     anon = Actor(session["session_token"], session["principal_id"], session["namespace"])
     lease = memory.request(
-        anon, "POST", "/v1/tasks/claim", {"queue": "demo.ping", "worker": "synthetic"}
+        anon, "POST", "/v1/tasks/claim", {"queue": "demo.ping", "worker": "example"}
     ).json()
     assert memory.submit(anon, lease, report={}).status_code == 200
     run_id = memory.run_id(lease["task_id"], anon.namespace)
@@ -425,7 +425,7 @@ def test_anonymous_memory_expires_and_all_indexes_are_purged(memory: MemoryHarne
     assert run.json()["expires_at"] == session["retention_expires_at"]
     assert run.json()["labels"]["origin"] == "anonymous"
     second = memory.client.post(
-        "/v1/session/anonymous", json={"agent_label": "synthetic-other"}
+        "/v1/session/anonymous", json={"agent_label": "example-other"}
     ).json()
     other = Actor(second["session_token"], second["principal_id"], second["namespace"])
     assert memory.request(other, "GET", "/v1/executions/" + run_id).status_code == 404
@@ -452,7 +452,7 @@ def test_resume_input_changes_exact_fingerprint(memory: MemoryHarness) -> None:
         {
             "task_id": query["task_id"],
             "fencing_token": query["fencing_token"],
-            "reason": "SYNTHETIC missing input",
+            "reason": "EXAMPLE missing input",
         },
     )
     assert parked.status_code == 200
@@ -462,12 +462,12 @@ def test_resume_input_changes_exact_fingerprint(memory: MemoryHarness) -> None:
         "/v1/tasks/resume",
         {
             "task_id": query["task_id"],
-            "input": {"synthetic": True, "additional_number": 4},
+            "input": {"example_only": True, "additional_number": 4},
         },
     )
     assert resumed.status_code == 200
     query = memory.request(
-        owner, "POST", "/v1/tasks/claim", {"queue": QUEUE, "worker": "synthetic"}
+        owner, "POST", "/v1/tasks/claim", {"queue": QUEUE, "worker": "example"}
     ).json()
     recalled = memory.recall(owner, query)
     assert recalled.status_code == 200, recalled.text
@@ -481,7 +481,7 @@ def test_unsupported_snapshot_shape_preserves_legacy_submit(
 ) -> None:
     owner = memory.actor()
     brief: dict[str, Any] = (
-        {"synthetic": True, "text": "x" * 140000} if shape == "large" else {"synthetic": True}
+        {"example_only": True, "text": "x" * 140000} if shape == "large" else {"example_only": True}
     )
     if shape == "deep":
         for _ in range(20):

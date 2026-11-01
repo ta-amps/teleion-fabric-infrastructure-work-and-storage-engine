@@ -261,7 +261,7 @@ def test_swarm_expander_tracks_meta_responses_api_job_on_lease(
                                 "type": "output_text",
                                 "text": json.dumps(
                                     {
-                                        "summary": "SYNTHETIC plan",
+                                        "summary": "EXAMPLE plan",
                                         "candidate_nouns": [{"slot": "kit", "title": "NGO intake"}],
                                     }
                                 ),
@@ -327,7 +327,7 @@ def test_meta_open_bridge_translates_responses_and_refuses_contributor() -> None
             "/v1/responses",
             json={
                 "model": "muse-spark-1.3",
-                "input": "SYNTHETIC smoke",
+                "input": "EXAMPLE smoke",
                 "text": {"format": {"type": "json_object"}},
             },
         )

@@ -138,7 +138,7 @@ def generate_examples(ctx: Context, brief: dict[str, Any], deps: dict, beat: Bea
     return Result(
         nouns={"batches": made},
         summary={"rows": counts},
-        problem="Produce owned synthetic typed tool-call examples with computed labels",
+        problem="Produce owned example typed tool-call examples with computed labels",
         given=f"Batch plan {[s['batch'] for s in brief['params']['batches']]}",
         solution=f"Generated {counts} rows from repository templates; every call label is schema-valid",
         went_right=[f"{n} rows in batch {name}" for name, n in counts.items()],

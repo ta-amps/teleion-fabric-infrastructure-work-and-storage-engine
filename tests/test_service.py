@@ -153,10 +153,10 @@ def test_storage_needs_the_store_scope(service: tuple[TestClient, Store, Keys]) 
     assert client.post(path, json={"value": 1}, headers=auth(keys["admin"])).json()["version"] == 1
     conflict = client.post(path, json={"value": 2}, headers=auth(keys["admin"]))
     assert conflict.status_code == 409 and conflict.json()["current_version"] == 1
-    blob = client.post("/v1/blobs", content=b"SYNTHETIC", headers=auth(keys["admin"]))
+    blob = client.post("/v1/blobs", content=b"EXAMPLE", headers=auth(keys["admin"]))
     assert (
         client.get(f"/v1/blobs/{blob.json()['sha256']}", headers=auth(keys["admin"])).content
-        == b"SYNTHETIC"
+        == b"EXAMPLE"
     )
 
 

@@ -7,7 +7,7 @@
   "provider": "Ollama Cloud",
   "model": "kimi-k2.7-code",
   "interface": "Direct deployed Tessera MCP; no context shim or Frontier connector",
-  "scope": "One synthetic execution-report and recall loop per principal. Worker observations do not qualify public artifact admission or universal client compatibility.",
+  "scope": "One example execution-report and recall loop per principal. Worker observations do not qualify public artifact admission or universal client compatibility.",
   "worker_inference_requests": 30,
   "server_model_requests": 0,
   "transport": "Loopback observation gate forwarding only to the fixed official Ollama chat endpoint, with request/deadline/output bounds and no tool-payload repair.",

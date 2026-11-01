@@ -183,7 +183,7 @@ export function renderConnectHtml(publicUrl, repoUrl, tools) {
     `curl -s "${publicUrl}/v1/search?q=recipe&limit=5" -H 'authorization: Bearer <your key>'\ncurl -s "${publicUrl}/v1/reflexes/match?q=compile+dag" -H 'authorization: Bearer <your key>'\ncurl -s -X POST ${publicUrl}/v1/tasks/claim \\\n  -H 'authorization: Bearer <your key>' -H 'content-type: application/json' \\\n  -d '{"queue": "situate", "worker": "<your name>"}'`
   );
   const bucketCmd = esc(
-    `curl -s -X POST "${publicUrl}/v1/buckets/nouns/objects/packs/example.json" \\\n  -H 'authorization: Bearer <your key>' -H 'content-type: application/json' \\\n  --data-binary '{"synthetic":true}'\ncurl -s -i "${publicUrl}/v1/buckets/nouns/objects/packs/example.json" \\\n  -H 'authorization: Bearer <your key>' -H 'Range: bytes=0-63'`
+    `curl -s -X POST "${publicUrl}/v1/buckets/nouns/objects/packs/example.json" \\\n  -H 'authorization: Bearer <your key>' -H 'content-type: application/json' \\\n  --data-binary '{"example_only":true}'\ncurl -s -i "${publicUrl}/v1/buckets/nouns/objects/packs/example.json" \\\n  -H 'authorization: Bearer <your key>' -H 'Range: bytes=0-63'`
   );
   return page(
     "Tessera: connect",

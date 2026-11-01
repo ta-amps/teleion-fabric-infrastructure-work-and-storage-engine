@@ -23,14 +23,14 @@ each rule a test.
 
 Independently schedulable agentic work must run as a claimed verb on an authorized worker, unless an explicit server exception applies. The architecture has only nouns, verbs, surfaces and narrow infrastructure, and Tessera is infrastructure. Seed packs bundle nouns and verbs; a project name creates no other task or permission authority. The [worker-first execution policy](docs/WORKER-FIRST-EXECUTION.md) is a required design checkpoint, with behavioral qualification required before claiming implementation.
 
-The [optional fine-tuning worker example](docs/fine-tuning-workers.md) separates synthetic data and provenance, existing noun/verb authoring, and a worker-only PEFT backend. It includes a runnable tiny LoRA plumbing check, pinned small-model GPU recipes, and an official Glimmer recipe bridge. No training dependencies or model promotion are added to the server.
+The [optional fine-tuning worker example](docs/fine-tuning-workers.md) separates example data and provenance, existing noun/verb authoring, and a worker-only PEFT backend. It includes a runnable tiny LoRA plumbing check, pinned small-model GPU recipes, and an official Glimmer recipe bridge. No training dependencies or model promotion are added to the server.
 
 The [execution reporting and recall guide](docs/execution-memory.md) explains optional worker telemetry, permitted prior-run lookup, HTTP/MCP access without a shim, and a bounded contribution task example. Reports accompany new submissions; worker claims remain separate from independent verification and public admission.
 
 ## External agents and personal assistants
 
 Public MCP discovery works without a key. When anonymous access is enabled,
-`POST /v1/session/anonymous` opens a tracked session for private, synthetic demo
+`POST /v1/session/anonymous` opens a tracked session for private practice
 nouns and verbs. Coding agents and personal assistants can complete the same
 claim, heartbeat, CAS and submit loop. Private production work requires a scoped
 operator-issued key. Visit `/connect`, inspect `/connect.json`, or follow the

@@ -5,7 +5,7 @@
   "deploy/cloudflare/cloud_mcp.js": "84aae64ebd7d251332434e676125c178dc4062a4c940623c60fac656f8cf5e73",
   "deploy/cloudflare/cloud_access_routes.js": "79ccea229ed38a0b26f3c7cf6e04e6301d1d21f52163e095dfd6c04f88c3388e"
  },
- "tools_sha256": "e6cea83c79f3d77104423b352f9d0656bf101f4edef93af9052f920e452c0472",
+ "tools_sha256": "9f6a4c024507891aabac954fc486a53e06eeea24a08c5351905e69457bc39f89",
  "tools": [
   {
    "name": "queues",
@@ -1222,7 +1222,7 @@
   },
   {
    "name": "open_anonymous_session",
-   "description": "Open a tracked, one-hour synthetic demo session without secrets. Use the returned session_token as Authorization: Bearer for subsequent calls. No production access.",
+   "description": "Open a tracked, one-hour practice session without secrets. Use the returned session_token as Authorization: Bearer for subsequent calls. No production access.",
    "inputSchema": {
     "type": "object",
     "properties": {

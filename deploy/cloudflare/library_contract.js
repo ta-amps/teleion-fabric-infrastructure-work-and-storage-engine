@@ -13,7 +13,7 @@ export const LIBRARY = Object.freeze({
 });
 export const LIBRARY_RATES = Object.freeze({ anonymous_per_session_hour: 3, anonymous_per_ip_hour: 6, anonymous_per_hour: 60, keyed_per_key_hour: 30 });
 // Bytes a UTC day may add to library.proposals, charged before anything is stored.
-export const LIBRARY_BUDGETS = Object.freeze({ daily_bytes: 33554432, anonymous_daily_bytes: 4194304, account_daily_bytes: 8388608 });
+export const LIBRARY_BUDGETS = Object.freeze({ daily_bytes: 8388608, anonymous_daily_bytes: 4194304, account_daily_bytes: 8388608 });
 // An operator may lower or raise them with LIBRARY_DAILY_BYTES, LIBRARY_ANON_DAILY_BYTES and
 // LIBRARY_ACCOUNT_DAILY_BYTES (positive whole numbers); anything else keeps the defaults.
 export function libraryBudgets(env = {}) {
@@ -68,7 +68,7 @@ export function libraryDescription(url, enabled, anonymousEnabled = false, budge
       catalog: `${url}/v1/library/catalog`, catalog_item: `${url}/v1/library/catalog/{key}`, instructions: `${url}/v1/library/instructions`,
       a2a: { method: "POST", url: `${url}/a2a`, agent_card: `${url}/.well-known/agent.json` },
     },
-    mcp_tools: LIBRARY_TOOLS.map(tool => tool.name),
+    mcp_tools: enabled ? LIBRARY_TOOLS.map(tool => tool.name) : [],
     types: { noun: "one task object", verb: "one task template", pack: `a whole seed pack bundle (${BUNDLE_FORMAT})` },
     who_may_propose: enabled && anonymousEnabled ? "a contributor key whose queues include library.propose and not library.review, or a tracked anonymous session from POST /v1/session/anonymous"
       : "a contributor key whose queues include library.propose and not library.review (tracked sessions cannot propose here yet)",
@@ -76,7 +76,7 @@ export function libraryDescription(url, enabled, anonymousEnabled = false, budge
     who_may_review: "a different account-tracked key whose queues include library.review; never the proposer's key or account, an anonymous session or a requester key",
     limits: { ...LIBRARY_LIMITS, rates: LIBRARY_RATES, budgets, check_timeout_ms: CHECK_TIMEOUT_MS },
     licenses: [...LIBRARY_LICENSES],
-    checks: ["schema", "size", "nesting", "license", "file_type", "hidden_characters", "secrets", "personal_data", "complexity"],
+    checks: ["schema", "size", "nesting", "license", "file_type", "hidden_characters", "look_alike", "secrets", "personal_data", "complexity"],
     review_output: { schema: REVIEW_SCHEMA, fields: ["proposal_id", "item_sha256", "reviewer_key_id", "approved", "reasons", "checks"] },
     guarantees: [
       "Proposing runs nothing, activates nothing and admits nothing.",

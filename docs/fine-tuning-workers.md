@@ -19,7 +19,7 @@ management status does not authorize server inference.
 
 | Module | Responsibility |
 | --- | --- |
-| `examples/finetuning/data.py` | Owned synthetic observations, complete target JSON, provenance, immutable fingerprints, source and project family separation |
+| `examples/finetuning/data.py` | Owned example observations, complete target JSON, provenance, immutable fingerprints, source and project family separation |
 | `examples/finetuning/encoding.py` | Completion-only labels, exact template-prefix check and full-sequence fit rejection |
 | `examples/finetuning/peft_backend.py` | Optional CPU/CUDA LoRA or single-device NF4 QLoRA, loss measurements, save/reload proof and environment report |
 | `examples/finetuning/author.py` | Offline `RecordWrite` and `TaskSpec` previews; no client, enqueue or model import |
@@ -31,7 +31,7 @@ The example authors 20 deterministic observations: 12 training, four development
 and four test examples. Both source families and project families remain disjoint
 across the three splits. The generator, source policy, instruction hash, row IDs,
 file hashes and dataset hash are recorded. Targets are repository-authored
-synthetic templates under this repository's MIT license. No model outputs,
+example templates under this repository's MIT license. No model outputs,
 private histories, hidden reasoning or third-party datasets are training data.
 
 The existing noun categories carry dataset/split manifests (`noun.benchmark_suite`),
@@ -70,7 +70,7 @@ fails if reload logits or held-out losses disagree beyond its recorded tolerance
 Run the same command with `--device cuda` in a compatible GPU environment.
 
 This is a real adapter update on a tiny random model. It is **not pretrained
-Meta Llama or Muse Glimmer fine-tuning**, and lower synthetic loss does not establish
+Meta Llama or Muse Glimmer fine-tuning**, and lower example loss does not establish
 factual grounding, relevance or useful task decomposition. The report leaves
 those quality metrics unmeasured. The unchanged baseline remains the candidate
 for use until a separate meaningful evaluation and review justify replacement.
@@ -80,17 +80,17 @@ records successful CPU and RTX 3060 local fabric runs. Both saved six base/adapt
 blobs, captured the training execution and denied a different principal record,
 blob and execution reads. The GPU run used 3,584 trainable parameters, measured
 41,225,728 bytes peak allocated memory, and reloaded with zero probe-logit
-difference. Its synthetic test loss changed from 5.586128 to 5.396280. Those
+difference. Its example test loss changed from 5.586128 to 5.396280. Those
 measurements qualify this tiny plumbing example only.
 
-Pretrained models have since been tuned on synthetic tasks: typed tool calls for
+Pretrained models have since been tuned on example tasks: typed tool calls for
 Tessera's own tools. Their training rows came from repository templates, and no
 model wrote any of them. [Continuous tuning](continuous-tuning.md#measured-results)
 has the Llama 3.2 1B and 3B rounds. A Muse Glimmer 30B QLoRA adapter, trained on
-Kaggle's free GPUs, went from 93.3% to 99.3% exact match on a fresh synthetic test of
+Kaggle's free GPUs, went from 93.3% to 99.3% exact match on a fresh example test of
 150 rows whose hashes were registered before scoring. The
 [evidence](https://github.com/ta-amps/agora-public-overview-architecture-setup-and-contribution/tree/main/evidence/glimmer-30b-2026-10-29)
-is in Agora. These are synthetic tasks, not a measured improvement on real work.
+is in Agora. These are example tasks, not a measured improvement on real work.
 Nothing was promoted, admitted or registered, the adapter weights are not published,
 and useful-task quality runs remain unrun.
 
@@ -170,7 +170,7 @@ python -m examples.finetuning.run train \
 ```
 
 This runner compares the adapter with the **same quantized base** and unchanged
-prompt/schema on held-out families. A synthetic smoke remains a plumbing check
+prompt/schema on held-out families. An example smoke remains a plumbing check
 even when pretrained weights are used. For a useful pilot, curate permitted and
 reviewed task inputs/final outputs/evidence, hold out whole source/project families,
 freeze acceptance criteria and compare grounding, useful decomposition, failure

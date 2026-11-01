@@ -110,7 +110,7 @@ after lease lapse. See [access modes](access-modes.md) and [setup](setup.md).
 
 ## Experiments and remaining limits
 
-The regression suite uses actual Worker HTTP/MCP handlers with synthetic SQLite
+The regression suite uses actual Worker HTTP/MCP handlers with example SQLite
 bindings and Python Store/service operations with temporary databases. It retains
 the triggering cases and asserts corrected behavior without provider keys or
 model calls.

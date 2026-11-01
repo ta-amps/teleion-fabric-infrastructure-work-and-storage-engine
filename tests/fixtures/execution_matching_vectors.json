@@ -47,13 +47,13 @@
           "toolchain_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
         },
         "harness": {
-          "name": "synthetic",
+          "name": "example",
           "settings": {
             "native_tools": true
           }
         },
         "model": {
-          "name": "synthetic",
+          "name": "example",
           "revision": "r1"
         },
         "summaries": {
@@ -87,13 +87,13 @@
           "toolchain_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
         },
         "harness": {
-          "name": "synthetic",
+          "name": "example",
           "settings": {
             "native_tools": true
           }
         },
         "model": {
-          "name": "synthetic",
+          "name": "example",
           "revision": "r1"
         },
         "summaries": {
@@ -255,7 +255,7 @@
       "input": null,
       "report": {
         "embedding": {
-          "model": "synthetic",
+          "model": "example",
           "revision": "fixed-v1",
           "preprocessing": "utf8-v1",
           "dimensions": 3,
@@ -268,7 +268,7 @@
       },
       "normalized": {
         "embedding": {
-          "model": "synthetic",
+          "model": "example",
           "revision": "fixed-v1",
           "preprocessing": "utf8-v1",
           "dimensions": 3,
@@ -328,7 +328,7 @@
       "input": 1,
       "report": {
         "embedding": {
-          "model": "synthetic",
+          "model": "example",
           "revision": "fixed-v1",
           "preprocessing": "utf8-v1",
           "dimensions": 1,
@@ -339,7 +339,7 @@
       },
       "normalized": {
         "embedding": {
-          "model": "synthetic",
+          "model": "example",
           "revision": "fixed-v1",
           "preprocessing": "utf8-v1",
           "dimensions": 1,

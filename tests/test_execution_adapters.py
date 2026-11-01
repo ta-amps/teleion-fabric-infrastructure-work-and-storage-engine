@@ -21,7 +21,7 @@ from tessera.service import create_app
 
 def test_client_preserves_report_object_namespace_and_idempotency() -> None:
     requests: list[httpx.Request] = []
-    report = {"version": 1, "summaries": {"problem": "SYNTHETIC integer addition"}}
+    report = {"version": 1, "summaries": {"problem": "EXAMPLE integer addition"}}
 
     def respond(request: httpx.Request) -> httpx.Response:
         requests.append(request)
@@ -82,8 +82,8 @@ def test_mcp_report_recall_and_readback_without_shim(tmp_path: Path) -> None:
     store.define_queue(QueueConfig(name=queue))
     report = {
         "version": 1,
-        "harness": {"name": "synthetic-test-client"},
-        "summaries": {"problem": "SYNTHETIC addition"},
+        "harness": {"name": "example-test-client"},
+        "summaries": {"problem": "EXAMPLE addition"},
     }
     try:
         with TestClient(
@@ -110,7 +110,11 @@ def test_mcp_report_recall_and_readback_without_shim(tmp_path: Path) -> None:
             response = http.post(
                 "/v1/tasks",
                 headers=headers,
-                json={"queue": queue, "brief": {"synthetic": True}, "visibility_scope": "private"},
+                json={
+                    "queue": queue,
+                    "brief": {"example_only": True},
+                    "visibility_scope": "private",
+                },
             )
             assert response.status_code == 201
             lease = rpc("claim", {"queue": queue, "worker": "fixture-worker"})["lease"]

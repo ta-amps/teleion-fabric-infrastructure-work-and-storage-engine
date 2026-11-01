@@ -14,10 +14,10 @@ async function fixture(h, { sameActor = false, largeNumber = false } = {}) {
     queues: ["eq02", "eq03"],
     scopes: ["store", "surface:eranos"],
   };
-  const drafter = await h.key(operator, "synthetic-drafter", grants);
+  const drafter = await h.key(operator, "example-drafter", grants);
   const reviewer = sameActor
     ? drafter
-    : await h.key(operator, "synthetic-reviewer", grants);
+    : await h.key(operator, "example-reviewer", grants);
   for (const name of ["eq02", "eq03"]) {
     assert.equal(
       (await h.post("/v1/queues/define", { name }, operator.key)).status,
@@ -30,8 +30,8 @@ async function fixture(h, { sameActor = false, largeNumber = false } = {}) {
     tags: ["status:quarantined"],
   };
   const kit = {
-    kit_id: "synthetic-practice-kit",
-    title: "SYNTHETIC deterministic practice",
+    kit_id: "example-practice-kit",
+    title: "EXAMPLE deterministic practice",
     drafted_by_key: drafter.key_id,
     producer_surface: "surface:eranos",
     visibility_scope: "public_commons",
@@ -39,7 +39,7 @@ async function fixture(h, { sameActor = false, largeNumber = false } = {}) {
     target_cohorts: ["all"],
     spdx_license: "MIT",
     tool: {
-      name: "synthetic_math",
+      name: "example_math",
       input_schema: { type: "number", maximum: largeNumber ? 1e20 : 10 },
     },
   };
@@ -53,8 +53,8 @@ async function fixture(h, { sameActor = false, largeNumber = false } = {}) {
     "/v1/tasks",
     {
       queue: "eq02",
-      task_id: "synthetic-draft",
-      brief: { synthetic: true },
+      task_id: "example-draft",
+      brief: { example_only: true },
       ...governance,
     },
     drafter.key,
@@ -62,7 +62,7 @@ async function fixture(h, { sameActor = false, largeNumber = false } = {}) {
   assert.equal(queued.status, 201);
   const draftLease = await h.post(
     "/v1/tasks/claim",
-    { queue: "eq02", worker: "synthetic-drafter" },
+    { queue: "eq02", worker: "example-drafter" },
     drafter.key,
   );
   assert.equal(draftLease.status, 200);
@@ -74,7 +74,7 @@ async function fixture(h, { sameActor = false, largeNumber = false } = {}) {
       output: draftOutput,
     },
     drafter.key,
-    { "Idempotency-Key": "synthetic-draft-done" },
+    { "Idempotency-Key": "example-draft-done" },
   );
   assert.equal(draftDone.status, 200);
   assert.equal(
@@ -83,9 +83,9 @@ async function fixture(h, { sameActor = false, largeNumber = false } = {}) {
         "/v1/tasks",
         {
           queue: "eq03",
-          task_id: "synthetic-review",
-          depends_on: ["synthetic-draft"],
-          brief: { synthetic: true },
+          task_id: "example-review",
+          depends_on: ["example-draft"],
+          brief: { example_only: true },
           ...governance,
         },
         reviewer.key,
@@ -95,7 +95,7 @@ async function fixture(h, { sameActor = false, largeNumber = false } = {}) {
   );
   const reviewLease = await h.post(
     "/v1/tasks/claim",
-    { queue: "eq03", worker: "synthetic-reviewer" },
+    { queue: "eq03", worker: "example-reviewer" },
     reviewer.key,
   );
   assert.equal(reviewLease.status, 200);
@@ -137,11 +137,11 @@ async function fixture(h, { sameActor = false, largeNumber = false } = {}) {
         output,
       },
       reviewer.key,
-      { "Idempotency-Key": "synthetic-review-done" },
+      { "Idempotency-Key": "example-review-done" },
     );
   const publish = (value) =>
     h.post(
-      "/v1/stores/eranos.catalog/records/synthetic-practice-kit",
+      "/v1/stores/eranos.catalog/records/example-practice-kit",
       {
         value,
         expected_version: 0,
@@ -170,7 +170,7 @@ export async function publicationTests(test) {
     assert.equal(same.status, 403, same.data?.detail);
     const forged = await f.approve({
       ...f.proof,
-      drafter_key_id: "synthetic-not-the-actual-drafter",
+      drafter_key_id: "example-not-the-actual-drafter",
     });
     assert.equal(forged.status, 403, forged.data?.detail);
     assert.equal(
@@ -191,7 +191,7 @@ export async function publicationTests(test) {
       403,
     );
     assert.equal(
-      (await f.approve({ ...f.proof, kit_id: "synthetic-wrong-kit" })).status,
+      (await f.approve({ ...f.proof, kit_id: "example-wrong-kit" })).status,
       403,
     );
     const approved = await f.approve(f.proof);
@@ -202,7 +202,7 @@ export async function publicationTests(test) {
     };
     const tampered = await f.publish({
       ...candidate,
-      kit: { ...candidate.kit, title: "SYNTHETIC substituted kit" },
+      kit: { ...candidate.kit, title: "EXAMPLE substituted kit" },
     });
     assert.equal(tampered.status, 403);
     const published = await f.publish(candidate);

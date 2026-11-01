@@ -23,9 +23,9 @@
     "version": 1
    },
    "learner_spec": {
-    "key": "learner_spec.c4fc7ab6d0eb99c52bcfa577f907f7dfd96c349bf4325afcd8c69b0560136701",
+    "key": "learner_spec.cce5b4efe6a62bd6accb99b8b451af0efa4ad26e696465a62184472665e91cf7",
     "store": "tuning.specs",
-    "value_sha256": "c4fc7ab6d0eb99c52bcfa577f907f7dfd96c349bf4325afcd8c69b0560136701",
+    "value_sha256": "cce5b4efe6a62bd6accb99b8b451af0efa4ad26e696465a62184472665e91cf7",
     "version": 1
    },
    "recipe": {
@@ -35,9 +35,9 @@
     "version": 1
    },
    "rule": {
-    "key": "promotion_rule.520abffa83ef6080089441137aabb547f4dec09ebfbf4a8b319a9679a4fd00c8",
+    "key": "promotion_rule.515680228c2832d6a19a20dda1f9a0194c372c73349b95e24c29d6506ef188d7",
     "store": "tuning.specs",
-    "value_sha256": "520abffa83ef6080089441137aabb547f4dec09ebfbf4a8b319a9679a4fd00c8",
+    "value_sha256": "515680228c2832d6a19a20dda1f9a0194c372c73349b95e24c29d6506ef188d7",
     "version": 1
    },
    "search": {
@@ -47,9 +47,9 @@
     "version": 1
    },
    "tools": {
-    "key": "tool_snapshot.04b90e2ce2e7b3b0f26f20201366a88e6c33157e698ce58cd84cb5dbfa1ece1d",
+    "key": "tool_snapshot.eee4fbf3d5b22f9ac713d5cbfc331c4a151438a4ee04cf90e6fc60f8b47fc566",
     "store": "tuning.specs",
-    "value_sha256": "04b90e2ce2e7b3b0f26f20201366a88e6c33157e698ce58cd84cb5dbfa1ece1d",
+    "value_sha256": "eee4fbf3d5b22f9ac713d5cbfc331c4a151438a4ee04cf90e6fc60f8b47fc566",
     "version": 1
    },
    "trigger": {
@@ -63,7 +63,7 @@
   "step": "tick"
  },
  "effect_class": "write-internal",
- "idempotency_key": "continuous-tuning-seed:01be3e4eaad76bb41045c3bbc1f1ec5a7b133ff3f60a1731f90d3ffd146f1abb",
+ "idempotency_key": "continuous-tuning-seed:42cffadd959b35c682a9c13429bcec1f3c8e1db5c8ff67fbdc2e94e36dde55ec",
  "kind": "verb.decompose_dag",
  "namespace": "conformance-tuning",
  "queue": "conformance-tuning",
@@ -71,7 +71,7 @@
   "category:verb.decompose_dag",
   "stage:tick",
   "status:proposal",
-  "data:synthetic"
+  "data:example"
  ],
  "target_cohorts": [
   "all"

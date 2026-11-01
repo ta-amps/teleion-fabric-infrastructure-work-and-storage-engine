@@ -25,7 +25,7 @@ def test_history_intersects_version_and_head_acl(tmp_path: Path, kind: str) -> N
             store.put_record(
                 "fixture",
                 "key",
-                {"synthetic": True, "version": version + 1},
+                {"example_only": True, "version": version + 1},
                 expected_version=version,
                 visibility_scope=visibility,
                 tags=tags,
@@ -34,7 +34,7 @@ def test_history_intersects_version_and_head_acl(tmp_path: Path, kind: str) -> N
             store.put_object(
                 "fixture",
                 "key",
-                f"SYNTHETIC {version}".encode(),
+                f"EXAMPLE {version}".encode(),
                 expected_version=version,
                 visibility_scope=visibility,
                 tags=tags,
@@ -84,9 +84,9 @@ def test_quarantined_blob_still_requires_private_owner(tmp_path: Path) -> None:
     try:
         with store.scope_context(key_id="owner", surface="eranos"):
             digest = store.put_blob(
-                b"SYNTHETIC private blob", visibility_scope="private", tags=["status:quarantined"]
+                b"EXAMPLE private blob", visibility_scope="private", tags=["status:quarantined"]
             )
-            assert store.get_blob(digest) == b"SYNTHETIC private blob"
+            assert store.get_blob(digest) == b"EXAMPLE private blob"
         with store.scope_context(key_id="other", surface="eranos"), pytest.raises(NotFound):
             store.get_blob(digest)
     finally:
@@ -100,8 +100,8 @@ def test_lease_time_is_checked_after_transaction_lock(
     clock = FakeClock()
     store = Store(tmp_path / "deadline.db", clock=clock)
     store.define_queue(QueueConfig(name="conformance-deadline"))
-    store.enqueue(TaskSpec(queue="conformance-deadline", brief={"synthetic": True}))
-    lease = store.claim("conformance-deadline", "synthetic")
+    store.enqueue(TaskSpec(queue="conformance-deadline", brief={"example_only": True}))
+    lease = store.claim("conformance-deadline", "example")
     assert lease is not None
     original_tx = store._tx
 
@@ -120,7 +120,7 @@ def test_lease_time_is_checked_after_transaction_lock(
         "split": lambda: store.split(lease.task_id, lease.fencing_token, [ChildSpec(brief={})]),
         "park": lambda: store.park(lease.task_id, lease.fencing_token, reason="late"),
         "register_job": lambda: store.register_job(
-            lease.task_id, lease.fencing_token, "synthetic-job", "synthetic-model"
+            lease.task_id, lease.fencing_token, "example-job", "example-model"
         ),
     }[method]
     try:
@@ -136,7 +136,7 @@ def test_claim_deadlines_start_after_transaction_lock(
     clock = FakeClock()
     store = Store(tmp_path / "claim-deadline.db", clock=clock)
     store.define_queue(QueueConfig(name="conformance-deadline"))
-    store.enqueue(TaskSpec(queue="conformance-deadline", brief={"synthetic": True}))
+    store.enqueue(TaskSpec(queue="conformance-deadline", brief={"example_only": True}))
     original_tx = store._tx
 
     @contextmanager
@@ -147,7 +147,7 @@ def test_claim_deadlines_start_after_transaction_lock(
 
     monkeypatch.setattr(store, "_tx", delayed_tx)
     try:
-        lease = store.claim("conformance-deadline", "synthetic")
+        lease = store.claim("conformance-deadline", "example")
         assert lease is not None
         assert lease.expires_at > clock.now()
         assert lease.hard_expires_at > clock.now()
@@ -158,19 +158,19 @@ def test_claim_deadlines_start_after_transaction_lock(
 def test_http_and_mcp_strict_boolean_outcome(tmp_path: Path) -> None:
     store = Store(tmp_path / "boolean.db")
     store.define_queue(QueueConfig(name="conformance-boolean"))
-    token, _ = store.issue_key("synthetic", queues=["conformance-boolean"], scopes=["store"])
+    token, _ = store.issue_key("example", queues=["conformance-boolean"], scopes=["store"])
     app = create_app(store, ServiceSettings(db_path=store.path, reaper_seconds=3600))
     headers = {"Authorization": "Bearer " + token, "Accept": "application/json, text/event-stream"}
     with TestClient(app) as client:
         client.post(
             "/v1/tasks",
             headers=headers,
-            json={"queue": "conformance-boolean", "brief": {"synthetic": True}},
+            json={"queue": "conformance-boolean", "brief": {"example_only": True}},
         ).raise_for_status()
         claimed = client.post(
             "/v1/tasks/claim",
             headers=headers,
-            json={"queue": "conformance-boolean", "worker": "synthetic"},
+            json={"queue": "conformance-boolean", "worker": "example"},
         ).json()
         args = {
             "task_id": claimed["task_id"],
@@ -187,7 +187,7 @@ def test_http_and_mcp_strict_boolean_outcome(tmp_path: Path) -> None:
                 "params": {
                     "protocolVersion": "2025-06-18",
                     "capabilities": {},
-                    "clientInfo": {"name": "synthetic", "version": "1"},
+                    "clientInfo": {"name": "example", "version": "1"},
                 },
             },
         ).raise_for_status()
@@ -225,7 +225,7 @@ def test_http_and_mcp_strict_boolean_outcome(tmp_path: Path) -> None:
 
 def test_category_filter_and_fragility_digest_http(tmp_path: Path) -> None:
     store = Store(tmp_path / "categories.db")
-    token, _ = store.issue_key("synthetic", queues=["*"], scopes=["store"])
+    token, _ = store.issue_key("example", queues=["*"], scopes=["store"])
     for key, category in [("a-other", "noun.code_node"), ("b-match", "noun.mcp_server")]:
         store.put_record(
             "fixture",
@@ -235,7 +235,7 @@ def test_category_filter_and_fragility_digest_http(tmp_path: Path) -> None:
         )
     digest = "a" * 64
     store.put_record(
-        "feeds", "synthetic", {"content_sha256": digest, "last_verified_at": 1}, expected_version=0
+        "feeds", "example", {"content_sha256": digest, "last_verified_at": 1}, expected_version=0
     )
     app = create_app(store, ServiceSettings(db_path=store.path, reaper_seconds=3600))
     with TestClient(app) as client:

@@ -72,7 +72,7 @@ VERBS: dict[str, dict[str, Any]] = {
     },
     "generate_examples": {
         "category": "verb.solve_draft",
-        "summary": "Draw owned synthetic examples from repository templates; labels are computed, never model-written.",
+        "summary": "Draw owned examples from repository templates; labels are computed, never model-written.",
         "reads": ["tool snapshot", "templates", "batch plan"],
         "writes": ["candidate example batch nouns (noun.benchmark_suite) with JSONL blobs"],
         "checks": [

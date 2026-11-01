@@ -22,7 +22,9 @@ from examples.finetuning.data import canonical, digest, file_digest
 
 SNAPSHOT = Path(__file__).with_name("mcp_tools.json")
 SERVED = Path(__file__).with_name("mcp_tools.served.json")
-BENCHMARK_TOOLS_SHA256 = "e6cea83c79f3d77104423b352f9d0656bf101f4edef93af9052f920e452c0472"
+# Re-digested once on 2026-11-01 after a wording-only revision of the tool descriptions; every
+# schema and label is unchanged, and evidence recorded before keeps the digest it ran against.
+BENCHMARK_TOOLS_SHA256 = "9f6a4c024507891aabac954fc486a53e06eeea24a08c5351905e69457bc39f89"
 SNAPSHOT_FORMAT = "tessera.continuous-tuning.mcp-tools.v1"
 SOURCES = ("deploy/cloudflare/cloud_mcp.js", "deploy/cloudflare/cloud_access_routes.js")
 EXPORT_SCRIPT = """

@@ -1,5 +1,5 @@
 """Python bounds bodies as the Worker does, before authentication (H-60): 64 KiB for anonymous
-sessions, 16 MiB for uploads and 1 MiB for everything else. Synthetic data only."""
+sessions, 16 MiB for uploads and 1 MiB for everything else. Example data only."""
 
 from __future__ import annotations
 

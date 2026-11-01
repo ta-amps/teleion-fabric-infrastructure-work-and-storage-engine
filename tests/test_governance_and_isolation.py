@@ -444,7 +444,7 @@ def test_claimed_content_identity_must_match_uploaded_bytes(tmp_path: Path) -> N
     store = Store(db_path)
     admin_key, _ = store.issue_key("admin", queues=["*"], scopes=["admin", "store"])
     app = create_app(store, ServiceSettings(db_path=str(db_path), reaper_seconds=3600))
-    secret, dummy = b"SYNTHETIC private bytes", b"synthetic other bytes"
+    secret, dummy = b"EXAMPLE private bytes", b"example other bytes"
     secret_sha = hashlib.sha256(secret).hexdigest()
     dummy_sha = hashlib.sha256(dummy).hexdigest()
 

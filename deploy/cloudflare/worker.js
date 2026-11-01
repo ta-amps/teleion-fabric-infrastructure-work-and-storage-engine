@@ -14,7 +14,7 @@ import { LIBRARY_BODY_LIMIT, parseJsonBody, proposeThroughDoors, readCappedBody 
 
 import { loadCloudBlob, mirrorBucketObjectToD1, sha256Hex, storeCloudBlob, validateWireNumbers } from "./cloud_buckets.js";
 import { normalizeNamespace, sliceBytesResponse, tagMatchesCategory } from "./cloud_intelligence.js";
-import { govFields, handleMcpRequest, MCP_TOOLS } from "./cloud_mcp.js";
+import { govFields, handleMcpRequest, mcpToolsFor } from "./cloud_mcp.js";
 import {
   ROBOTS_TXT,
   renderAgentCard,
@@ -381,7 +381,7 @@ function discoveryResponse(path, method, env, publicUrl, repoUrl) {
   const access = accessDiscoveryRoute(path, method, publicUrl, env, jsonResp, htmlResp);
   if (access) return access;
   if (path === "/" || path === "/connect") {
-    return htmlResp(renderConnectHtml(publicUrl, repoUrl, MCP_TOOLS));
+    return htmlResp(renderConnectHtml(publicUrl, repoUrl, mcpToolsFor(env)));
   }
   if (path === "/favicon.svg") {
     return withSecurity(
@@ -397,7 +397,7 @@ function discoveryResponse(path, method, env, publicUrl, repoUrl) {
   }
   if (path === "/llms.txt") {
     return withSecurity(
-      new Response(renderLlmsTxt(publicUrl, repoUrl, MCP_TOOLS) + "\n\nExternal harnesses and personal assistants: POST /v1/session/anonymous without secrets, then use Authorization: Bearer <session_token> for demo nouns and verbs. See /connect.json. tools/list is public; tool counts and schemas are authoritative there. Keyed production work remains protected.\n\nSeed-pack library: propose one task object (noun), one task template (verb) or a whole pack with POST /v1/library/proposals, the MCP library tools or A2A message/send at /a2a (agent card /.well-known/agent.json). A different reviewer claims the library.review verb; proposing runs, activates and admits nothing. Status: GET /v1/library/proposals/<proposal_id>.\n", {
+      new Response(renderLlmsTxt(publicUrl, repoUrl, mcpToolsFor(env)) + "\n\nExternal harnesses and personal assistants: POST /v1/session/anonymous without secrets, then use Authorization: Bearer <session_token> for demo nouns and verbs. See /connect.json. tools/list is public; tool counts and schemas are authoritative there. Keyed production work remains protected.\n\nSeed-pack library: propose one task object (noun), one task template (verb) or a whole pack with POST /v1/library/proposals, the MCP library tools or A2A message/send at /a2a (agent card /.well-known/agent.json). A different reviewer claims the library.review verb; proposing runs, activates and admits nothing. Status: GET /v1/library/proposals/<proposal_id>.\n", {
         status: 200,
         headers: { "content-type": "text/plain; charset=utf-8" },
       }),
@@ -406,7 +406,7 @@ function discoveryResponse(path, method, env, publicUrl, repoUrl) {
   }
   if (path === "/llms-full.txt") {
     return withSecurity(
-      new Response(renderLlmsFullTxt(publicUrl, repoUrl, MCP_TOOLS) + "\n\n" + JSON.stringify(accessDescriptionFor(publicUrl, env), null, 2), {
+      new Response(renderLlmsFullTxt(publicUrl, repoUrl, mcpToolsFor(env)) + "\n\n" + JSON.stringify(accessDescriptionFor(publicUrl, env), null, 2), {
         status: 200,
         headers: { "content-type": "text/plain; charset=utf-8" },
       }),
@@ -415,7 +415,7 @@ function discoveryResponse(path, method, env, publicUrl, repoUrl) {
   }
   if (path === "/.well-known/agent.json") return libraryEnabled(env) ? jsonResp(renderA2aCard(publicUrl, repoUrl, env)) : problem(404, "not_found", "the library door is not enabled on this fabric");
   if (path === "/.well-known/agent-card.json") {
-    return jsonResp({ ...renderAgentCard(publicUrl, repoUrl, MCP_TOOLS), authentication: { discovery: "none", demo: "tan_ bearer session", keyed: "tsk_ bearer key" }, capabilities: { streaming: "long-poll", tools: true }, access: accessDescriptionFor(publicUrl, env) });
+    return jsonResp({ ...renderAgentCard(publicUrl, repoUrl, mcpToolsFor(env)), authentication: { discovery: "none", demo: "tan_ bearer session", keyed: "tsk_ bearer key" }, capabilities: { streaming: "long-poll", tools: true }, access: accessDescriptionFor(publicUrl, env) });
   }
   if (path === "/robots.txt") {
     return withSecurity(

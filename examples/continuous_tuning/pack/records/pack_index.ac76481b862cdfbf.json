@@ -1,14 +1,14 @@
 {
  "allowed_surfaces": [],
  "expected_version": 0,
- "key": "pack_index.0adb151fcd9eae2d899cc51abfe38ef4bbe89e153a8dc20beb753f113202e9b5",
+ "key": "pack_index.ac76481b862cdfbf18dbc2e8232772ef21d68546d4d0348ce0763eb734a96a6c",
  "namespace": "conformance-tuning",
  "store": "tuning.specs",
  "tags": [
   "category:noun.skill_pack",
   "role:pack_index",
   "status:proposal",
-  "data:synthetic",
+  "data:example",
   "spdx:MIT"
  ],
  "target_cohorts": [
@@ -39,7 +39,7 @@
     "note": "uses tools",
     "relation": "requires_noun",
     "target_category": "noun.mcp_server",
-    "target_id": "tool_snapshot.04b90e2ce2e7b3b0f26f20201366a88e6c33157e698ce58cd84cb5dbfa1ece1d"
+    "target_id": "tool_snapshot.eee4fbf3d5b22f9ac713d5cbfc331c4a151438a4ee04cf90e6fc60f8b47fc566"
    },
    {
     "note": "uses base:llama-3.2-1b-instruct",
@@ -63,7 +63,7 @@
     "note": "uses rule",
     "relation": "requires_noun",
     "target_category": "noun.code_node",
-    "target_id": "promotion_rule.520abffa83ef6080089441137aabb547f4dec09ebfbf4a8b319a9679a4fd00c8"
+    "target_id": "promotion_rule.515680228c2832d6a19a20dda1f9a0194c372c73349b95e24c29d6506ef188d7"
    },
    {
     "note": "uses recipe",
@@ -87,7 +87,7 @@
     "note": "uses verb:generate_examples",
     "relation": "requires_noun",
     "target_category": "noun.code_node",
-    "target_id": "verb_template.a625527e2177c54e4f4fc8b599be5e985b4cd7f4378fdc22697882b0f1ecd888"
+    "target_id": "verb_template.8459a01edb35cd1022144438964472747cc522d71af78508c31bcb819c65c388"
    },
    {
     "note": "uses verb:curate_dataset",
@@ -135,7 +135,7 @@
     "note": "uses learner_spec",
     "relation": "requires_noun",
     "target_category": "noun.code_node",
-    "target_id": "learner_spec.c4fc7ab6d0eb99c52bcfa577f907f7dfd96c349bf4325afcd8c69b0560136701"
+    "target_id": "learner_spec.cce5b4efe6a62bd6accb99b8b451af0efa4ad26e696465a62184472665e91cf7"
    }
   ],
   "role": "pack_index",

@@ -501,7 +501,7 @@ NOUN_CATEGORIES: dict[str, CategorySpec] = {
         worker_guidance=WorkerGuidance(
             preflight_context=(
                 "Load linked noun.statute_card records and regional language/literacy constraints.",
-                "Check brief rules and SYNTHETIC disclosure requirements.",
+                "Check brief rules and AI-generated media disclosure requirements.",
             ),
             required_mcp_tools=("corpus.lookup_statute", "safety.pii_redactor"),
             deterministic_checks_before_llm=(
@@ -718,7 +718,7 @@ NOUN_CATEGORIES: dict[str, CategorySpec] = {
                 "Verify asset URIs, frame budgets, and non-overlapping collision bounds.",
             ),
             post_condition_receipt_rules=(
-                "Record deterministic seed, scene graph SHA-256, and SYNTHETIC watermark metadata if rendered.",
+                "Record deterministic seed, scene graph SHA-256, and generated-media watermark metadata if rendered.",
             ),
         ),
         canonical_tags=("scene", "spatial", "kinematics"),

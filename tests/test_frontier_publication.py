@@ -27,7 +27,7 @@ class Pipeline:
                 role,
                 queues=["*"],
                 scopes=["store", "surface:frontier"],
-                account_id="synthetic-shared" if shared_account else "synthetic-" + role,
+                account_id="example-shared" if shared_account else "example-" + role,
             )
             self.ids[role] = grant.key_id
         for name in ["repair", "verify", "review"]:
@@ -44,8 +44,8 @@ class Pipeline:
             "files": [
                 {
                     "path": name,
-                    "content": "SYNTHETIC " + name,
-                    "sha256": hashlib.sha256(("SYNTHETIC " + name).encode()).hexdigest(),
+                    "content": "EXAMPLE " + name,
+                    "sha256": hashlib.sha256(("EXAMPLE " + name).encode()).hexdigest(),
                 }
                 for name in ["contract.json", "fixtures.json", "validate.mjs", "SKILL.md"]
             ],
@@ -69,9 +69,9 @@ class Pipeline:
             "files": self.candidate["files"],
         }
         self.store.enqueue(
-            TaskSpec(queue="frontier.repair", task_id="draft", brief={"synthetic": True})
+            TaskSpec(queue="frontier.repair", task_id="draft", brief={"example_only": True})
         )
-        draft = self.store.claim("frontier.repair", "synthetic", key_id=self.ids["draft"])
+        draft = self.store.claim("frontier.repair", "example", key_id=self.ids["draft"])
         assert draft
         self.store.submit(
             "draft",
@@ -91,7 +91,7 @@ class Pipeline:
                 brief={"candidate_key": "candidate", "repair_task_id": "draft"},
             )
         )
-        lease = self.store.claim("frontier.verify", "synthetic", key_id=self.ids["verify"])
+        lease = self.store.claim("frontier.verify", "example", key_id=self.ids["verify"])
         assert lease
         self.lease = lease
         self.proof = {
@@ -122,9 +122,9 @@ class Pipeline:
             "controls_sha256": "c" * 64,
             "runs": [
                 {
-                    "harness": "synthetic-fixture",
-                    "provider": "synthetic-fixture",
-                    "model": "synthetic-fixture",
+                    "harness": "example-fixture",
+                    "provider": "example-fixture",
+                    "model": "example-fixture",
                     "principal_kind": "anonymous",
                     "passed": True,
                     "receipt_sha256": "e" * 64,
@@ -159,7 +159,7 @@ class Pipeline:
                 brief={"candidate_key": "candidate", "verification_task_id": "verify"},
             )
         )
-        review = self.store.claim("frontier.review", "synthetic", key_id=self.ids["review"])
+        review = self.store.claim("frontier.review", "example", key_id=self.ids["review"])
         assert review
         self.review_lease = review
         self.approval = {
@@ -219,7 +219,7 @@ def test_frontier_exact_independent_publication_and_immutable_catalog(tmp_path: 
         with pytest.raises(Forbidden):
             p.publish(wrong)
         with pytest.raises(Forbidden):
-            p.publish({**p.publication, "extra_secret": "SYNTHETIC forbidden field"})
+            p.publish({**p.publication, "extra_secret": "EXAMPLE forbidden field"})
         with pytest.raises(Forbidden):
             p.publish(namespace="other")
         assert p.publish().version == 1
@@ -260,14 +260,14 @@ def test_frontier_quarantine_cannot_be_widened_or_copied_to_public_resources(
                 producer_surface="surface:frontier",
             )
         with pytest.raises(Forbidden):
-            p.store.put_blob(b"SYNTHETIC candidate copy", producer_surface="surface:frontier")
+            p.store.put_blob(b"EXAMPLE candidate copy", producer_surface="surface:frontier")
         with pytest.raises(Forbidden):
             p.store.publish_feed("copied", p.candidate, producer_surface="surface:frontier")
         with pytest.raises(Forbidden):
             p.store.enqueue(
                 TaskSpec(
                     queue="frontier.repair",
-                    brief={"synthetic": True},
+                    brief={"example_only": True},
                     producer_surface="surface:frontier",
                 )
             )
