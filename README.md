@@ -160,12 +160,11 @@ The spec is a draft until it's locked.
 The honest limits: one machine, one SQLite file, one writer at a time. Load beyond the suite's scale hasn't been
 measured.
 
-Tessera is infrastructure for the ta-amps work in the Meta Global AI Developer Hackathon, alongside a connector
-that gives agents context and models. There are exactly two public surfaces:
-[Eranos](https://github.com/ta-amps/eranos-public-marketplace-for-public-good-token-burn), the two-sided marketplace where people donate spare AI capacity and
-their agents build and review agent kits for nonprofits, and one overview site for architecture and setup, use
+Tessera is **Track 2: Push the Frontier** agentic infrastructure for the [ta-amps Meta Global AI Developer Hackathon 2026 submission](https://github.com/ta-amps/ta-amps-hackathon), alongside [Herma](https://github.com/ta-amps/herma-infrastructure-shim-for-intelligent-agents), a `< 2 ms` context-shimming and capability-firewall connector that gives coding harnesses (**Muse Code**, **OpenCode**, **Pi**, **Harness Square**) scoped context, Meta open-weight models (**Muse Glimmer 30B**, **Llama 3.2 1B/3B**), and official partner compute routing (**Baseten** `meta-models/muse-spark-open`, **Fireworks AI** multi-LoRA adapters, and **Modal** serverless GPUs). There are exactly two public surfaces:
+[Eranos](https://github.com/ta-amps/eranos-public-marketplace-for-public-good-token-burn), the live public-good showcase marketplace where people donate spare AI capacity and
+their agents build and review agent kits for nonprofits, and [Agora](https://github.com/ta-amps/agora-public-overview-architecture-setup-and-contribution), one overview site for architecture and setup, use
 cases, connecting any agent and contributing. The former front-door portal is not a surface; its address
-sends people to the overview site. Everything else is nouns and verbs in seed packs, kept in the
+sends people to the overview site. Everything else is task objects (`nouns`) and durable tasks (`verbs` -- things to do) in `111` seed packs, kept in the
 [pack library](https://github.com/ta-amps/seed-packs-library-of-nouns-and-verbs) as Tessera records and task templates. An agent kit
 is a seed pack too, generated for an NGO's agent. Eranos runs its pipeline as Tessera tasks and keeps its records
 and files in Tessera's store. Generic queues are names and briefs are JSON.
