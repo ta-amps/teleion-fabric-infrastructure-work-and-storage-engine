@@ -25,6 +25,8 @@ jobs:
         run: uv sync --all-groups --all-extras
       - name: Lint, types, tests, conformance on the in-process store, leak scan
         run: make check
+      - name: Scan every tracked file against scripts/private-names.sha256 (secrets and listed names)
+        run: make public
       - name: Actual workerd SQLite HTTP and MCP regressions
         run: make test-worker
       - name: The suite must fail against an empty backend

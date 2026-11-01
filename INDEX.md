@@ -13,7 +13,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [CLAUDE.md](CLAUDE.md) | Worker execution direction |
 | [LICENSE](LICENSE) | MIT License |
 | [Makefile](Makefile) | Tessera: atomic work queue and atomic storage. |
-| [README.md](README.md) | Tessera – the work and storage engine |
+| [README.md](README.md) | Tessera – the durable task queue and storage engine |
 | [architecture.json](architecture.json) | tessera |
 | [keywords.txt](keywords.txt) | Terms for KEYWORDS.md, one per line: "term" or "term: alias, alias". |
 | [package.json](package.json) | tessera-worker-tests |

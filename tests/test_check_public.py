@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
+import re
 import sys
 from pathlib import Path
 
@@ -35,12 +37,32 @@ def test_allow_marker_skips_line(tmp_path: Path) -> None:
     assert check_public.scan(tmp_path) == []
 
 
-def test_private_name_hashes_only() -> None:
-    source = (REPO / "scripts" / "check_public.py").read_text()
-    source += (REPO / "scripts" / "private-names.sha256").read_text()
-    # The scanner must flag a private name without containing it in plain text.
-    assert check_public.private_names("see " + "".join(["tel", "eon"]) + ".dev for details")
-    assert "".join(["tel", "eon"]) not in source.lower()
+def test_a_listed_name_is_flagged_by_its_hash_alone(tmp_path: Path) -> None:
+    # A made-up name, hashed into a temporary list inside the test: no real private name is
+    # written or rebuilt here, and the checker sees only the hash.
+    made_up = "examplecorp-zz"
+    listed = tmp_path / "names.sha256"
+    listed.write_text(hashlib.sha256(made_up.encode()).hexdigest() + "  # made up for this test\n")
+    hashes = check_public.load_hashes(listed)
+    assert check_public.private_names(f"Thanks to {made_up} for the review.", hashes)
+    assert check_public.private_names(f"Thanks to {made_up.upper()} for the review.", hashes)
+    assert not check_public.private_names("Thanks to the reviewers for the review.", hashes)
+    assert not check_public.private_names("Thanks to examplecorp for the review.", hashes)
+    (tmp_path / "tree").mkdir()
+    (tmp_path / "tree" / "notes.txt").write_text(f"Credits: {made_up}\n")
+    findings = check_public.scan(tmp_path / "tree", hashes)
+    assert len(findings) == 1 and "private name" in findings[0]
+    assert made_up not in findings[0]
+    (tmp_path / "tree" / "notes.txt").write_text("Credits: the reviewers\n")
+    assert check_public.scan(tmp_path / "tree", hashes) == []
+
+
+def test_the_real_list_holds_only_hashes_and_is_the_default() -> None:
+    # make public (part of make check, run in CI) scans every tracked file against this list.
+    path = REPO / "scripts" / "private-names.sha256"
+    entries = {line.split("#", 1)[0].strip() for line in path.read_text().splitlines()} - {""}
+    assert entries and all(re.fullmatch(r"[0-9a-f]{64}", entry) for entry in entries)
+    assert check_public.PRIVATE_NAME_HASHES == check_public.load_hashes(path) == frozenset(entries)
 
 
 def test_ordinary_words_pass() -> None:
