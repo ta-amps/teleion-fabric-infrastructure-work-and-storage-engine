@@ -100,8 +100,10 @@ def run_step(
             **step.get("profile", {}),
         }
         made = client.post("/v1/session/requester", json={"profile": profile})
-        assert made.status_code == 201, (where, made.text)
-        saved[step["signup"]] = {**made.json(), "token": made.json()["key"]}
+        assert made.status_code == step.get("status", 201), (where, made.text)
+        if made.status_code == 201:
+            saved[step["signup"]] = {**made.json(), "token": made.json()["key"]}
+            check(where, made.json(), fill(step.get("expect", {}), saved))
         return
     if "key" in step:
         grant = step["grant"]
@@ -118,13 +120,24 @@ def run_step(
     headers = {**fill(step.get("headers", {}), saved)}
     if who != "none":
         headers["Authorization"] = "Bearer " + saved[who]["token"]
-    path = fill(step["path"], saved)
-    for _ in range(step.get("repeat", 1)):
-        if step["method"] == "GET":
-            response = client.get(path, headers=headers)
+    for index in range(step.get("repeat", 1)):
+        saved["rep"] = {"i": index}
+        path = fill(step["path"], saved)
+        if step["method"] in {"GET", "HEAD"}:
+            response = client.request(step["method"], path, headers=headers)
+        elif "raw" in step:  # exactly these bytes, with this Content-Type or none
+            if step.get("content_type"):
+                headers["Content-Type"] = step["content_type"]
+            response = client.post(path, content=step["raw"].encode(), headers=headers)
         else:
             response = client.post(path, json=fill(step.get("body", {}), saved), headers=headers)
         assert response.status_code == step["status"], (where, path, response.text[:400])
+        for name, part in step.get("headers_include", {}).items():
+            assert part in response.headers.get(name, ""), (where, name, response.headers.get(name))
+        if step["method"] == "HEAD":
+            assert response.content == b"", (where, "a HEAD answer has no body")
+        for part in step.get("text_lacks", []):
+            assert part not in response.text, (where, "the answer repeats", part[:40])
     try:
         body = response.json() if response.content else None
     except ValueError:  # an MCP door may answer as an event stream

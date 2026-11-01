@@ -59,17 +59,25 @@ async function fabric() {
     bindings: { STORAGE_MODE: "cloud", ANONYMOUS_ACCESS_ENABLED: "true", REQUESTER_SIGNUP_ENABLED: "true", FRAGILITY_PLANNER_ENABLED: "false", BOOTSTRAP_SECRET: BOOTSTRAP },
     outboundService: () => { throw new Error("External requests are prohibited in this fixture"); },
   }] }));
+  // The deployed D1 schemas, as the hosted Worker has them, so bucket objects can be stored.
+  for (const [binding, file] of [["BUCKETS_DB", "d1-buckets.sql"], ["FABRIC_DB", "d1-fabric.sql"]]) {
+    const db = await runtime.getD1Database(binding);
+    const schema = readFileSync(new URL(`../deploy/cloudflare/${file}`, import.meta.url), "utf8").replace(/--[^\n]*\n/g, "\n");
+    for (const statement of schema.split(";").map(s => s.trim()).filter(Boolean)) await db.prepare(statement).run();
+  }
   const worker = await runtime.getWorker("tessera");
-  const request = async (method, path, body, token, headers = {}) => {
+  const request = async (method, path, body, token, headers = {}, raw = undefined) => {
+    // raw: { text, contentType } sends exactly these bytes, with that Content-Type or none.
+    const base = raw ? (raw.contentType ? { "Content-Type": raw.contentType } : {}) : { "Content-Type": "application/json" };
     const response = await worker.fetch("https://tessera.example" + path, {
       method,
-      headers: { "Content-Type": "application/json", "cf-connecting-ip": "192.0.2.40", ...(token ? { Authorization: "Bearer " + token } : {}), ...headers },
-      ...(method === "GET" ? {} : { body: JSON.stringify(body ?? {}) }),
+      headers: { ...base, "cf-connecting-ip": "192.0.2.40", ...(token ? { Authorization: "Bearer " + token } : {}), ...headers },
+      ...(method === "GET" || method === "HEAD" ? {} : { body: raw ? new TextEncoder().encode(raw.text) : JSON.stringify(body ?? {}) }),
     });
     const text = await response.text();
     let data = null;
     try { data = text ? JSON.parse(text) : null; } catch { data = text; }
-    return { status: response.status, data };
+    return { status: response.status, data, text, headers: response.headers };
   };
   const issued = await request("POST", "/v1/admin/keys", { label: "synthetic-operator", queues: ["*"], scopes: ["admin", "store"], effect_classes: ["read", "write-internal"] }, undefined, { "X-Bootstrap-Secret": BOOTSTRAP });
   assert.equal(issued.status, 201, JSON.stringify(issued.data));
@@ -90,8 +98,11 @@ async function runStep({ request, saved }, step, where) {
   if (step.signup) {
     const profile = { display_name: "Synthetic Food Bank", organization_type: "Food pantry", ...(step.profile || {}) };
     const made = await request("POST", "/v1/session/requester", { profile });
-    assert.equal(made.status, 201, `${where}: ${JSON.stringify(made.data)}`);
-    saved[step.signup] = { ...made.data, token: made.data.key };
+    assert.equal(made.status, step.status || 201, `${where}: ${JSON.stringify(made.data)}`);
+    if (made.status === 201) {
+      saved[step.signup] = { ...made.data, token: made.data.key };
+      check(where, made.data, fill(step.expect || {}, saved));
+    }
     return;
   }
   if (step.key) {
@@ -102,11 +113,16 @@ async function runStep({ request, saved }, step, where) {
     return;
   }
   const token = step.as === "none" ? undefined : saved[step.as].token;
-  const path = fill(step.path, saved);
-  let response;
+  let response, path;
   for (let i = 0; i < (step.repeat || 1); i++) {
-    response = await request(step.method, path, fill(step.body || {}, saved), token, fill(step.headers || {}, saved));
+    saved.rep = { i };
+    path = fill(step.path, saved);
+    const raw = "raw" in step ? { text: step.raw, contentType: step.content_type || null } : undefined;
+    response = await request(step.method, path, fill(step.body || {}, saved), token, fill(step.headers || {}, saved), raw);
     assert.equal(response.status, step.status, `${where}: ${path} ${JSON.stringify(response.data)?.slice(0, 400)}`);
+    for (const [name, part] of Object.entries(step.headers_include || {})) assert.ok((response.headers.get(name) || "").includes(part), `${where}: ${name} ${response.headers.get(name)}`);
+    if (step.method === "HEAD") assert.equal(response.text, "", `${where}: a HEAD answer has no body`);
+    for (const part of step.text_lacks || []) assert.ok(!response.text.includes(part), `${where}: the answer repeats ${part.slice(0, 40)}...`);
   }
   if (step.save) saved[step.save] = response.data;
   check(where, response.data, fill(step.expect || {}, saved));

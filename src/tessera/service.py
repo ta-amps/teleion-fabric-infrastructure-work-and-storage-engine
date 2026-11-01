@@ -13,14 +13,16 @@ from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager, suppress
 from http import HTTPStatus
 from typing import Any, cast
-from urllib.parse import urlsplit
+from urllib.parse import unquote_to_bytes, urlsplit
 
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
-from pydantic import BaseModel, ConfigDict, Field, StrictBool
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, ValidationError
 from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.middleware import Middleware
+from starlette.routing import Match, Mount
 
 from tessera import pages
 from tessera._access_boundary import access_dispatch
@@ -236,6 +238,12 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
     async def edge_and_namespace_lock(
         request: Request, call_next: Callable[[Request], Any]
     ) -> Response:
+        if malformed_path(request.scope.get("raw_path") or b""):
+            return problem(400, "invalid_request", "the path has a malformed percent escape")
+        if _CONTROL.search(request.scope.get("path", "")):
+            # A route's `$` would otherwise match before a trailing newline, so `a/b%0A` reached
+            # the handler as `a/b` (H-65).
+            return problem(400, "invalid_request", "the path has a control character")
         raw_path = request.scope.get("path", "/")
         path_ns: str | None = None
         if raw_path.startswith("/ns/"):
@@ -329,6 +337,8 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
             headers["retry-after"] = str(int(exc.retry_after + 0.999))
         if isinstance(exc, VersionConflict):
             extra["current_version"] = exc.current_version
+        if isinstance(exc, MethodNotAllowed):
+            headers["allow"] = "POST"
         return problem(exc.status, exc.code, exc.detail, headers, **extra)
 
     @app.exception_handler(RequestValidationError)
@@ -336,6 +346,16 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
         first = exc.errors()[0] if exc.errors() else {}
         where = ".".join(str(p) for p in first.get("loc", ()))
         return problem(400, "invalid_request", f"{where}: {first.get('msg', 'invalid request')}")
+
+    @app.exception_handler(ValidationError)
+    async def invalid_model(_: Request, exc: ValidationError) -> JSONResponse:
+        # A model a route builds from path or body values (a record key, a store name, tags)
+        # that fails validation is the client's mistake, as the Worker answers it (H-59).
+        errors = exc.errors()
+        if not errors:
+            return problem(400, "invalid_request", "invalid request")
+        where = ".".join(str(p) for p in errors[0]["loc"])
+        return problem(400, "invalid_request", f"{where}: {errors[0]['msg']}")
 
     @app.exception_handler(StarletteHTTPException)
     async def http_error(_: Request, exc: StarletteHTTPException) -> JSONResponse:
@@ -417,7 +437,13 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
     @app.get("/v1/tasks/{task_id}")
     def task(task_id: str, grant: KeyGrant = key) -> dict[str, Any]:
         view = store.task(task_id)
-        gate.queue(grant, view.queue)
+        bound = grant.bound_surface()
+        if not (
+            bound is not None
+            and view.visibility_scope == "allowlist_surfaces"
+            and f"surface:{bound}" in view.allowed_surfaces
+        ):
+            gate.queue(grant, view.queue)
         return view.model_dump(mode="json")
 
     @app.get("/v1/tasks/{task_id}/results")
@@ -719,4 +745,78 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
         return schema
 
     app.openapi = openapi_with_access  # type: ignore[method-assign]
+    # Outermost, so every layer below sees a GET; innermost, so the namespace prefix is gone.
+    app.add_middleware(HeadAsGet)
+    app.user_middleware.append(Middleware(MethodRules, routes=app.router.routes))
     return app
+
+
+_BAD_ESCAPE = re.compile(rb"%(?![0-9A-Fa-f]{2})")
+_CONTROL = re.compile(r"[\x00-\x1f\x7f]")
+_MCP_PATH = re.compile(r"(?:/ns/[^/]+)?/mcp")
+
+
+def malformed_path(raw: bytes) -> bool:
+    """A percent escape that is cut short or does not decode to UTF-8, which the Worker's
+    decodeURIComponent refuses too (H-54)."""
+    if _BAD_ESCAPE.search(raw):
+        return True
+    try:
+        unquote_to_bytes(raw).decode("utf-8")
+    except UnicodeDecodeError:
+        return True
+    return False
+
+
+class HeadAsGet:
+    """HEAD answers wherever GET does, with GET's status and headers and no body, as the Worker
+    answers it (H-53). /mcp keeps its own method rules, since a GET there opens an event stream."""
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        if (
+            scope["type"] != "http"
+            or scope["method"] != "HEAD"
+            or _MCP_PATH.fullmatch(scope["path"])
+        ):
+            await self.app(scope, receive, send)
+            return
+
+        async def headers_only(message: Any) -> None:
+            if message["type"] == "http.response.body":
+                message = {**message, "body": b""}
+            await send(message)
+
+        await self.app({**scope, "method": "GET"}, receive, headers_only)
+
+
+class MethodRules:
+    """A path that only other methods answer gets 405 with Allow, before the MCP mount at / can
+    answer 404 (H-55)."""
+
+    def __init__(self, app: Any, routes: list[Any]) -> None:
+        self.app = app
+        self.routes = routes
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        if scope["type"] != "http" or scope["path"] == "/mcp":
+            await self.app(scope, receive, send)
+            return
+        allowed: set[str] = set()
+        for route in self.routes:
+            if isinstance(route, Mount):
+                continue
+            match, _ = route.matches(scope)
+            if match == Match.FULL:
+                await self.app(scope, receive, send)
+                return
+            if match == Match.PARTIAL:
+                allowed |= set(getattr(route, "methods", None) or ())
+        if not allowed:
+            await self.app(scope, receive, send)
+            return
+        response = problem(405, "method_not_allowed", f"{scope['method']} is not allowed here")
+        response.headers["allow"] = ", ".join(sorted(allowed))
+        await response(scope, receive, send)

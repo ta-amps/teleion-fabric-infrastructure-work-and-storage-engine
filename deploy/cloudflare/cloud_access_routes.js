@@ -2,6 +2,7 @@ import { FAVICON_SVG } from "./cloud_pages.js";
 import ACCESS_OPENAPI from "./access_openapi.json" with { type: "json" };
 // Public discovery and bearer-only onboarding; navigation never mints a session.
 import { ANON_LABELS, DEMO_QUOTAS, REQUESTER_QUOTAS, openVerbsDescription, requesterDescription } from "./cloud_access.js";
+import { libraryDescription, libraryEnabled } from "./library_contract.js";
 
 export const ACCESS_TOOLS = [
   { name: "list_verbs", description: "List ready verbs visible to this principal, with optional queue and status filters.", inputSchema: {type:"object",properties:{queue:{type:"string"},status:{type:"string",enum:["ready","leased","waiting","done","dead","cancelled"]},limit:{type:"integer",minimum:1,maximum:100}},additionalProperties:false}},
@@ -17,15 +18,16 @@ export const ACCESS_TOOLS = [
 // Every published access description reads both switches from the same environment, so the
 // connect page, connect.json, the agent card, llms-full.txt and MCP always agree (F-054).
 export function accessDescriptionFor(url, env) {
-  return accessDescription(url, env.ANONYMOUS_ACCESS_ENABLED === "true", env.REQUESTER_SIGNUP_ENABLED === "true");
+  return accessDescription(url, env.ANONYMOUS_ACCESS_ENABLED === "true", env.REQUESTER_SIGNUP_ENABLED === "true", libraryEnabled(env));
 }
 
-export function accessDescription(url, enabled, requesterEnabled) {
+export function accessDescription(url, enabled, requesterEnabled, libraryOn = false) {
   return { service: "Tessera", mcp_url: `${url}/mcp`, transport: "streamable-http", streaming: "long-poll",
     anonymous: { enabled, endpoint: `${url}/v1/session/anonymous`, method: "POST", token_prefix: "tan_", quotas: DEMO_QUOTAS, labels: ANON_LABELS,
       namespace: "Server assigned demo.<principal_id>; bearer routes automatically", persistence: "Session-private synthetic records, removed after 24 hours", supported_clients: ["coding harness", "personal assistant", "HTTP client", "MCP client"], open_verbs: openVerbsDescription() },
     requester: { ...requesterDescription(requesterEnabled), endpoint: `${url}/v1/session/requester`, method: "POST", quotas: REQUESTER_QUOTAS },
     keyed: { endpoint: `${url}/v1/keys`, method: "POST", authorization: "Existing operator admin key required to issue an account-bound key; paste an issued key to connect", token_prefix: "tsk_", signup_mode: "admin_assisted", secret_shown_once: true },
+    library: libraryDescription(url, libraryOn),
     authorization_header: "Authorization: Bearer <session_token_or_api_key>",
     demo_flow: ["open_anonymous_session", "search_nouns(query=practice)", "claim(queue=demo.ping,worker=your-agent)", "heartbeat", "put_record(store_name=demo.artifacts,expected_version=0)", "submit", "my_audit"],
     audit_retention_seconds: 86400, example: { method: "POST", url: `${url}/v1/session/anonymous`, json: { agent_label: "my-assistant" } } };
@@ -57,7 +59,7 @@ export async function accessRoute(request, env, { path, url, bearer, primary, st
     // the requester's own namespace object is created by the key's first call there.
     return rpcResponse(await primary.openRequesterSession(body, meta));
   }
-  if (path === "/v1/verbs" && method === "GET") return rpcResponse(await stub.rpcCall(bearer, "listVerbs", { ...baseRpc, queue: url.searchParams.get("queue"), status: url.searchParams.get("status"), limit: url.searchParams.get("limit") }));
+  if (path === "/v1/verbs" && method === "GET") return rpcResponse(await stub.rpcCall(bearer, "listVerbs", { ...baseRpc, queue: url.searchParams.get("queue"), status: url.searchParams.get("status"), limit: url.searchParams.get("limit"), after: url.searchParams.get("after") }));
   if (path === "/v1/me" && method === "GET") return rpcResponse(await stub.rpcCall(bearer, "me", baseRpc));
   if (["/v1/me/audit", "/v1/admin/audit"].includes(path) && method === "GET") return rpcResponse(await primary.auditForToken(bearer, { admin: path.includes("/admin/"), after: url.searchParams.get("after"), limit: url.searchParams.get("limit") }));
   if (path === "/v1/public/activity" && method === "GET") return jsonResp(await primary.publicActivity());

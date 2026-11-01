@@ -9,6 +9,7 @@ import json
 import math
 import re
 import secrets
+import unicodedata
 from typing import TYPE_CHECKING, Any, cast
 
 from tessera._access_schema import AccessSchemaOps
@@ -35,16 +36,29 @@ ANON_LABELS: dict[str, Any] = {"origin": "anonymous", "demo": True, "untrusted":
 # A limited deterministic screen for common personal and payment data (same rules as the Worker):
 # email addresses outside the example domains, identity and payment card numbers, IBANs, phone
 # numbers and street addresses. It is not a claim that all personal data can be detected.
-_EMAIL = re.compile(r"@(?!example\.(?:com|org|net)\b)[a-z0-9.-]+\.[a-z]{2,}", re.I)
-_IDENTITY = re.compile(r"\b\d{3}-\d{2}-\d{4}\b|\b(?:\d[ -]?){13,19}\b")
+# The patterns read ASCII only (re.ASCII, as in JavaScript); screen_text first folds full-width
+# letters and digits (NFKC) and writes every other decimal digit as its ASCII digit, so numbers in
+# Arabic-Indic, Devanagari or full-width digits are caught the same way in both implementations.
+_EMAIL = re.compile(r"@(?!example\.(?:com|org|net)\b)[a-z0-9.-]+\.[a-z]{2,}", re.I | re.ASCII)
+_IDENTITY = re.compile(r"\b\d{3}-\d{2}-\d{4}\b|\b(?:\d[ -]?){13,19}\b", re.ASCII)
 # An IBAN carries at least ten digits, so a bill name such as "AB12 RENT CAPS" is not one.
-_IBAN = re.compile(r"\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,4})?\b")
+_IBAN = re.compile(r"\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,4})?\b", re.ASCII)
 _CONTACT = re.compile(
     r"(?<![\w+])(?:\+\d{1,3}[ .-]?)?(?:\(\d{3}\)[ .-]?|\d{3}[ .-])\d{3}[ .-]\d{4}(?![\w-])"
     r"|(?<![\w+])\+\d{1,3}(?:[ .-]?\d{2,4}){2,5}(?![\w-])"
-    r"|\b\d{1,5}\s+(?:[A-Z][a-z]+\s+){1,3}"
-    r"(?:Street|St|Avenue|Ave|Road|Rd|Lane|Ln|Drive|Dr|Boulevard|Blvd|Court|Ct|Way|Place|Pl)\b"
+    r"|\b\d{1,5}[ \t]+(?:[A-Z][a-z]+[ \t]+){1,3}"
+    r"(?:Street|St|Avenue|Ave|Road|Rd|Lane|Ln|Drive|Dr|Boulevard|Blvd|Court|Ct|Way|Place|Pl)\b",
+    re.ASCII,
 )
+_OTHER_DIGIT = re.compile(r"(?![0-9])\d")  # any Unicode decimal digit but 0-9
+
+
+def screen_text(text: str) -> str:
+    """The text the screen reads: NFKC folded, every decimal digit written as 0-9."""
+    folded = unicodedata.normalize("NFKC", text)
+    return _OTHER_DIGIT.sub(lambda m: str(unicodedata.digit(m.group())), folded)
+
+
 # A quote of at least this many characters counts as a cited source quote.
 MIN_CITED_QUOTE = 20
 # Every field an action stores is screened and counted, ids, keys and tags included.
@@ -56,15 +70,16 @@ STORED_FIELDS: dict[str, tuple[str, ...]] = {
 
 
 def _identity_or_payment(text: str) -> bool:
+    text = screen_text(text)
     return bool(
         _EMAIL.search(text)
         or _IDENTITY.search(text)
-        or any(sum(ch.isdigit() for ch in m.group(0)) >= 10 for m in _IBAN.finditer(text))
+        or any(sum(ch in "0123456789" for ch in m.group(0)) >= 10 for m in _IBAN.finditer(text))
     )
 
 
 def has_personal_data(text: str) -> bool:
-    return _identity_or_payment(text) or bool(_CONTACT.search(text))
+    return _identity_or_payment(text) or bool(_CONTACT.search(screen_text(text)))
 
 
 def _cited_quotes(value: Any) -> list[str]:
@@ -477,7 +492,11 @@ class PrincipalOps(AccessSchemaOps):
         if open_verbs:
             self._enforce_open_verb(grant, action, args, namespace)
         elif action not in ANON_ACTIONS:
-            raise ScopeDenied("anonymous sessions may only use isolated demo nouns and verbs")
+            raise ScopeDenied(
+                "anonymous sessions may only use isolated demo nouns and verbs "
+                f"(action {action!r} requires a contributor key; for shared open verbs "
+                "send X-Namespace: main to /v1/verbs or /v1/tasks/claim)"
+            )
         else:
             for name in ("queue", "store", "store_name"):
                 if args.get(name) and not str(args[name]).startswith("demo."):
@@ -533,7 +552,9 @@ class PrincipalOps(AccessSchemaOps):
         if action not in OPEN_VERB_ACTIONS:
             raise ScopeDenied(
                 "outside its own namespace an anonymous session may only claim, heartbeat and"
-                " submit open verbs"
+                f" submit open verbs (action {action!r} requires a contributor key; allowed"
+                " open-verb actions: claim, heartbeat, listVerbs, me, my_audit, results, submit,"
+                " task)"
             )
         if args.get("queue") and str(args["queue"]) in CLOSED_TO_ANONYMOUS:
             raise ScopeDenied("review, approval and publication verbs are closed to anonymous")

@@ -354,7 +354,10 @@ export async function mirrorBucketObjectToD1(env, objMeta) {
 }
 
 
-// Validate integer wire tokens before JSON.parse can round an unsafe integer.
+// Validate integer wire tokens before JSON.parse can round an unsafe integer, and bound the body as
+// Python's strict_json does: at most MAX_JSON_DEPTH levels of nesting (H-58) and only well-formed
+// Unicode strings (H-59).
+export const MAX_JSON_DEPTH = 64;
 export function validateWireNumbers(text) {
   const outsideStrings = text.replace(/"(?:[^"\\]|\\.)*"/g, '""');
   for (const match of outsideStrings.matchAll(/-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g)) {
@@ -362,5 +365,20 @@ export function validateWireNumbers(text) {
     const value = Number(token);
     if (!Number.isFinite(value)) throw makeBadReq("JSON numbers must be finite");
     if (!/[.eE]/.test(token) && BigInt(token) !== BigInt(value)) throw makeBadReq("JSON integers must round-trip exactly through IEEE-754");
+  }
+  let depth = 0;
+  for (const bracket of outsideStrings.matchAll(/[[\]{}]/g)) {
+    depth += bracket[0] === "[" || bracket[0] === "{" ? 1 : -1;
+    if (depth > MAX_JSON_DEPTH) throw makeBadReq(`JSON bodies nest at most ${MAX_JSON_DEPTH} levels deep`);
+  }
+  let parsed;
+  try { parsed = JSON.parse(text); } catch { return; } // the route answers a parse failure itself
+  const stack = [parsed];
+  while (stack.length) {
+    const item = stack.pop();
+    const texts = typeof item === "string" ? [item] : item && typeof item === "object" && !Array.isArray(item) ? Object.keys(item) : [];
+    if (Array.isArray(item)) stack.push(...item);
+    else if (item && typeof item === "object") stack.push(...Object.values(item));
+    if (texts.some(t => !t.isWellFormed())) throw makeBadReq("JSON strings must be valid Unicode (no lone surrogates)");
   }
 }

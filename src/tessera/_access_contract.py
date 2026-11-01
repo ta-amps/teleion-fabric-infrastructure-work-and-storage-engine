@@ -20,7 +20,7 @@ from tessera.grants import (
 
 def requester_description(public_url: str, enabled: bool) -> dict[str, Any]:
     """Self-serve requester keys; the Worker publishes the same."""
-    from tessera._requesters import REQUESTER_QUOTAS
+    from tessera._requesters import REQUESTER_QUOTAS, profile_rules
 
     return {
         "enabled": enabled,
@@ -30,6 +30,7 @@ def requester_description(public_url: str, enabled: bool) -> dict[str, Any]:
         f" (X-Namespace: main), readable by {', '.join(REQUEST_SURFACES)}",
         "reads": "its own nouns and the request verbs it filed, nothing else",
         "profile": "display_name, organization_type and causes only; no personal data",
+        "profile_rules": profile_rules(),
         "secret_shown_once": True,
         "endpoint": f"{public_url}/v1/session/requester",
         "method": "POST",

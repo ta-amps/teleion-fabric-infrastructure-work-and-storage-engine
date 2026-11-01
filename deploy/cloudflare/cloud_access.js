@@ -15,7 +15,7 @@ export const DEMO_QUOTAS = Object.freeze({
 // stay closed whatever their tags say.
 export const OPEN_VERB_TAG = "open:anonymous";
 export const OPEN_VERB_NAMESPACE = "main";
-export const CLOSED_TO_ANONYMOUS = new Set(["eq03", "frontier.review", "frontier.verify"]);
+export const CLOSED_TO_ANONYMOUS = new Set(["eq03", "frontier.review", "frontier.verify", "library.propose", "library.review"]);
 const OPEN_VERB_EFFECTS = new Set(["read", "write-internal"]);
 // Claim events would show other attempts on the verb, so they stay closed (same rule as Python).
 export const OPEN_VERB_ACTIONS = new Set(["claim", "heartbeat", "submit", "task", "results", "listVerbs", "me", "my_audit"]);
@@ -31,7 +31,19 @@ export function requesterDescription(enabled = false) {
     files: `${REQUEST_KIND} verbs in ${REQUEST_QUEUE} of the shared namespace (X-Namespace: main), readable by ${REQUEST_SURFACES.join(", ")}`,
     reads: "its own nouns and the request verbs it filed, nothing else",
     profile: "display_name, organization_type and causes only; no personal data",
+    profile_rules: profileRules(),
     secret_shown_once: true };
+}
+// The rules cleanProfile applies, published for clients to check up front (H-09; the same object
+// as _requesters.profile_rules).
+export function profileRules() {
+  return { normalization: "NFC",
+    kept: `letters, combining marks and digits of any script (Unicode L, M and N), the zero-width joiners U+200C and U+200D, spaces and ${PROFILE_SYMBOLS.replace(" ", "").split("").join(" ")}`,
+    kept_pattern: String.raw`[\p{L}\p{M}\p{N}_ .,&'()/:+\-\u200C\u200D]`,
+    removed: "every other character, before lengths are counted",
+    refused: "control and format characters (Unicode Cc and Cf) other than U+200C and U+200D, and personal or payment data",
+    length_unit: "Unicode code points, after normalization and removal",
+    fields: PROFILE_FIELDS, max_causes: MAX_CAUSES };
 }
 export function openVerbsDescription() {
   return { namespace: OPEN_VERB_NAMESPACE, tag: OPEN_VERB_TAG,
@@ -73,13 +85,30 @@ const PERSONAL_IBAN = /\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,4})?
 const PERSONAL_CONTACT = new RegExp([
   String.raw`(?<![\w+])(?:\+\d{1,3}[ .-]?)?(?:\(\d{3}\)[ .-]?|\d{3}[ .-])\d{3}[ .-]\d{4}(?![\w-])`,
   String.raw`(?<![\w+])\+\d{1,3}(?:[ .-]?\d{2,4}){2,5}(?![\w-])`,
-  String.raw`\b\d{1,5}\s+(?:[A-Z][a-z]+\s+){1,3}(?:Street|St|Avenue|Ave|Road|Rd|Lane|Ln|Drive|Dr|Boulevard|Blvd|Court|Ct|Way|Place|Pl)\b`,
+  String.raw`\b\d{1,5}[ \t]+(?:[A-Z][a-z]+[ \t]+){1,3}(?:Street|St|Avenue|Ave|Road|Rd|Lane|Ln|Drive|Dr|Boulevard|Blvd|Court|Ct|Way|Place|Pl)\b`,
 ].join("|"));
 const MIN_CITED_QUOTE = 20; // characters: a quote at least this long counts as a cited source quote
-function identityOrPayment(text) {
-  return PERSONAL_EMAIL.test(text) || PERSONAL_IDENTITY.test(text) || [...text.matchAll(PERSONAL_IBAN)].some(m => (m[0].match(/\d/g) || []).length >= 10);
+// The patterns read ASCII only, as in Python with re.ASCII. screenText first folds full-width letters
+// and digits (NFKC) and writes every other decimal digit as its ASCII digit, so numbers written in
+// Arabic-Indic, Devanagari or full-width digits are caught the same way in both implementations.
+// Unicode encodes each digit set as a run of ten from zero, so a digit's value is its place in its run.
+export function screenText(text) {
+  text = String(text);
+  // ASCII is already NFKC and its only decimal digits are 0-9, so it screens as written.
+  if (!/[^\x00-\x7f]/.test(text)) return text;
+  return text.normalize("NFKC").replace(/\p{Nd}/gu, ch => {
+    if (ch >= "0" && ch <= "9") return ch;
+    const cp = ch.codePointAt(0);
+    let k = 0;
+    while (k < 64 && /\p{Nd}/u.test(String.fromCodePoint(cp - k - 1))) k++;
+    return String(k % 10);
+  });
 }
-export function hasPersonalData(text) { return identityOrPayment(text) || PERSONAL_CONTACT.test(text); }
+function identityOrPayment(text) {
+  text = screenText(text);
+  return PERSONAL_EMAIL.test(text) || PERSONAL_IDENTITY.test(text) || [...text.matchAll(PERSONAL_IBAN)].some(m => (m[0].match(/[0-9]/g) || []).length >= 10);
+}
+export function hasPersonalData(text) { return identityOrPayment(text) || PERSONAL_CONTACT.test(screenText(text)); }
 function citedQuotes(value) {
   if (Array.isArray(value)) return value.flatMap(citedQuotes);
   if (!value || typeof value !== "object") return [];
@@ -104,16 +133,33 @@ export function storedPayload(action, args) {
 const DEFAULT_PRIORITY = 50; // requests always get the default priority (models.DEFAULT_PRIORITY)
 // In the shared namespace these read one request verb, which must be one the key filed.
 const REQUESTER_FOLLOW_ACTIONS = new Set(["task", "results", "claimEvents"]);
+// A profile's fields, as /connect.json publishes them (same rules as _requesters.PROFILE_FIELDS).
+// Text is NFC normalized; letters, combining marks and digits of any script and the symbols below
+// are kept and anything else is removed before the length is counted in code points. Control and
+// format characters are refused, except the zero-width joiners that Persian and Indic names need.
+export const PROFILE_FIELDS = Object.freeze({
+  display_name: Object.freeze({ min_length: 2, max_length: 80 }),
+  organization_type: Object.freeze({ min_length: 3, max_length: 120 }),
+  cause: Object.freeze({ min_length: 2, max_length: 40 }),
+});
+export const MAX_CAUSES = 8;
+const PROFILE_SYMBOLS = "_ .,&'()/:+-";
+const RAW_LENGTH_FACTOR = 4; // input longer than four times a field's limit is refused unread
 export function cleanProfile(profile) {
-  const text = (value, field, low, high) => {
-    const clean = String(value ?? "").replace(/[^\p{L}\p{N}_ .,&'()/:+-]/gu, "").trim();
-    if (clean.length < low || clean.length > high) throw error(400, "invalid_request", `profile ${field} must be ${low} to ${high} characters`);
+  const text = (value, field) => {
+    const { min_length: low, max_length: high } = PROFILE_FIELDS[field];
+    const raw = String(value ?? "").normalize("NFC");
+    if ([...raw].length > high * RAW_LENGTH_FACTOR) throw error(400, "invalid_request", `profile ${field} must be ${low} to ${high} characters`);
+    if (/[\p{Cc}\p{Cf}]/u.test(raw.replace(/[\u200C\u200D]/gu, ""))) throw error(400, "invalid_request", `profile ${field} must not contain control or format characters`);
+    const clean = [...raw].filter(ch => PROFILE_SYMBOLS.includes(ch) || ch === "\u200C" || ch === "\u200D" || /^[\p{L}\p{M}\p{N}]$/u.test(ch)).join("").trim();
+    const length = [...clean].length;
+    if (length < low || length > high) throw error(400, "invalid_request", `profile ${field} must be ${low} to ${high} characters`);
     return clean;
   };
   if (!profile || typeof profile !== "object" || Array.isArray(profile)) throw error(400, "invalid_request", "profile must be an object");
   const causes = profile.causes ?? [];
-  if (!Array.isArray(causes) || causes.length > 8) throw error(400, "invalid_request", "profile causes must be a list of at most 8 short phrases");
-  const clean = { display_name: text(profile.display_name, "display_name", 2, 80), organization_type: text(profile.organization_type, "organization_type", 3, 120), causes: causes.map(c => text(c, "cause", 2, 40)) };
+  if (!Array.isArray(causes) || causes.length > MAX_CAUSES) throw error(400, "invalid_request", `profile causes must be a list of at most ${MAX_CAUSES} short phrases`);
+  const clean = { display_name: text(profile.display_name, "display_name"), organization_type: text(profile.organization_type, "organization_type"), causes: causes.map(c => text(c, "cause")) };
   if (hasPersonalData(JSON.stringify(clean))) throw error(400, "invalid_request", "profiles must not contain personal or payment data");
   return clean;
 }
@@ -460,12 +506,12 @@ export function enforceAccess(c, grant, action, args) {
   if (grant.principal_kind === "requester") return enforceRequester(c, grant, action, args, ns);
   if (grant.principal_kind !== "anonymous") return [args, null];
   if (openVerbs) {
-    if (!OPEN_VERB_ACTIONS.has(action)) throw error(403, "scope_denied", "outside its own namespace an anonymous session may only claim, heartbeat and submit open verbs");
+    if (!OPEN_VERB_ACTIONS.has(action)) throw error(403, "scope_denied", `outside its own namespace an anonymous session may only claim, heartbeat and submit open verbs (action '${action}' requires a contributor key; allowed open-verb actions: claim, heartbeat, listVerbs, me, my_audit, results, submit, task)`);
     if (args.queue && CLOSED_TO_ANONYMOUS.has(String(args.queue))) throw error(403, "scope_denied", "review, approval and publication verbs are closed to anonymous");
     if (OWN_WORK_ACTIONS.has(action) && !c._one("SELECT 1 AS own FROM leases WHERE namespace=? AND task_id=? AND key_id=? UNION ALL SELECT 1 AS own FROM results WHERE namespace=? AND task_id=? AND completed_by_key=? LIMIT 1", ns, String(args.task_id || ""), grant.key_id, ns, String(args.task_id || ""), grant.key_id))
       throw error(404, "not_found", "task does not exist");
   } else {
-    if (!ANON_ACTIONS.has(action)) throw error(403, "scope_denied", "anonymous sessions may only use isolated demo nouns and verbs");
+    if (!ANON_ACTIONS.has(action)) throw error(403, "scope_denied", `anonymous sessions may only use isolated demo nouns and verbs (action '${action}' requires a contributor key; for shared open verbs send X-Namespace: main to /v1/verbs or /v1/tasks/claim)`);
     if (args.queue && !String(args.queue).startsWith("demo.")) throw error(403, "scope_denied", "anonymous sessions cannot access production verbs");
     if (args.store && !String(args.store).startsWith("demo.")) throw error(403, "scope_denied", "anonymous sessions cannot access production nouns");
   }

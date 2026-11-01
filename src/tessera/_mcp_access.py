@@ -109,6 +109,7 @@ def register_access_tools(
     async def verbs(
         queue: str | None = None, status: str = "ready", limit: int = 100
     ) -> dict[str, Any]:
+        # The tool's schema belongs to the frozen tool benchmark, so paging (`after`) is HTTP-only.
         grant = await current_grant()
         return cast(
             dict[str, Any], await run(lambda: list_verbs(store, grant, queue, status, limit), grant)

@@ -78,6 +78,11 @@ def test_stores_and_buckets_roundtrip_and_cas(tmp_path: Path) -> None:
 
         with pytest.raises(InvalidRequest):
             store.put_object("kits", "../escape", b"bad", expected_version=None)
+        # H-65: the key pattern's $ had also accepted a trailing newline, as had the bucket name's.
+        with pytest.raises(InvalidRequest):
+            store.put_object("kits", "ngo-intake/SKILL.md\n", b"bad", expected_version=None)
+        with pytest.raises(InvalidRequest):
+            store.put_object("kits\n", "a.txt", b"bad", expected_version=None)
         with pytest.raises(NotFound):
             store.put_object("missing-bucket", "a.txt", b"x", expected_version=None)
     finally:

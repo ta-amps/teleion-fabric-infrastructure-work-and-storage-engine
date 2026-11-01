@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import time
 from collections.abc import Callable
 from typing import Any
@@ -36,10 +37,12 @@ class AnonymousBody(BaseModel):
 
 
 class RequesterProfile(BaseModel):
+    """Only the shape is checked here; clean_profile applies the published field rules."""
+
     model_config = ConfigDict(extra="forbid")
-    display_name: str = Field(min_length=2, max_length=80)
-    organization_type: str = Field(min_length=3, max_length=120)
-    causes: list[str] = Field(default_factory=list, max_length=8)
+    display_name: str = ""
+    organization_type: str = ""
+    causes: list[str] = Field(default_factory=list)
 
 
 class RequesterBody(BaseModel):
@@ -63,11 +66,39 @@ def claim_events(
     }
 
 
+VERB_PAGE_MAX = 200
+# Rows one listing reads at most. Hidden rows never hide visible ones: when the budget runs out
+# before the page fills, `next` resumes the scan where it stopped (H-14; same rule as the Worker).
+VERB_SCAN_BUDGET = 10_000
+
+
+def _verb_cursor(created_at: float, task_id: str) -> str:
+    return f"{created_at!r}|{task_id}"
+
+
+def _parse_verb_cursor(after: str) -> tuple[float, str]:
+    created, sep, task_id = after.partition("|")
+    try:
+        value = float(created)
+    except ValueError as exc:
+        raise InvalidRequest("invalid verb cursor") from exc
+    if not sep or not task_id or not math.isfinite(value):
+        raise InvalidRequest("invalid verb cursor")
+    return value, task_id
+
+
 def list_verbs(
-    store: Store, grant: KeyGrant, queue: str | None = None, status: str = "ready", limit: int = 100
+    store: Store,
+    grant: KeyGrant,
+    queue: str | None = None,
+    status: str = "ready",
+    limit: int = 100,
+    after: str | None = None,
 ) -> dict[str, Any]:
+    """Visible verbs, oldest first, `limit` at a time; pass `next` back as `after` to go on."""
     if status not in {"ready", "leased", "waiting", "done", "dead", "cancelled", "all"}:
         raise InvalidRequest("invalid verb status")
+    limit = max(1, min(limit, VERB_PAGE_MAX))
     ns = store.current_scope().namespace
     sql = "SELECT * FROM tasks WHERE namespace=?"
     params: list[Any] = [ns]
@@ -77,16 +108,25 @@ def list_verbs(
     if status != "all":
         sql += " AND state=?"
         params.append(status)
-    sql += " ORDER BY created_at,id"
-    verbs = []
+    if after:
+        created, task_id = _parse_verb_cursor(after)
+        sql += " AND (created_at > ? OR (created_at = ? AND id > ?))"
+        params += [created, created, task_id]
+    sql += " ORDER BY created_at,id LIMIT ?"
+    params.append(VERB_SCAN_BUDGET)
+    verbs: list[dict[str, Any]] = []
+    following: str | None = None
+    scanned = 0
     with store._read() as c:
-        for row in c.execute(sql, params):
+        for row in c.execute(sql, params).fetchall():
+            scanned += 1
             if grant.may_use_queue(row["queue"], ns) and store._task_visible(row):
                 view = store._viewer_task_view(store._task_view(c, ns, row["id"]))
                 verbs.append(view.model_dump(mode="json"))
-                if len(verbs) >= max(1, min(limit, 200)):
-                    break
-    return {"verbs": verbs}
+            if len(verbs) >= limit or scanned >= VERB_SCAN_BUDGET:
+                following = _verb_cursor(float(row["created_at"]), row["id"])
+                break
+    return {"verbs": verbs, "next": following}
 
 
 def mount_access_routes(
@@ -130,9 +170,13 @@ def mount_access_routes(
 
     @app.get("/v1/verbs", response_model=Verbs)
     def verbs(
-        queue: str | None = None, status: str = "ready", limit: int = 100, grant: KeyGrant = key
+        queue: str | None = None,
+        status: str = "ready",
+        limit: int = 100,
+        after: str | None = None,
+        grant: KeyGrant = key,
     ) -> dict[str, Any]:
-        return list_verbs(store, grant, queue, status, limit)
+        return list_verbs(store, grant, queue, status, limit, after)
 
     @app.get("/v1/me", response_model=PrincipalView)
     def me(grant: KeyGrant = key) -> dict[str, Any]:

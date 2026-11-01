@@ -400,7 +400,11 @@
         "deploy/cloudflare/cloud_publication.js",
         "deploy/cloudflare/access_openapi.json",
         "deploy/cloudflare/ontology_catalog.js",
-        "deploy/cloudflare/cloud_frontier_publication.js"
+        "deploy/cloudflare/cloud_frontier_publication.js",
+        "deploy/cloudflare/cloud_library.js",
+        "deploy/cloudflare/library_checks.js",
+        "deploy/cloudflare/library_contract.js",
+        "deploy/cloudflare/cloud_a2a.js"
       ],
       "kind": "edge",
       "domain": "neutral",

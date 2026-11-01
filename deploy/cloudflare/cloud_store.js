@@ -9,6 +9,8 @@ import { initAccess, principalMetadata, requestIdentity, mintAnonymous, mintRequ
 import { canonicalSha256, planFragilityRechecks } from "./ontology_engine.js";
 import { reviewProof, publicationProof } from "./cloud_publication.js";
 import { frontierVerificationProof, frontierReviewProof, frontierPublicationProof } from "./cloud_frontier_publication.js";
+import { libraryGuard, libraryReviewOutcome, proposeToLibrary, readLibrary } from "./cloud_library.js";
+import { LIBRARY } from "./library_contract.js";
 import { DurableObject } from "cloudflare:workers";
 import { TESSERA_VERSION } from "./cloud_pages.js";
 import { canonicalJson, receiptHash, sha256Hex } from "./cloud_buckets.js";
@@ -38,6 +40,8 @@ export { canonicalJson, receiptHash };
 
 const NAME_RE = /^[a-z0-9][a-z0-9_.-]{0,63}$/;
 const MAX_IDEMPOTENCY_KEY = 256; // characters, as models.MAX_IDEMPOTENCY_KEY
+const VERB_PAGE_MAX = 200; // as _access_routes.VERB_PAGE_MAX
+const VERB_SCAN_BUDGET = 10000; // rows one verb listing reads at most, as in Python
 const INHERITED_GOVERNANCE = ["producer_surface", "visibility_scope", "allowed_surfaces", "target_cohorts", "owner_key_id"];
 const TASK_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/;
 const RECORD_KEY_RE = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$/;
@@ -1469,6 +1473,40 @@ export class TesseraCoordinator extends DurableObject {
     }
   }
 
+  // Visible verbs, oldest first, `limit` at a time; `next` goes back as `after`. Hidden rows never
+  // hide visible ones: the scan pages through rows until the page fills or VERB_SCAN_BUDGET rows
+  // are read, and `next` resumes where it stopped (H-14; same rule as _access_routes.list_verbs).
+  _listVerbs(grant, ns, args) {
+    const status = args.status == null || args.status === "" ? "ready" : String(args.status);
+    if (!["ready", "leased", "waiting", "done", "dead", "cancelled", "all"].includes(status)) throw badReq("invalid verb status");
+    const requested = args.limit == null || args.limit === "" ? 100 : Number(args.limit);
+    if (!Number.isInteger(requested)) throw badReq("limit must be an integer");
+    const limit = Math.max(1, Math.min(requested, VERB_PAGE_MAX));
+    let cursor = null;
+    if (args.after != null && args.after !== "") {
+      const text = String(args.after), split = text.indexOf("|");
+      const created = split > 0 ? Number(text.slice(0, split)) : NaN, id = split > 0 ? text.slice(split + 1) : "";
+      if (!Number.isFinite(created) || !id) throw badReq("invalid verb cursor");
+      cursor = [created, id];
+    }
+    const view = this._viewerCtx(grant, args.surfaceHeader);
+    const queue = args.queue || "", verbs = [];
+    let scanned = 0, next = null;
+    while (next === null && scanned < VERB_SCAN_BUDGET) {
+      const page = Math.min(500, VERB_SCAN_BUDGET - scanned);
+      const rows = this._all(`SELECT * FROM tasks WHERE namespace=? AND (?='' OR queue=?) AND (?='all' OR state=?)${cursor ? " AND (created_at > ? OR (created_at = ? AND id > ?))" : ""} ORDER BY created_at,id LIMIT ?`,
+        ns, queue, queue, status, status, ...(cursor ? [cursor[0], cursor[0], cursor[1]] : []), page);
+      for (const r of rows) {
+        scanned++;
+        cursor = [Number(r.created_at), r.id];
+        if (this._taskVisible(r, grant, view) && this._mayUseQueue(grant, r.queue)) verbs.push(this._viewerTaskView(grant, this._taskView(r.id)));
+        if (verbs.length >= limit || scanned >= VERB_SCAN_BUDGET) { next = `${cursor[0]}|${cursor[1]}`; break; }
+      }
+      if (rows.length < page) break;
+    }
+    return { verbs, next };
+  }
+
   // An anonymous viewer never sees which keys own, parked or deduplicated a verb.
   _viewerTaskView(grant, view) {
     return grant.principal_kind === "anonymous" ? { ...view, owner_key_id: null, parked_by: null, idempotency_key: null } : view;
@@ -1915,6 +1953,9 @@ export class TesseraCoordinator extends DurableObject {
     try { this.ctx.storage.transactionSync(() => chargeClaimCaps(this, [[who.key_id, 0, "", null]])); return { ok: true }; } catch (e) { return this._errOut(e); }
   }
   publicActivity() { return publicActivity(this); }
+  // The seed-pack library door (cloud_library.js); always the shared namespace.
+  async libraryPropose(secret, body, meta) { return proposeToLibrary(this, secret, body, meta); }
+  libraryRead(what, args) { return readLibrary(this, what, args); }
   recordAccessEvent(grant, action, args, out, meta) { audit(this, grant, action, args, out, meta); }
   countAccessEvent(grant, action, args, out, meta) { countAccess(this, grant, action, args, out, meta); }
   async auditForToken(secret, args = {}) {
@@ -1935,6 +1976,7 @@ export class TesseraCoordinator extends DurableObject {
       grant = await this._grantFromSecret(secret);
       const [checked, charge] = enforceAccess(this, grant, action, { ...args, namespace: ns });
       args = checked;
+      libraryGuard(this, grant, action, args);
       if (charge) await this._chargeAccess(grant, charge);
       await ensureDemoSeeded(this, grant, ns);
       await ensureRequesterSeeded(this, grant, ns);
@@ -1946,11 +1988,7 @@ export class TesseraCoordinator extends DurableObject {
         permit = await this.claimAdmission.acquire(grant.key_id);
       }
       if (action === "me") out = { ok: true, status: 200, data: publicPrincipal(grant) };
-      else if (action === "listVerbs") {
-        const rows=this._all("SELECT * FROM tasks WHERE namespace=? AND (?='' OR queue=?) AND (?='' OR state=?) ORDER BY created_at,id LIMIT 1000",ns,args.queue||"",args.queue||"",args.status||"ready",args.status||"ready");
-        const view=this._viewerCtx(grant,args.surfaceHeader);
-        out={ok:true,status:200,data:{verbs:rows.filter(r=>this._taskVisible(r,grant,view)&&this._mayUseQueue(grant,r.queue)).slice(0,Math.max(1,Math.min(Number(args.limit)||50,100))).map(r=>this._viewerTaskView(grant,this._taskView(r.id)))}};
-      }
+      else if (action === "listVerbs") out = { ok: true, status: 200, data: this._listVerbs(grant, ns, args) };
       else if (action === "claimEvents") {
         const row = this._taskRow(String(args.task_id));
         this._requireQueue(grant, row.queue);
@@ -2190,7 +2228,8 @@ export class TesseraCoordinator extends DurableObject {
             args.idempotency_key != null && String(args.idempotency_key).trim()
               ? String(args.idempotency_key).trim()
               : null;
-          if (cleanIdem != null && cleanIdem.length > MAX_IDEMPOTENCY_KEY) throw badReq(`idempotency_key is over ${MAX_IDEMPOTENCY_KEY} characters`);
+          // Code points, as Python's len() counts them; .length counts UTF-16 units (H-65).
+          if (cleanIdem != null && [...cleanIdem].length > MAX_IDEMPOTENCY_KEY) throw badReq(`idempotency_key is over ${MAX_IDEMPOTENCY_KEY} characters`);
 
           this._requireQueue(grant, queue);
           this._requireEffect(grant, effectClass);
@@ -2211,22 +2250,36 @@ export class TesseraCoordinator extends DurableObject {
           if (filesRequests(grant, this.namespace)) Object.assign(gov, requesterVerbGovernance(grant));
 
           let outId = args.task_id ? String(args.task_id) : newId("t");
+          // Only an exact replay returns the first task's id (H-08; same rule as _tasks._same_enqueue).
+          const sameEnqueue = (row) => {
+            if ((row.owner_key_id ?? null) !== (gov.owner_key_id ?? null)) throw idemConflict("this idempotency key or task id belongs to another principal's task");
+            const deps = this._all("SELECT depends_on FROM task_deps WHERE namespace = ? AND task_id = ? ORDER BY rowid", this.namespace, row.id).map((r) => r.depends_on);
+            const same = (args.task_id == null || String(args.task_id) === row.id)
+              && row.kind === kind && row.effect_class === effectClass && Number(row.priority) === priority
+              && row.brief === canonicalJson(args.brief) && Number(row.not_before) === notBefore
+              && JSON.stringify(deps) === JSON.stringify([...new Set(dependsOn)])
+              && row.producer_surface === gov.producer_surface && row.visibility_scope === gov.visibility_scope
+              && row.allowed_surfaces === JSON.stringify(gov.allowed_surfaces) && row.target_cohorts === JSON.stringify(gov.target_cohorts)
+              && row.tags === JSON.stringify(gov.tags);
+            if (!same) throw idemConflict("this idempotency key or task id was used for a different request");
+          };
           this.ctx.storage.transactionSync(() => {
             this._queueConfig(queue);
             if (cleanIdem != null) {
               const priorIdem = this._one(
-                "SELECT id FROM tasks WHERE namespace = ? AND queue = ? AND idempotency_key = ?",
+                "SELECT * FROM tasks WHERE namespace = ? AND queue = ? AND idempotency_key = ?",
                 this.namespace,
                 queue,
                 cleanIdem
               );
               if (priorIdem) {
+                sameEnqueue(priorIdem);
                 outId = String(priorIdem.id);
                 return;
               }
             }
             const existing = this._one(
-              "SELECT queue FROM tasks WHERE namespace = ? AND id = ?",
+              "SELECT * FROM tasks WHERE namespace = ? AND id = ?",
               this.namespace,
               outId
             );
@@ -2234,6 +2287,7 @@ export class TesseraCoordinator extends DurableObject {
               if (existing.queue !== queue) {
                 throw badReq(`task '${outId}' already exists in another queue`);
               }
+              sameEnqueue(existing);
               return;
             }
             try {
@@ -2260,6 +2314,7 @@ export class TesseraCoordinator extends DurableObject {
                   cleanIdem
                 );
                 if (winner) {
+                  sameEnqueue(this._one("SELECT * FROM tasks WHERE namespace = ? AND id = ?", this.namespace, winner.id));
                   outId = String(winner.id);
                   return;
                 }
@@ -2272,7 +2327,6 @@ export class TesseraCoordinator extends DurableObject {
 
         case "task": {
           const view = this._taskView(String(args.task_id));
-          this._requireQueue(grant, view.queue);
           if (usesOpenVerbs(grant, this.namespace) || filesRequests(grant, this.namespace)) {
             if (!this._taskVisible(this._taskRow(String(args.task_id)), grant, viewerCtx)) throw notFound(`task '${view.task_id}' does not exist`);
           } else if (
@@ -2290,6 +2344,12 @@ export class TesseraCoordinator extends DurableObject {
           ) {
             throw notFound(`task '${view.task_id}' does not exist`);
           }
+          const surfaceAllowed =
+            view.visibility_scope === "allowlist_surfaces" &&
+            Boolean(grant.bound_surface) &&
+            Array.isArray(view.allowed_surfaces) &&
+            view.allowed_surfaces.includes(`surface:${grant.bound_surface}`);
+          if (!surfaceAllowed) this._requireQueue(grant, view.queue);
           return { ok: true, status: 200, data: this._viewerTaskView(grant, view) };
         }
 
@@ -2504,7 +2564,7 @@ export class TesseraCoordinator extends DurableObject {
           const okFlag = args.ok === undefined ? true : args.ok;
           const errorText = args.error == null ? null : String(args.error);
           if (!idem) throw badReq("the Idempotency-Key header is required");
-          if (idem.length > MAX_IDEMPOTENCY_KEY) throw badReq(`idempotency_key is over ${MAX_IDEMPOTENCY_KEY} characters`);
+          if ([...idem].length > MAX_IDEMPOTENCY_KEY) throw badReq(`idempotency_key is over ${MAX_IDEMPOTENCY_KEY} characters`);
           const outputVal = args.output === undefined ? null : args.output;
           const outputText = canonicalJson(outputVal);
           if (new TextEncoder().encode(outputText).byteLength > MAX_OUTPUT_BYTES) {
@@ -2520,6 +2580,7 @@ export class TesseraCoordinator extends DurableObject {
 
           let receipt = null;
           let staleMsg = null;
+          const libraryWrites = [];
           this.ctx.storage.transactionSync(() => {
             const now = Date.now() / 1000;
             const prior = this._one(
@@ -2553,6 +2614,7 @@ export class TesseraCoordinator extends DurableObject {
             if (task.queue === "eq03" && okFlag) reviewProof(this, taskId, grant.key_id, outputVal, forbid);
             if (task.queue === "frontier.verify" && okFlag) frontierVerificationProof(this, taskId, grant.key_id, outputVal, forbid);
             if (task.queue === "frontier.review" && okFlag) frontierReviewProof(this, taskId, grant.key_id, outputVal, forbid);
+            if (task.queue === LIBRARY.review_queue && okFlag && this.isPrimary) libraryReviewOutcome(this, task, grant, outputVal, digest, now, libraryWrites);
             this.ctx.storage.sql.exec(
               "DELETE FROM leases WHERE namespace = ? AND task_id = ? AND fencing_token = ?",
               this.namespace,
@@ -2618,6 +2680,7 @@ export class TesseraCoordinator extends DurableObject {
             };
           });
           if (!receipt) throw staleLease(staleMsg || "lease is not live");
+          this._mirrorToD1(libraryWrites);
           return { ok: true, status: 200, data: receipt };
         }
 

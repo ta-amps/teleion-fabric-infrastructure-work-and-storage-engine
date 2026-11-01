@@ -84,17 +84,26 @@ def normalize_cohorts(values: Any) -> list[str]:
     return out or ["all"]
 
 
+# A caller names at most this many tags, each at most this long (H-57; same caps as the Worker).
+MAX_TAGS = 64
+MAX_TAG_LENGTH = 128
+
+
 def normalize_tags(values: Any) -> list[str]:
+    """Trimmed, non-empty, first occurrence kept; linear in the number of tags (H-57)."""
     if values is None:
         return []
     if not isinstance(values, list | tuple | set):
         raise ValueError("tags must be a list")
-    out: list[str] = []
-    for item in values:
-        clean = str(item).strip()
-        if clean and clean not in out:
-            out.append(clean)
-    return out
+    return list(dict.fromkeys(clean for item in values if (clean := str(item).strip())))
+
+
+def caller_tags(values: Any) -> list[str]:
+    """The tags a caller names on a task, record or child: normalized and capped."""
+    tags = normalize_tags(values)
+    if len(tags) > MAX_TAGS or any(len(tag) > MAX_TAG_LENGTH for tag in tags):
+        raise ValueError(f"at most {MAX_TAGS} tags of at most {MAX_TAG_LENGTH} characters each")
+    return tags
 
 
 def canonical_category_id(value: Any) -> str | None:
@@ -248,7 +257,7 @@ class _GovernedModel(_Model):
     @field_validator("tags", mode="before")
     @classmethod
     def _validate_tags(cls, v: Any) -> list[str]:
-        return normalize_tags(v)
+        return caller_tags(v)
 
 
 DEFAULT_PRIORITY = 50  # A task's priority when its producer names none; requests always get it.
@@ -300,7 +309,7 @@ class ChildSpec(_Model):
     @field_validator("tags", mode="before")
     @classmethod
     def _validate_child_tags(cls, v: Any) -> list[str]:
-        return normalize_tags(v)
+        return caller_tags(v)
 
 
 class ChildResult(_Model):

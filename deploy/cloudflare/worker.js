@@ -2,6 +2,8 @@ import { agentStartAsset, withAgentStart } from "./agent_start.js";
 import { storageQuotaFailure } from "./storage_quota.js";
 import { namespaceReachable, publicPrincipal } from "./cloud_access.js";
 import { accessDiscoveryRoute, accessRoute, accessDescriptionFor } from "./cloud_access_routes.js";
+import { handleA2a } from "./cloud_a2a.js";
+import { renderA2aCard } from "./library_contract.js";
 // Tessera Cloud Worker: 24/7 native cloud execution on Cloudflare Durable Object SQLite + D1
 // (`STORAGE_MODE = "cloud"`, the default) with optional Fly.io origin reverse-proxy fallback
 // (`STORAGE_MODE = "origin"`). Serves all Tessera Spec v0.2 HTTP routes (`/v1/*` and
@@ -85,7 +87,9 @@ const STATUS_TITLES = {
   404: "Not Found",
   405: "Method Not Allowed",
   409: "Conflict",
+  413: "Content Too Large",
   416: "Range Not Satisfiable",
+  422: "Unprocessable Content",
   429: "Too Many Requests",
   500: "Internal Server Error",
   502: "Bad Gateway",
@@ -93,6 +97,8 @@ const STATUS_TITLES = {
 };
 
 const POST_ONLY_EXACT = new Set([
+  "/v1/session/anonymous",
+  "/v1/session/requester",
   "/v1/queues/define",
   "/v1/tasks",
   "/v1/tasks/claim",
@@ -390,7 +396,7 @@ function discoveryResponse(path, method, env, publicUrl, repoUrl) {
   }
   if (path === "/llms.txt") {
     return withSecurity(
-      new Response(renderLlmsTxt(publicUrl, repoUrl, MCP_TOOLS) + "\n\nExternal harnesses and personal assistants: POST /v1/session/anonymous without secrets, then use Authorization: Bearer <session_token> for demo nouns and verbs. See /connect.json. tools/list is public; tool counts and schemas are authoritative there. Keyed production work remains protected.\n", {
+      new Response(renderLlmsTxt(publicUrl, repoUrl, MCP_TOOLS) + "\n\nExternal harnesses and personal assistants: POST /v1/session/anonymous without secrets, then use Authorization: Bearer <session_token> for demo nouns and verbs. See /connect.json. tools/list is public; tool counts and schemas are authoritative there. Keyed production work remains protected.\n\nSeed-pack library: propose one task object (noun), one task template (verb) or a whole pack with POST /v1/library/proposals, the MCP library tools or A2A message/send at /a2a (agent card /.well-known/agent.json). A different reviewer claims the library.review verb; proposing runs, activates and admits nothing. Status: GET /v1/library/proposals/<proposal_id>.\n", {
         status: 200,
         headers: { "content-type": "text/plain; charset=utf-8" },
       }),
@@ -406,6 +412,7 @@ function discoveryResponse(path, method, env, publicUrl, repoUrl) {
       { noStore: false }
     );
   }
+  if (path === "/.well-known/agent.json") return jsonResp(renderA2aCard(publicUrl, repoUrl));
   if (path === "/.well-known/agent-card.json") {
     return jsonResp({ ...renderAgentCard(publicUrl, repoUrl, MCP_TOOLS), authentication: { discovery: "none", demo: "tan_ bearer session", keyed: "tsk_ bearer key" }, capabilities: { streaming: "long-poll", tools: true }, access: accessDescriptionFor(publicUrl, env) });
   }
@@ -435,6 +442,49 @@ async function mcpNeedsNoStorage(request) {
   return messages.every((m) => m && typeof m === "object" && (m.id === undefined || STORAGELESS_MCP_METHODS.has(m.method) || (m.method === "tools/call" && m.params?.name === "explain_access_modes")));
 }
 const STORAGELESS_STUB = new Proxy({}, { get: (_target, name) => () => { throw new Error(`storage-free MCP discovery must not call ${String(name)}`); } });
+
+
+// The seed-pack library door. POST /v1/library/proposals files one proposal (a noun, a verb template
+// or a whole pack) under the caller's own key or tracked session; the GET routes read the public
+// proposals, catalog and instruction nouns without a key. /a2a maps A2A message/send to the same path.
+const LIBRARY_BODY_LIMIT = 600 * 1024;
+function libraryOut(out) {
+  if (out.ok) return jsonResp(out.data, out.status || 200);
+  const extra = {};
+  if (out.extra?.findings) Object.assign(extra, { findings: out.extra.findings, refusal_sha256: out.extra.refusal_sha256 });
+  if (out.code === "version_conflict") extra.current_version = out.extra?.current_version ?? null;
+  const headers = out.code === "rate_limited" && out.extra?.retry_after != null ? { "retry-after": String(Math.max(1, Math.ceil(Number(out.extra.retry_after)))) } : {};
+  if (out.code === "rate_limited") extra.retry_after = out.extra?.retry_after ?? null;
+  return problem(out.status || 400, out.code || "invalid_request", out.detail || "error", extra, headers);
+}
+async function libraryRoute(request, path, url, method, bearer, stub, publicUrl) {
+  if (path === "/a2a") {
+    if (method !== "POST") return problem(405, "method_not_allowed", "A2A JSON-RPC accepts POST /a2a", {}, { allow: "POST" });
+    return withSecurity(await handleA2a(request, { bearer, propose: body => stub.libraryPropose(bearer, body, "a2a"), read: (what, args) => stub.libraryRead(what, args), sessionUrl: `${publicUrl}/v1/session/anonymous` }), { isWrite: true });
+  }
+  if (path !== "/v1/library" && !path.startsWith("/v1/library/")) return null;
+  if (path === "/v1/library/proposals" && method === "POST") {
+    const raw = await request.text();
+    if (raw.length > LIBRARY_BODY_LIMIT) return problem(413, "payload_too_large", `a proposal request holds at most ${LIBRARY_BODY_LIMIT} bytes`);
+    let body;
+    try { body = JSON.parse(raw); } catch { return problem(400, "invalid_request", "request body must be valid JSON"); }
+    if (!bearer) return problem(401, "unauthorized", "send Authorization: Bearer <contributor key or tracked session token>; POST /v1/session/anonymous opens a tracked session without secrets");
+    return libraryOut(await stub.libraryPropose(bearer, body, "http"));
+  }
+  if (method !== "GET" && method !== "HEAD") return problem(405, "method_not_allowed", "library reads are GET; proposals are POST /v1/library/proposals", {}, { allow: path === "/v1/library/proposals" ? "GET, HEAD, POST" : "GET, HEAD" });
+  const q = name => url.searchParams.get(name);
+  if (path === "/v1/library") return libraryOut(await stub.libraryRead("overview", {}));
+  if (path === "/v1/library/proposals") return libraryOut(await stub.libraryRead("proposals", { status: q("status"), after: q("after"), limit: q("limit") }));
+  if (path === "/v1/library/catalog") return libraryOut(await stub.libraryRead("catalog", { kind: q("kind"), pack: q("pack"), after: q("after"), limit: q("limit") }));
+  if (path === "/v1/library/instructions") return libraryOut(await stub.libraryRead("instructions", { after: q("after"), limit: q("limit") }));
+  const one = /^\/v1\/library\/(proposals|catalog)\/([^/]+)$/.exec(path);
+  if (one) {
+    let id;
+    try { id = decodeURIComponent(one[2]); } catch { return problem(400, "invalid_request", "bad escape in path"); }
+    return libraryOut(await stub.libraryRead(one[1] === "proposals" ? "proposal" : "catalog_item", one[1] === "proposals" ? { proposal_id: id } : { key: id }));
+  }
+  return problem(404, "not_found", "no such library resource");
+}
 
 const worker = {
   async fetch(request, env, ctx) {
@@ -501,6 +551,9 @@ const worker = {
       bootstrapOrIssueKey: (secret, bootstrap, body) => primary.bootstrapOrIssueKey(secret, bootstrap, { ...body, access_meta: meta }),
       openAnonymousSession: body => primary.openAnonymousSession(body, meta),
       auditForToken: (secret, args) => primary.auditForToken(secret, args),
+      // The library door always works in the shared namespace, under the caller's own principal.
+      libraryPropose: (secret, body, door) => primary.libraryPropose(secret, body, { ...meta, door }),
+      libraryRead: (what, args) => primary.libraryRead(what, args),
     };
     const bearer = requestBearer;
     const surfaceHeader = (request.headers.get("x-surface-id") || "").trim();
@@ -512,6 +565,8 @@ const worker = {
     const namespaceStub = ns => coordBinding.get(coordBinding.idFromName(ns === "main" ? "primary" : `ns:${ns}`));
     const accessResponse = await accessRoute(request, env, { path, url, bearer, primary, stub, baseRpc, meta, publicUrl, rpcResponse, jsonResp, htmlResp, readJsonBody, namespaceStub });
     if (accessResponse) return accessResponse;
+    const libraryResponse = await libraryRoute(request, path, url, method, bearer, stub, publicUrl);
+    if (libraryResponse) return libraryResponse;
 
 
     // 1. Streamable HTTP MCP Door (`/mcp`)
@@ -533,7 +588,9 @@ const worker = {
       return problem(
         405,
         "method_not_allowed",
-        "writes are POST only; this path changes nothing on GET"
+        "writes are POST only; this path changes nothing on GET",
+        {},
+        { allow: "POST" }
       );
     }
 
@@ -1501,7 +1558,8 @@ const worker = {
       });
     }
 
-    return problem(404, "not_found", `no route matches ${method} ${path}`);
+    // Echo at most 200 characters of an unknown path (H-55).
+    return problem(404, "not_found", `no route matches ${method} ${path.length > 200 ? `${path.slice(0, 200)}...` : path}`);
   },
 
   async scheduled(event, env, ctx) {
@@ -1515,6 +1573,18 @@ const worker = {
 };
 
 
+// What a route's body holds. Blob and bucket-object uploads are raw bytes and /work forms are
+// form posts; every other body is parsed as JSON whatever its Content-Type says, so its numbers
+// are checked whatever it says too (H-07). The 16 MiB cap (the storage limit) belongs to the upload
+// routes themselves, not to any path that contains "/blobs" (H-65); Python applies the same caps.
+export function bodyRoute(pathname) {
+  const path = pathname.replace(/^\/ns\/[^/]+(?=\/)/, "");
+  if (path === "/v1/blobs") return { kind: "bytes", limit: 16 * 1024 * 1024 };
+  if (/^\/v1\/buckets\/[^/]+\/objects\/./.test(path)) return { kind: "bytes", limit: 16 * 1024 * 1024 };
+  if (path === "/work" || path.startsWith("/work/")) return { kind: "form", limit: 1024 * 1024 };
+  return { kind: "json", limit: 1024 * 1024 };
+}
+
 const onboardingApplication = {
   scheduled: worker.scheduled,
   async fetch(request, env, ctx) {
@@ -1522,9 +1592,15 @@ const onboardingApplication = {
     const headers = { "access-control-allow-origin": "*", "access-control-allow-methods": "GET, HEAD, POST, PUT, DELETE, OPTIONS", "access-control-allow-headers": "Authorization, Content-Type, If-Match, X-Request-Id, X-Agent-Label, Idempotency-Key, X-Namespace, X-Tessera-Namespace, X-Surface-Id, MCP-Protocol-Version, MCP-Session-Id", "access-control-expose-headers": "ETag, Retry-After, X-Request-Id, MCP-Session-Id", "x-request-id": requestId, "cache-control": "no-store" };
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers });
     try {
+      // A broken percent escape (H-54) or a control character (H-65) anywhere in the path is
+      // refused up front, as Python refuses them.
+      if (/[\u0000-\u001f\u007f]/.test(decodeURIComponent(new URL(request.url).pathname))) {
+        return problem(400, "invalid_request", "the path has a control character", {}, headers);
+      }
       const h = new Headers(request.headers); h.set("x-request-id", requestId);
       if (request.body) {
-        const limit = (h.get("authorization") || "").startsWith("Bearer tan_") ? 65536 : new URL(request.url).pathname.includes("/blobs") ? 16*1024*1024 : 1024*1024;
+        const route = bodyRoute(new URL(request.url).pathname);
+        const limit = (h.get("authorization") || "").startsWith("Bearer tan_") ? 65536 : route.limit;
         const reader = request.body.getReader(); const chunks = []; let size = 0;
         while (true) {
           const { done, value } = await reader.read(); if (done) break;
@@ -1535,7 +1611,7 @@ const onboardingApplication = {
         h.set("content-length", String(size));
         const bytes = new Uint8Array(size); let offset = 0;
         for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
-        if ((h.get("content-type") || "").includes("json")) validateWireNumbers(new TextDecoder().decode(bytes));
+        if (route.kind === "json") validateWireNumbers(new TextDecoder().decode(bytes));
         h.set("content-length", String(size));
         request = new Request(request, { headers: h, body: bytes });
       } else request = new Request(request, { headers: h });
@@ -1544,6 +1620,8 @@ const onboardingApplication = {
       for (const [k,v] of Object.entries(headers)) outHeaders.set(k,v);
       return new Response(response.body, { status: response.status, headers: outHeaders });
     } catch (e) {
+      // A path segment with a broken percent escape is the client's mistake, not a fault (H-54).
+      if (e instanceof URIError) return problem(400, "invalid_request", "the path has a malformed percent escape", {}, headers);
       const quota = storageQuotaFailure(e);
       if (quota) return problem(quota.status, quota.code, quota.detail, quota.extra, { ...headers, "retry-after": String(quota.extra.retry_after) });
       return problem(e.status || 500, e.code || "internal_error", e.detail || "request could not be completed", {}, headers);
@@ -1551,9 +1629,19 @@ const onboardingApplication = {
   },
 };
 
+async function serve(request, env, ctx) {
+  return agentStartAsset(request) || withAgentStart(request, await onboardingApplication.fetch(request, env, ctx));
+}
+
 export default {
   ...onboardingApplication,
+  // HEAD answers wherever GET does, with GET's status and headers and no body (H-53). /mcp keeps
+  // its own method rules, since a GET there opens an event stream.
   async fetch(request, env, ctx) {
-    return agentStartAsset(request) || withAgentStart(request, await onboardingApplication.fetch(request, env, ctx));
+    if (request.method === "HEAD" && !/^(?:\/ns\/[^/]+)?\/mcp$/.test(new URL(request.url).pathname)) {
+      const got = await serve(new Request(request, { method: "GET" }), env, ctx);
+      return new Response(null, { status: got.status, statusText: got.statusText, headers: got.headers });
+    }
+    return serve(request, env, ctx);
   },
 };

@@ -1,4 +1,5 @@
 import { ACCESS_TOOLS, accessDescriptionFor } from "./cloud_access_routes.js";
+import { LIBRARY_TOOLS, LIBRARY_TOOL_NAMES, libraryToolBody } from "./library_contract.js";
 // Native Streamable HTTP MCP Door (`/mcp`) for Tessera Cloud.
 // Exposes tools across atomic verbs, queryable CAS nouns, persistent cloud buckets,
 // progressive L0 scent search, delta feeds, reflex recall, and Surface Handshake v1.0
@@ -421,7 +422,7 @@ export const TOOLS = [
 
 // The one served tool registry. `tools/list` returns exactly this array, and every agent page
 // (llms.txt, llms-full.txt, the agent card and the connect page) renders its tool list from it.
-export const MCP_TOOLS = Object.freeze([...TOOLS, ...ACCESS_TOOLS]);
+export const MCP_TOOLS = Object.freeze([...TOOLS, ...ACCESS_TOOLS, ...LIBRARY_TOOLS]);
 
 function b64ToBytes(b64) {
   const bin = atob(b64);
@@ -832,9 +833,9 @@ export async function handleMcpRequest(
         title: "Method Not Allowed",
         status: 405,
         code: "method_not_allowed",
-        detail: "MCP Streamable HTTP accepts POST /mcp",
+        detail: "MCP Streamable HTTP accepts JSON-RPC 2.0 via POST /mcp (stateless JSON response; server-sent GET streams are not used; REST equivalents live under /v1/...)",
       }),
-      { status: 405, headers: { "content-type": "application/problem+json" } }
+      { status: 405, headers: { "content-type": "application/problem+json", allow: "POST" } }
     );
   }
   const surfaceHeader = (request.headers.get("x-surface-id") || "").trim();
@@ -882,6 +883,8 @@ export async function handleMcpRequest(
       else if (toolName === "cancel") out = await stub.rpcCall(bearerSecret, "cancel", { ...toolArgs, ...routeCtx });
       else if (toolName === "list_verbs") out = await stub.rpcCall(bearerSecret, "listVerbs", { ...toolArgs, ...routeCtx });
       else if (toolName === "claim_events") out = await stub.rpcCall(bearerSecret, "claimEvents", { ...toolArgs, ...routeCtx });
+      else if (toolName === "proposal_status") out = await stub.libraryRead("proposal", { proposal_id: toolArgs.proposal_id });
+      else if (LIBRARY_TOOL_NAMES.has(toolName)) out = bearerSecret ? await stub.libraryPropose(bearerSecret, libraryToolBody(toolName, toolArgs), "mcp") : { ok: false, status: 401, code: "unauthorized", detail: "a contributor key or a tracked session (open_anonymous_session) is required to propose" };
       else out = await callTool(stub, env, ctx, bearerSecret, toolName, toolArgs, routeCtx);
       if (!out.ok) {
         return {
@@ -889,7 +892,7 @@ export async function handleMcpRequest(
           id,
           result: {
             content: [{ type: "text", text: `${out.code}: ${out.detail}` }],
-            structuredContent: { error: { code: out.code, status: out.status, detail: out.detail, ...(out.code === "storage_quota_exhausted" ? { retry_after: out.extra?.retry_after, reset_at: out.extra?.reset_at } : {}) }, access: out.status === 401 ? accessDescriptionFor(env.PUBLIC_URL || new URL(request.url).origin, env) : undefined },
+            structuredContent: { error: { code: out.code, status: out.status, detail: out.detail, ...(out.code === "storage_quota_exhausted" ? { retry_after: out.extra?.retry_after, reset_at: out.extra?.reset_at } : {}), ...(out.extra?.findings ? { findings: out.extra.findings, refusal_sha256: out.extra.refusal_sha256 } : {}), ...(out.code === "rate_limited" ? { retry_after: out.extra?.retry_after ?? null } : {}) }, access: out.status === 401 ? accessDescriptionFor(env.PUBLIC_URL || new URL(request.url).origin, env) : undefined },
             isError: true,
           },
         };
