@@ -80,7 +80,7 @@ async function observe(token, args) { return plain(await primary.testObservation
 const verbRows = {};
 async function claimOne(token, goal, measure = false) {
   if (measure) await primary.testRowsStart();
-  const created = await request("/v1/tasks", { queue: "conformance-learn", kind: "verb.solve_draft", brief: { goal, contract: "tessera.example_only.v1" }, visibility_scope: "private" }, token);
+  const created = await request("/v1/tasks", { queue: "conformance-learn", kind: "verb.solve_draft", brief: { goal, contract: "tessera.example.v1" }, visibility_scope: "private" }, token);
   assert.equal(created.status, 201, JSON.stringify(created.data));
   if (measure) { verbRows.enqueue = plain(await primary.testRowsStop()); await primary.testRowsStart(); }
   const lease = await request("/v1/tasks/claim", { queue: "conformance-learn", worker: "example-workerd" }, token);
@@ -169,7 +169,7 @@ test("workerd observation read is permission filtered, paginated and matches the
   assert.equal(new Set(all.map(o => o.run_id)).size, 3);
   const item = all[0];
   assert.equal(item.observation, "execution-observation-v1");
-  assert.equal(item.brief.template, "tessera.example_only.v1");
+  assert.equal(item.brief.template, "tessera.example.v1");
   assert.equal(item.report.learning.outcome, "succeeded");
   assert.equal(item.input_snapshot, undefined);
   assert.ok(all.every(o => o.task_id && o.queue === "conformance-learn" && o.category === "verb.solve_draft"));

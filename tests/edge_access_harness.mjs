@@ -744,7 +744,7 @@ await test("CAS race stale lease fencing and numeric validation", async (h) => {
   );
   assert.equal(numeric.status, 400);
   const missing = await h.req("/v1/me"),
-    unknown = await h.req("/v1/me", { token: ["example_only", "unknown", "bearer"].join("-") });
+    unknown = await h.req("/v1/me", { token: ["example", "unknown", "bearer"].join("-") });
   assert.equal(missing.status, 401);
   assert.equal(unknown.status, 401);
   assert.notEqual(missing.data.detail, unknown.data.detail);

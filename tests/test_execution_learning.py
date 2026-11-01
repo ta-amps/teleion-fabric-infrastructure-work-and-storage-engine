@@ -95,7 +95,7 @@ class Harness:
             TaskSpec(
                 queue=SOURCE,
                 kind="verb.solve_draft",
-                brief={"goal": goal, "contract": "tessera.example_only.v1"},
+                brief={"goal": goal, "contract": "tessera.example.v1"},
                 visibility_scope="private",
             )
         )
@@ -217,7 +217,7 @@ def test_observations_are_permission_filtered_paginated_and_bounded(harness: Har
     assert len(set(seen)) == 3
     item = first["observations"][0]
     assert item["category"] == "verb.solve_draft"
-    assert item["brief"]["template"] == "tessera.example_only.v1"
+    assert item["brief"]["template"] == "tessera.example.v1"
     assert item["report"]["learning"]["path"] == {"shim": "json-native"}
     assert item["trust"]["telemetry"] == "worker_reported"
     assert "input_snapshot" not in item and "output" not in item
@@ -317,7 +317,7 @@ def test_memory_learner_indexes_asynchronously_and_recalls_with_statistics(
         category="verb.solve_draft",
         brief={
             "goal": "EXAMPLE convert a mov clip into png frames",
-            "contract": "tessera.example_only.v1",
+            "contract": "tessera.example.v1",
         },
         report={"learning": {"types": {"input": "video", "output": "image/png[]"}}},
     )

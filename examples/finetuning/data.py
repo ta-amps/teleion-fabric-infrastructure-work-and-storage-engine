@@ -138,7 +138,7 @@ def prepare(directory: Path) -> dict[str, Any]:
             path.write_bytes(b"".join(canonical(row) + b"\n" for row in values))
             files[name] = {"sha256": file_digest(path), "rows": len(values)}
     manifest = {
-        "format": "tessera.example_only-research.v1",
+        "format": "tessera.example-research.v1",
         "example_only": True,
         "provenance": {
             "origin": "repository-authored deterministic templates",
@@ -175,7 +175,7 @@ def prepare(directory: Path) -> dict[str, Any]:
 def load(directory: Path) -> tuple[dict[str, Any], dict[str, list[dict[str, Any]]]]:
     manifest = json.loads((directory / "manifest.json").read_bytes())
     if (
-        manifest.get("format") != "tessera.example_only-research.v1"
+        manifest.get("format") != "tessera.example-research.v1"
         or manifest.get("example_only") is not True
     ):
         raise ValueError("unsupported dataset manifest")
