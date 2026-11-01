@@ -206,7 +206,8 @@ test("the access contract publishes the open-verb rule and caps", async () => {
   const { request } = await setup();
   const contract = await request("/connect.json");
   assert.equal(contract.data.anonymous.open_verbs.tag, "open:anonymous");
-  assert.deepEqual(contract.data.anonymous.open_verbs.closed_queues, ["eq03", "frontier.review", "frontier.verify"]);
+  // The library's propose and review verbs are closed too (docs/library-submissions.md).
+  assert.deepEqual(contract.data.anonymous.open_verbs.closed_queues, ["eq03", "frontier.review", "frontier.verify", "library.propose", "library.review"]);
   assert.equal(contract.data.anonymous.quotas.open_claims_per_hour, 5);
   assert.equal(contract.data.anonymous.quotas.open_claims_per_ip_hour, 10);
 });

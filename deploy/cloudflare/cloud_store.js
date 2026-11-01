@@ -9,6 +9,8 @@ import { initAccess, principalMetadata, requestIdentity, mintAnonymous, mintRequ
 import { canonicalSha256, planFragilityRechecks } from "./ontology_engine.js";
 import { reviewProof, publicationProof } from "./cloud_publication.js";
 import { frontierVerificationProof, frontierReviewProof, frontierPublicationProof } from "./cloud_frontier_publication.js";
+import { libraryGuard, libraryReviewOutcome, proposeToLibrary, readLibrary } from "./cloud_library.js";
+import { LIBRARY } from "./library_contract.js";
 import { DurableObject } from "cloudflare:workers";
 import { TESSERA_VERSION } from "./cloud_pages.js";
 import { canonicalJson, receiptHash, sha256Hex } from "./cloud_buckets.js";
@@ -1951,6 +1953,9 @@ export class TesseraCoordinator extends DurableObject {
     try { this.ctx.storage.transactionSync(() => chargeClaimCaps(this, [[who.key_id, 0, "", null]])); return { ok: true }; } catch (e) { return this._errOut(e); }
   }
   publicActivity() { return publicActivity(this); }
+  // The seed-pack library door (cloud_library.js); always the shared namespace.
+  async libraryPropose(secret, body, meta) { return proposeToLibrary(this, secret, body, meta); }
+  libraryRead(what, args) { return readLibrary(this, what, args); }
   recordAccessEvent(grant, action, args, out, meta) { audit(this, grant, action, args, out, meta); }
   countAccessEvent(grant, action, args, out, meta) { countAccess(this, grant, action, args, out, meta); }
   async auditForToken(secret, args = {}) {
@@ -1971,6 +1976,7 @@ export class TesseraCoordinator extends DurableObject {
       grant = await this._grantFromSecret(secret);
       const [checked, charge] = enforceAccess(this, grant, action, { ...args, namespace: ns });
       args = checked;
+      libraryGuard(this, grant, action, args);
       if (charge) await this._chargeAccess(grant, charge);
       await ensureDemoSeeded(this, grant, ns);
       await ensureRequesterSeeded(this, grant, ns);
@@ -2569,6 +2575,7 @@ export class TesseraCoordinator extends DurableObject {
 
           let receipt = null;
           let staleMsg = null;
+          const libraryWrites = [];
           this.ctx.storage.transactionSync(() => {
             const now = Date.now() / 1000;
             const prior = this._one(
@@ -2602,6 +2609,7 @@ export class TesseraCoordinator extends DurableObject {
             if (task.queue === "eq03" && okFlag) reviewProof(this, taskId, grant.key_id, outputVal, forbid);
             if (task.queue === "frontier.verify" && okFlag) frontierVerificationProof(this, taskId, grant.key_id, outputVal, forbid);
             if (task.queue === "frontier.review" && okFlag) frontierReviewProof(this, taskId, grant.key_id, outputVal, forbid);
+            if (task.queue === LIBRARY.review_queue && okFlag && this.isPrimary) libraryReviewOutcome(this, task, grant, outputVal, digest, now, libraryWrites);
             this.ctx.storage.sql.exec(
               "DELETE FROM leases WHERE namespace = ? AND task_id = ? AND fencing_token = ?",
               this.namespace,
@@ -2667,6 +2675,7 @@ export class TesseraCoordinator extends DurableObject {
             };
           });
           if (!receipt) throw staleLease(staleMsg || "lease is not live");
+          this._mirrorToD1(libraryWrites);
           return { ok: true, status: 200, data: receipt };
         }
 
