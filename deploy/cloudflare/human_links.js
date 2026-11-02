@@ -138,7 +138,7 @@ export async function humanLinkPublicAnswer(c, token, body) {
   if (view.state === "ended") return { status: 410, data: view };
   if (view.state !== "open") return { status: 409, data: view };
   const answer = body?.answer;
-  const next = Object.hasOwn(ANSWERS[row.kind], String(answer)) ? ANSWERS[row.kind][answer] : null;
+  const next = typeof answer === "string" && Object.hasOwn(ANSWERS[row.kind], answer) ? ANSWERS[row.kind][answer] : null;
   if (!next) return { status: 400, data: { ...view, error: `answer must be ${Object.keys(ANSWERS[row.kind]).join(" or ")}` } };
   let value = null;
   if (answer === "send") {

@@ -73,7 +73,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [conformance-draft/test_storage.py](conformance-draft/test_storage.py) | ST01 to ST04: atomic storage. |
 | [conformance-draft/test_task_graph.py](conformance-draft/test_task_graph.py) | Task graphs every backend must meet (SPEC §5.2 and §5.6): dependencies (fan-in), children that run in waves,… |
 
-## deploy/ (36)
+## deploy/ (37)
 
 | File | What it is |
 |---|---|
@@ -102,6 +102,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [deploy/cloudflare/edge_activity.js](deploy/cloudflare/edge_activity.js) | Where workers connect, for the public activity map (GET /v1/public/activity/map). |
 | [deploy/cloudflare/execution_matching.js](deploy/cloudflare/execution_matching.js) | Bounded execution-report validation and retrieval candidates, never reuse authorization. |
 | [deploy/cloudflare/execution_observations.js](deploy/cloudflare/execution_observations.js) | Execution observations and problem fingerprints: core infrastructure, no learning policy. |
+| [deploy/cloudflare/human_links.js](deploy/cloudflare/human_links.js) | Human links: when an agent needs a person, it asks for a time-limited link and polls its state. |
 | [deploy/cloudflare/library_checks.js](deploy/cloudflare/library_checks.js) | Deterministic checks for library proposals: shape, size, nesting, licence, file types, hidden |
 | [deploy/cloudflare/library_contract.js](deploy/cloudflare/library_contract.js) | The library door's public contract: store and queue names, rates, the MCP tools, the connect.json |
 | [deploy/cloudflare/library_io.js](deploy/cloudflare/library_io.js) | The Worker side of the library door: bodies are measured in bytes before they are buffered, and |
@@ -308,7 +309,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [src/tessera/store.py](src/tessera/store.py) | The in-process Tessera store: the reference implementation of SPEC.md. |
 | [src/tessera/testing.py](src/tessera/testing.py) | Factories the conformance suite loads by name (TESSERABACKENDFACTORY="module:function"). |
 
-## tests/ (81)
+## tests/ (82)
 
 | File | What it is |
 |---|---|
@@ -385,6 +386,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [tests/workerd_client_addresses.mjs](tests/workerd_client_addresses.mjs) | Real Worker/SQLite: per-IP limits count in the hour their daily-rotated IP hash was computed, so a |
 | [tests/workerd_execution_history.mjs](tests/workerd_execution_history.mjs) | Actual Worker handlers and ephemeral SQLite Durable Objects; no provider or cloud access. |
 | [tests/workerd_execution_learning.mjs](tests/workerd_execution_learning.mjs) | Actual Worker and SQLite Durable Objects: learning reports, observations and row costs. |
+| [tests/workerd_human_links.mjs](tests/workerd_human_links.mjs) | Real Worker/SQLite: human links. |
 | [tests/workerd_library_checks.mjs](tests/workerd_library_checks.mjs) | The library door's checks as pure functions: linear time on the independent review's crafted |
 | [tests/workerd_library_doors.mjs](tests/workerd_library_doors.mjs) | Real Worker/SQLite: the seed-pack library door. |
 | [tests/workerd_open_verbs.mjs](tests/workerd_open_verbs.mjs) | Real Worker/SQLite: a tracked anonymous session claims, heartbeats and submits only verbs whose |
