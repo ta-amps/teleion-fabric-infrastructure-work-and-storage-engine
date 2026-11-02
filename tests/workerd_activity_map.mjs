@@ -737,3 +737,17 @@ test("the route is GET only, cached, open to other sites and limited per address
   assert.equal(preflight.status, 204);
   assert.equal(preflight.headers.get("access-control-allow-origin"), "*");
 });
+
+// Review test (1da5ea1): a named volunteer's key, issued as go_live.py issue-volunteer-key does (account
+// "eranos-volunteer-<name>"), counts as a volunteer's AI under the deployed setting, read from wrangler.jsonc.
+test("review: a named volunteer's key counts as a volunteer's AI under the deployed setting", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const config = await readFile(new URL("../deploy/cloudflare/wrangler.jsonc", import.meta.url), "utf8");
+  const live = /"VOLUNTEER_WORKER_ACCOUNTS":\s*"([^"]*)"/.exec(config)[1];
+  const { task, key, claim, map } = await setup({ VOLUNTEER_WORKER_ACCOUNTS: live });
+  await task("named-1");
+  const named = await key("eranos-volunteer-sample", "eranos-volunteer-sample");
+  await claim(named.key, FRA, "volunteer-sample");
+  const row = (await map("1h")).data.recent[0];
+  assert.equal(row.worker, "volunteer", `shown as ${row.worker}: "${row.worker_label}"`);
+});

@@ -49,7 +49,7 @@
     // The public activity map (edge_activity.js): accounts whose keys are volunteers' AIs (every other
     // key is a dedicated worker run by ta-amps), the model catalog Task Object it names models from,
     // and reads per minute per address.
-    "VOLUNTEER_WORKER_ACCOUNTS": "eranos-volunteer",
+    "VOLUNTEER_WORKER_ACCOUNTS": "eranos-volunteer,eranos-volunteer-*",
     "MODEL_CATALOG": "eranos.instructions/models.meta",
     "PUBLIC_ACTIVITY_PER_MINUTE": "60",
     "PUBLIC_URL": "https://tessera.ta-amps.workers.dev",
