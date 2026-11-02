@@ -53,6 +53,10 @@ button{padding:8px 14px;border:0;border-radius:6px;background:var(--accent);colo
 </style>`;
 
 export function esc(val) {
+  return escHtml(val);
+}
+
+function escHtml(val) {
   return String(val ?? "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -233,7 +237,10 @@ export function renderAgentCard(publicUrl, repoUrl, tools) {
   };
 }
 
-export function renderBoardHtml(health, snapshot = {}, repoUrl = "https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine") {
+// `mask` hides banned words in stored data at display time (shared list, data_rendering rule); records stay as
+// they are. worker.js builds it from the BANNED_TEXT var that `make deploy` sets from the shared list.
+export function renderBoardHtml(health, snapshot = {}, repoUrl = "https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine", mask = (v) => v) {
+  const esc = (v) => escHtml(mask(v));
   const ns = String(snapshot?.namespace || "main");
   const dagNodes = Array.isArray(snapshot?.dag_nodes) ? snapshot.dag_nodes : [];
   const parkedTiles = Array.isArray(snapshot?.parked_tiles) ? snapshot.parked_tiles : [];

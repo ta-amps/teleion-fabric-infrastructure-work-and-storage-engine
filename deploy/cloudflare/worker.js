@@ -3,6 +3,7 @@ import { storageQuotaFailure } from "./storage_quota.js";
 import { namespaceReachable, publicPrincipal } from "./cloud_access.js";
 import { accessDiscoveryRoute, accessRoute, accessDescriptionFor } from "./cloud_access_routes.js";
 import { handleA2a } from "./cloud_a2a.js";
+import { displayMask } from "./display_mask.js";
 import { LIBRARY_CHECKER, libraryEnabled, renderA2aCard } from "./library_contract.js";
 import { LIBRARY_BODY_LIMIT, parseJsonBody, proposeThroughDoors, readCappedBody } from "./library_io.js";
 // Tessera Cloud Worker: 24/7 native cloud execution on Cloudflare Durable Object SQLite + D1
@@ -516,7 +517,7 @@ const worker = {
       if (["/v1/health", "/api/health", "/healthz", "/health"].includes(path)) return jsonResp(await primary.publicHealthAndBoard(false, "main"));
       if (path === "/board") {
         const info = await primary.publicHealthAndBoard(true, "main");
-        return htmlResp(renderBoardHtml(info.health, info.snapshot, repoUrl));
+        return htmlResp(renderBoardHtml(info.health, info.snapshot, repoUrl, displayMask(env)));
       }
       if (path === "/v1/public/activity" && method === "GET") return jsonResp(await primary.publicActivity());
     }
@@ -606,7 +607,7 @@ const worker = {
     }
     if (path === "/board" && (method === "GET" || method === "HEAD")) {
       const info = await stub.publicHealthAndBoard(true, namespace);
-      return htmlResp(renderBoardHtml(info.health, info.snapshot, repoUrl));
+      return htmlResp(renderBoardHtml(info.health, info.snapshot, repoUrl, displayMask(env)));
     }
 
     // 4. Keyed browser work forms (`/work`, `/work/claim`, `/work/heartbeat`, `/work/submit`, `/work/resume`)

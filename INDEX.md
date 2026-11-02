@@ -73,7 +73,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [conformance-draft/test_storage.py](conformance-draft/test_storage.py) | ST01 to ST04: atomic storage. |
 | [conformance-draft/test_task_graph.py](conformance-draft/test_task_graph.py) | Task graphs every backend must meet (SPEC §5.2 and §5.6): dependencies (fan-in), children that run in waves,… |
 
-## deploy/ (34)
+## deploy/ (35)
 
 | File | What it is |
 |---|---|
@@ -98,6 +98,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [deploy/cloudflare/cloud_store.js](deploy/cloudflare/cloud_store.js) |  |
 | [deploy/cloudflare/d1-buckets.sql](deploy/cloudflare/d1-buckets.sql) | Persistent Cloudflare D1 content-addressed blob & named-bucket store (ta-amps-buckets), Schema v3. |
 | [deploy/cloudflare/d1-fabric.sql](deploy/cloudflare/d1-fabric.sql) | Persistent Cloudflare D1 schema for Tessera cloud fabric (ta-amps-fabric), Schema v3. |
+| [deploy/cloudflare/display_mask.js](deploy/cloudflare/display_mask.js) | Display-time masking for pages that render stored data (shared banned list, datarendering rule). |
 | [deploy/cloudflare/execution_matching.js](deploy/cloudflare/execution_matching.js) | Bounded execution-report validation and retrieval candidates, never reuse authorization. |
 | [deploy/cloudflare/execution_observations.js](deploy/cloudflare/execution_observations.js) | Execution observations and problem fingerprints: core infrastructure, no learning policy. |
 | [deploy/cloudflare/library_checks.js](deploy/cloudflare/library_checks.js) | Deterministic checks for library proposals: shape, size, nesting, licence, file types, hidden |
@@ -222,10 +223,11 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [harness/limits.toml](harness/limits.toml) | Starting limits for the work harness (workstream W). |
 | [harness/rubrics.toml](harness/rubrics.toml) | Task rating rubric and priority weights. |
 
-## scripts/ (8)
+## scripts/ (9)
 
 | File | What it is |
 |---|---|
+| [scripts/banned_text_var.py](scripts/banned_text_var.py) | Print the BANNEDTEXT var for make deploy: the shared list's always and visible-text patterns as compact JSON. |
 | [scripts/build_access_openapi.py](scripts/build_access_openapi.py) | Generate the shared access OpenAPI subset from actual Python route and model schemas. |
 | [scripts/build_index.py](scripts/build_index.py) | Build this repo's indexes from its own files. |
 | [scripts/build_ontology_catalog.py](scripts/build_ontology_catalog.py) | Generate the Worker ontology catalog from the canonical Python category/profile models. |
@@ -304,12 +306,13 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [src/tessera/store.py](src/tessera/store.py) | The in-process Tessera store: the reference implementation of SPEC.md. |
 | [src/tessera/testing.py](src/tessera/testing.py) | Factories the conformance suite loads by name (TESSERABACKENDFACTORY="module:function"). |
 
-## tests/ (77)
+## tests/ (78)
 
 | File | What it is |
 |---|---|
 | [tests/agent_start.test.mjs](tests/agent_start.test.mjs) |  |
 | [tests/claim_admission.test.mjs](tests/claim_admission.test.mjs) |  |
+| [tests/display_mask.test.mjs](tests/display_mask.test.mjs) | The board hides banned words in stored data at display time; stored records stay as they are. |
 | [tests/edge_access_harness.mjs](tests/edge_access_harness.mjs) | No remote HTTP, credentials, or persistent production data: real Worker handlers, example SQLite. |
 | [tests/edge_access_loader.mjs](tests/edge_access_loader.mjs) | Minimal Cloudflare DurableObject class for deterministic Node SQLite tests. |
 | [tests/edge_access_publication.mjs](tests/edge_access_publication.mjs) | Storage-level approvals bind an authenticated draft, reviewer, receipt, and exact catalog value. |

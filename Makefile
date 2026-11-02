@@ -88,7 +88,7 @@ openapi-check: ## Generated access schema must match the HTTP route/model contra
 
 .PHONY: agent-start-check
 agent-start-check: ## Check public agent onboarding instructions and HTTP boundaries
-	node --test tests/agent_start.test.mjs
+	node --test tests/agent_start.test.mjs tests/display_mask.test.mjs
 
 .PHONY: claim-admission-check
 claim-admission-check: ## Adaptive pacing, fair waiting, recovery and bounded overload
@@ -98,4 +98,4 @@ deploy-guard: ## Before any Worker deploy: clean, light, banned words from BANNE
 	uv run python scripts/deploy_guard.py
 
 deploy: deploy-guard ## Guarded Worker deploy; the message names the source commit
-	npx -y wrangler@4.154.0 deploy --config deploy/cloudflare/wrangler.jsonc --message "source $$(git rev-parse HEAD)"
+	npx -y wrangler@4.154.0 deploy --config deploy/cloudflare/wrangler.jsonc --message "source $$(git rev-parse HEAD)" --var "BANNED_TEXT:$$(uv run python scripts/banned_text_var.py)"
