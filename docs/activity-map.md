@@ -83,6 +83,33 @@ whichever isolate. `ACTIVITY_MEMO_SCALE` multiplies those times (0 turns the cac
 window with no claims is never kept, so reading a quiet map is free and the first claim shows at once. The counts
 of a busy window can therefore lag by up to those times; the feed lags by 15 s.
 
+## Rows it costs
+
+Measured in local workerd (Miniflare) by summing each SQL cursor's `rowsWritten` and `rowsRead` in the
+coordinator, against `f7999be` without the map; index entries count as rows. This is a local measurement, not a
+production bill.
+
+| Request | Rows written without the map | With the map |
+| --- | ---: | ---: |
+| Claim (a public Task, the worker seen at that data center in the last 600 s) | 13 | 16 |
+| Claim, the worker's first time through that data center in 25 hours | 13 | 19 |
+| Heartbeat | 10 | 10 |
+| Heartbeat or claim of a busy worker, at most once per 600 s per data center | (in the above) | +2 |
+| Submit with a model in its report | 20 | 21 |
+| Enqueue, private Tasks, empty polls, every read | unchanged | unchanged |
+| Retention, 25 hours later | | +1 per claim row, +1 per place row |
+| The first claim after a deploy (two tables, three indexes) | | +8, once |
+
+So a claim costs about 5 more rows over its life (3 written, 1 for its model, 1 deleted), plus about 2 rows for
+every 10 minutes a worker keeps working (288 a day for one that works all day). Five workers busy all day with
+1,000 claims between them add about 6,500 rows a day, under 7% of the Workers Free allowance of 100,000.
+
+A view the coordinator computes reads the window's claim rows (one indexed scan), its place rows and up to 20 rows
+for the feed; the replay adds the last hour's claims (at most 300). Kept as above, the 24-hour view is computed at
+most every 300 s, so 1,000 claims a day cost under 300,000 rows read a day of the 5 million. Read all day, the feed
+(kept 15 s) adds at most about 115,000 and the replay (kept 30 s) about 120,000 more. The view checks its tables in the coordinator's
+schema names, read once per instance; a `sqlite_master` lookup per table read 81 rows each time.
+
 `tests/workerd_activity_map.mjs` checks the client cannot name a place, the two-worker threshold, the four
 classes, show_on_map, that private Tasks stay off, that no identifying field or value appears, the models and
-the banned-list mask, replay, and the headers, cache and limit.
+the banned-list mask, the rows written per claim, heartbeat and submit, replay, and the headers, cache and limit.

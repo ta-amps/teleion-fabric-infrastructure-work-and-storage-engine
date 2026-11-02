@@ -16,6 +16,15 @@ const fixture = `
 export { default } from './deploy/cloudflare/worker.js';
 import { TesseraCoordinator } from './deploy/cloudflare/cloud_store.js';
 export class FixtureCoordinator extends TesseraCoordinator {
+  // Test-only: log each SQL cursor while asked, to count rows written (workerd's rowsWritten, index entries included).
+  constructor(ctx, env) {
+    super(ctx, env);
+    const sql = ctx.storage.sql, exec = sql.exec.bind(sql);
+    this.rowLog = null;
+    sql.exec = (query, ...args) => { const cursor = exec(query, ...args); if (this.rowLog) this.rowLog.push([query, cursor]); return cursor; };
+  }
+  testRowsStart() { this.rowLog = []; }
+  testRowsStop() { const out = (this.rowLog || []).map(([query, cursor]) => [query, cursor.rowsWritten]); this.rowLog = null; return out; }
   // Test-only: count the Worker's reads of the aggregated view, and show the projection's rows.
   publicActivityMap(windowName, replay) { this.mapReads = (this.mapReads || 0) + 1; return super.publicActivityMap(windowName, replay); }
   testMapReads() { return this.mapReads || 0; }
@@ -284,6 +293,32 @@ test("a read or an empty poll never makes the projection; the first claim does",
   await claim(ana.key, FRA, "ana-1");
   assert.equal(await primary.testHasEdgeTables(), true);
   assert.equal((await primary.testEdgeRows()).claims.length, 1);
+});
+
+test("the map adds 3 rows written to a claim, 3 more for a new place, none to a heartbeat and 1 to a submit", async (t) => {
+  const { task, key, claim, submit, request, primary } = await setup();
+  const ana = await key("example-ops-ana", "example-ops"), ben = await key("example-ops-ben", "example-ops");
+  const measured = async (step) => {
+    await primary.testRowsStart();
+    const value = await step();
+    const log = await primary.testRowsStop();
+    const rows = (pattern) => log.filter(([query]) => pattern.test(query)).reduce((n, [, written]) => n + written, 0);
+    return { value, total: rows(/./), claims: rows(/edge_claims/), presence: rows(/edge_presence/) };
+  };
+  await task("cost-1");
+  await submit(ana.key, await claim(ana.key, FRA, "ana")); // the first claim makes the tables
+  await task("cost-2");
+  const seen = await measured(() => claim(ana.key, FRA, "ana"));
+  assert.deepEqual([seen.claims, seen.presence], [3, 0]); // the claim row and its two index entries
+  const beat = await measured(() => request("/v1/tasks/heartbeat", { body: { task_id: seen.value.task_id, fencing_token: seen.value.fencing_token }, token: ana.key, cf: FRA }));
+  assert.equal(beat.value.status, 200, JSON.stringify(beat.value.data));
+  assert.deepEqual([beat.claims, beat.presence], [0, 0]); // seen under 600 s ago
+  const done = await measured(() => submit(ana.key, seen.value, { model: { id: "muse-spark-1.3" } }));
+  assert.deepEqual([done.claims, done.presence], [1, 0]); // the model joins the claim row
+  await task("cost-3");
+  const fresh = await measured(() => claim(ben.key, FRA, "ben"));
+  assert.deepEqual([fresh.claims, fresh.presence], [3, 3]); // a worker's first time through this data center
+  t.diagnostic(`rows written: claim ${seen.total} (map ${seen.claims}), new place ${fresh.total} (map ${fresh.claims + fresh.presence}), heartbeat ${beat.total} (map 0), submit ${done.total} (map ${done.claims})`);
 });
 
 test("private Tasks stay off the map", async () => {

@@ -35,7 +35,9 @@ export const CACHE_SECONDS = 30;
 export const WORKER_LABELS = Object.freeze({ volunteer: "a volunteer's AI", dedicated: "a dedicated worker run by ta-amps" });
 export const NO_EDGE = Object.freeze({ colo: null, country: null, continent: null });
 const RETAIN_SECONDS = WINDOWS["24h"] + 3600;
-const PRESENCE_REFRESH_SECONDS = 120; // a worker's "last seen" moves at most this often
+// A worker's "last seen" moves at most this often. Each move is 2 rows written; 600 s is under the smallest
+// window (15 minutes), so a worker that keeps working always counts in every window.
+const PRESENCE_REFRESH_SECONDS = 600;
 const PRUNE_EVERY_SECONDS = 60;
 const MAX_ROWS = 50000; // rows one view reads at most, whatever the traffic
 const NO_MODEL = "-"; // the report said the work used no model
@@ -47,8 +49,10 @@ const CHECK_KIND = /(?:^|[_.-])(?:review|verify)$|^verify/;
 const CONTINENT_SET = new Set(CONTINENTS);
 const enc = new TextEncoder();
 
+// seq is the rowid: it only orders claims made in the same instant and is never shown, so it has no
+// AUTOINCREMENT, whose sequence row would cost one more row written per claim.
 export const EDGE_DDL = [
-  `CREATE TABLE IF NOT EXISTS edge_claims (seq INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL NOT NULL, task_id TEXT NOT NULL, fencing_token INTEGER NOT NULL, claim_class TEXT NOT NULL, model TEXT, colo TEXT, country TEXT, continent TEXT, worker_kind TEXT NOT NULL, worker_tag TEXT NOT NULL, shown INTEGER NOT NULL DEFAULT 1)`,
+  `CREATE TABLE IF NOT EXISTS edge_claims (seq INTEGER PRIMARY KEY, ts REAL NOT NULL, task_id TEXT NOT NULL, fencing_token INTEGER NOT NULL, claim_class TEXT NOT NULL, model TEXT, colo TEXT, country TEXT, continent TEXT, worker_kind TEXT NOT NULL, worker_tag TEXT NOT NULL, shown INTEGER NOT NULL DEFAULT 1)`,
   `CREATE INDEX IF NOT EXISTS edge_claims_ts ON edge_claims (ts)`,
   `CREATE INDEX IF NOT EXISTS edge_claims_attempt ON edge_claims (task_id, fencing_token)`,
   `CREATE TABLE IF NOT EXISTS edge_presence (worker_tag TEXT NOT NULL, colo TEXT NOT NULL, continent TEXT NOT NULL, worker_kind TEXT NOT NULL, last_ts REAL NOT NULL, PRIMARY KEY (worker_tag, colo, continent, worker_kind))`,
@@ -112,6 +116,13 @@ export function classOf(c, task, grant) {
 // Only the shared namespace's coordinator keeps the projection, in two tables it knows from its schema scan.
 function edgeTables(c) {
   return Boolean(c.schemaNames?.has("edge_claims") && c.schemaNames?.has("edge_presence"));
+}
+
+// Whether a table exists, from the schema names the coordinator reads once per instance (_ensureSchema, then
+// _ensureDdl adds what it creates). _tableExists scans every row of sqlite_master (81 today) on each call,
+// which made four or five such scans most of a view's rows read.
+function hasTable(c, name) {
+  return c.schemaNames ? c.schemaNames.has(name) : c._tableExists(name);
 }
 
 // Who is connecting, for the projection: the kind of worker, whether it asked to be left off the map, and a
@@ -218,7 +229,7 @@ export function recordModel(c, taskId, token, report) {
 export function catalogModels(c, env = {}) {
   const spec = String(env?.MODEL_CATALOG || "");
   const slash = spec.indexOf("/");
-  if (slash < 1 || !c._tableExists("record_heads")) return new Set();
+  if (slash < 1 || !hasTable(c, "record_heads")) return new Set();
   const row = c._one(
     "SELECT r.value FROM record_heads h JOIN records r ON r.namespace = h.namespace AND r.store = h.store AND r.key = h.key AND r.version = h.version WHERE h.namespace = 'main' AND h.store = ? AND h.key = ?",
     spec.slice(0, slash), spec.slice(slash + 1)
@@ -272,7 +283,7 @@ const emptyAggregate = (name, seconds, now) => ({
 function loadAggregate(c, name, { allowed, banned, now }) {
   const seconds = WINDOWS[name];
   const out = emptyAggregate(name, seconds, now);
-  if (!c._tableExists("edge_claims") || !c._tableExists("edge_presence")) return out;
+  if (!hasTable(c, "edge_claims") || !hasTable(c, "edge_presence")) return out;
   const since = now - seconds;
   const claims = c._all("SELECT ts, claim_class, model, colo, continent, worker_kind, worker_tag, shown FROM edge_claims WHERE ts >= ? ORDER BY ts DESC, seq DESC LIMIT ?", since, MAX_AGGREGATE_ROWS);
   const shownClaims = claims.filter((r) => r.shown);
@@ -340,13 +351,13 @@ function claimRow(r, placeOf, allowed, banned) {
 // The light parts: the last claims of the window, and the last hour's, oldest first. At most FEED_SIZE and
 // REPLAY_ROWS rows are read, whatever the traffic.
 function lastClaims(c, placeOf, { allowed, banned }, since) {
-  if (!c._tableExists("edge_claims")) return [];
+  if (!hasTable(c, "edge_claims")) return [];
   return c._all("SELECT ts, claim_class, model, colo, continent, worker_kind FROM edge_claims WHERE ts >= ? AND shown = 1 ORDER BY ts DESC, seq DESC LIMIT ?", since, FEED_SIZE)
     .map((r) => claimRow(r, placeOf, allowed, banned));
 }
 
 function replayClaims(c, placeOf, { allowed, banned }, now) {
-  if (!c._tableExists("edge_claims")) return [];
+  if (!hasTable(c, "edge_claims")) return [];
   return c._all("SELECT ts, claim_class, model, colo, continent, worker_kind FROM edge_claims WHERE ts >= ? AND shown = 1 ORDER BY ts DESC, seq DESC LIMIT ?", now - REPLAY_SECONDS, REPLAY_ROWS)
     .reverse().map((r) => claimRow(r, placeOf, allowed, banned));
 }
