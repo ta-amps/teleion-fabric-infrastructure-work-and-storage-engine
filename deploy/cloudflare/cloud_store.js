@@ -1,5 +1,5 @@
 import { initExecutions, checkedReport, prepareExecution, validatePrepared, captureExecution, recallExecution, getExecution, listExecutions } from "./cloud_executions.js";
-import { activityMap, catalogModels, cleanEdge, edgeWorker, flushEdge, recordClaim, recordModel, recordPresence, withEdge } from "./edge_activity.js";
+import { NO_EDGE, activityMap, bannedTest, catalogModels, cleanEdge, edgeWorker, flushEdge, recordClaim, recordModel, recordPresence, showOnMapLabel, withEdge } from "./edge_activity.js";
 import { initAccess, principalMetadata, requestIdentity, mintAnonymous, mintRequester, seedDemo, ensureDemoSeeded, ensureRequesterSeeded, enforceAccess, chargeAccess, claimCaps, checkClaimCaps, chargeClaimCaps, audit, auditMode, countAccess, ownAudit, publicActivity, publicPrincipal, requesterVerbGovernance, CLOSED_TO_ANONYMOUS, filesRequests, openToAnonymous, usesOpenVerbs } from "./cloud_access.js";
 // TesseraCoordinator: single-writer SQLite Durable Object (`new_sqlite_classes`) implementing
 // 100% of Tessera Spec v0.2 (queues, 5 verbs, dependencies, waves, park/resume, model jobs,
@@ -1630,6 +1630,7 @@ export class TesseraCoordinator extends DurableObject {
           : [...EFFECTS];
       const scopes = Array.isArray(body.scopes) ? body.scopes.map(String) : [];
       const days = body.days == null ? 14.0 : Number(body.days);
+      const mapLabels = showOnMapLabel(body.show_on_map); // a worker that leaves the map keeps no place, from its first claim
       if (!label) throw badReq("label is required");
       if (!queues.length) throw badReq("a key needs at least one queue pattern");
       if (effect_classes.includes("public")) throw badReq("no key may hold the public effect class");
@@ -1674,7 +1675,7 @@ export class TesseraCoordinator extends DurableObject {
         this._event("key_issued", now, {
           detail: { key_id: keyId, label, queues, scopes },
         });
-        this.ctx.storage.sql.exec("INSERT INTO access_principals(key_id,principal_kind,principal_id,account_id,namespace,key_prefix,labels,quota_tier,last_used_at,purge_at) VALUES (?,?,?,?,?,?,?,?,NULL,NULL)", keyId, scopes.some(s => s.startsWith("surface:")) ? "service_binding" : "keyed", keyId, String(body.account_id || issuer?.account_id || `operator:${keyId}`).slice(0,128), "main", keySecret.slice(0,8), "{}", "standard");
+        this.ctx.storage.sql.exec("INSERT INTO access_principals(key_id,principal_kind,principal_id,account_id,namespace,key_prefix,labels,quota_tier,last_used_at,purge_at) VALUES (?,?,?,?,?,?,?,?,NULL,NULL)", keyId, scopes.some(s => s.startsWith("surface:")) ? "service_binding" : "keyed", keyId, String(body.account_id || issuer?.account_id || `operator:${keyId}`).slice(0,128), "main", keySecret.slice(0,8), JSON.stringify(mapLabels), "standard");
         audit(this, issuer || { principal_kind: "service_binding", principal_id: "bootstrap" }, "mint_key", { key: keyId }, { ok: true, status: 201, data: {} }, body.access_meta || {});
       });
 
@@ -1956,7 +1957,11 @@ export class TesseraCoordinator extends DurableObject {
   }
   publicActivity() { return publicActivity(this); }
   // The aggregated activity map (edge_activity.js): a read of the shared namespace's projection only.
-  publicActivityMap(windowName) { this._ensureSchema(); this.namespace = "main"; this.isPrimary = true; return activityMap(this, windowName, catalogModels(this, this.env)); }
+  publicActivityMap(windowName, replay = false) {
+    this._ensureSchema(); this.namespace = "main"; this.isPrimary = true;
+    const scale = this.env.ACTIVITY_MEMO_SCALE === undefined ? 1 : Number(this.env.ACTIVITY_MEMO_SCALE);
+    return activityMap(this, windowName, { allowed: catalogModels(this, this.env), banned: bannedTest(this.env), replay, memo: this.edgeMemo || (this.edgeMemo = new Map()), scale });
+  }
   // The seed-pack library door (cloud_library.js). Attempts, writes and reads run in the primary
   // object; libraryInspect runs only in the separate library-checks instance and touches no storage.
   async libraryAttempt(secret, meta) { return attemptLibrary(this, secret, meta); }
@@ -2402,9 +2407,10 @@ export class TesseraCoordinator extends DurableObject {
           const effects = grant.effectFilter(args.effect_classes || null);
           const kinds = grant.kindFilter(args.kinds || null);
           let lease = null;
-          // Where Cloudflare received this claim, as the Worker read it from request.cf.
-          const edge = cleanEdge(args.access_meta?.edge);
+          // Where Cloudflare received this claim, as the Worker read it from request.cf; none for a worker that
+          // registered with show_on_map false.
           const who = await edgeWorker(this, grant);
+          const edge = who?.hidden ? NO_EDGE : cleanEdge(args.access_meta?.edge);
 
           // An anonymous session's claim limits are counted in the primary object: there in this
           // transaction, from a demo namespace once its lease is granted.
@@ -2465,7 +2471,7 @@ export class TesseraCoordinator extends DurableObject {
                 token,
                 detail: withEdge({ attempt }, edge),
               });
-              recordClaim(this, who, edge, row, token, now);
+              recordClaim(this, who, edge, row, token, now, grant);
               lease = {
                 namespace: this.namespace,
                 task_id: row.id,
@@ -2498,8 +2504,8 @@ export class TesseraCoordinator extends DurableObject {
           this._requireHolder(grant, taskId);
           let lease = null;
           let staleMsg = null;
-          const edge = cleanEdge(args.access_meta?.edge);
           const who = await edgeWorker(this, grant);
+          const edge = who?.hidden ? NO_EDGE : cleanEdge(args.access_meta?.edge);
           this.ctx.storage.transactionSync(() => {
             const now = Date.now() / 1000;
             const [row, stale] = this._liveLease(taskId, token, now);

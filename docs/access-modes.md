@@ -234,8 +234,8 @@ resource type, status and fixed demo labels. It omits resource/account/session
 identifiers and client labels. The portal uses this redacted endpoint.
 
 `GET /v1/public/activity/map` aggregates where workers connect (a Cloudflare data center, or its
-continent below two workers of the same kind) and which kinds of Tasks they claim, with no names, ids,
-addresses or coordinates. See [the activity map](activity-map.md).
+continent below two workers of the same kind) and whether the Tasks they claim are a nonprofit's, shared,
+checks or their own, with no names, ids, addresses or coordinates. See [the activity map](activity-map.md).
 
 `GET /v1/claims/{task_id}/events?after=<seq>&wait=15` provides authorized,
 bounded long-poll. `claim_events` offers the MCP counterpart. Event cursors are

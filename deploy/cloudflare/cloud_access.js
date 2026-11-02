@@ -2,6 +2,7 @@
 // Queue, lease and CAS operations remain in TesseraCoordinator.
 import { extractTags } from "./cloud_intelligence.js";
 import { sha256Hex, canonicalJson } from "./cloud_buckets.js";
+import { showOnMapLabel } from "./edge_activity.js";
 
 export const DEMO_QUOTAS = Object.freeze({
   session_seconds: 3600, retention_seconds: 86400, claims_per_hour: 20,
@@ -368,7 +369,7 @@ export async function mintAnonymous(c, body, meta) {
   const digest = await sha256Hex(new TextEncoder().encode(token));
   const id = `a_${crypto.randomUUID().replaceAll("-", "")}`;
   const namespace = `demo.${id}`;
-  const labels = { ...ANON_LABELS, agent_label: safeLabel(body.agent_label) };
+  const labels = { ...ANON_LABELS, agent_label: safeLabel(body.agent_label), ...showOnMapLabel(body.show_on_map) };
   const scopes = ["store", "nouns:read", "verbs:claim", "verbs:submit", "cas:write", `namespace:${namespace}`];
   const grant = { key_id: id, principal_id: id, session_id: id, principal_kind: "anonymous", account_id: null,
     namespace, labels, scopes, expires_at: now + DEMO_QUOTAS.session_seconds };

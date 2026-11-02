@@ -308,7 +308,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [src/tessera/store.py](src/tessera/store.py) | The in-process Tessera store: the reference implementation of SPEC.md. |
 | [src/tessera/testing.py](src/tessera/testing.py) | Factories the conformance suite loads by name (TESSERABACKENDFACTORY="module:function"). |
 
-## tests/ (79)
+## tests/ (80)
 
 | File | What it is |
 |---|---|
@@ -332,6 +332,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [tests/test_access_modes.py](tests/test_access_modes.py) | Full anonymous/keyed agent loops, durable limits and adversarial isolation. |
 | [tests/test_access_parity.py](tests/test_access_parity.py) | The access cases in tests/fixtures/accessparity.json, run against the Python service. |
 | [tests/test_agent_tool_listings.py](tests/test_agent_tool_listings.py) | Every agent-facing tool listing on the Python service matches what MCP tools/list serves. |
+| [tests/test_banned_text_var.py](tests/test_banned_text_var.py) | make deploy sets the BANNEDTEXT var from the one shared word list (rule 16). |
 | [tests/test_blob_first_uploader.py](tests/test_blob_first_uploader.py) | Raw blob governance is one row per namespace and digest, written by the first uploader. |
 | [tests/test_board.py](tests/test_board.py) | Console Board v2 (/board, L19), UI chrome, and agent discovery routes. |
 | [tests/test_body_limits.py](tests/test_body_limits.py) | Python bounds bodies as the Worker does, before authentication (H-60): 64 KiB for anonymous sessions, 16 MiB… |
