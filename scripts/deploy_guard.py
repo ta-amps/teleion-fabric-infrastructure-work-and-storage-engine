@@ -12,7 +12,9 @@
    - `always` patterns anywhere in a Worker source;
    - private names, by the sha256 of each lowercase letters-and-digits token (never printed);
    - agent-app names in served prose;
-   - `visible_text` patterns in served prose (human-readable string literals).
+   - `visible_text` patterns in served prose (human-readable string literals). SQL statements are code, not
+     prose, and are skipped; so are the generated access contract's titles (made from field names, which the
+     list allows as code): only its descriptions and summaries are read.
    VISIBLE_TEXT_GATE=report only counts the visible-text findings; any other value blocks.
 4. Ancestry: the live source commit is an ancestor of HEAD. It comes from LIVE_SOURCE_COMMIT, or from the
    shared deploy log through DEPLOY_LOCK (a path to deploy_lock.py), whose `live tessera` prints the last
@@ -45,6 +47,14 @@ DARK_SCHEME = re.compile(
 STRING = re.compile(r"`(?:\\.|[^\\`])*`|'(?:\\.|[^'\\\n])*'|\"(?:\\.|[^\"\\\n])*\"", re.S)
 PLACEHOLDER = re.compile(r"\$\{[^}]*\}|<code>.*?</code>|`[^`]*`|\{[a-z_]+\}")
 MARKUP = re.compile(r"<(script|style|code|pre)\b.*?</\1>|<[^>]+>", re.S | re.I)
+# An SQL statement as this code writes them: upper-case keywords in an SQL shape. Case-sensitive on purpose, so
+# prose such as "Create a queue" or "Update the record" is still read.
+SQL_STATEMENT = re.compile(
+    r"^\s*(?:SELECT\b[\s\S]*\bFROM\b|INSERT(?:\s+OR\s+[A-Z]+)?\s+INTO\b|CREATE\s+(?:UNIQUE\s+)?(?:TABLE|INDEX|VIEW|TRIGGER)\b"
+    r"|UPDATE\s+\w+\s+SET\b|DELETE\s+FROM\b|ALTER\s+TABLE\b|DROP\s+(?:TABLE|INDEX)\b|REPLACE\s+INTO\b"
+    r"|WITH\s+\w+(?:\([^)]*\))?\s+AS\s*\(|PRAGMA\s)"
+)
+OPENAPI = "access_openapi.json"
 
 
 def luminance(hex_color: str) -> float:
@@ -78,13 +88,34 @@ def light_problems(name: str, text: str) -> list[str]:
 
 
 def served_prose(text: str) -> str:
-    """Human-readable string literals with placeholders and markup removed."""
+    """Human-readable string literals with placeholders and markup removed; SQL statements are skipped."""
     out = []
     for m in STRING.finditer(text):
         body = m.group(0)[1:-1]
+        if SQL_STATEMENT.match(body):
+            continue
         if " " in body and re.search(r"[A-Za-z]{3,} [A-Za-z]{2,}", body):
             out.append(MARKUP.sub(" ", PLACEHOLDER.sub(" ", body)))
     return "\n".join(out)
+
+
+def openapi_prose(text: str) -> str:
+    """The generated access contract's prose: its descriptions and summaries, as served_prose reads them."""
+    found: list[str] = []
+
+    def walk(node: Any) -> None:
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if key in ("description", "summary") and isinstance(value, str):
+                    found.append(value)
+                else:
+                    walk(value)
+        elif isinstance(node, list):
+            for value in node:
+                walk(value)
+
+    walk(json.loads(text))
+    return served_prose("\n".join(json.dumps(value) for value in found))
 
 
 def load_banned(path: str) -> dict[str, Any]:
@@ -101,8 +132,11 @@ def load_banned(path: str) -> dict[str, Any]:
     }
 
 
-def banned_findings(name: str, text: str, banned: dict[str, Any]) -> dict[str, list[str]]:
-    """Findings by kind; a finding names the file and line or section, never the matched text."""
+def banned_findings(
+    name: str, text: str, banned: dict[str, Any], prose: str | None = None
+) -> dict[str, list[str]]:
+    """Findings by kind; a finding names the file and line or section, never the matched text. `prose` replaces
+    served_prose(text) for the visible-text and agent-app checks (the access contract's descriptions)."""
     found: dict[str, list[str]] = {"always": [], "private": [], "apps": [], "visible": []}
     for n, line in enumerate(text.splitlines(), 1):
         if any(p.search(line) for p in banned["always"]):
@@ -110,7 +144,7 @@ def banned_findings(name: str, text: str, banned: dict[str, Any]) -> dict[str, l
         tokens = re.findall(r"[a-z0-9]+", line.lower())
         if any(hashlib.sha256(t.encode()).hexdigest() in banned["private"] for t in tokens):
             found["private"].append(f"{name}:{n}")
-    prose = served_prose(text)
+    prose = served_prose(text) if prose is None else prose
     for kind in ("apps", "visible"):
         hits = sum(len(p.findall(prose)) for p in banned[kind])
         if hits:
@@ -166,7 +200,8 @@ def main() -> int:
         name = str(path.relative_to(ROOT))
         problems += light_problems(name, text)
         if banned is not None:
-            found = banned_findings(name, text, banned)
+            prose = openapi_prose(text) if path.name == OPENAPI else None
+            found = banned_findings(name, text, banned, prose)
             problems += [f"always: {f}" for f in found["always"]] + [
                 f"private name: {f}" for f in found["private"]
             ]
