@@ -50,7 +50,7 @@ import {
 export { TesseraCoordinator };
 
 const DEFAULT_ORIGIN = "https://tessera-fabric.fly.dev";
-const DEFAULT_PUBLIC_URL = "https://tessera.teleionlabs.com";
+const DEFAULT_PUBLIC_URL = "https://fabric.teleionlabs.com";
 const DEFAULT_REPO_URL = "https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine";
 const NAMESPACE_RE = /^[a-z0-9][a-z0-9_.-]{0,63}$/;
 const SHA256_RE = /^[0-9a-f]{64}$/;
@@ -331,7 +331,7 @@ async function proxyToOrigin(request, env) {
       redirect: "manual",
     });
   } catch {
-    return problem(502, "unavailable", "The Tessera origin service did not answer.");
+    return problem(502, "unavailable", "The Teleion Fabric origin service did not answer.");
   }
   return withSecurity(upstream, { isWrite: !isRead, noStore: !isRead });
 }
@@ -1634,7 +1634,7 @@ const onboardingApplication = {
   scheduled: worker.scheduled,
   async fetch(request, env, ctx) {
     const requestId = /^[a-zA-Z0-9._:-]{1,100}$/.test(request.headers.get("x-request-id") || "") ? request.headers.get("x-request-id") : crypto.randomUUID();
-    const headers = { "access-control-allow-origin": "*", "access-control-allow-methods": "GET, HEAD, POST, PUT, DELETE, OPTIONS", "access-control-allow-headers": "Authorization, Content-Type, If-Match, X-Request-Id, X-Agent-Label, Idempotency-Key, X-Namespace, X-Tessera-Namespace, X-Surface-Id, MCP-Protocol-Version, MCP-Session-Id", "access-control-expose-headers": "ETag, Retry-After, X-Request-Id, MCP-Session-Id, Age", "x-request-id": requestId, "cache-control": "no-store" };
+    const headers = { "access-control-allow-origin": "*", "access-control-allow-methods": "GET, HEAD, POST, PUT, DELETE, OPTIONS", "access-control-allow-headers": "Authorization, Content-Type, If-Match, X-Request-Id, X-Agent-Label, Idempotency-Key, X-Namespace, X-Teleion Fabric-Namespace, X-Surface-Id, MCP-Protocol-Version, MCP-Session-Id", "access-control-expose-headers": "ETag, Retry-After, X-Request-Id, MCP-Session-Id, Age", "x-request-id": requestId, "cache-control": "no-store" };
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers });
     try {
       // A broken percent escape (H-54) or a control character (H-65) anywhere in the path is

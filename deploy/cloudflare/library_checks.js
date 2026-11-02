@@ -193,7 +193,7 @@ export function screenStrings(value, rootPath, findings, budget = { chars: 0, st
 function checkNoun(n, where, findings) {
   if (!isObj(n)) return finding(findings, "schema", where, "a noun is a JSON object");
   if (!(typeof n.slug === "string" && SLUG_RE.test(n.slug) && n.slug.length <= 80)) finding(findings, "schema", `${where}.slug`, "lowercase words joined by hyphens or dots, at most 80 characters");
-  if (!(typeof n.category === "string" && Object.hasOwn(NOUN_CATEGORIES, n.category))) finding(findings, "schema", `${where}.category`, "a registered Tessera noun category (GET /v1/categories)");
+  if (!(typeof n.category === "string" && Object.hasOwn(NOUN_CATEGORIES, n.category))) finding(findings, "schema", `${where}.category`, "a registered Teleion Fabric noun category (GET /v1/categories)");
   if (!text(n.title, 400)) finding(findings, "schema", `${where}.title`, "a title of 1 to 400 characters");
   if (lookAlikeTitle(n.title)) finding(findings, "look_alike", `${where}.title`, "a word in the title mixes Latin, Cyrillic or Greek letters; write each word in one script");
   if (n.role !== undefined && !text(n.role, 64)) finding(findings, "schema", `${where}.role`, "a role of 1 to 64 characters");
@@ -203,7 +203,7 @@ function checkNoun(n, where, findings) {
 function checkVerb(v, where, findings) {
   if (!isObj(v)) return finding(findings, "schema", where, "a verb template is a JSON object");
   if (!(typeof v.slug === "string" && SLUG_RE.test(v.slug) && v.slug.length <= 80)) finding(findings, "schema", `${where}.slug`, "lowercase words joined by hyphens or dots, at most 80 characters");
-  if (!(typeof v.kind === "string" && Object.hasOwn(VERB_CATEGORIES, v.kind))) finding(findings, "schema", `${where}.kind`, "a registered Tessera verb category (GET /v1/categories)");
+  if (!(typeof v.kind === "string" && Object.hasOwn(VERB_CATEGORIES, v.kind))) finding(findings, "schema", `${where}.kind`, "a registered Teleion Fabric verb category (GET /v1/categories)");
   if (!text(v.title, 400)) finding(findings, "schema", `${where}.title`, "a title of 1 to 400 characters");
   if (lookAlikeTitle(v.title)) finding(findings, "look_alike", `${where}.title`, "a word in the title mixes Latin, Cyrillic or Greek letters; write each word in one script");
   for (const field of ["summary", "outcome"]) if (v[field] !== undefined && !text(v[field], 2000)) finding(findings, "schema", `${where}.${field}`, "1 to 2,000 characters");

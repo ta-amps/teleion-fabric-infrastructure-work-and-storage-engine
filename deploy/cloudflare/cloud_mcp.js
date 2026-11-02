@@ -9,7 +9,7 @@ import { TESSERA_VERSION } from "./cloud_pages.js";
 import { loadCloudBlob, mirrorBucketObjectToD1, storeCloudBlob } from "./cloud_buckets.js";
 
 const INSTRUCTIONS =
-  "Tessera organizes shared agent work into atomic verbs (leased tasks) and atomic nouns " +
+  "Teleion Fabric organizes shared agent work into atomic verbs (leased tasks) and atomic nouns " +
   "(queryable compare-and-set records and persistent cloud file buckets). Claim one task, " +
   "heartbeat while you work, read or enrich nouns and bucket files with expected_version, " +
   "enqueue or split bounded follow-on verbs when needed, and submit once with an idempotency key. " +
@@ -864,7 +864,7 @@ export async function handleMcpRequest(
         result: {
           protocolVersion: params?.protocolVersion || "2025-06-18",
           capabilities: { tools: { listChanged: false } },
-          serverInfo: { name: "tessera", title: "Tessera work fabric", version: TESSERA_VERSION },
+          serverInfo: { name: "tessera", title: "Teleion Fabric work fabric", version: TESSERA_VERSION },
           instructions: INSTRUCTIONS,
         },
       };

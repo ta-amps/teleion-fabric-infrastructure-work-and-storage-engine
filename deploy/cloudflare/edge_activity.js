@@ -365,7 +365,7 @@ const MAX_AGGREGATE_ROWS = 20000; // claims one aggregate reads at most, whateve
 const emptyAggregate = (name, seconds, now) => ({
   rows: 0,
   view: {
-    service: "Tessera", window: name, window_seconds: seconds, as_of: Math.round(now * 1000) / 1000,
+    service: "Teleion Fabric", window: name, window_seconds: seconds, as_of: Math.round(now * 1000) / 1000,
     min_workers: MIN_WORKERS, places: [], recent: [], totals: { claims: 0, workers: 0, places: 0, continents: 0, by_class: {} },
     shows: "The Cloudflare data center each claim came through, by its airport code, only when another worker of the same kind had come through it in the 15 minutes before the claim, and otherwise its continent; whether each Task claimed was a nonprofit's, a shared one, a check or a worker's own; the model the worker reported; whether the worker is a volunteer's AI or a dedicated worker run by ta-amps; counts of claims and of distinct workers. A worker that set show_on_map to false is counted in the totals and appears nowhere else.",
     never_shows: "Countries, IP addresses, cities, coordinates, network names, user agents, worker names, ids, keys, Task ids or what a Task says.",

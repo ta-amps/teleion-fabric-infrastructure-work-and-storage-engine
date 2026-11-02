@@ -52,7 +52,7 @@
     "VOLUNTEER_WORKER_ACCOUNTS": "eranos-volunteer,eranos-volunteer-*",
     "MODEL_CATALOG": "eranos.instructions/models.meta",
     "PUBLIC_ACTIVITY_PER_MINUTE": "60",
-    "PUBLIC_URL": "https://tessera.teleionlabs.com",
+    "PUBLIC_URL": "https://fabric.teleionlabs.com",
     "REPO_URL": "https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine",
     "ORIGIN": "https://tessera-fabric.fly.dev"
   },

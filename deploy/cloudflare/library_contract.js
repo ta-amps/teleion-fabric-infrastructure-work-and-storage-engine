@@ -80,7 +80,7 @@ export function libraryDescription(url, enabled, anonymousEnabled = false, budge
     review_output: { schema: REVIEW_SCHEMA, fields: ["proposal_id", "item_sha256", "reviewer_key_id", "approved", "reasons", "checks"] },
     guarantees: [
       "Proposing runs nothing, activates nothing and admits nothing.",
-      "Submitted code is stored as text and never executed by Tessera.",
+      "Submitted code is stored as text and never executed by Teleion Fabric.",
       "Only an approving library.review verb completed by a different principal admits items to library.catalog.",
       "A rejected proposal keeps its propose and review receipts.",
     ],
@@ -94,7 +94,7 @@ export function renderA2aCard(url, repoUrl, env = {}) {
   const json = ["application/json"];
   return {
     protocolVersion: "0.3.0",
-    name: "Tessera seed-pack library door",
+    name: "Teleion Fabric seed-pack library door",
     description: "Submit seed packs, task objects (nouns) and task templates (verbs) to the seed-pack library, one message at a time. Each submission becomes a propose verb with a SHA-256 receipt and a review verb that a different reviewer claims. Submitting executes, activates and admits nothing.",
     url: `${url}/a2a`,
     preferredTransport: "JSONRPC",
