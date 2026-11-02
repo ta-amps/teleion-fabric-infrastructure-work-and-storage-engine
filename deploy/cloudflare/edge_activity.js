@@ -131,13 +131,36 @@ function hasTable(c, name) {
 export async function edgeWorker(c, grant) {
   c.edgePending = [];
   if (!c.isPrimary || c.namespace !== "main") return null;
-  if (!c.edgeTagKey) {
-    const salt = c._one("SELECT value FROM meta WHERE key='access_hash_salt'")?.value || "";
-    c.edgeTagKey = await crypto.subtle.importKey("raw", enc.encode(`edge-activity:${salt}`), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  try {
+    if (!c.edgeTagKey) {
+      const salt = c._one("SELECT value FROM meta WHERE key='access_hash_salt'")?.value || "";
+      c.edgeTagKey = await crypto.subtle.importKey("raw", enc.encode(`edge-activity:${salt}`), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+    }
+    const mac = new Uint8Array(await crypto.subtle.sign("HMAC", c.edgeTagKey, enc.encode(String(grant.principal_id || grant.key_id))));
+    const tag = Array.from(mac.slice(0, 12), (b) => b.toString(16).padStart(2, "0")).join("");
+    return { tag, kind: workerKind(grant, c.env), hidden: grant.labels?.show_on_map === false };
+  } catch {
+    failed(c);
+    return null; // this request is left off the map
   }
-  const mac = new Uint8Array(await crypto.subtle.sign("HMAC", c.edgeTagKey, enc.encode(String(grant.principal_id || grant.key_id))));
-  const tag = Array.from(mac.slice(0, 12), (b) => b.toString(16).padStart(2, "0")).join("");
-  return { tag, kind: workerKind(grant, c.env), hidden: grant.labels?.show_on_map === false };
+}
+
+// A map write never changes the claim, heartbeat or submit it rides on. Inside their transactions a failed
+// statement is undone on its own (SQLite statement atomicity) and the request goes on; after a claim has
+// committed, a failed first write is dropped. Failures are counted on the object (edgeFailures) and never
+// logged with any value.
+function failed(c) {
+  c.edgeFailures = (c.edgeFailures || 0) + 1;
+}
+
+function quietly(c, write) {
+  try {
+    write();
+    return true;
+  } catch {
+    failed(c);
+    return false;
+  }
 }
 
 function prune(c, now) {
@@ -177,12 +200,12 @@ function record(c, item) {
 
 // Inside the heartbeat's transaction: the worker was seen through this data center now.
 export function recordPresence(c, who, edge, task, now) {
-  if (who && !who.hidden && mapped(task)) record(c, { who, edge, now });
+  if (who && !who.hidden && mapped(task)) quietly(c, () => record(c, { who, edge, now }));
 }
 
 // Inside the claim's transaction: one row for the claim, and the worker seen.
 export function recordClaim(c, who, edge, task, token, now, grant) {
-  if (who && mapped(task)) record(c, { who, edge, now, task_id: task.id, token, claim_class: classOf(c, task, grant) });
+  if (who && mapped(task)) quietly(c, () => record(c, { who, edge, now, task_id: task.id, token, claim_class: classOf(c, task, grant) }));
 }
 
 // Right after a claim or heartbeat committed, before any await. Only the first rows an object records
@@ -192,9 +215,9 @@ export function flushEdge(c) {
   const items = c.edgePending || [];
   c.edgePending = [];
   if (!items.length) return;
-  if (!edgeTables(c)) c._observe(() => c._ensureDdl(EDGE_DDL));
+  if (!edgeTables(c)) quietly(c, () => c._ensureDdl(EDGE_DDL));
   if (!edgeTables(c)) return;
-  c._observe(() => c.ctx.storage.transactionSync(() => {
+  quietly(c, () => c.ctx.storage.transactionSync(() => {
     for (const item of items) {
       if (!item.who.hidden) writeSeen(c, item);
       if (item.task_id) writeClaim(c, item);
@@ -215,7 +238,7 @@ export function reportedModel(report) {
 export function recordModel(c, taskId, token, report) {
   const model = reportedModel(report);
   if (model == null || !c.isPrimary || c.namespace !== "main" || !edgeTables(c)) return;
-  c.ctx.storage.sql.exec("UPDATE edge_claims SET model = ? WHERE task_id = ? AND fencing_token = ?", model, taskId, token);
+  quietly(c, () => c.ctx.storage.sql.exec("UPDATE edge_claims SET model = ? WHERE task_id = ? AND fencing_token = ?", model, taskId, token));
 }
 
 // Rule 16: the values workers and producers contribute to the view (the model ids reports name) pass the

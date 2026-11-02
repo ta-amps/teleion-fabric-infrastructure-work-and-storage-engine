@@ -23,6 +23,14 @@ export class FixtureCoordinator extends TesseraCoordinator {
     this.rowLog = null;
     sql.exec = (query, ...args) => { const cursor = exec(query, ...args); if (this.rowLog) this.rowLog.push([query, cursor]); return cursor; };
   }
+  // Test-only: make the map's writes fail, to show they never fail the request they ride on.
+  _ensureDdl(statements) {
+    if (this.failMapDdl && statements.some((stmt) => /edge_claims/.test(stmt))) throw new Error("example: the map's tables cannot be made");
+    return super._ensureDdl(statements);
+  }
+  testFailMapDdl(on) { this.failMapDdl = on; }
+  testBreakMap() { this.ctx.storage.sql.exec("DROP TABLE IF EXISTS edge_claims"); this.ctx.storage.sql.exec("DROP TABLE IF EXISTS edge_presence"); }
+  testEdgeFailures() { return this.edgeFailures || 0; }
   testRowsStart() { this.rowLog = []; }
   testRowsStop() { const out = (this.rowLog || []).map(([query, cursor]) => [query, cursor.rowsWritten]); this.rowLog = null; return out; }
   // Test-only: count the Worker's reads of the aggregated view, and show the projection's rows.
@@ -319,6 +327,36 @@ test("the map adds 3 rows written to a claim, 3 more for a new place, none to a 
   const fresh = await measured(() => claim(ben.key, FRA, "ben"));
   assert.deepEqual([fresh.claims, fresh.presence], [3, 3]); // a worker's first time through this data center
   t.diagnostic(`rows written: claim ${seen.total} (map ${seen.claims}), new place ${fresh.total} (map ${fresh.claims + fresh.presence}), heartbeat ${beat.total} (map 0), submit ${done.total} (map ${done.claims})`);
+});
+
+test("a failed map write never changes a claim, heartbeat or submit", async () => {
+  const { task, key, claim, submit, request, primary, events } = await setup();
+  const ana = await key("example-ops-ana", "example-ops");
+  // The first claim after a deploy cannot make the map's tables: the claim still succeeds, off the map.
+  await primary.testFailMapDdl(true);
+  await task("iso-1");
+  const first = await claim(ana.key, FRA, "ana");
+  assert.equal(first.task_id, "iso-1");
+  await submit(ana.key, first, { model: { id: "muse-spark-1.3" } });
+  assert.equal(await primary.testHasEdgeTables(), false);
+  assert.ok((await primary.testEdgeFailures()) >= 1);
+  // The tables exist, then go missing behind the coordinator's back: every map write now fails inside the
+  // claim's, the heartbeat's and the submit's own transaction, and each request still succeeds in full.
+  await primary.testFailMapDdl(false);
+  await task("iso-2");
+  await submit(ana.key, await claim(ana.key, FRA, "ana"));
+  assert.equal(await primary.testHasEdgeTables(), true);
+  await primary.testBreakMap();
+  const before = await primary.testEdgeFailures();
+  await task("iso-3");
+  const lease = await claim(ana.key, FRA, "ana");
+  assert.equal(lease.task_id, "iso-3");
+  const beat = await request("/v1/tasks/heartbeat", { body: { task_id: lease.task_id, fencing_token: lease.fencing_token }, token: ana.key, cf: FRA });
+  assert.equal(beat.status, 200, JSON.stringify(beat.data));
+  await submit(ana.key, lease, { model: { id: "muse-spark-1.3" } });
+  assert.ok((await primary.testEdgeFailures()) >= before + 3, "the claim's, heartbeat's and submit's map writes each failed");
+  const log = await events();
+  for (const type of ["claimed", "heartbeat", "submitted"]) assert.ok(log.some((e) => e.type === type && e.task_id === "iso-3"), type);
 });
 
 test("private Tasks stay off the map", async () => {

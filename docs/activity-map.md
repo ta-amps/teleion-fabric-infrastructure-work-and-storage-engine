@@ -83,6 +83,13 @@ whichever isolate. `ACTIVITY_MEMO_SCALE` multiplies those times (0 turns the cac
 window with no claims is never kept, so reading a quiet map is free and the first claim shows at once. The counts
 of a busy window can therefore lag by up to those times; the feed lags by 15 s.
 
+## Failure isolation
+
+A map write never changes the claim, heartbeat or submit it rides on. Inside their transactions a failed
+statement is undone on its own and the request goes on; after a claim has committed, a failed first write
+(the tables, then the first rows) is dropped. The request is then simply not on the map. Failures are counted
+on the object and never logged with a value.
+
 ## Rows it costs
 
 Measured in local workerd (Miniflare) by summing each SQL cursor's `rowsWritten` and `rowsRead` in the
@@ -112,4 +119,5 @@ schema names, read once per instance; a `sqlite_master` lookup per table read 81
 
 `tests/workerd_activity_map.mjs` checks the client cannot name a place, the two-worker threshold, the four
 classes, show_on_map, that private Tasks stay off, that no identifying field or value appears, the models and
-the banned-list mask, the rows written per claim, heartbeat and submit, replay, and the headers, cache and limit.
+the banned-list mask, the rows written per claim, heartbeat and submit, that a failed map write fails no
+request, replay, and the headers, cache and limit.
