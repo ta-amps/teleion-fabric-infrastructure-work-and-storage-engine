@@ -694,7 +694,7 @@ test("the last hour can be replayed, oldest first", async () => {
 });
 
 test("the route is GET only, cached, open to other sites and limited per address", async () => {
-  const { map, request, primary, task, key, claim } = await setup({ PUBLIC_ACTIVITY_PER_MINUTE: "3" });
+  const { map, request, primary, task, key, claim } = await setup({ PUBLIC_ACTIVITY_PER_MINUTE: "3", STRICT_AUTH_AND_QUOTAS: "true" });
   await task("research-1");
   const ana = await key("example-volunteer-ana", "volunteer-ana");
   await claim(ana.key, FRA, "ana-1");

@@ -16,6 +16,41 @@ export const DEMO_QUOTAS = Object.freeze({
 // stay closed whatever their tags say.
 export const OPEN_VERB_TAG = "open:anonymous";
 export const OPEN_VERB_NAMESPACE = "main";
+export const MAX_IDEMPOTENCY_KEY = 256;
+export const FREE_OPEN_UNTIL_ISO = "2026-12-31T23:59:59-05:00";
+export const FREE_OPEN_UNTIL_UTC_DEFAULT = "2027-01-01T04:59:59Z";
+export const CANONICAL_FABRIC_URL = "https://fabric.teleionlabs.com";
+export const WORKING_FABRIC_ALIASES = Object.freeze(["https://tessera.teleionlabs.com"]);
+const OPEN_SLUG_MAX = 48;
+export function strictAuthAndQuotas(env = {}, coordinator = null) {
+  return coordinator?._strictAuthAndQuotas === true || String(env?.STRICT_AUTH_AND_QUOTAS || "").trim().toLowerCase() === "true";
+}
+export function openFreeDeadlineMs(env = {}) {
+  const parsed = Date.parse(String(env?.FREE_OPEN_UNTIL_UTC || FREE_OPEN_UNTIL_UTC_DEFAULT));
+  return Number.isFinite(parsed) ? parsed : Date.parse(FREE_OPEN_UNTIL_UTC_DEFAULT);
+}
+export function isOpenFreeWindow(env = {}, nowMs = Date.now(), coordinator = null) {
+  return !strictAuthAndQuotas(env, coordinator) && nowMs <= openFreeDeadlineMs(env);
+}
+export function openSlug(rawLabel) {
+  const clean = String(rawLabel || "").trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, OPEN_SLUG_MAX);
+  return clean || "open";
+}
+export function openGrantFor(env = {}, rawLabel = null, nowSeconds = Date.now() / 1000) {
+  const slug = openSlug(rawLabel);
+  const id = `o_${slug}`;
+  const namespace = `demo.${slug}`;
+  const label = rawLabel && String(rawLabel).trim() ? safeLabel(rawLabel) : "open-agent";
+  const labels = { ...ANON_LABELS, agent_label: label };
+  const scopes = ["store", "nouns:read", "verbs:claim", "verbs:submit", "cas:write", `namespace:${namespace}`];
+  const expiresAt = Math.max(nowSeconds + DEMO_QUOTAS.session_seconds, Math.floor(openFreeDeadlineMs(env) / 1000));
+  return {
+    key_id: id, principal_id: id, session_id: id, principal_kind: "anonymous", account_id: null,
+    namespace, key_prefix: "open", label, labels, quota_tier: "demo",
+    queues: ["demo.*"], kinds: ["*"], effect_classes: ["read", "write-internal"], scopes,
+    created_at: nowSeconds, expires_at: expiresAt, purge_at: expiresAt + DEMO_QUOTAS.retention_seconds, revoked_at: null,
+  };
+}
 export const CLOSED_TO_ANONYMOUS = new Set(["eq03", "frontier.review", "frontier.verify", "library.propose", "library.review"]);
 const OPEN_VERB_EFFECTS = new Set(["read", "write-internal"]);
 // Claim events would show other attempts on the verb, so they stay closed (same rule as Python).
@@ -71,8 +106,8 @@ export function requesterVerbGovernance(grant) {
   return { producer_surface: "surface:tessera", visibility_scope: "allowlist_surfaces", allowed_surfaces: [...REQUEST_SURFACES],
     target_cohorts: ["all"], tags: [...REQUESTER_VERB_TAGS], owner_key_id: grant.key_id };
 }
-const REQUESTER_OWN_ACTIONS = new Set(["putRecords", "getRecord", "listRecords", "recordHistory", "listStores", "stores", "searchNouns", "me", "my_audit"]);
-const REQUESTER_SHARED_ACTIONS = new Set(["enqueue", "task", "results", "claimEvents", "me", "my_audit"]);
+const REQUESTER_OWN_ACTIONS = new Set(["putRecords", "getRecord", "listRecords", "recordHistory", "listStores", "stores", "searchNouns", "me", "my_audit", "humanLinkIssue"]);
+const REQUESTER_SHARED_ACTIONS = new Set(["enqueue", "task", "results", "claimEvents", "me", "my_audit", "humanLinkIssue"]);
 export function filesRequests(grant, ns) {
   return grant?.principal_kind === "requester" && ns === OPEN_VERB_NAMESPACE && grant.namespace !== ns;
 }
@@ -170,6 +205,7 @@ const ANON_ACTIONS = new Set(["recallExecution", "getExecution", "listExecutions
   "verifyKey", "verifyStoreScope", "queues", "counts", "claim", "heartbeat", "submit",
   "cancel", "enqueue", "task", "results", "putRecords", "getRecord", "listRecords",
   "recordHistory", "listStores", "stores", "searchNouns", "claimEvents", "me", "listVerbs",
+  "humanLinkIssue",
 ]);
 const WRITE_ACTIONS = new Set(["putRecords", "enqueue", "submit"]);
 const SCOPES = { claim: "verbs:claim", heartbeat: "verbs:claim", cancel: "verbs:submit",
@@ -373,13 +409,14 @@ export async function mintAnonymous(c, body, meta) {
   const scopes = ["store", "nouns:read", "verbs:claim", "verbs:submit", "cas:write", `namespace:${namespace}`];
   const grant = { key_id: id, principal_id: id, session_id: id, principal_kind: "anonymous", account_id: null,
     namespace, labels, scopes, expires_at: now + DEMO_QUOTAS.session_seconds };
+  const enforceLimits = !isOpenFreeWindow(c.env, now * 1000, c);
   c.ctx.storage.transactionSync(() => {
     const window = Math.floor(now / 3600);
     for (const [subject, ceiling, paced, hour] of [[`mint:${meta.ip_hash || "unknown"}`, DEMO_QUOTAS.sessions_per_ip_hour, false, meta.ip_window ?? window], ["mint:global", GLOBAL_SESSIONS_PER_HOUR, true, window]]) {
       c.ctx.storage.sql.exec("INSERT OR IGNORE INTO access_limits(subject,window) VALUES (?,?)", subject, hour);
       const used = c._one("SELECT requests FROM access_limits WHERE subject=? AND window=?", subject, hour);
       const pace = paced ? mintAllowance(ceiling, now % 3600) : null;
-      if (used.requests >= (pace ? pace.allowed : ceiling)) throw error(429, "rate_limited", "anonymous session mint quota exceeded", { retry_after: pace ? pace.nextIn(used.requests) : 3600 - now % 3600 });
+      if (enforceLimits && used.requests >= (pace ? pace.allowed : ceiling)) throw error(429, "rate_limited", "anonymous session mint quota exceeded", { retry_after: pace ? pace.nextIn(used.requests) : 3600 - now % 3600 });
       c.ctx.storage.sql.exec("UPDATE access_limits SET requests=requests+1 WHERE subject=? AND window=?", subject, hour);
     }
     c.ctx.storage.sql.exec("INSERT INTO keys(key_id,key_hash,label,queues,kinds,effect_classes,scopes,created_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?)",
@@ -406,13 +443,14 @@ export async function mintRequester(c, body, meta) {
   const scopes = ["nouns:read", "cas:write", "verbs:submit", `namespace:${namespace}`];
   const grant = { key_id: keyId, principal_id: principalId, session_id: null, principal_kind: "requester", account_id: `requester:${principalId}`,
     namespace, labels, scopes, queues: [REQUEST_QUEUE], kinds: [REQUEST_KIND], effect_classes: ["read", "write-internal"], expires_at: now + REQUESTER_QUOTAS.key_days * 86400 };
+  const enforceLimits = !isOpenFreeWindow(c.env, now * 1000, c);
   c.ctx.storage.transactionSync(() => {
     const window = Math.floor(now / 3600);
     for (const [subject, ceiling, paced, hour] of [[`signup:${meta.ip_hash || "unknown"}`, REQUESTER_QUOTAS.signups_per_ip_hour, false, meta.ip_window ?? window], ["signup:global", GLOBAL_SIGNUPS_PER_HOUR, true, window]]) {
       c.ctx.storage.sql.exec("INSERT OR IGNORE INTO access_limits(subject,window) VALUES (?,?)", subject, hour);
       const used = c._one("SELECT requests FROM access_limits WHERE subject=? AND window=?", subject, hour);
       const pace = paced ? mintAllowance(ceiling, now % 3600) : null;
-      if (used.requests >= (pace ? pace.allowed : ceiling)) throw error(429, "rate_limited", "requester sign-up quota exceeded", { retry_after: pace ? pace.nextIn(used.requests) : 3600 - now % 3600 });
+      if (enforceLimits && used.requests >= (pace ? pace.allowed : ceiling)) throw error(429, "rate_limited", "requester sign-up quota exceeded", { retry_after: pace ? pace.nextIn(used.requests) : 3600 - now % 3600 });
       c.ctx.storage.sql.exec("UPDATE access_limits SET requests=requests+1 WHERE subject=? AND window=?", subject, hour);
     }
     c.ctx.storage.sql.exec("INSERT INTO keys(key_id,key_hash,label,queues,kinds,effect_classes,scopes,created_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?)",
@@ -488,10 +526,14 @@ export async function ensureDemoSeeded(c, grant, ns) {
   c.demoSeeded = ns;
 }
 
+function utf8Bytes(value) {
+  return new TextEncoder().encode(String(value || "")).byteLength;
+}
+
 export function enforceAccess(c, grant, action, args) {
   const ns = args.namespace || "main";
-  const openVerbs = usesOpenVerbs(grant, ns);
-  if (!openVerbs && !filesRequests(grant, ns) && !namespaceAllowed(grant, ns)) throw error(403, "scope_denied", "this principal may not access this namespace");
+  const openVerbs = action !== "humanLinkIssue" && usesOpenVerbs(grant, ns);
+  if (action !== "humanLinkIssue" && !openVerbs && !filesRequests(grant, ns) && !namespaceAllowed(grant, ns)) throw error(403, "scope_denied", "this principal may not access this namespace");
   const fineScopes = grant.scopes.some(s => s.includes(":") && !s.startsWith("surface:") && !s.startsWith("namespace:"));
   const required = SCOPES[action] || (READ_ACTIONS.has(action) ? "nouns:read" : null);
   if (!grant.is_admin && fineScopes && required && !grant.scopes.includes(required)) throw error(403, "scope_denied", `missing ${required} scope`);
@@ -525,12 +567,13 @@ export function enforceAccess(c, grant, action, args) {
     if (!String(w.store).startsWith("demo.")) throw error(403, "scope_denied", "demo store required");
     return governed(w);
   });
-  const payload = storedPayload(action, args);
+  const linkIssue = action === "humanLinkIssue";
+  const payload = linkIssue ? "" : storedPayload(action, args);
   if (WRITE_ACTIONS.has(action) && (action === "submit" ? submissionHasPersonalData(payload, args.output) : hasPersonalData(payload)))
     throw error(400, "example_only", "demo payloads must not contain personal or payment data; use example.com");
-  const bytes = new TextEncoder().encode(payload).length;
+  const bytes = linkIssue ? utf8Bytes(args.text) + utf8Bytes(args.agent_note || "") : utf8Bytes(payload);
   if (bytes > DEMO_QUOTAS.request_bytes) throw error(413, "payload_too_large", "demo request exceeds byte limit");
-  const writing = WRITE_ACTIONS.has(action);
+  const writing = linkIssue || WRITE_ACTIONS.has(action);
   return [args, { kind: "anonymous", action, namespace: ns, ip_hash: args.access_meta?.ip_hash || null, ip_window: args.access_meta?.ip_window ?? null, bytes: writing ? bytes : 0, writing }];
 }
 
@@ -542,16 +585,18 @@ export function chargeAccess(c, who, charge, now = Date.now() / 1000) {
   const sql = c.ctx.storage.sql;
   const requester = charge.kind === "requester";
   const quotas = requester ? REQUESTER_QUOTAS : DEMO_QUOTAS;
+  const requestCost = charge.requests === undefined ? 1 : charge.requests;
+  const enforceLimits = !isOpenFreeWindow(c.env, now * 1000, c);
   c.ctx.storage.transactionSync(() => {
     sql.exec("INSERT OR IGNORE INTO access_limits(subject,window) VALUES (?,?)", who.key_id, window);
     const row = c._one("SELECT * FROM access_limits WHERE subject=? AND window=?", who.key_id, window);
     const total = c._one("SELECT COALESCE(SUM(bytes),0) n FROM access_limits WHERE subject=?", who.key_id).n;
     const filing = requester && charge.action === "enqueue";
     const filed = filing ? c._one("SELECT claims FROM access_limits WHERE subject=? AND window=?", `request:${who.key_id}`, window)?.claims || 0 : 0;
-    if (row.requests >= quotas.requests_per_hour || (charge.writing && total + charge.bytes > quotas.storage_bytes) || (filing && filed >= REQUESTER_QUOTAS.request_verbs_per_hour))
+    if (enforceLimits && ((requestCost > 0 && row.requests + requestCost > quotas.requests_per_hour) || (charge.writing && total + charge.bytes > quotas.storage_bytes) || (filing && filed >= REQUESTER_QUOTAS.request_verbs_per_hour)))
       throw error(429, "rate_limited", requester ? "requester quota exceeded" : "demo quota exceeded", { retry_after: Math.ceil(3600 - now % 3600) });
-    if (!requester && charge.action === "claim") checkClaimCaps(c, claimCaps(who, charge.namespace, charge.ip_hash, charge.ip_window), now);
-    sql.exec("UPDATE access_limits SET requests=requests+1,bytes=bytes+? WHERE subject=? AND window=?", charge.writing ? charge.bytes : 0, who.key_id, window);
+    if (enforceLimits && !requester && charge.action === "claim") checkClaimCaps(c, claimCaps(who, charge.namespace, charge.ip_hash, charge.ip_window), now);
+    sql.exec("UPDATE access_limits SET requests=requests+?,bytes=bytes+? WHERE subject=? AND window=?", requestCost, charge.writing ? charge.bytes : 0, who.key_id, window);
     if (filing) sql.exec("INSERT INTO access_limits(subject,window,claims) VALUES (?,?,1) ON CONFLICT(subject,window) DO UPDATE SET claims=claims+1", `request:${who.key_id}`, window);
   });
 }
@@ -566,6 +611,7 @@ export function claimCaps(who, ns, ipHash, ipWindow = null) {
   return caps;
 }
 export function checkClaimCaps(c, caps, now = Date.now() / 1000) {
+  if (isOpenFreeWindow(c.env, now * 1000, c)) return;
   for (const [subject, ceiling, refusal, hour] of caps)
     if ((c._one("SELECT claims FROM access_limits WHERE subject=? AND window=?", subject, hour ?? Math.floor(now / 3600))?.claims || 0) >= ceiling)
       throw error(429, "rate_limited", refusal, { retry_after: Math.ceil(3600 - now % 3600) });
@@ -598,10 +644,11 @@ function enforceRequester(c, grant, action, args, ns) {
     if (action === "putRecords") args.writes = (args.writes || []).map(w => ({ ...w, namespace: ns, producer_surface: "surface:tessera", owner_key_id: grant.key_id, visibility_scope: "private", allowed_surfaces: [], target_cohorts: ["all"],
       tags: [...(w.tags || []).filter(t => !/^(status|origin|untrusted|demo|open):/.test(t)).slice(0, 8), "origin:requester", "untrusted:true"] }));
   }
-  const writing = action === "putRecords" || action === "enqueue";
-  const payload = storedPayload(action, args);
-  if (writing && hasPersonalData(payload)) throw error(400, "example_only", "requests and nouns must not contain personal or payment data");
-  const bytes = new TextEncoder().encode(payload).length;
+  const linkIssue = action === "humanLinkIssue";
+  const writing = linkIssue || action === "putRecords" || action === "enqueue";
+  const payload = linkIssue ? "" : storedPayload(action, args);
+  if (!linkIssue && writing && hasPersonalData(payload)) throw error(400, "example_only", "requests and nouns must not contain personal or payment data");
+  const bytes = linkIssue ? utf8Bytes(args.text) + utf8Bytes(args.agent_note || "") : utf8Bytes(payload);
   if (bytes > REQUESTER_QUOTAS.request_bytes) throw error(413, "payload_too_large", "requester request exceeds byte limit");
   return [args, { kind: "requester", action, namespace: ns, bytes: writing ? bytes : 0, writing }];
 }

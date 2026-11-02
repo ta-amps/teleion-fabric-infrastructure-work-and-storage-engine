@@ -9,38 +9,63 @@ import { Miniflare, convertV4MiniflareOptions } from "miniflare";
 const runtimes = [];
 after(async () => { await Promise.all(runtimes.map((runtime) => runtime.dispose())); });
 const fixture = `
-export { default } from './deploy/cloudflare/worker.js';
+import app from './deploy/cloudflare/worker.js';
 import { TesseraCoordinator } from './deploy/cloudflare/cloud_store.js';
+export default {
+  ...app,
+  async fetch(request, env, ctx) {
+    if (new URL(request.url).pathname === '/__test_preflight') {
+      const res = await app.fetch(new Request('https://fabric.teleionlabs.com/v1/tasks', {
+        method: 'OPTIONS',
+        headers: { origin: 'https://teleionlabs.com', 'access-control-request-method': 'POST', 'access-control-request-headers': 'X-Tessera-Namespace, Idempotency-Key' },
+      }), env, ctx);
+      return Response.json({ status: res.status, headers: Object.fromEntries(res.headers) });
+    }
+    return app.fetch(request, env, ctx);
+  },
+};
 export class FixtureCoordinator extends TesseraCoordinator {
   testAge(id, seconds) { this.ctx.storage.sql.exec("UPDATE human_links SET expires_at = expires_at - ? WHERE id=?", seconds, id); }
   testRows() { return this._all("SELECT * FROM human_links"); }
   testEvents() { return this._all("SELECT * FROM access_events"); }
+  testSetUsage(subject, requests, bytes) {
+    const window = Math.floor(Date.now() / 3600000);
+    this.ctx.storage.sql.exec("DELETE FROM access_limits WHERE subject=?", subject);
+    this.ctx.storage.sql.exec("INSERT INTO access_limits(subject, window, requests, claims, bytes) VALUES (?, ?, ?, 0, ?)", subject, window, requests, bytes);
+  }
+  testUsage(subject) {
+    const window = Math.floor(Date.now() / 3600000);
+    const cur = this._one("SELECT requests, claims, bytes FROM access_limits WHERE subject=? AND window=?", subject, window) || { requests: 0, claims: 0, bytes: 0 };
+    const totalBytes = this._one("SELECT COALESCE(SUM(bytes), 0) AS n FROM access_limits WHERE subject=?", subject).n;
+    return { requests: Number(cur.requests), claims: Number(cur.claims), bytes: Number(totalBytes) };
+  }
 }
 `;
 const built = await build({ stdin: { contents: fixture, resolveDir: process.cwd(), sourcefile: "human-links-fixture.mjs" }, bundle: true, format: "esm", platform: "browser", write: false, external: ["cloudflare:workers"], loader: { ".json": "json" } });
 
-async function setup() {
+async function setup(extraBindings = {}) {
   const seen = [];
   const runtime = new Miniflare(convertV4MiniflareOptions({ cf: false, workers: [{
     name: "tessera", modules: true, script: built.outputFiles[0].text, compatibilityDate: "2026-10-01",
     durableObjects: { COORDINATOR: { className: "FixtureCoordinator", useSQLite: true } },
     d1Databases: ["FABRIC_DB", "BUCKETS_DB"],
-    bindings: { STORAGE_MODE: "cloud", ANONYMOUS_ACCESS_ENABLED: "true", FRAGILITY_PLANNER_ENABLED: "false", PUBLIC_URL: "https://tessera.teleionlabs.com" },
+    bindings: { STORAGE_MODE: "cloud", ANONYMOUS_ACCESS_ENABLED: "true", FRAGILITY_PLANNER_ENABLED: "false", PUBLIC_URL: "https://fabric.teleionlabs.com", ...extraBindings },
     outboundService: () => { throw new Error("External requests are prohibited in this fixture"); },
   }] }));
   runtimes.push(runtime);
   const worker = await runtime.getWorker("tessera");
   const call = (path, init = {}) => { seen.push(path); return worker.fetch("https://tessera.example" + path, init); };
   const json = (method, path, body, headers = {}) => call(path, { method, headers: { "content-type": "application/json", ...headers }, body: body === undefined ? undefined : JSON.stringify(body) });
-  const session = async (label = "build-bot") => (await (await json("POST", "/v1/session/anonymous", { agent_label: label })).json()).session_token;
+  const sessionInfo = async (label = "build-bot") => (await json("POST", "/v1/session/anonymous", { agent_label: label })).json();
+  const session = async (label = "build-bot") => (await sessionInfo(label)).session_token;
   const bearer = (token) => ({ authorization: `Bearer ${token}` });
-  const issue = async (token, body) => json("POST", "/v1/human-links", body, bearer(token));
+  const issue = async (token, body, extraHeaders = {}) => json("POST", "/v1/human-links", body, { ...bearer(token), ...extraHeaders });
   const read = (linkToken) => call("/v1/human-links/public", { headers: linkToken === null ? {} : { "x-human-link-token": linkToken } });
   const answer = (linkToken, body) => json("POST", "/v1/human-links/public", body, { "x-human-link-token": linkToken });
   const status = (token, id) => call(`/v1/human-links/${id}`, { headers: bearer(token) });
   const ns = await runtime.getDurableObjectNamespace("COORDINATOR");
   const primary = ns.get(ns.idFromName("primary"));
-  return { call, json, session, bearer, issue, read, answer, status, primary, seen };
+  return { call, json, sessionInfo, session, bearer, issue, read, answer, status, primary, seen };
 }
 const tokenOf = (url) => url.slice("https://teleionlabs.com/l/".length);
 const open = async (t, body = { kind: "confirm", text: "Add 40 Tasks to the queue harbor-tools?" }) => {
@@ -61,8 +86,8 @@ test("issuing returns a one-time address and defaults to ten minutes", async () 
   assert.ok(minutes > 9.5 && minutes <= 10, `about ten minutes, got ${minutes}`);
 });
 
-test("bad requests are refused: kind, empty or long text, long note, ttl out of range, no key", async () => {
-  const t = await setup();
+test("bad requests are refused: kind, empty or long text, long note, ttl out of range, no key in strict mode", async () => {
+  const t = await setup({ STRICT_AUTH_AND_QUOTAS: "true" });
   const agent = await t.session();
   for (const body of [{ kind: "other", text: "x" }, { kind: "confirm" }, { kind: "confirm", text: "   " }, { kind: "ask", text: "x".repeat(2001) },
     { kind: "ask", text: "x", agent_note: "y".repeat(201) }, { kind: "ask", text: "x", ttl_seconds: 59 }, { kind: "ask", text: "x", ttl_seconds: 86401 }, { kind: "ask", text: "x", ttl_seconds: 90.5 }]) {
@@ -164,7 +189,7 @@ test("cancel: only an open link; a link can't outlive the session that requested
 });
 
 test("only the issuer can read or cancel a link; everyone else gets 404", async () => {
-  const t = await setup();
+  const t = await setup({ STRICT_AUTH_AND_QUOTAS: "true" });
   const { link, token } = await open(t);
   const other = await t.session("someone-else");
   assert.equal((await t.status(other, link.id)).status, 404);
@@ -206,9 +231,242 @@ test("MCP tools request and read a link; discovery lists them on the canonical h
   const connect = await (await t.call("/connect.json")).text();
   assert.ok(connect.includes(instruction));
   assert.ok(!connect.includes("workers.dev"), "the connection file names the canonical host");
-  assert.ok(connect.includes("https://tessera.teleionlabs.com/v1/human-links"));
+  assert.ok(connect.includes("https://fabric.teleionlabs.com/v1/human-links"));
+  const connectObj = JSON.parse(connect);
+  assert.match(connectObj.human_links.ttl_seconds.visibility, /public link/i);
   const llms = await (await t.call("/llms.txt")).text();
   assert.ok(llms.includes(instruction) && llms.includes("request_human_link") && llms.includes("get_human_link"));
   const api = await (await t.call("/v1/openapi.json")).json();
   assert.ok(api.paths["/v1/human-links"].post && api.paths["/v1/human-links/public"].post && api.paths["/v1/human-links/{id}"].delete);
+});
+
+test("strict request cap 300 blocks new human-link creation with 429 while allowing status, cancel, confirm and ask answers on existing links", async () => {
+  const t = await setup({ STRICT_AUTH_AND_QUOTAS: "true" });
+  const info = await t.sessionInfo("cap-request-bot");
+  const token = info.session_token;
+  const principalId = info.principal_id;
+
+  const confirmRes = await t.issue(token, { kind: "confirm", text: "Approve batch?" });
+  assert.equal(confirmRes.status, 201);
+  const confirmLink = await confirmRes.json();
+
+  const cancelRes = await t.issue(token, { kind: "confirm", text: "Cancel this one?" });
+  assert.equal(cancelRes.status, 201);
+  const cancelLink = await cancelRes.json();
+
+  const askRes = await t.issue(token, { kind: "ask", text: "Provide label?" });
+  assert.equal(askRes.status, 201);
+  const askLink = await askRes.json();
+
+  const usageBefore = await t.primary.testUsage(principalId);
+  assert.equal(usageBefore.requests, 3);
+
+  await t.primary.testSetUsage(principalId, 300, usageBefore.bytes);
+  const blockedHttp = await t.issue(token, { kind: "confirm", text: "Should be blocked" });
+  assert.equal(blockedHttp.status, 429);
+  assert.ok(Number(blockedHttp.headers.get("retry-after")) >= 1);
+  assert.equal((await blockedHttp.json()).code, "rate_limited");
+
+  const blockedMcp = await (await t.json("POST", "/mcp", {
+    jsonrpc: "2.0", id: 1, method: "tools/call",
+    params: { name: "request_human_link", arguments: { kind: "confirm", text: "Blocked via MCP" } },
+  }, t.bearer(token))).json();
+  assert.equal(blockedMcp.result.isError, true);
+  assert.equal(blockedMcp.result.structuredContent.error.status, 429);
+  assert.equal((await t.primary.testRows()).length, 3);
+
+  assert.equal((await t.status(token, confirmLink.id)).status, 200);
+  assert.equal((await t.call(`/v1/human-links/${cancelLink.id}`, { method: "DELETE", headers: t.bearer(token) })).status, 200);
+  assert.equal((await t.answer(tokenOf(confirmLink.url), { answer: "confirm" })).status, 200);
+  assert.equal((await t.answer(tokenOf(askLink.url), { answer: "send", value: "alpha-queue" })).status, 200);
+  const answered = await (await t.status(token, askLink.id)).json();
+  assert.equal(answered.state, "answered");
+  assert.equal(answered.answer, "alpha-queue");
+});
+
+test("strict storage byte cap 1048575/1048576 charges issue and ask answer UTF-8 bytes and refuses overflow with 429", async () => {
+  const t = await setup({ STRICT_AUTH_AND_QUOTAS: "true" });
+  const info = await t.sessionInfo("cap-byte-bot");
+  const token = info.session_token;
+  const principalId = info.principal_id;
+
+  const first = await t.issue(token, { kind: "ask", text: "é", agent_note: "ß" });
+  assert.equal(first.status, 201);
+  const firstLink = await first.json();
+  assert.equal((await t.primary.testUsage(principalId)).bytes, 4, "UTF-8 byte length of text + agent_note charged");
+
+  await t.primary.testSetUsage(principalId, 1, 1048575);
+  const overIssue = await t.issue(token, { kind: "confirm", text: "ab" });
+  assert.equal(overIssue.status, 429);
+  assert.ok(Number(overIssue.headers.get("retry-after")) >= 1);
+  assert.equal((await t.primary.testRows()).length, 1);
+
+  const overAnswer = await t.answer(tokenOf(firstLink.url), { answer: "send", value: "ok" });
+  assert.equal(overAnswer.status, 429);
+  assert.ok(Number(overAnswer.headers.get("retry-after")) >= 1);
+  assert.equal((await t.read(tokenOf(firstLink.url)).then((r) => r.json())).state, "open", "overflow answer leaves link open with zero partial bytes");
+
+  const exactAnswer = await t.answer(tokenOf(firstLink.url), { answer: "send", value: "y" });
+  assert.equal(exactAnswer.status, 200);
+  assert.equal((await t.primary.testUsage(principalId)).bytes, 1048576);
+  assert.equal((await (await t.status(token, firstLink.id)).json()).answer, "y");
+});
+
+test("Idempotency-Key header and MCP idempotency_key deduplicate identical issuance and return 409 on payload mismatch", async () => {
+  const t = await setup({ STRICT_AUTH_AND_QUOTAS: "true" });
+  const info = await t.sessionInfo("idem-bot");
+  const token = info.session_token;
+  const body = { kind: "ask", text: "Choose batch target?", agent_note: "step 1", ttl_seconds: 300 };
+
+  const a1 = await t.issue(token, body, { "idempotency-key": "idem-http-1" });
+  assert.equal(a1.status, 201);
+  const d1 = await a1.json();
+  assert.equal(d1.replayed, undefined);
+
+  const a2 = await t.issue(token, body, { "idempotency-key": "idem-http-1" });
+  assert.equal(a2.status, 201);
+  const d2 = await a2.json();
+  assert.equal(d2.replayed, true);
+  assert.equal(d2.id, d1.id);
+  assert.equal(d2.url, d1.url);
+  assert.equal(d2.expires_at, d1.expires_at);
+  assert.equal((await t.primary.testRows()).length, 1);
+  assert.equal((await t.primary.testUsage(info.principal_id)).requests, 1, "replay does not double-charge request quota");
+
+  const mismatch = await t.issue(token, { ...body, text: "Different question?" }, { "idempotency-key": "idem-http-1" });
+  assert.equal(mismatch.status, 409);
+  assert.equal((await mismatch.json()).code, "idempotency_conflict");
+
+  const mcpCall = async (args) => (await (await t.json("POST", "/mcp", {
+    jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "request_human_link", arguments: args },
+  }, t.bearer(token))).json()).result;
+  const m1 = await mcpCall({ kind: "confirm", text: "Continue?", idempotency_key: "idem-mcp-1" });
+  const m2 = await mcpCall({ kind: "confirm", text: "Continue?", idempotency_key: "idem-mcp-1" });
+  assert.equal(m1.isError, false);
+  assert.equal(m2.isError, false);
+  assert.equal(m2.structuredContent.replayed, true);
+  assert.equal(m2.structuredContent.id, m1.structuredContent.id);
+  assert.equal((await t.primary.testRows()).length, 2);
+
+  const m3 = await mcpCall({ kind: "confirm", text: "Changed?", idempotency_key: "idem-mcp-1" });
+  assert.equal(m3.isError, true);
+  assert.equal(m3.structuredContent.error.status, 409);
+  assert.equal(m3.structuredContent.error.code, "idempotency_conflict");
+});
+
+test("terminal links redact text and agent_note on public GET and duplicate POST after expires_at while preserving issuer status", async () => {
+  const t = await setup();
+  const { agent, link, token } = await open(t, {
+    kind: "ask",
+    text: "Enter target tag",
+    agent_note: "internal context note",
+    ttl_seconds: 120,
+  });
+  assert.equal((await t.answer(token, { answer: "send", value: "v1-tag" })).status, 200);
+
+  const dupBeforeExpiry = await t.answer(token, { answer: "send", value: "second-attempt" });
+  assert.equal(dupBeforeExpiry.status, 409);
+  const dupBeforeJson = await dupBeforeExpiry.json();
+  assert.equal(dupBeforeJson.state, "answered");
+  assert.ok(!("value" in dupBeforeJson) && !("answer" in dupBeforeJson));
+
+  await t.primary.testAge(link.id, 121);
+
+  const pubRead = await t.read(token);
+  assert.equal(pubRead.status, 200);
+  const pubReadJson = await pubRead.json();
+  assert.equal(pubReadJson.state, "answered");
+  assert.equal(pubReadJson.text, null);
+  assert.equal(pubReadJson.agent_note, null);
+  assert.ok(!("value" in pubReadJson) && !("answer" in pubReadJson));
+
+  const pubPost = await t.answer(token, { answer: "send", value: "late-attempt" });
+  assert.equal(pubPost.status, 409);
+  const pubPostJson = await pubPost.json();
+  assert.equal(pubPostJson.state, "answered");
+  assert.equal(pubPostJson.text, null);
+  assert.equal(pubPostJson.agent_note, null);
+  assert.ok(!("value" in pubPostJson) && !("answer" in pubPostJson));
+
+  const issuer = await (await t.status(agent, link.id)).json();
+  assert.equal(issuer.state, "answered");
+  assert.equal(issuer.text, "Enter target tag");
+  assert.equal(issuer.answer, "v1-tag");
+  assert.equal((await t.primary.testRows()).length, 1);
+});
+
+test("open free window through 2026-12-31 allows zero-auth agent work & human links, enforces zero 429 barriers while recording accounting, keeps admin/bad-token protected, and serves valid CORS header tokens", async () => {
+  const t = await setup({ BOOTSTRAP_SECRET: "example-open-bootstrap" });
+
+  // 1. CORS preflight: every Access-Control-Allow-Headers item is a valid HTTP token (zero spaces), with X-Tessera-Namespace restored.
+  const preflight = await (await t.call("/__test_preflight")).json();
+  assert.equal(preflight.status, 204);
+  const getHeaders = (await t.call("/connect.json")).headers.get("access-control-allow-headers") || "";
+  assert.equal(preflight.headers["access-control-allow-headers"], getHeaders);
+  const allowHeaders = preflight.headers["access-control-allow-headers"].split(",").map((h) => h.trim()).filter(Boolean);
+  assert.ok(allowHeaders.includes("X-Tessera-Namespace"));
+  assert.ok(allowHeaders.includes("X-Teleion-Fabric-Namespace"));
+  assert.ok(allowHeaders.includes("X-Namespace"));
+  assert.ok(allowHeaders.includes("X-Agent-Label"));
+  assert.ok(allowHeaders.includes("Idempotency-Key"));
+  assert.ok(allowHeaders.includes("X-Human-Link-Token"));
+  for (const name of allowHeaders) {
+    assert.match(name, /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/, `invalid HTTP header token: ${name}`);
+    assert.doesNotThrow(() => new Headers({ [name]: "1" }));
+  }
+
+  // 2. Zero-auth HTTP & MCP flow (no Authorization header, no /v1/session/anonymous call).
+  const me = await t.call("/v1/me");
+  assert.equal(me.status, 200);
+  const meData = await me.json();
+  assert.equal(meData.principal_id, "o_open");
+  assert.equal(meData.namespace, "demo.open");
+
+  const verbs = await t.call("/v1/verbs");
+  assert.equal(verbs.status, 200);
+  assert.ok((await verbs.json()).verbs.length >= 1);
+
+  const claimed = await t.json("POST", "/v1/tasks/claim", { queue: "demo.ping", worker: "keyless-worker" });
+  assert.equal(claimed.status, 200);
+  const lease = await claimed.json();
+  assert.equal((await t.json("POST", "/v1/tasks/heartbeat", { task_id: lease.task_id, fencing_token: lease.fencing_token })).status, 200);
+  assert.equal((await t.json("POST", "/v1/stores/demo.artifacts/records/sample-1", { value: { ok: true }, expected_version: 0 })).status, 200);
+  assert.equal((await t.json("POST", "/v1/tasks/submit", { task_id: lease.task_id, fencing_token: lease.fencing_token, output: { artifact: "sample-1" } }, { "idempotency-key": `${lease.task_id}:${lease.fencing_token}` })).status, 200);
+  assert.equal((await t.call("/v1/me/audit")).status, 200);
+
+  // Explicit namespace headers (both X-Tessera-Namespace and X-Teleion-Fabric-Namespace) work identically.
+  assert.equal((await t.call("/v1/verbs", { headers: { "x-tessera-namespace": "main" } })).status, 200);
+  assert.equal((await t.call("/v1/verbs", { headers: { "x-teleion-fabric-namespace": "main" } })).status, 200);
+
+  // Keyless human-link lifecycle + X-Agent-Label isolation.
+  const openLinkRes = await t.json("POST", "/v1/human-links", { kind: "ask", text: "Keyless prompt?" }, { "x-agent-label": "helper-alpha" });
+  assert.equal(openLinkRes.status, 201);
+  const openLink = await openLinkRes.json();
+  assert.equal((await t.call(`/v1/human-links/${openLink.id}`)).status, 404, "isolated from default o_open");
+  assert.equal((await t.call(`/v1/human-links/${openLink.id}`, { headers: { "x-agent-label": "helper-alpha" } })).status, 200);
+
+  const mcpKeyless = await (await t.json("POST", "/mcp", {
+    jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "whoami", arguments: {} },
+  })).json();
+  assert.equal(mcpKeyless.result.isError, false);
+  assert.equal(mcpKeyless.result.structuredContent.principal_id, "o_open");
+
+  // 3. Zero 429 barriers past 300 requests and 1 MiB, while usage accounting still records accurately.
+  await t.primary.testSetUsage("o_open", 500, 1048576);
+  const unthrottledIssue = await t.json("POST", "/v1/human-links", { kind: "ask", text: "Still allowed" });
+  assert.equal(unthrottledIssue.status, 201);
+  const unthrottledData = await unthrottledIssue.json();
+  assert.equal((await t.answer(tokenOf(unthrottledData.url), { answer: "send", value: "answer-bytes" })).status, 200);
+  const usageAfter = await t.primary.testUsage("o_open");
+  assert.equal(usageAfter.requests, 501);
+  assert.equal(usageAfter.bytes, 1048576 + "Still allowed".length + "answer-bytes".length);
+
+  // 4. Protected boundaries stay firm: invalid bearer -> 401, admin/key routes -> 401, ungranted namespace -> 403, personal data -> 400.
+  assert.equal((await t.call("/v1/me", { headers: { authorization: "Bearer tan_invalid_secret" } })).status, 401);
+  assert.equal((await t.json("POST", "/v1/keys", { label: "x", queues: ["demo.*"] })).status, 401);
+  assert.equal((await t.call("/v1/keys")).status, 401);
+  assert.equal((await t.call("/v1/admin/audit")).status, 401);
+  assert.equal((await t.call("/v1/admin/keys")).status, 401);
+  assert.equal((await t.call("/ns/ungranted-private/v1/counts")).status, 403);
+  assert.equal((await t.json("POST", "/v1/stores/demo.artifacts/records/pii", { value: { email: "person@realdomain.org" }, expected_version: 0 })).status, 400);
 });

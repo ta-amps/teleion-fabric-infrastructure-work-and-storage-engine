@@ -8,7 +8,7 @@
 // Only an approving review by a different, account-tracked principal admits items to the public
 // library.catalog. The public sees a status stub of each proposal; the proposer and reviewers see
 // its content. Deterministic checks and receipts only: no judgment, execution or activation.
-import { audit, countAccess, DEMO_QUOTAS } from "./cloud_access.js";
+import { audit, countAccess, DEMO_QUOTAS, isOpenFreeWindow } from "./cloud_access.js";
 import { canonicalJson, receiptHash, sha256Hex } from "./cloud_buckets.js";
 import { catalogPlan, inspectProposal, LIBRARY_LIMITS, withinDepth } from "./library_checks.js";
 import { LIBRARY, LIBRARY_CHECKER, LIBRARY_RATES, REVIEW_SCHEMA, libraryAnonymousEnabled, libraryBudgets, libraryEnabled } from "./library_contract.js";
@@ -70,11 +70,11 @@ function catalogItem(payload, entry) {
   return { source, license: payload.bundle.license, files: payload.bundle.files, nouns: (nouns || []).length, verbs: (verbs || []).length };
 }
 
-async function grantFor(c, secret) {
+async function grantFor(c, secret, meta = {}) {
   c.namespace = NS;
   c.isPrimary = true;
   c._ensureSchema();
-  const grant = await c._grantFromSecret(secret);
+  const grant = await c._grantFromSecret(secret, { allowOpen: true, agentLabel: meta?.agent_label || null });
   if (!libraryEnabled(c.env)) throw err(503, "library_disabled", "library proposals are not enabled on this fabric");
   const anonymous = grant.principal_kind === "anonymous";
   if (anonymous && !libraryAnonymousEnabled(c.env)) throw err(503, "anonymous_proposals_disabled", "tracked sessions cannot propose on this fabric yet; use a contributor key");
@@ -97,15 +97,18 @@ function finish(c, grant, out, meta, key = null) {
 export async function libraryAttempt(c, secret, meta = {}) {
   let grant = null;
   try {
-    const who = await grantFor(c, secret);
+    const who = await grantFor(c, secret, meta);
     grant = who.grant;
     const now = Date.now() / 1000, hour = Math.floor(now / 3600);
+    const enforceLimits = !isOpenFreeWindow(c.env, now * 1000, c);
     const caps = who.anonymous
       ? [[`library:${grant.key_id}`, LIBRARY_RATES.anonymous_per_session_hour, hour], [`library-ip:${meta.ip_hash || "unknown"}`, LIBRARY_RATES.anonymous_per_ip_hour, meta.ip_window ?? hour], ["library:anonymous", LIBRARY_RATES.anonymous_per_hour, hour]]
       : [[`library:${grant.key_id}`, LIBRARY_RATES.keyed_per_key_hour, hour]];
     c.ctx.storage.transactionSync(() => {
-      for (const [subject, ceiling, window] of caps)
-        if ((c._one("SELECT claims FROM access_limits WHERE subject=? AND window=?", subject, window)?.claims || 0) >= ceiling) throw err(429, "rate_limited", "library proposal limit reached for this hour", { retry_after: Math.ceil(3600 - now % 3600) });
+      if (enforceLimits) {
+        for (const [subject, ceiling, window] of caps)
+          if ((c._one("SELECT claims FROM access_limits WHERE subject=? AND window=?", subject, window)?.claims || 0) >= ceiling) throw err(429, "rate_limited", "library proposal limit reached for this hour", { retry_after: Math.ceil(3600 - now % 3600) });
+      }
       for (const [subject, , window] of caps) c.ctx.storage.sql.exec("INSERT INTO access_limits(subject,window,claims) VALUES (?,?,1) ON CONFLICT(subject,window) DO UPDATE SET claims=claims+1", subject, window);
     });
     return { ok: true, status: 200, data: { anonymous: who.anonymous } };
@@ -132,7 +135,7 @@ export async function inspectForLibrary(c, body, { anonymous = false } = {}) {
 // A refusal from the checker (or its timeout) is counted against the caller like any other.
 export async function libraryRefusal(c, secret, out, meta = {}) {
   let grant = null;
-  try { grant = await c._grantFromSecret(secret); } catch { /* an unknown caller was already refused */ }
+  try { grant = await c._grantFromSecret(secret, { allowOpen: true, agentLabel: meta?.agent_label || null }); } catch { /* an unknown caller was already refused */ }
   return finish(c, grant, out, meta);
 }
 
@@ -167,23 +170,26 @@ function ensureQueues(c, now) {
 // is the hour that starts the UTC day, so access-limit retention keeps it for the whole day.
 function chargeBudgets(c, grant, anonymous, bytes, now) {
   const day = Math.floor(now / 86400) * 24, retry_after = Math.ceil(86400 - now % 86400);
+  const enforceLimits = !isOpenFreeWindow(c.env, now * 1000, c);
   const account = grant.account_id ? `account:${grant.account_id}` : `key:${grant.key_id}`, limits = libraryBudgets(c.env);
   // The caller's own budget first, so a refusal names the budget that is really spent.
   const budgets = [anonymous ? ["library-bytes:anonymous", limits.anonymous_daily_bytes, "anonymous_daily_bytes"] : [`library-bytes:${account}`, limits.account_daily_bytes, "account_daily_bytes"],
     ["library-bytes:all", limits.daily_bytes, "daily_bytes"]];
   const sql = c.ctx.storage.sql;
-  for (const [subject, ceiling, name] of budgets) {
-    const used = c._one("SELECT bytes FROM access_limits WHERE subject=? AND window=?", subject, day)?.bytes || 0;
-    if (used + bytes > ceiling) {
-      // Recorded outside the refused write: the refusal count per budget and day survives the rollback.
-      c.libraryRefusals = [...(c.libraryRefusals || []), [`library-refused:${name}`, day]];
-      throw err(429, "rate_limited", `the library's ${name.replaceAll("_", " ")} budget is spent; try again after midnight UTC`, { retry_after, budget: name });
+  if (enforceLimits) {
+    for (const [subject, ceiling, name] of budgets) {
+      const used = c._one("SELECT bytes FROM access_limits WHERE subject=? AND window=?", subject, day)?.bytes || 0;
+      if (used + bytes > ceiling) {
+        // Recorded outside the refused write: the refusal count per budget and day survives the rollback.
+        c.libraryRefusals = [...(c.libraryRefusals || []), [`library-refused:${name}`, day]];
+        throw err(429, "rate_limited", `the library's ${name.replaceAll("_", " ")} budget is spent; try again after midnight UTC`, { retry_after, budget: name });
+      }
     }
   }
   for (const [subject] of budgets) sql.exec("INSERT INTO access_limits(subject,window,bytes) VALUES (?,?,?) ON CONFLICT(subject,window) DO UPDATE SET bytes=bytes+excluded.bytes", subject, day, bytes);
   if (anonymous) {
     const used = c._one("SELECT COALESCE(SUM(bytes),0) n FROM access_limits WHERE subject=?", grant.key_id).n;
-    if (used + bytes > DEMO_QUOTAS.storage_bytes) throw err(429, "rate_limited", "demo quota exceeded", { retry_after: Math.ceil(3600 - now % 3600) });
+    if (enforceLimits && used + bytes > DEMO_QUOTAS.storage_bytes) throw err(429, "rate_limited", "demo quota exceeded", { retry_after: Math.ceil(3600 - now % 3600) });
     sql.exec("INSERT INTO access_limits(subject,window,bytes) VALUES (?,?,?) ON CONFLICT(subject,window) DO UPDATE SET bytes=bytes+excluded.bytes", grant.key_id, Math.floor(now / 3600), bytes);
   }
 }
@@ -192,7 +198,7 @@ function chargeBudgets(c, grant, anonymous, bytes, now) {
 export async function writeProposal(c, secret, inspected, meta = {}) {
   let grant = null, out;
   try {
-    const who = await grantFor(c, secret);
+    const who = await grantFor(c, secret, meta);
     grant = who.grant;
     const anonymous = who.anonymous;
     const { payload, catalog, item_sha256 } = await verifyInspected(inspected, anonymous);

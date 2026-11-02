@@ -1,13 +1,11 @@
 import { FAVICON_SVG } from "./cloud_pages.js";
 import ACCESS_OPENAPI from "./access_openapi.json" with { type: "json" };
 // Public discovery and bearer-only onboarding; navigation never mints a session.
-import { ANON_LABELS, DEMO_QUOTAS, REQUESTER_QUOTAS, openVerbsDescription, requesterDescription } from "./cloud_access.js";
-import { HUMAN_LINK_INSTRUCTIONS, HUMAN_LINK_OPENAPI_PATHS, humanLinkDescription } from "./human_links.js";
+import { ANON_LABELS, CANONICAL_FABRIC_URL, DEMO_QUOTAS, FREE_OPEN_UNTIL_ISO, REQUESTER_QUOTAS, WORKING_FABRIC_ALIASES, isOpenFreeWindow, openVerbsDescription, requesterDescription } from "./cloud_access.js";
+import { HUMAN_LINK_OPENAPI_PATHS, humanLinkDescription } from "./human_links.js";
 import { libraryAnonymousEnabled, libraryBudgets, libraryDescription, libraryEnabled } from "./library_contract.js";
 
 export const ACCESS_TOOLS = [
-  { name: "request_human_link", description: `${HUMAN_LINK_INSTRUCTIONS} Returns a link that works once and ends by itself.`, inputSchema: { type: "object", required: ["kind", "text"], properties: { kind: { type: "string", enum: ["confirm", "ask"] }, text: { type: "string", maxLength: 2000 }, agent_note: { type: "string", maxLength: 200 }, ttl_seconds: { type: "integer", minimum: 60, maximum: 86400 } }, additionalProperties: false } },
-  { name: "get_human_link", description: "Read the state and answer of a link this principal requested.", inputSchema: { type: "object", required: ["id"], properties: { id: { type: "string" } }, additionalProperties: false } },
   { name: "list_verbs", description: "List ready verbs visible to this principal, with optional queue and status filters.", inputSchema: {type:"object",properties:{queue:{type:"string"},status:{type:"string",enum:["ready","leased","waiting","done","dead","cancelled"]},limit:{type:"integer",minimum:1,maximum:100}},additionalProperties:false}},
   { name: "open_anonymous_session", description: "Open a tracked, one-hour practice session without secrets. Use the returned session_token as Authorization: Bearer for subsequent calls. No production access.", inputSchema: { type: "object", properties: { agent_label: { type: "string", maxLength: 64 } }, additionalProperties: false } },
   { name: "explain_access_modes", description: "Public connection instructions, limits, labels and keyed upgrade path.", inputSchema: { type: "object", properties: {}, additionalProperties: false } },
@@ -21,18 +19,21 @@ export const ACCESS_TOOLS = [
 // Every published access description reads both switches from the same environment, so the
 // connect page, connect.json, the agent card, llms-full.txt and MCP always agree (F-054).
 export function accessDescriptionFor(url, env) {
-  return accessDescription(url, env.ANONYMOUS_ACCESS_ENABLED === "true", env.REQUESTER_SIGNUP_ENABLED === "true", libraryEnabled(env), libraryAnonymousEnabled(env), libraryBudgets(env));
+  return accessDescription(url, env.ANONYMOUS_ACCESS_ENABLED === "true", env.REQUESTER_SIGNUP_ENABLED === "true", libraryEnabled(env), libraryAnonymousEnabled(env), libraryBudgets(env), isOpenFreeWindow(env));
 }
 
-export function accessDescription(url, enabled, requesterEnabled, libraryOn = false, libraryAnonymousOn = false, libraryBudgetValues = undefined) {
-  return { service: "Teleion Fabric", mcp_url: `${url}/mcp`, transport: "streamable-http", streaming: "long-poll",
+export function accessDescription(url, enabled, requesterEnabled, libraryOn = false, libraryAnonymousOn = false, libraryBudgetValues = undefined, openWindow = true) {
+  return { service: "Teleion Fabric", canonical_url: CANONICAL_FABRIC_URL, working_aliases: [...WORKING_FABRIC_ALIASES],
+    authentication_required: !openWindow, credentials_required: !openWindow, session_required: !openWindow,
+    abuse_rate_limits: openWindow ? "none_through_2026_12_31" : "enforced", free_until: FREE_OPEN_UNTIL_ISO,
+    mcp_url: `${url}/mcp`, transport: "streamable-http", streaming: "long-poll",
     anonymous: { enabled, endpoint: `${url}/v1/session/anonymous`, method: "POST", token_prefix: "tan_", quotas: DEMO_QUOTAS, labels: ANON_LABELS,
       namespace: "Server assigned demo.<principal_id>; bearer routes automatically", persistence: "Session-private example records, removed after 24 hours", supported_clients: ["coding harness", "personal assistant", "HTTP client", "MCP client"], open_verbs: openVerbsDescription() },
     requester: { ...requesterDescription(requesterEnabled), endpoint: `${url}/v1/session/requester`, method: "POST", quotas: REQUESTER_QUOTAS },
     keyed: { endpoint: `${url}/v1/keys`, method: "POST", authorization: "Existing operator admin key required to issue an account-bound key; paste an issued key to connect", token_prefix: "tsk_", signup_mode: "admin_assisted", secret_shown_once: true },
     library: libraryDescription(url, libraryOn, libraryAnonymousOn, libraryBudgetValues),
     human_links: humanLinkDescription(url),
-    authorization_header: "Authorization: Bearer <session_token_or_api_key>",
+    authorization_header: openWindow ? "Optional through 2026-12-31 (Authorization: Bearer <session_token_or_api_key> or X-Agent-Label)" : "Authorization: Bearer <session_token_or_api_key>",
     demo_flow: ["open_anonymous_session", "search_nouns(query=practice)", "claim(queue=demo.ping,worker=your-agent)", "heartbeat", "put_record(store_name=demo.artifacts,expected_version=0)", "submit", "my_audit"],
     audit_retention_seconds: 86400, example: { method: "POST", url: `${url}/v1/session/anonymous`, json: { agent_label: "my-assistant" } } };
 }
@@ -65,7 +66,7 @@ export async function accessRoute(request, env, { path, url, bearer, primary, st
   }
   if (path === "/v1/verbs" && method === "GET") return rpcResponse(await stub.rpcCall(bearer, "listVerbs", { ...baseRpc, queue: url.searchParams.get("queue"), status: url.searchParams.get("status"), limit: url.searchParams.get("limit"), after: url.searchParams.get("after") }));
   if (path === "/v1/me" && method === "GET") return rpcResponse(await stub.rpcCall(bearer, "me", baseRpc));
-  if (["/v1/me/audit", "/v1/admin/audit"].includes(path) && method === "GET") return rpcResponse(await primary.auditForToken(bearer, { admin: path.includes("/admin/"), after: url.searchParams.get("after"), limit: url.searchParams.get("limit") }));
+  if (["/v1/me/audit", "/v1/admin/audit"].includes(path) && method === "GET") return rpcResponse(await primary.auditForToken(bearer, { admin: path.includes("/admin/"), after: url.searchParams.get("after"), limit: url.searchParams.get("limit"), agent_label: meta.agent_label }));
   if (path === "/v1/public/activity" && method === "GET") return jsonResp(await primary.publicActivity());
   if (path === "/v1/keys" && method === "POST") {
     const { body, error } = await readJsonBody(request);

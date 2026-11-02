@@ -2,7 +2,7 @@ import { humanLinkAction, humanLinkPublicAnswer, humanLinkPublicRead } from "./h
 import { initExecutions, checkedReport, prepareExecution, validatePrepared, captureExecution, recallExecution, getExecution, listExecutions } from "./cloud_executions.js";
 import { NO_EDGE, activityMap, catalogModels, cleanEdge, clearActivity, edgeStatus, edgeWorker, flushEdge, recordClaim, recordModel, recordPresence, showOnMapLabel } from "./edge_activity.js";
 import { displayTest } from "./display_mask.js";
-import { initAccess, principalMetadata, requestIdentity, mintAnonymous, mintRequester, seedDemo, ensureDemoSeeded, ensureRequesterSeeded, enforceAccess, chargeAccess, claimCaps, checkClaimCaps, chargeClaimCaps, audit, auditMode, countAccess, ownAudit, publicActivity, publicPrincipal, requesterVerbGovernance, CLOSED_TO_ANONYMOUS, filesRequests, openToAnonymous, usesOpenVerbs } from "./cloud_access.js";
+import { initAccess, principalMetadata, requestIdentity, mintAnonymous, mintRequester, seedDemo, ensureDemoSeeded, ensureRequesterSeeded, enforceAccess, chargeAccess, claimCaps, checkClaimCaps, chargeClaimCaps, audit, auditMode, countAccess, ownAudit, publicActivity, publicPrincipal, requesterVerbGovernance, CLOSED_TO_ANONYMOUS, MAX_IDEMPOTENCY_KEY, filesRequests, isOpenFreeWindow, openGrantFor, openToAnonymous, usesOpenVerbs } from "./cloud_access.js";
 // TesseraCoordinator: single-writer SQLite Durable Object (`new_sqlite_classes`) implementing
 // 100% of Tessera Spec v0.2 (queues, 5 verbs, dependencies, waves, park/resume, model jobs,
 // counts, events, scoped keys, queryable CAS records, persistent named file buckets,
@@ -43,7 +43,6 @@ import {
 export { canonicalJson, receiptHash };
 
 const NAME_RE = /^[a-z0-9][a-z0-9_.-]{0,63}$/;
-const MAX_IDEMPOTENCY_KEY = 256; // characters, as models.MAX_IDEMPOTENCY_KEY
 const VERB_PAGE_MAX = 200; // as _access_routes.VERB_PAGE_MAX
 const VERB_SCAN_BUDGET = 10000; // rows one verb listing reads at most, as in Python
 const INHERITED_GOVERNANCE = ["producer_surface", "visibility_scope", "allowed_surfaces", "target_cohorts", "owner_key_id"];
@@ -1426,8 +1425,22 @@ export class TesseraCoordinator extends DurableObject {
     };
   }
 
-  async _grantFromSecret(secret) {
-    if (!secret) throw unauth("a bearer key is required");
+  async _grantFromSecret(secret, { allowOpen = false, agentLabel = null } = {}) {
+    if (!secret) {
+      if (allowOpen && isOpenFreeWindow(this.env, Date.now(), this)) {
+        const now = Date.now() / 1000;
+        const openGrant = openGrantFor(this.env, agentLabel, now);
+        const existing = this._one("SELECT last_used_at FROM access_principals WHERE key_id=?", openGrant.key_id);
+        if (!existing || existing.last_used_at == null || Number(existing.last_used_at) <= now - LAST_USED_WRITE_INTERVAL_SECONDS) {
+          this._observe(() => this.ctx.storage.sql.exec(
+            "INSERT INTO access_principals(key_id,principal_kind,principal_id,account_id,namespace,key_prefix,labels,quota_tier,last_used_at,purge_at) VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(key_id) DO UPDATE SET last_used_at=excluded.last_used_at WHERE access_principals.last_used_at IS NULL OR access_principals.last_used_at<=excluded.last_used_at-?",
+            openGrant.key_id, openGrant.principal_kind, openGrant.principal_id, openGrant.account_id, openGrant.namespace, openGrant.key_prefix, JSON.stringify(openGrant.labels), openGrant.quota_tier, now, openGrant.purge_at, LAST_USED_WRITE_INTERVAL_SECONDS
+          ));
+        }
+        return this._hydrateGrant(openGrant);
+      }
+      throw unauth("a bearer key is required");
+    }
     const local = await this.resolveKeyGrant(secret);
     if (local) return this._hydrateGrant(local);
     if (!this.isPrimary && this.env && this.env.COORDINATOR) {
@@ -1982,7 +1995,7 @@ export class TesseraCoordinator extends DurableObject {
   countAccessEvent(grant, action, args, out, meta) { countAccess(this, grant, action, args, out, meta); }
   async auditForToken(secret, args = {}) {
     try {
-      const grant = await this._grantFromSecret(secret);
+      const grant = await this._grantFromSecret(secret, { allowOpen: !args.admin, agentLabel: args.agent_label || null });
       if (args.admin && !grant.is_admin) throw forbid("admin scope required");
       // An admin's read also says how many of the activity map's writes failed here (edge_activity.js).
       return { ok: true, status: 200, data: args.admin ? { ...ownAudit(this, grant, args), activity_map: edgeStatus(this) } : ownAudit(this, grant, args) };
@@ -1996,7 +2009,7 @@ export class TesseraCoordinator extends DurableObject {
     this.namespace = ns;
     this.isPrimary = ns === "main";
     try {
-      grant = await this._grantFromSecret(secret);
+      grant = await this._grantFromSecret(secret, { allowOpen: true, agentLabel: args?.access_meta?.agent_label || null });
       const [checked, charge] = enforceAccess(this, grant, action, { ...args, namespace: ns });
       args = checked;
       libraryGuard(this, grant, action, args);
@@ -2058,7 +2071,7 @@ export class TesseraCoordinator extends DurableObject {
     try {
       this.namespace = normalizeNamespace(args?.namespace || "main");
       this.isPrimary = Boolean(args?.isPrimary ?? (this.namespace === "main"));
-      const grant = await this._grantFromSecret(secret);
+      const grant = await this._grantFromSecret(secret, { allowOpen: true, agentLabel: args?.access_meta?.agent_label || null });
       const now = Date.now() / 1000;
       if (!this.namespace.startsWith("demo.") && !this.namespace.startsWith("org.")) this._ensureNamespaceSeeded(this.namespace, now);
       const surfaceHeader = args?.surfaceHeader || args?.header_surface_id || "";
@@ -2438,7 +2451,7 @@ export class TesseraCoordinator extends DurableObject {
               const now = Date.now() / 1000;
               const config = this._queueConfig(queue);
               this._reap(now, queue);
-              if (anonymous && this._one("SELECT COUNT(*) n FROM leases WHERE namespace=? AND key_id=? AND expires_at>? AND hard_expires_at>?", this.namespace, grant.key_id, now, now).n >= 1) throw rateLim("one concurrent demo claim allowed", 30);
+              if (anonymous && !isOpenFreeWindow(this.env, now * 1000, this) && this._one("SELECT COUNT(*) n FROM leases WHERE namespace=? AND key_id=? AND expires_at>? AND hard_expires_at>?", this.namespace, grant.key_id, now, now).n >= 1) throw rateLim("one concurrent demo claim allowed", 30);
               if (caps) checkClaimCaps(this, caps, now);
               let sql =
                 "SELECT * FROM tasks WHERE namespace = ? AND queue = ? AND state = 'ready' AND not_before <= ?";
