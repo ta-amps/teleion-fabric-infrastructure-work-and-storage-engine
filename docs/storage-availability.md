@@ -52,6 +52,8 @@ every route.
   `explain_access_modes` (single or batched). These responses depend only on configuration.
 - Unauthenticated `GET /v1/health`, `/healthz`, `/board` and `/v1/public/activity` on the main
   namespace skip the key and identity lookups.
+- `GET /v1/public/activity/map` skips them for every caller and only reads; its projection tables
+  are made by the first claim that needs them and are skipped, not fatal, under a spent allowance.
 - Cold start reads `sqlite_master` and the marker rows first and runs only the DDL, column or salt
   statements that are actually missing. A new object still creates its whole schema.
 - The profile timestamp and namespace identity snapshot are read first and written only when

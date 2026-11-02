@@ -73,7 +73,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [conformance-draft/test_storage.py](conformance-draft/test_storage.py) | ST01 to ST04: atomic storage. |
 | [conformance-draft/test_task_graph.py](conformance-draft/test_task_graph.py) | Task graphs every backend must meet (SPEC §5.2 and §5.6): dependencies (fan-in), children that run in waves,… |
 
-## deploy/ (35)
+## deploy/ (36)
 
 | File | What it is |
 |---|---|
@@ -99,6 +99,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [deploy/cloudflare/d1-buckets.sql](deploy/cloudflare/d1-buckets.sql) | Persistent Cloudflare D1 content-addressed blob & named-bucket store (ta-amps-buckets), Schema v3. |
 | [deploy/cloudflare/d1-fabric.sql](deploy/cloudflare/d1-fabric.sql) | Persistent Cloudflare D1 schema for Tessera cloud fabric (ta-amps-fabric), Schema v3. |
 | [deploy/cloudflare/display_mask.js](deploy/cloudflare/display_mask.js) | Display-time masking for pages that render stored data (shared banned list, datarendering rule). |
+| [deploy/cloudflare/edge_activity.js](deploy/cloudflare/edge_activity.js) | Where workers connect, for the public activity map (GET /v1/public/activity/map). |
 | [deploy/cloudflare/execution_matching.js](deploy/cloudflare/execution_matching.js) | Bounded execution-report validation and retrieval candidates, never reuse authorization. |
 | [deploy/cloudflare/execution_observations.js](deploy/cloudflare/execution_observations.js) | Execution observations and problem fingerprints: core infrastructure, no learning policy. |
 | [deploy/cloudflare/library_checks.js](deploy/cloudflare/library_checks.js) | Deterministic checks for library proposals: shape, size, nesting, licence, file types, hidden |
@@ -113,13 +114,14 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [deploy/fly/README.md](deploy/fly/README.md) | Fly.io: the Tessera service |
 | [deploy/fly/fly.toml](deploy/fly/fly.toml) | Tessera service on one Fly.io machine with a volume (brief L20), reached through the Cloudflare edge |
 
-## docs/ (30)
+## docs/ (31)
 
 | File | What it is |
 |---|---|
 | [docs/WORKER-FIRST-EXECUTION.md](docs/WORKER-FIRST-EXECUTION.md) | Worker-first execution and private work |
 | [docs/WORKER-VERB-EXAMPLES.md](docs/WORKER-VERB-EXAMPLES.md) | Work suitable for claimed verbs |
 | [docs/access-modes.md](docs/access-modes.md) | External agent access |
+| [docs/activity-map.md](docs/activity-map.md) | The public activity map |
 | [docs/agent-start.md](docs/agent-start.md) | Start an agent from a website |
 | [docs/architecture.md](docs/architecture.md) | Tessera: architecture |
 | [docs/claim-admission.md](docs/claim-admission.md) | Claim admission |
@@ -306,7 +308,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [src/tessera/store.py](src/tessera/store.py) | The in-process Tessera store: the reference implementation of SPEC.md. |
 | [src/tessera/testing.py](src/tessera/testing.py) | Factories the conformance suite loads by name (TESSERABACKENDFACTORY="module:function"). |
 
-## tests/ (78)
+## tests/ (79)
 
 | File | What it is |
 |---|---|
@@ -372,6 +374,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [tests/workerd_access_descriptions.mjs](tests/workerd_access_descriptions.mjs) | Real Worker: every published access description (connect.json, the agent card, llms-full.txt, |
 | [tests/workerd_access_parity.mjs](tests/workerd_access_parity.mjs) | Real Worker/SQLite: the access cases in tests/fixtures/accessparity.json, which |
 | [tests/workerd_access_writes.mjs](tests/workerd_access_writes.mjs) | Real Worker/SQLite: requests that never authenticate write nothing and create no namespace |
+| [tests/workerd_activity_map.mjs](tests/workerd_activity_map.mjs) | Real Worker/SQLite: the public activity map. |
 | [tests/workerd_agent_tool_listings.mjs](tests/workerd_agent_tool_listings.mjs) | Real Worker: every agent-facing tool listing matches what MCP tools/list serves. |
 | [tests/workerd_anonymous_cost.mjs](tests/workerd_anonymous_cost.mjs) | Real Worker/SQLite: anonymous sessions stay available but cost little until used, and one |
 | [tests/workerd_blob_first_uploader.mjs](tests/workerd_blob_first_uploader.mjs) | Real Worker/SQLite: a key can always read back bytes it uploaded, whoever stored them first, |

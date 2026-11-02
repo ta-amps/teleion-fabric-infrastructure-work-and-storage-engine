@@ -1,6 +1,7 @@
 import { agentStartAsset, withAgentStart } from "./agent_start.js";
 import { storageQuotaFailure } from "./storage_quota.js";
-import { namespaceReachable, publicPrincipal } from "./cloud_access.js";
+import { ipGroup, namespaceReachable, publicPrincipal } from "./cloud_access.js";
+import { edgeFromCf, publicActivityRoute } from "./edge_activity.js";
 import { accessDiscoveryRoute, accessRoute, accessDescriptionFor } from "./cloud_access_routes.js";
 import { handleA2a } from "./cloud_a2a.js";
 import { displayMask } from "./display_mask.js";
@@ -511,6 +512,9 @@ const worker = {
     }
     const coordBinding = env.COORDINATOR || env.TESSERA_COORDINATOR;
     const primary = coordBinding.get(coordBinding.idFromName("primary"));
+    // The public activity map needs no principal: aggregated, cached and limited per address.
+    const activity = await publicActivityRoute(request, { path, method, namespace, env, primary, problem, withSecurity, address: ipGroup(request.headers.get("cf-connecting-ip")) });
+    if (activity) return activity;
     const requestBearer = extractBearer(request);
     // Unauthenticated public reads of the main namespace need no identity or key lookup.
     if (!requestBearer && namespace === "main" && (method === "GET" || method === "HEAD")) {
@@ -527,7 +531,9 @@ const worker = {
     isPrimary = namespace === "main";
     const rawStub = coordBinding.get(coordBinding.idFromName(isPrimary ? "primary" : `ns:${namespace}`));
     const identity = await primary.requestIdentity(request.headers.get("cf-connecting-ip"), request.headers.get("user-agent"));
-    const meta = { ...identity, request_id: request.headers.get("x-request-id") || crypto.randomUUID(), route: path, bytes_in: Number(request.headers.get("content-length") || 0) };
+    // edge: where Cloudflare received this request (data center, country, continent), from request.cf
+    // only. It is set after every client field, so no body, header or tool argument can name a place.
+    const meta = { ...identity, request_id: request.headers.get("x-request-id") || crypto.randomUUID(), route: path, bytes_in: Number(request.headers.get("content-length") || 0), edge: edgeFromCf(request.cf) };
     // Authentication and namespace authorization happen here, before any namespace object is
     // touched: a caller without a valid key, or without a grant for the namespace it named,
     // neither writes a row nor creates a coordinator object for that name. The coordinator
@@ -1593,7 +1599,7 @@ const onboardingApplication = {
   scheduled: worker.scheduled,
   async fetch(request, env, ctx) {
     const requestId = /^[a-zA-Z0-9._:-]{1,100}$/.test(request.headers.get("x-request-id") || "") ? request.headers.get("x-request-id") : crypto.randomUUID();
-    const headers = { "access-control-allow-origin": "*", "access-control-allow-methods": "GET, HEAD, POST, PUT, DELETE, OPTIONS", "access-control-allow-headers": "Authorization, Content-Type, If-Match, X-Request-Id, X-Agent-Label, Idempotency-Key, X-Namespace, X-Tessera-Namespace, X-Surface-Id, MCP-Protocol-Version, MCP-Session-Id", "access-control-expose-headers": "ETag, Retry-After, X-Request-Id, MCP-Session-Id", "x-request-id": requestId, "cache-control": "no-store" };
+    const headers = { "access-control-allow-origin": "*", "access-control-allow-methods": "GET, HEAD, POST, PUT, DELETE, OPTIONS", "access-control-allow-headers": "Authorization, Content-Type, If-Match, X-Request-Id, X-Agent-Label, Idempotency-Key, X-Namespace, X-Tessera-Namespace, X-Surface-Id, MCP-Protocol-Version, MCP-Session-Id", "access-control-expose-headers": "ETag, Retry-After, X-Request-Id, MCP-Session-Id, Age", "x-request-id": requestId, "cache-control": "no-store" };
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers });
     try {
       // A broken percent escape (H-54) or a control character (H-65) anywhere in the path is
@@ -1623,7 +1629,10 @@ const onboardingApplication = {
       } else request = new Request(request, { headers: h });
       const response = await worker.fetch(request, env, ctx);
       const outHeaders = new Headers(response.headers);
-      for (const [k,v] of Object.entries(headers)) outHeaders.set(k,v);
+      // A read that chose to be publicly cacheable (the favicon, the public activity map) keeps its
+      // cache-control; every other answer, and every write, is never stored.
+      const cacheable = (request.method === "GET" || request.method === "HEAD") && /^public\b/.test(response.headers.get("cache-control") || "");
+      for (const [k,v] of Object.entries(headers)) if (!(cacheable && k === "cache-control")) outHeaders.set(k,v);
       return new Response(response.body, { status: response.status, headers: outHeaders });
     } catch (e) {
       // A path segment with a broken percent escape is the client's mistake, not a fault (H-54).

@@ -1,4 +1,5 @@
 import { initExecutions, checkedReport, prepareExecution, validatePrepared, captureExecution, recallExecution, getExecution, listExecutions } from "./cloud_executions.js";
+import { activityMap, catalogModels, cleanEdge, edgeWorker, flushEdge, recordClaim, recordModel, recordPresence, withEdge } from "./edge_activity.js";
 import { initAccess, principalMetadata, requestIdentity, mintAnonymous, mintRequester, seedDemo, ensureDemoSeeded, ensureRequesterSeeded, enforceAccess, chargeAccess, claimCaps, checkClaimCaps, chargeClaimCaps, audit, auditMode, countAccess, ownAudit, publicActivity, publicPrincipal, requesterVerbGovernance, CLOSED_TO_ANONYMOUS, filesRequests, openToAnonymous, usesOpenVerbs } from "./cloud_access.js";
 // TesseraCoordinator: single-writer SQLite Durable Object (`new_sqlite_classes`) implementing
 // 100% of Tessera Spec v0.2 (queues, 5 verbs, dependencies, waves, park/resume, model jobs,
@@ -1954,6 +1955,8 @@ export class TesseraCoordinator extends DurableObject {
     try { this.ctx.storage.transactionSync(() => chargeClaimCaps(this, [[who.key_id, 0, "", null]])); return { ok: true }; } catch (e) { return this._errOut(e); }
   }
   publicActivity() { return publicActivity(this); }
+  // The aggregated activity map (edge_activity.js): a read of the shared namespace's projection only.
+  publicActivityMap(windowName) { this._ensureSchema(); this.namespace = "main"; this.isPrimary = true; return activityMap(this, windowName, catalogModels(this, this.env)); }
   // The seed-pack library door (cloud_library.js). Attempts, writes and reads run in the primary
   // object; libraryInspect runs only in the separate library-checks instance and touches no storage.
   async libraryAttempt(secret, meta) { return attemptLibrary(this, secret, meta); }
@@ -2399,6 +2402,9 @@ export class TesseraCoordinator extends DurableObject {
           const effects = grant.effectFilter(args.effect_classes || null);
           const kinds = grant.kindFilter(args.kinds || null);
           let lease = null;
+          // Where Cloudflare received this claim, as the Worker read it from request.cf.
+          const edge = cleanEdge(args.access_meta?.edge);
+          const who = await edgeWorker(this, grant);
 
           // An anonymous session's claim limits are counted in the primary object: there in this
           // transaction, from a demo namespace once its lease is granted.
@@ -2457,8 +2463,9 @@ export class TesseraCoordinator extends DurableObject {
                 queue,
                 worker,
                 token,
-                detail: { attempt },
+                detail: withEdge({ attempt }, edge),
               });
+              recordClaim(this, who, edge, row, token, now);
               lease = {
                 namespace: this.namespace,
                 task_id: row.id,
@@ -2478,6 +2485,7 @@ export class TesseraCoordinator extends DurableObject {
                 inputs: this._inputs(row.id),
               };
             });
+            flushEdge(this);
             if (lease) await this._scheduleNextAlarm();
             if (lease && anonymous && !caps && this.env.COORDINATOR) await this._primary().chargeClaimFor({ key_id: grant.key_id });
           }
@@ -2490,6 +2498,8 @@ export class TesseraCoordinator extends DurableObject {
           this._requireHolder(grant, taskId);
           let lease = null;
           let staleMsg = null;
+          const edge = cleanEdge(args.access_meta?.edge);
+          const who = await edgeWorker(this, grant);
           this.ctx.storage.transactionSync(() => {
             const now = Date.now() / 1000;
             const [row, stale] = this._liveLease(taskId, token, now);
@@ -2529,7 +2539,9 @@ export class TesseraCoordinator extends DurableObject {
               queue: task.queue,
               worker: row.worker,
               token,
+              detail: withEdge({}, edge),
             });
+            recordPresence(this, who, edge, task, now);
             lease = {
               namespace: this.namespace,
               task_id: taskId,
@@ -2549,6 +2561,7 @@ export class TesseraCoordinator extends DurableObject {
               inputs: this._inputs(taskId),
             };
           });
+          flushEdge(this);
           if (!lease) throw staleLease(staleMsg || "lease is not live");
           await this._scheduleNextAlarm();
           return { ok: true, status: 200, data: lease };
@@ -2665,6 +2678,7 @@ export class TesseraCoordinator extends DurableObject {
               JSON.stringify(grant.labels || {})
             );
             captureExecution(this,prepared,task,row,digest,now,grant.labels || {});
+            recordModel(this, taskId, token, report);
             this._event("submitted", now, {
               task_id: taskId,
               queue: task.queue,

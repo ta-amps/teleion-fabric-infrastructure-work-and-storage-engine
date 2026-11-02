@@ -233,6 +233,10 @@ rotates, still counts against the hour that hash belongs to.
 resource type, status and fixed demo labels. It omits resource/account/session
 identifiers and client labels. The portal uses this redacted endpoint.
 
+`GET /v1/public/activity/map` aggregates where workers connect (a Cloudflare data center, or its
+continent below two workers of the same kind) and which kinds of Tasks they claim, with no names, ids,
+addresses or coordinates. See [the activity map](activity-map.md).
+
 `GET /v1/claims/{task_id}/events?after=<seq>&wait=15` provides authorized,
 bounded long-poll. `claim_events` offers the MCP counterpart. Event cursors are
 monotonic storage sequences. This release advertises `streaming: long-poll`;
@@ -242,7 +246,7 @@ MCP and HTTP agent routes answer CORS preflight with `204`. They allow bearer
 headers with `Access-Control-Allow-Origin: *`, without cookies or
 `Allow-Credentials`. Allowed headers include Authorization, Content-Type,
 If-Match, X-Request-Id and X-Agent-Label. ETag, Retry-After and X-Request-Id are
-exposed. Python retains configured MCP Host checks while permitting valid
+exposed; the Worker also exposes MCP-Session-Id, and Age for the activity map. Python retains configured MCP Host checks while permitting valid
 external HTTP(S) origins. Origin is never a source of authorization.
 
 The local HTTP schema is generated at `/v1/openapi.json`. Regression coverage:
