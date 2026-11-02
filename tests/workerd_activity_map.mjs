@@ -127,6 +127,17 @@ async function freshMap(map, window) {
   return answer.data;
 }
 
+// The rule Herma relies on: a row says "data_center" only when the view lists that data center with 2 or more
+// workers; every other row says continent or unknown, and level and placed always agree.
+function assertPlacement(view, label = "") {
+  const centers = new Map(view.places.filter((p) => p.level === "colo").map((p) => [p.place, p]));
+  for (const p of centers.values()) assert.ok(p.workers >= 2, `${label} ${p.place} shows ${p.workers} workers`);
+  for (const r of [...view.recent, ...(view.replay?.claims || [])]) {
+    assert.equal(r.placed, { colo: "data_center", continent: "continent", unknown: "unknown" }[r.level], `${label} ${r.at}`);
+    if (r.placed === "data_center") assert.ok(centers.get(r.place)?.workers >= 2, `${label} ${r.place} is not listed with 2 or more workers`);
+  }
+}
+
 async function waitForRoomInThisMinute(seconds) {
   const left = 60 - (Date.now() / 1000) % 60;
   if (left < seconds) await new Promise((resolve) => setTimeout(resolve, (left + 0.2) * 1000));
@@ -226,8 +237,11 @@ test("a data center shows only when two different workers of the same kind conne
     ["NA", "dedicated", "a dedicated worker run by ta-amps"], ["EU", "dedicated", "a dedicated worker run by ta-amps"],
   ]);
   assert.deepEqual(view.recent.slice(4).map((r) => [r.place, r.level, r.worker_label]), [["FRA", "colo", "a volunteer's AI"], ["EU", "continent", "a volunteer's AI"], ["EU", "continent", "a volunteer's AI"]]);
+  assertPlacement(view, "6h");
+  assert.deepEqual(view.recent.map((r) => r.placed), ["data_center", "data_center", "continent", "continent", "data_center", "continent", "continent"]);
   // Another window places every row the same way.
   const quarter = (await map("15m&replay=1")).data;
+  assertPlacement(quarter, "15m");
   assert.deepEqual(quarter.recent.map((r) => [r.at, r.place]), view.recent.map((r) => [r.at, r.place]));
   assert.deepEqual(quarter.replay.claims.map((r) => [r.at, r.place]), [...view.recent].reverse().map((r) => [r.at, r.place]));
   assert.ok(view.recent.every((r) => r.class === "shared" && Math.abs(Date.parse(r.at) / 1000 - view.as_of) < 120));
@@ -413,6 +427,8 @@ test("a worker alone at a data center is placed there in no window; one joined w
   await claim(ana.key, FRA, "ana-1");
   for (const window of ["15m", "1h", "24h&replay=1"]) {
     const view = (await map(window)).data;
+    assertPlacement(view, window);
+    assert.ok([...view.recent, ...(view.replay?.claims || [])].every((r) => r.placed !== "data_center"), `${window}: a placed row`);
     assert.ok(!view.places.some((p) => p.place === "FRA"), `${window}: a place at FRA`);
     assert.ok(![...view.recent, ...(view.replay?.claims || [])].some((r) => r.place === "FRA"), `${window}: a row at FRA`);
   }
@@ -422,6 +438,8 @@ test("a worker alone at a data center is placed there in no window; one joined w
   const views = {};
   for (const window of ["15m&replay=1", "6h", "24h"]) views[window] = (await map(window)).data;
   for (const [window, view] of Object.entries(views)) {
+    assertPlacement(view, window);
+    assert.deepEqual(view.recent.slice(0, 2).map((r) => r.placed), ["data_center", "continent"], window);
     const fra = view.places.find((p) => p.place === "FRA");
     assert.deepEqual([fra.level, fra.workers, fra.claims], ["colo", 2, 1], window);
     assert.equal(fra.last_claim_at, view.recent[0].at, window);
@@ -461,7 +479,7 @@ test("the view names no worker, key, Task, address, city or coordinate", async (
   const allowed = {
     top: ["as_of", "min_workers", "never_shows", "places", "recent", "service", "shows", "totals", "window", "window_seconds"],
     place: ["by_class", "by_model", "by_worker", "claims", "continent", "last_claim_at", "level", "place", "workers"],
-    recent: ["at", "class", "continent", "level", "model", "model_status", "place", "worker", "worker_label"],
+    recent: ["at", "class", "continent", "level", "model", "model_status", "place", "placed", "worker", "worker_label"],
     totals: ["by_class", "claims", "continents", "places", "workers"],
   };
   for (const { data, text } of views) {

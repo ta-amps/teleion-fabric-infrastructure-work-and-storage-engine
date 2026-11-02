@@ -382,11 +382,16 @@ function loadAggregate(c, name, { allowed, banned, now }) {
   return out;
 }
 
+// How a row was placed, said plainly for whoever merges the view (Herma): "data_center" only when the claim met
+// the 15-minute two-worker rule, and then `places` lists that data center with MIN_WORKERS or more workers;
+// "continent" or "unknown" otherwise.
+export const PLACED = Object.freeze({ colo: "data_center", continent: "continent", unknown: "unknown" });
+
 // One claim as the view shows it.
 function claimRow(r, allowed, banned) {
   const where = placeOfClaim(r);
   const model = modelView(r.model, allowed, banned);
-  return { at: iso(r.ts), class: r.claim_class, model: model.model, model_status: model.status, place: where.place, level: where.level,
+  return { at: iso(r.ts), class: r.claim_class, model: model.model, model_status: model.status, place: where.place, level: where.level, placed: PLACED[where.level],
     continent: where.level === "continent" ? where.place : r.continent || null,
     worker: r.worker_kind, worker_label: WORKER_LABELS[r.worker_kind] || WORKER_LABELS.dedicated };
 }

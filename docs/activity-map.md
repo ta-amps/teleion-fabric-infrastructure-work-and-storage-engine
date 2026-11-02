@@ -41,7 +41,7 @@ in `recent` or `replay`. A later change is not supported yet; register a new ses
 ## What is shown
 
 `places`, each with its claims by class, by model and by kind of worker, its newest claim's time
-(`last_claim_at`) and its workers as an exact number; `recent`, the last 20 claims, each with its class, model, place, time (`at`, ISO) and worker label;
+(`last_claim_at`) and its workers as an exact number; `recent`, the last 20 claims, each with its class, model, place, `level`, `placed`, time (`at`, ISO) and worker label;
 `replay` (with `replay=1`), the last hour's claims, oldest first, up to 300; and `totals` (claims, workers,
 places, continents and claims by class, which include workers that left the map).
 
@@ -52,6 +52,12 @@ places, continents and claims by class, which include workers that left the map)
   `places`, `recent`, `replay` and `last_claim_at`, whichever window is read: comparing two windows
   never shows where a worker that was alone connected. Its first claims before a second worker of its
   kind arrives stay under the continent.
+- Every `recent` and `replay` row says how it was placed, in `placed`: `data_center` only when that claim
+  met the rule above, and then `places` lists that data center with 2 or more `workers`; `continent` when it
+  counts under its continent; `unknown` when Cloudflare gave no place. `level` (`colo`, `continent`,
+  `unknown`) always agrees. A reader that merges the view, such as Herma, should take a data-center row
+  only with `placed: "data_center"` and a matching place of 2 or more workers, and count anything else
+  under the continent.
 - A data center is a place only once a claim was placed there in the window. Its `workers` are the most
   of each kind that were there together when one was, added up, so never a worker that was there
   alone. Every other claim and its worker count under the continent, and so does a worker seen in the
