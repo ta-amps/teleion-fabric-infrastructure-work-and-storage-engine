@@ -208,34 +208,11 @@ export function recordModel(c, taskId, token, report) {
 }
 
 // Rule 16: the values workers and producers contribute to the view (the model ids reports name) pass the
-// shared banned list when the view is read; stored rows stay as they are. The patterns come from the
-// BANNED_TEXT var the deploy sets from that list (`make deploy`, scripts/banned_text_var.py: {"always":
-// [...], "visible": [...]}, the same var the board's display mask reads), so this repository holds none.
+// shared banned list when the view is read; stored rows stay as they are. The test is display_mask.js's
+// displayTest, which reads the BANNED_TEXT var the deploy sets from that list (`make deploy`,
+// scripts/banned_text_var.py), the same var the board's mask reads, so this repository holds no pattern.
 // Without the var nothing matches. Every other word in the view is fixed text in this file, which the
 // deploy guard checks against the same list.
-export function bannedTest(env = {}) {
-  let spec = null;
-  try {
-    spec = env?.BANNED_TEXT ? JSON.parse(env.BANNED_TEXT) : null;
-  } catch {
-    spec = null;
-  }
-  const patterns = (spec ? [...(spec.always || []), ...(spec.visible || [])] : []).flatMap((p) => {
-    try {
-      return [new RegExp(p, "i")];
-    } catch {
-      return [];
-    }
-  });
-  if (!patterns.length) return () => false;
-  const known = new Map();
-  // An id such as muse-spark-1.3 is also read as the words a page would show ("muse spark 1 3").
-  return (value) => {
-    const text = String(value);
-    if (!known.has(text)) known.set(text, [text, text.replace(/[_./-]+/g, " ")].some((t) => patterns.some((p) => p.test(t))));
-    return known.get(text);
-  };
-}
 
 // The model ids the map may name: the catalog Task Object's runtime table, without agent apps.
 export function catalogModels(c, env = {}) {

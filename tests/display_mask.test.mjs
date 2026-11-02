@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { renderBoardHtml } from "../deploy/cloudflare/cloud_pages.js";
-import { displayMask } from "../deploy/cloudflare/display_mask.js";
+import { displayMask, displayTest } from "../deploy/cloudflare/display_mask.js";
 
 const health = { ok: true, queues: [] };
 const snapshot = { namespace: "main", events: [{ seq: 7, type: "promoted", queue: "q", task_id: "t-zzneverword" }],
@@ -20,4 +20,13 @@ test("without the list nothing is masked, so the Python board stays identical", 
   const plain = renderBoardHtml(health, snapshot, "https://example.invalid");
   assert.equal(renderBoardHtml(health, snapshot, "https://example.invalid", displayMask({})), plain);
   assert.equal(renderBoardHtml(health, snapshot, "https://example.invalid", displayMask({ BANNED_TEXT: "not json" })), plain);
+});
+
+test("the test form reads the same list, and an id is also read as the words a page shows", () => {
+  const banned = displayTest({ BANNED_TEXT: JSON.stringify({ always: [], visible: ["\\bzz never\\b"] }) });
+  assert.equal(banned("zz-never-7b"), true);
+  assert.equal(banned("zz.never"), true);
+  assert.equal(banned("muse-spark-1.3"), false);
+  assert.equal(displayTest({})("zz-never-7b"), false);
+  assert.equal(displayTest({ BANNED_TEXT: "not json" })("zz-never-7b"), false);
 });

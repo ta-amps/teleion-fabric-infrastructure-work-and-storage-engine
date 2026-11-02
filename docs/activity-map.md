@@ -63,7 +63,8 @@ places, continents and claims by class, which include workers that left the map)
 Every word the view shows is fixed text in `edge_activity.js` or a catalog model id. The deploy guard
 checks the fixed text against the one shared list. The model ids, which a worker's report names, also pass
 the list when the view is read: `make deploy` sets the `BANNED_TEXT` var from the list
-(`scripts/banned_text_var.py`), a banned id is shown as `other_model`, and the stored row stays as it is.
+(`scripts/banned_text_var.py`), the map reads it through `display_mask.js` (`displayTest`, beside the board's
+`displayMask`), a banned id is shown as `other_model`, and the stored row stays as it is.
 No pattern from the list is kept in this repository; without the var nothing is masked.
 
 ## Serving
