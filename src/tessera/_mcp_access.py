@@ -26,7 +26,7 @@ def register_access_tools(
     current_grant: Callable[[], Awaitable[KeyGrant]],
 ) -> None:
     @server.tool(
-        description="Open a tracked one-hour anonymous demo session. Personal assistants and coding agents welcome; only synthetic demo nouns and verbs, fixed quotas, private 24-hour retention. No pre-issued key needed."
+        description="Open a tracked one-hour anonymous demo session. Personal assistants and coding agents welcome; only practice nouns and verbs with example data, fixed quotas, private 24-hour retention. No pre-issued key needed."
     )
     async def open_anonymous_session(agent_label: str = "") -> dict[str, Any]:
         if not settings.anonymous_access_enabled:

@@ -67,6 +67,13 @@ def main(argv: list[str] | None = None) -> int:
     curve.add_argument("--output", type=Path)
     pack = commands.add_parser("pack", help="write the seed pack (deterministic, offline)")
     pack.add_argument("--output", type=Path, default=HERE / "pack")
+    pack.add_argument(
+        "--base",
+        type=Path,
+        action="append",
+        default=[],
+        help="a base-model description to include (repeatable); none by default",
+    )
     tools = commands.add_parser(
         "export-tools", help="refresh mcp_tools.served.json; the frozen benchmark never changes"
     )
@@ -114,7 +121,7 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "pack":
         from .pack import write_pack
 
-        print(json.dumps(write_pack(args.output), indent=1))
+        print(json.dumps(write_pack(args.output, bases=tuple(args.base)), indent=1))
     else:
         from .tools import write_snapshot
 

@@ -1,6 +1,6 @@
 // Real Worker/SQLite: per-IP limits count in the hour their daily-rotated IP hash was computed, so a
 // request that crosses midnight cannot charge the old day's hash to the new hour's allowance. Same
-// rule as tests/test_client_addresses.py. Synthetic data only.
+// rule as tests/test_client_addresses.py. Example data only.
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { build } from "esbuild";
@@ -21,7 +21,7 @@ export class FixtureCoordinator extends TesseraCoordinator {
 }
 `;
 const built = await build({ stdin: { contents: fixture, resolveDir: process.cwd(), sourcefile: "client-addresses-fixture.mjs" }, bundle: true, format: "esm", platform: "browser", write: false, external: ["cloudflare:workers"] });
-const PROFILE = { display_name: "Synthetic Food Bank", organization_type: "Food pantry" };
+const PROFILE = { display_name: "Example Food Bank", organization_type: "Food pantry" };
 
 test("a per-IP allowance is charged to the hour its identity was computed in", async () => {
   const runtime = new Miniflare(convertV4MiniflareOptions({ cf: false, workers: [{

@@ -1,5 +1,5 @@
 import { ACCESS_TOOLS, accessDescriptionFor } from "./cloud_access_routes.js";
-import { LIBRARY_TOOLS, LIBRARY_TOOL_NAMES, libraryToolBody } from "./library_contract.js";
+import { LIBRARY_TOOLS, LIBRARY_TOOL_NAMES, libraryEnabled, libraryToolBody } from "./library_contract.js";
 // Native Streamable HTTP MCP Door (`/mcp`) for Tessera Cloud.
 // Exposes tools across atomic verbs, queryable CAS nouns, persistent cloud buckets,
 // progressive L0 scent search, delta feeds, reflex recall, and Surface Handshake v1.0
@@ -9,7 +9,7 @@ import { TESSERA_VERSION } from "./cloud_pages.js";
 import { loadCloudBlob, mirrorBucketObjectToD1, storeCloudBlob } from "./cloud_buckets.js";
 
 const INSTRUCTIONS =
-  "Tessera organizes shared agent work into atomic verbs (leased tasks) and atomic nouns " +
+  "Teleion Fabric organizes shared agent work into atomic verbs (leased tasks) and atomic nouns " +
   "(queryable compare-and-set records and persistent cloud file buckets). Claim one task, " +
   "heartbeat while you work, read or enrich nouns and bucket files with expected_version, " +
   "enqueue or split bounded follow-on verbs when needed, and submit once with an idempotency key. " +
@@ -423,6 +423,9 @@ export const TOOLS = [
 // The one served tool registry. `tools/list` returns exactly this array, and every agent page
 // (llms.txt, llms-full.txt, the agent card and the connect page) renders its tool list from it.
 export const MCP_TOOLS = Object.freeze([...TOOLS, ...ACCESS_TOOLS, ...LIBRARY_TOOLS]);
+const WITHOUT_LIBRARY = Object.freeze(MCP_TOOLS.filter(tool => !LIBRARY_TOOL_NAMES.has(tool.name)));
+// What tools/list and every page that names tools serve: the library tools only while the door is on.
+export const mcpToolsFor = env => (libraryEnabled(env) ? MCP_TOOLS : WITHOUT_LIBRARY);
 
 function b64ToBytes(b64) {
   const bin = atob(b64);
@@ -861,7 +864,7 @@ export async function handleMcpRequest(
         result: {
           protocolVersion: params?.protocolVersion || "2025-06-18",
           capabilities: { tools: { listChanged: false } },
-          serverInfo: { name: "tessera", title: "Tessera work fabric", version: TESSERA_VERSION },
+          serverInfo: { name: "tessera", title: "Teleion Fabric work fabric", version: TESSERA_VERSION },
           instructions: INSTRUCTIONS,
         },
       };
@@ -870,7 +873,7 @@ export async function handleMcpRequest(
       return { jsonrpc: "2.0", id, result: {} };
     }
     if (method === "tools/list") {
-      return { jsonrpc: "2.0", id, result: { tools: MCP_TOOLS } };
+      return { jsonrpc: "2.0", id, result: { tools: mcpToolsFor(env) } };
     }
     if (method === "tools/call") {
       const toolName = params?.name;
@@ -878,12 +881,14 @@ export async function handleMcpRequest(
       let out;
       if (toolName === "open_anonymous_session") out = await stub.openAnonymousSession(toolArgs);
       else if (toolName === "explain_access_modes") out = { ok: true, data: accessDescriptionFor(env.PUBLIC_URL || new URL(request.url).origin, env) };
+      else if (toolName === "request_human_link") out = await stub.humanLink(bearerSecret, "issue", toolArgs);
+      else if (toolName === "get_human_link") out = await stub.humanLink(bearerSecret, "get", { id: toolArgs.id });
       else if (toolName === "whoami") out = await stub.rpcCall(bearerSecret, "me", routeCtx);
       else if (toolName === "my_audit" || toolName === "admin_audit") out = await stub.auditForToken(bearerSecret, { ...toolArgs, admin: toolName === "admin_audit" });
       else if (toolName === "cancel") out = await stub.rpcCall(bearerSecret, "cancel", { ...toolArgs, ...routeCtx });
       else if (toolName === "list_verbs") out = await stub.rpcCall(bearerSecret, "listVerbs", { ...toolArgs, ...routeCtx });
       else if (toolName === "claim_events") out = await stub.rpcCall(bearerSecret, "claimEvents", { ...toolArgs, ...routeCtx });
-      else if (toolName === "proposal_status") out = await stub.libraryRead("proposal", { proposal_id: toolArgs.proposal_id });
+      else if (toolName === "proposal_status") out = await stub.libraryRead("proposal", { proposal_id: toolArgs.proposal_id }, bearerSecret || null);
       else if (LIBRARY_TOOL_NAMES.has(toolName)) out = bearerSecret ? await stub.libraryPropose(bearerSecret, libraryToolBody(toolName, toolArgs), "mcp") : { ok: false, status: 401, code: "unauthorized", detail: "a contributor key or a tracked session (open_anonymous_session) is required to propose" };
       else out = await callTool(stub, env, ctx, bearerSecret, toolName, toolArgs, routeCtx);
       if (!out.ok) {
@@ -892,7 +897,7 @@ export async function handleMcpRequest(
           id,
           result: {
             content: [{ type: "text", text: `${out.code}: ${out.detail}` }],
-            structuredContent: { error: { code: out.code, status: out.status, detail: out.detail, ...(out.code === "storage_quota_exhausted" ? { retry_after: out.extra?.retry_after, reset_at: out.extra?.reset_at } : {}), ...(out.extra?.findings ? { findings: out.extra.findings, refusal_sha256: out.extra.refusal_sha256 } : {}), ...(out.code === "rate_limited" ? { retry_after: out.extra?.retry_after ?? null } : {}) }, access: out.status === 401 ? accessDescriptionFor(env.PUBLIC_URL || new URL(request.url).origin, env) : undefined },
+            structuredContent: { error: { code: out.code, status: out.status, detail: out.detail, ...(out.code === "storage_quota_exhausted" ? { retry_after: out.extra?.retry_after, reset_at: out.extra?.reset_at } : {}), ...(out.extra?.findings ? { findings: out.extra.findings, refusal_sha256: out.extra.refusal_sha256 } : {}), ...(out.code === "rate_limited" ? { retry_after: out.extra?.retry_after ?? null, ...(out.extra?.budget ? { budget: out.extra.budget } : {}) } : {}) }, access: out.status === 401 ? accessDescriptionFor(env.PUBLIC_URL || new URL(request.url).origin, env) : undefined },
             isError: true,
           },
         };

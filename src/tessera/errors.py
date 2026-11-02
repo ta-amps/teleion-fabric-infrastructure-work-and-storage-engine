@@ -125,3 +125,7 @@ BY_CODE: dict[str, type[TesseraError]] = {
         StorageQuotaExhausted,
     )
 }
+# The Worker refuses personal or payment data in demo and requester writes with example_only. Its
+# former code is still understood, so a client keeps working against an older Worker.
+BY_CODE["example_only"] = InvalidRequest
+BY_CODE["synthetic_only"] = InvalidRequest  # compat-alias: tessera-error-code

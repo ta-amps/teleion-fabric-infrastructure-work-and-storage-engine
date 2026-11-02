@@ -4,7 +4,7 @@ Before the fix, a key that uploaded bytes another key had already stored private
 then 404 on reading them back, which told it those bytes existed there; on the Python store a
 public bucket object holding such bytes was unreadable to everyone but the first uploader.
 docs/raw-blob-governance.md records what is fixed and what still needs a decision. The Worker
-has the same checks in tests/workerd_blob_first_uploader.mjs. Synthetic keys and bytes only."""
+has the same checks in tests/workerd_blob_first_uploader.mjs. Example keys and bytes only."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from tessera.access import ServiceSettings
 from tessera.errors import NotFound
 from tessera.service import create_app
 
-SHARED = b"SYNTHETIC bytes that two keys both hold"
+SHARED = b"EXAMPLE bytes that two keys both hold"
 
 
 def _headers(key: str, governance: dict[str, str] | None = None) -> dict[str, str]:
@@ -33,9 +33,9 @@ def _headers(key: str, governance: dict[str, str] | None = None) -> dict[str, st
 def test_a_later_uploader_reads_back_bytes_another_key_stored_privately(tmp_path: Path) -> None:
     db_path = tmp_path / "first-uploader.db"
     store = Store(db_path)
-    first, _ = store.issue_key("synthetic-first", queues=["none"], scopes=["store"])
-    later, _ = store.issue_key("synthetic-later", queues=["none"], scopes=["store"])
-    other, _ = store.issue_key("synthetic-other", queues=["none"], scopes=["store"])
+    first, _ = store.issue_key("example-first", queues=["none"], scopes=["store"])
+    later, _ = store.issue_key("example-later", queues=["none"], scopes=["store"])
+    other, _ = store.issue_key("example-other", queues=["none"], scopes=["store"])
     app = create_app(store, ServiceSettings(db_path=str(db_path), reaper_seconds=3600))
     digest = hashlib.sha256(SHARED).hexdigest()
     private = {"visibility_scope": "private"}
@@ -59,7 +59,7 @@ def test_a_later_uploader_reads_back_bytes_another_key_stored_privately(tmp_path
 
         # Nobody else gains access, and an upload grants no access to other bytes.
         assert client.get(f"/v1/blobs/{digest}", headers=_headers(other)).status_code == 404
-        mine = client.post("/v1/blobs", content=b"synthetic other bytes", headers=_headers(other))
+        mine = client.post("/v1/blobs", content=b"example other bytes", headers=_headers(other))
         assert mine.status_code == 201
         assert client.get(f"/v1/blobs/{digest}", headers=_headers(other)).status_code == 404
 
@@ -70,13 +70,13 @@ def test_an_object_is_governed_by_its_acl_not_by_who_stored_its_bytes_first(
     store = Store(tmp_path / "objects.db")
     try:
         store.define_bucket(BucketConfig(name="nouns"))
-        with store.scope_context(key_id="synthetic-first"):
+        with store.scope_context(key_id="example-first"):
             digest = store.put_blob(SHARED, visibility_scope="private")
-        with store.scope_context(key_id="synthetic-writer"):
+        with store.scope_context(key_id="example-writer"):
             store.put_object("nouns", "shared.txt", SHARED)
             assert store.get_object("nouns", "shared.txt")[1] == SHARED
             assert store.get_blob(digest) == SHARED
-        with store.scope_context(key_id="synthetic-reader"):
+        with store.scope_context(key_id="example-reader"):
             meta, data = store.get_object("nouns", "shared.txt")
             assert (meta.sha256, data) == (digest, SHARED)
             # Raw reads still follow the blob's own row: this key uploaded nothing.
@@ -92,12 +92,12 @@ def test_quarantine_and_private_objects_still_hide_bytes_from_keys_that_never_he
     store = Store(tmp_path / "unchanged.db")
     try:
         store.define_bucket(BucketConfig(name="nouns"))
-        with store.scope_context(key_id="synthetic-owner", surface="eranos"):
+        with store.scope_context(key_id="example-owner", surface="eranos"):
             store.put_object(
                 "nouns", "held.txt", SHARED, visibility_scope="private", tags=["status:quarantined"]
             )
         digest = hashlib.sha256(SHARED).hexdigest()
-        with store.scope_context(key_id="synthetic-reader", surface="eranos"):
+        with store.scope_context(key_id="example-reader", surface="eranos"):
             with pytest.raises(NotFound):
                 store.get_object("nouns", "held.txt")
             with pytest.raises(NotFound):

@@ -1,4 +1,4 @@
-// Actual coordinator, SQL and Worker ranking handlers; temporary synthetic data only.
+// Actual coordinator, SQL and Worker ranking handlers; temporary example data only.
 import assert from "node:assert/strict";
 import {DatabaseSync} from "node:sqlite";
 import worker, {TesseraCoordinator} from "../deploy/cloudflare/worker.js";
@@ -28,10 +28,10 @@ const env = {STORAGE_MODE:"cloud",PUBLIC_URL:"https://tessera.example"};
 const coord = new TesseraCoordinator(ctx, env);
 await Promise.all(pending);
 env.COORDINATOR = {idFromName:n=>n,get:()=>coord};
-const adm = await coord.bootstrapOrIssueKey("", true, {label:"synthetic",queues:["*"],scopes:["admin","store"]});
+const adm = await coord.bootstrapOrIssueKey("", true, {label:"example",queues:["*"],scopes:["admin","store"]});
 assert.equal(adm.ok, true);
 const token = adm.data.key;
-const reader = await coord.bootstrapOrIssueKey(token, false, {label:"synthetic-reader",queues:["conformance-query"],scopes:["store"]});
+const reader = await coord.bootstrapOrIssueKey(token, false, {label:"example-reader",queues:["conformance-query"],scopes:["store"]});
 assert.equal(reader.ok, true);
 const call = (action,args,key=token) => coord.rpcCall(key,action,args);
 const put = (key,value,tags=[]) => call("putRecords",{writes:[{store:"examples",key,value,tags,expected_version:0}]});
@@ -59,7 +59,7 @@ assert.equal((await call("putRecords",{writes:[
 ]})).status,400);
 assert.equal(db.prepare("SELECT COUNT(*) AS n FROM records WHERE key='rollback'").get().n,0);
 
-const common = {synthetic:true,trials:1,successes:1};
+const common = {example_only:true,trials:1,successes:1};
 assert.equal((await put("z-target",{...common,category_id:"noun.mcp_server"})).ok,true);
 assert.equal((await put("legacy-conflict",{category_id:"noun.feed_source"})).ok,true);
 for (const table of ["records","record_heads"]) {

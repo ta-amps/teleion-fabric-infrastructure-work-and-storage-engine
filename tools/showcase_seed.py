@@ -50,15 +50,15 @@ class Idea(BaseModel):
 
 class Ideas(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    synthetic: StrictBool
+    example_only: StrictBool
     theme_id: str = Field(pattern=r"^[a-z][a-z0-9-]{1,63}$")
     ideas: list[Idea] = Field(min_length=1, max_length=3)
 
-    @field_validator("synthetic")
+    @field_validator("example_only")
     @classmethod
-    def marked_synthetic(cls, value: bool) -> bool:
+    def marked_example(cls, value: bool) -> bool:
         if not value:
-            raise ValueError("showcase outputs must be marked synthetic")
+            raise ValueError("showcase outputs must be marked example_only")
         return value
 
 
@@ -72,7 +72,11 @@ def load_pack(path: Path = PACK) -> dict[str, Any]:
     if path.stat().st_size > 65536:
         raise ValueError("pack exceeds 64 KiB")
     data = json.loads(path.read_text())
-    if not isinstance(data, dict) or data.get("version") != 1 or data.get("synthetic") is not True:
+    if (
+        not isinstance(data, dict)
+        or data.get("version") != 1
+        or data.get("example_only") is not True
+    ):
         raise ValueError("invalid showcase pack")
     topics = data.get("themes", [])
     ids = [t["id"] for t in topics]
@@ -88,7 +92,7 @@ def load_pack(path: Path = PACK) -> dict[str, Any]:
 def nouns(pack: dict[str, Any]) -> dict[str, Any]:
     records = {
         "source": pack["source"],
-        "profile": {k: pack[k] for k in ["synthetic", "bounds", "evaluation", "boundaries"]},
+        "profile": {k: pack[k] for k in ["example_only", "bounds", "evaluation", "boundaries"]},
         "idea-contract": Ideas.model_json_schema(),
     }
     records.update({"theme." + t["id"]: t for t in pack["themes"]})
@@ -118,9 +122,9 @@ def task(
         effect_class="write-internal",
         visibility_scope="private",
         idempotency_key="opportunity-lab:" + identity,
-        tags=["category:verb.solve_draft", "stage:ideate", "status:quarantined", "data:synthetic"],
+        tags=["category:verb.solve_draft", "stage:ideate", "status:quarantined", "data:example"],
         brief={
-            "synthetic": True,
+            "example_only": True,
             "stage": "ideate",
             "theme_id": theme["id"],
             "attempt_index": variant,

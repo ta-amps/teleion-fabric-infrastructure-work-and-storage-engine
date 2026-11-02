@@ -37,7 +37,7 @@ def test_prepare_replays_without_overwrite_or_duplicate_tasks(tmp_path: Path) ->
     tool = module()
     store = Store(tmp_path / "seed.db")
     _, grant = store.issue_key(
-        "synthetic-showcase",
+        "example-showcase",
         queues=["conformance-showcase"],
         scopes=["store", "namespace:conformance-showcase"],
     )
@@ -65,7 +65,7 @@ def test_prepare_replays_without_overwrite_or_duplicate_tasks(tmp_path: Path) ->
 def test_shape_cannot_claim_verified_idea() -> None:
     tool = module()
     idea = {
-        "title": "SYNTHETIC test",
+        "title": "EXAMPLE test",
         "beneficiary": "test reader",
         "mechanism": "compare fixtures",
         "difference": "different input",
@@ -76,7 +76,9 @@ def test_shape_cannot_claim_verified_idea() -> None:
         "evidence_status": "verified",
     }
     with pytest.raises(ValueError, match="ideation cannot assert verified status"):
-        tool.Ideas.model_validate({"synthetic": True, "theme_id": "cheap-orbit", "ideas": [idea]})
+        tool.Ideas.model_validate(
+            {"example_only": True, "theme_id": "cheap-orbit", "ideas": [idea]}
+        )
 
 
 def test_preview_never_constructs_a_client(

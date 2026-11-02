@@ -1,4 +1,4 @@
-// Real tombstone SQL and shared Worker ACL/search code; only synthetic local state.
+// Real tombstone SQL and shared Worker ACL/search code; only example local state.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { DatabaseSync } from "node:sqlite";
@@ -23,20 +23,20 @@ const permitted = (row, key, surface = "surface:memory_team", admin = false) => 
   viewer_key_id: key, viewer_surface: surface, is_admin: admin, direct_get: true,
 });
 const cases = [
-  ["private", false, "synthetic-owner"], ["public_commons", false, "synthetic-owner"],
-  ["surface_only", true, "synthetic-owner"], ["allowlist_surfaces", true, "synthetic-owner"],
+  ["private", false, "example-owner"], ["public_commons", false, "example-owner"],
+  ["surface_only", true, "example-owner"], ["allowlist_surfaces", true, "example-owner"],
   ["public_commons", false, null],
 ];
 for (const [index, [visibility, quarantined, owner]] of cases.entries()) {
-  const id = "synthetic-" + index;
-  const task = { id, queue: "conformance-private", kind: "task", brief: canonical({ title: "SYNTHETIC diagnostic" }),
+  const id = "example-" + index;
+  const task = { id, queue: "conformance-private", kind: "task", brief: canonical({ title: "EXAMPLE diagnostic" }),
     producer_surface: "surface:memory_team", visibility_scope: visibility, owner_key_id: owner,
     allowed_surfaces: '["surface:other_team"]', target_cohorts: '["cohort:memory"]',
-    tags: canonical(["origin:synthetic", "status:verified", ...(quarantined ? ["status:quarantined"] : [])]),
+    tags: canonical(["origin:example", "status:verified", ...(quarantined ? ["status:quarantined"] : [])]),
   };
-  recordDeadEndTombstone(coord, task, 1, "SYNTHETIC failure", 100, canonical);
+  recordDeadEndTombstone(coord, task, 1, "EXAMPLE failure", 100, canonical);
   // A repeated derivation must retain privacy on both head and every new version.
-  recordDeadEndTombstone(coord, task, 2, "SYNTHETIC retry failure", 101, canonical);
+  recordDeadEndTombstone(coord, task, 2, "EXAMPLE retry failure", 101, canonical);
   const head = coord._one("SELECT * FROM record_heads WHERE namespace=? AND key=?", namespace, id);
   assert.equal(head.version, 2);
   const rows = coord._all("SELECT * FROM records WHERE namespace=? AND key=?", namespace, id);
@@ -47,14 +47,14 @@ for (const [index, [visibility, quarantined, owner]] of cases.entries()) {
     assert.equal(row.target_cohorts, '["cohort:memory"]');
     assert.equal(JSON.parse(row.tags).includes("status:quarantined"), quarantined);
     assert.equal(JSON.parse(row.tags).includes("status:verified"), false);
-    assert.equal(permitted(row, "synthetic-peer"), false);
-    assert.equal(permitted(row, "synthetic-noun-only"), false);
-    assert.equal(permitted(row, "synthetic-allowlisted", "surface:other_team"), false);
-    assert.equal(permitted(row, "synthetic-admin", null, true), true);
+    assert.equal(permitted(row, "example-peer"), false);
+    assert.equal(permitted(row, "example-noun-only"), false);
+    assert.equal(permitted(row, "example-allowlisted", "surface:other_team"), false);
+    assert.equal(permitted(row, "example-admin", null, true), true);
     if (owner) assert.equal(permitted(row, owner), true);
   }
 }
 assert.deepEqual(searchNouns(coord, { store: "negative.knowledge", cohort: "cohort:memory" }, canonical,
-  message => new Error(message), { key_id: "synthetic-noun-only", surface: "surface:memory_team" }), []);
+  message => new Error(message), { key_id: "example-noun-only", surface: "surface:memory_team" }), []);
 db.close();
 process.stdout.write(JSON.stringify({ controls_passed: true }));

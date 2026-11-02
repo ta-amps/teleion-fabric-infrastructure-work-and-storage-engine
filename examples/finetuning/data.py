@@ -1,4 +1,4 @@
-"""Owned synthetic research observations and family-separated dataset manifests."""
+"""Owned example research observations and family-separated dataset manifests."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from typing import Any
 
 SPLITS = ("train", "dev", "test")
 INSTRUCTION = (
-    "Turn this synthetic observation and project profile into a capability noun and "
+    "Turn this example observation and project profile into a capability noun and "
     "a candidate follow-up verb. Preserve evidence and unknowns; do not claim execution. "
     "Return only JSON with capability and follow_up."
 )
@@ -29,20 +29,20 @@ def file_digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def synthetic_rows() -> list[dict[str, Any]]:
+def example_rows() -> list[dict[str, Any]]:
     """Templates authored for this example; no external text or model outputs."""
     rows = []
     for family in range(10):
         split = "train" if family < 6 else "dev" if family < 8 else "test"
         for variation in range(2):
-            identity = f"synthetic-{family:02d}-{variation}"
+            identity = f"example-{family:02d}-{variation}"
             task = "source extraction" if variation == 0 else "task planning"
             source = {
                 "id": identity,
-                "synthetic": True,
+                "example_only": True,
                 "family": f"publisher-{family:02d}",
                 "observation": f"Model M{family} supports {task}. Local latency and grounding are unmeasured.",
-                "evidence_status": "synthetic_claim",
+                "evidence_status": "example_claim",
             }
             rows.append(
                 {
@@ -66,7 +66,7 @@ def synthetic_rows() -> list[dict[str, Any]]:
                             "evidence": [identity],
                             "relevance": "candidate",
                             "unknowns": ["local_latency", "grounding", "hardware_fit"],
-                            "status": "synthetic_proposal",
+                            "status": "example_proposal",
                         },
                         "follow_up": {
                             "kind": "verb.benchmark_harness",
@@ -99,8 +99,8 @@ def validate_rows(rows: list[dict[str, Any]]) -> None:
                 raise ValueError("source or project family leaks across splits")
         source = row["input"]["source"]
         output = row["output"]
-        if source.get("synthetic") is not True or source.get("id") != row["id"]:
-            raise ValueError("example accepts only identified owned synthetic observations")
+        if source.get("example_only") is not True or source.get("id") != row["id"]:
+            raise ValueError("example accepts only identified owned example observations")
         if (
             source.get("family") != row["source_family"]
             or row["input"]["profile"]["id"] != row["project_family"]
@@ -124,7 +124,7 @@ def messages(row: dict[str, Any]) -> list[dict[str, str]]:
 
 
 def prepare(directory: Path) -> dict[str, Any]:
-    rows = synthetic_rows()
+    rows = example_rows()
     validate_rows(rows)
     directory.mkdir(parents=True, exist_ok=False)
     files = {}
@@ -138,8 +138,8 @@ def prepare(directory: Path) -> dict[str, Any]:
             path.write_bytes(b"".join(canonical(row) + b"\n" for row in values))
             files[name] = {"sha256": file_digest(path), "rows": len(values)}
     manifest = {
-        "format": "tessera.synthetic-research.v1",
-        "synthetic": True,
+        "format": "tessera.example-research.v1",
+        "example_only": True,
         "provenance": {
             "origin": "repository-authored deterministic templates",
             "license": "MIT",
@@ -164,7 +164,7 @@ def prepare(directory: Path) -> dict[str, Any]:
         },
         "files": files,
         "limitations": [
-            "Tiny owned synthetic fixture; no factual or task-quality improvement can be inferred.",
+            "Tiny owned test fixture; no factual or task-quality improvement can be inferred.",
             "No private histories, hidden reasoning, provider responses or third-party datasets.",
         ],
     }
@@ -175,8 +175,8 @@ def prepare(directory: Path) -> dict[str, Any]:
 def load(directory: Path) -> tuple[dict[str, Any], dict[str, list[dict[str, Any]]]]:
     manifest = json.loads((directory / "manifest.json").read_bytes())
     if (
-        manifest.get("format") != "tessera.synthetic-research.v1"
-        or manifest.get("synthetic") is not True
+        manifest.get("format") != "tessera.example-research.v1"
+        or manifest.get("example_only") is not True
     ):
         raise ValueError("unsupported dataset manifest")
     if manifest.get("instruction_sha256") != digest(INSTRUCTION):

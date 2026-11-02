@@ -1,6 +1,6 @@
 // Real Worker/SQLite under a faithful storage-exhaustion simulation: after the provider's daily
 // allowance is spent it refuses every write-capable statement, even one that would change no row.
-// Fixture-only methods never ship in the product. Synthetic keys and data only.
+// Fixture-only methods never ship in the product. Example keys and data only.
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -50,7 +50,7 @@ async function setup(persist, bindings = {}) {
     compatibilityDate: "2026-10-01",
     durableObjects: { COORDINATOR: { className: "FixtureCoordinator", useSQLite: true } },
     d1Databases: ["FABRIC_DB", "BUCKETS_DB"],
-    bindings: { STORAGE_MODE: "cloud", ANONYMOUS_ACCESS_ENABLED: "false", FRAGILITY_PLANNER_ENABLED: "false", BOOTSTRAP_SECRET: "synthetic-exhaustion-bootstrap", ...bindings },
+    bindings: { STORAGE_MODE: "cloud", ANONYMOUS_ACCESS_ENABLED: "false", FRAGILITY_PLANNER_ENABLED: "false", BOOTSTRAP_SECRET: "example-exhaustion-bootstrap", ...bindings },
     outboundService: () => { throw new Error("External requests are prohibited in this fixture"); },
   }] }));
   runtimes.add(runtime);
@@ -75,7 +75,7 @@ async function warmed() {
   const dir = mkdtempSync(join(tmpdir(), "tessera-exhaustion-"));
   dirs.push(dir);
   const env = await setup(dir);
-  const issued = await env.request("/v1/admin/keys", { label: "synthetic-operator", queues: ["*"], scopes: ["admin", "store"], effect_classes: ["read", "write-internal"] }, undefined, { "X-Bootstrap-Secret": "synthetic-exhaustion-bootstrap" });
+  const issued = await env.request("/v1/admin/keys", { label: "example-operator", queues: ["*"], scopes: ["admin", "store"], effect_classes: ["read", "write-internal"] }, undefined, { "X-Bootstrap-Secret": "example-exhaustion-bootstrap" });
   assert.equal(issued.status, 201, JSON.stringify(issued.data));
   assert.equal((await env.request("/v1/queues/define", { name: "conformance-exhaustion" }, issued.data.key)).status, 200);
   assert.equal((await env.request("/ns/conformance-exhaustion/v1/counts", undefined, issued.data.key)).status, 200);

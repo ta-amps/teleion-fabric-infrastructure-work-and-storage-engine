@@ -1,9 +1,9 @@
-# Bilateral swarm testing with OpenCode & Ollama Cloud (`muse-spark-open`)
+# Bilateral swarm testing with OpenCode and Meta's open-weight Muse model (`muse-spark-open`)
 
 Before switching to hosted Meta Model API keys (`https://api.meta.ai/v1`), you can exercise every
 Tessera and Eranos workflow, and the verbs in seed packs, locally and bilaterally using **OpenCode**
 (`opencode v2.x` over Streamable HTTP `/mcp`) and **Meta's open-weight `muse-spark-open`** on
-**Ollama Cloud** (`https://ollama.com/v1`) or a local Ollama server. Tessera is infrastructure; Eranos and one
+any OpenAI-compatible host that serves it, hosted or local. Tessera is infrastructure; Eranos and one
 overview site are the only public surfaces, and everything else is nouns and verbs in seed packs.
 
 ## 1. Connect OpenCode directly to Tessera `/mcp`
@@ -22,12 +22,12 @@ Create a project-scoped `opencode.json` that references secrets only via `{env:.
 {
   "$schema": "https://opencode.ai/config.json",
   "provider": {
-    "ollama-cloud": {
+    "open-weights": {
       "npm": "@ai-sdk/openai-compatible",
-      "name": "Ollama Cloud",
+      "name": "Open-weights endpoint",
       "options": {
-        "baseURL": "https://ollama.com/v1",
-        "apiKey": "{env:OLLAMA_API_KEY}"
+        "baseURL": "https://<open-weights host>/v1",
+        "apiKey": "{env:OPEN_WEIGHTS_API_KEY}"
       },
       "models": {
         "muse-spark-open": {
@@ -37,8 +37,8 @@ Create a project-scoped `opencode.json` that references secrets only via `{env:.
       }
     }
   },
-  "model": "ollama-cloud/muse-spark-open",
-  "small_model": "ollama-cloud/muse-spark-open",
+  "model": "open-weights/muse-spark-open",
+  "small_model": "open-weights/muse-spark-open",
   "mcp": {
     "tessera": {
       "type": "remote",
@@ -58,7 +58,7 @@ OpenCode immediately sees all 12 scoped Tessera MCP tools (`queues`, `enqueue`, 
 
 ## 2. Run the bilateral two-agent test suite
 
-`tools/opencode_bilateral.py` runs **two distinct agents** (`opencode-agent-a` and `ollama-peer-b`,
+`tools/opencode_bilateral.py` runs **two distinct agents** (`opencode-agent-a` and `open-weights-peer-b`,
 each with its own `tsk_*` key) across two bilateral protocols:
 
 1. **`park` ↔ `resume` Q&A handshake (`T19` + `T21`):** Agent A claims an intake task over `/mcp`
@@ -67,15 +67,15 @@ each with its own `tsk_*` key) across two bilateral protocols:
    submits with a SHA-256 receipt.
 2. **Seed → Proposals (`v1..v3`) → Independent Review → Canonical (`v1`):** Agent A expands a seed
    noun and enriches two child tasks using `muse-spark-open`; Agent B (`reviewer != proposer`)
-   verifies `SYNTHETIC` marks and atomically promotes to `canonical/*`.
+   verifies `EXAMPLE` marks and atomically promotes to `canonical/*`.
 
 ```bash
 # Deterministic offline verification (runs in CI without network or keys):
 make bilateral-demo
 
-# Live Ollama Cloud (`muse-spark-open`) + live `opencode` CLI over `/mcp`:
-OLLAMA_API_KEY=<your-ollama-key> \
-  uv run python tools/opencode_bilateral.py --live-ollama --live-opencode
+# Live `muse-spark-open` on an OpenAI-compatible host + live `opencode` CLI over `/mcp`:
+OPEN_WEIGHTS_API_BASE=<host>/v1 OPEN_WEIGHTS_API_KEY=<key> \
+  uv run python tools/opencode_bilateral.py --live-model --live-opencode
 ```
 
 ## 3. Test Meta `/v1/responses` callers via `meta_open_bridge.py`
@@ -87,7 +87,7 @@ bridges requests to `muse-spark-open` (still refusing any `-contributor` model i
 
 ```bash
 # Terminal 1: start the local Meta Responses -> muse-spark-open bridge
-OLLAMA_API_KEY=<your-ollama-key> uv run python tools/meta_open_bridge.py --port 7799
+BRIDGE_UPSTREAM_BASE=<host>/v1 BRIDGE_UPSTREAM_KEY=<key> uv run python tools/meta_open_bridge.py --port 7799
 
 # Terminal 2: point any Responses API caller at the bridge instead of https://api.meta.ai/v1
 MODEL_API_BASE=http://127.0.0.1:7799/v1 MODEL_API_KEY=local-bridge <your caller's smoke command>

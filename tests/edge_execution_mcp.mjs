@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { handleMcpRequest, TOOLS } from "../deploy/cloudflare/cloud_mcp.js";
 
-const report = {version: 1, summaries: {problem: "SYNTHETIC addition"}};
+const report = {version: 1, summaries: {problem: "EXAMPLE addition"}};
 const calls = [];
 const stub = {async rpcCall(_secret, name, args) {
   calls.push({name, args});
@@ -15,7 +15,7 @@ async function call(name, args) {
   assert.equal(value.result.isError, false);
 }
 await call("recall_execution", {task_id: "fixture", fencing_token: 2, execution_report: report, limit: 3});
-await call("submit", {task_id: "fixture", fencing_token: 2, output: {synthetic: true}, idempotency_key: "fixture:2", execution_report: report});
+await call("submit", {task_id: "fixture", fencing_token: 2, output: {example_only: true}, idempotency_key: "fixture:2", execution_report: report});
 await call("get_execution", {run_id: "run_fixture"});
 await call("list_executions", {task_id: "fixture", after: 2, limit: 3});
 assert.deepEqual(calls.map(x => x.name), ["recallExecution", "submit", "getExecution", "listExecutions"]);

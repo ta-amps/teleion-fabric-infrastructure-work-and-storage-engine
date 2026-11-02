@@ -18,7 +18,7 @@ before(async () => {
     bindings: {
       STORAGE_MODE: "cloud", ANONYMOUS_ACCESS_ENABLED: "true",
       FRAGILITY_PLANNER_ENABLED: "false",
-      BOOTSTRAP_SECRET: "synthetic-workerd-bootstrap",
+      BOOTSTRAP_SECRET: "example-workerd-bootstrap",
     },
     outboundService: () => { throw new Error("External requests are prohibited in this fixture"); },
   }] }));
@@ -35,13 +35,13 @@ async function request(path, body, token, headers = {}) {
   return { status: response.status, data: await response.json(), headers: response.headers };
 }
 async function session() {
-  const created = await request("/v1/session/anonymous", { agent_label: "synthetic-workerd-recall" });
+  const created = await request("/v1/session/anonymous", { agent_label: "example-workerd-recall" });
   assert.equal(created.status, 201);
   return created.data.session_token;
 }
 async function rpc(token, name, args) {
   const response = await request("/mcp", {
-    jsonrpc: "2.0", id: "synthetic-runtime", method: "tools/call", params: { name, arguments: args },
+    jsonrpc: "2.0", id: "example-runtime", method: "tools/call", params: { name, arguments: args },
   }, token);
   assert.equal(response.status, 200);
   const result = response.data.result;
@@ -49,7 +49,7 @@ async function rpc(token, name, args) {
   return result.structuredContent;
 }
 const fence = lease => ({ task_id: lease.task_id, fencing_token: lease.fencing_token });
-const claim = async token => (await rpc(token, "claim", { queue: "demo.echo", worker: "synthetic-workerd" })).lease;
+const claim = async token => (await rpc(token, "claim", { queue: "demo.echo", worker: "example-workerd" })).lease;
 async function repeat(token, first) {
   const task = await rpc(token, "enqueue", {
     queue: "demo.echo", kind: first.kind, effect_class: first.effect_class,
@@ -61,7 +61,7 @@ async function repeat(token, first) {
 }
 async function submit(token, lease, report) {
   return (await rpc(token, "submit", {
-    ...fence(lease), output: { synthetic: true, sum: 3 }, execution_report: report,
+    ...fence(lease), output: { example_only: true, sum: 3 }, execution_report: report,
     idempotency_key: "submit:" + lease.task_id,
   })).receipt;
 }
@@ -71,7 +71,7 @@ const schema = {
 };
 const fullReport = {
   version: 1,
-  summaries: { problem: "SYNTHETIC add two integers", input: "one and two", solution: "three" },
+  summaries: { problem: "EXAMPLE add two integers", input: "one and two", solution: "three" },
   contract: { ...schema, context_hash: "a".repeat(64), environment_hash: "b".repeat(64), toolchain_hash: "c".repeat(64) },
   usage: { source: "deterministic_fixture_no_model", input_tokens: 0, output_tokens: 0 },
 };
@@ -120,12 +120,12 @@ for (const [name, report, expected] of [
 
 test("workerd recall returns an empty result when the matching profile has no candidate branches", async () => {
   const token = await session(), seeded = await claim(token);
-  await rpc(token, "cancel", { task_id: seeded.task_id, reason: "SYNTHETIC prepare isolated deep-input fixture" });
-  let nested = { value: "SYNTHETIC" };
+  await rpc(token, "cancel", { task_id: seeded.task_id, reason: "EXAMPLE prepare isolated deep-input fixture" });
+  let nested = { value: "EXAMPLE" };
   for (let depth = 0; depth < 20; depth++) nested = { nested };
   const created = await rpc(token, "enqueue", {
     queue: "demo.echo", kind: seeded.kind, effect_class: seeded.effect_class,
-    brief: { synthetic: true, nested }, visibility_scope: "private", idempotency_key: "deep-fixture",
+    brief: { example_only: true, nested }, visibility_scope: "private", idempotency_key: "deep-fixture",
   });
   const lease = await claim(token);
   assert.equal(lease.task_id, created.task_id);
@@ -139,25 +139,25 @@ test("workerd recall returns an empty result when the matching profile has no ca
 
 test("workerd execution nouns retain quarantine and facets with one primary noun category", async () => {
   const admin = await request("/v1/admin/keys", {
-    label: "synthetic-runtime-admin", queues: ["*"], scopes: ["admin"],
+    label: "example-runtime-admin", queues: ["*"], scopes: ["admin"],
     effect_classes: ["read", "write-internal"],
-  }, undefined, { "X-Bootstrap-Secret": "synthetic-workerd-bootstrap" });
+  }, undefined, { "X-Bootstrap-Secret": "example-workerd-bootstrap" });
   assert.equal(admin.status, 201);
   assert.equal((await request("/v1/queues/define", { name: "conformance-runtime" }, admin.data.key)).status, 200);
   const actor = await request("/v1/admin/keys", {
-    label: "synthetic-categorized-worker", queues: ["conformance-runtime"], kinds: ["*"],
+    label: "example-categorized-worker", queues: ["conformance-runtime"], kinds: ["*"],
     scopes: ["namespace:main", "surface:tessera", "nouns:read", "cas:write", "verbs:claim", "verbs:submit"],
     effect_classes: ["read", "write-internal"],
   }, admin.data.key);
   assert.equal(actor.status, 201);
   const token = actor.data.key;
   await rpc(token, "enqueue", {
-    queue: "conformance-runtime", kind: "synthetic", effect_class: "write-internal",
-    brief: { synthetic: true, category_id: "verb.solve_draft" }, visibility_scope: "private",
+    queue: "conformance-runtime", kind: "example", effect_class: "write-internal",
+    brief: { example_only: true, category_id: "verb.solve_draft" }, visibility_scope: "private",
     tags: ["category:verb.solve_draft", "cat:verb.solve_draft", "verb.solve_draft", "topic:arithmetic", "status:quarantined"],
     idempotency_key: "categorized-task",
   });
-  const lease = (await rpc(token, "claim", { queue: "conformance-runtime", worker: "synthetic-workerd" })).lease;
+  const lease = (await rpc(token, "claim", { queue: "conformance-runtime", worker: "example-workerd" })).lease;
   assert.ok(lease, "explicit surface grant permits the owner's quarantined task");
   await submit(token, lease, {});
   const runs = await rpc(token, "list_executions", { task_id: lease.task_id });
@@ -173,12 +173,12 @@ test("workerd execution nouns retain quarantine and facets with one primary noun
 
 test("100 simultaneous keyed claims use paced admission and preserve independent alternatives", async () => {
   const admin = await request("/v1/admin/keys", {
-    label: "synthetic-admission-admin", queues: ["*"], scopes: ["admin", "store"],
+    label: "example-admission-admin", queues: ["*"], scopes: ["admin", "store"],
     effect_classes: ["read", "write-internal"],
-  }, undefined, { "X-Bootstrap-Secret": "synthetic-workerd-bootstrap" });
+  }, undefined, { "X-Bootstrap-Secret": "example-workerd-bootstrap" });
   assert.equal(admin.status, 201);
   const issued = await request("/v1/admin/keys", {
-    label: "synthetic-swarm", queues: ["conformance-admission"], scopes: ["store"],
+    label: "example-swarm", queues: ["conformance-admission"], scopes: ["store"],
     effect_classes: ["read", "write-internal"],
   }, admin.data.key);
   assert.equal(issued.status, 201);
@@ -188,14 +188,14 @@ test("100 simultaneous keyed claims use paced admission and preserve independent
   for (let i = 0; i < 100; i++) {
     const task = await request("/v1/tasks", {
       queue, kind: "verb.solve_draft", effect_class: "write-internal",
-      brief: { synthetic: true, shared_brief: "same-problem", attempt_index: i },
+      brief: { example_only: true, shared_brief: "same-problem", attempt_index: i },
       visibility_scope: "private", idempotency_key: `alternative:${i}`,
     }, token);
     assert.equal(task.status, 201);
     ids.push(task.data.task_id);
   }
   const leases = await Promise.all(ids.map(async (_, i) => {
-    const claimed = await request("/v1/tasks/claim", { queue, worker: `synthetic-${i}` }, token);
+    const claimed = await request("/v1/tasks/claim", { queue, worker: `example-${i}` }, token);
     assert.equal(claimed.status, 200, JSON.stringify(claimed.data));
     assert.ok(Number.isFinite(Number(claimed.headers.get("x-claim-wait-ms"))));
     assert.ok(Number(claimed.headers.get("x-claim-concurrency")) >= 1);
@@ -205,7 +205,7 @@ test("100 simultaneous keyed claims use paced admission and preserve independent
   assert.deepEqual(new Set(leases.map(l => l.task_id)), new Set(ids));
   const completions = await Promise.all(leases.map(async lease => {
     assert.equal((await request("/v1/tasks/heartbeat", fence(lease), token)).status, 200);
-    const output = { synthetic: true, solution: `candidate-${lease.brief.attempt_index}` };
+    const output = { example_only: true, solution: `candidate-${lease.brief.attempt_index}` };
     const result = await rpc(token, "submit", {
       ...fence(lease), output, idempotency_key: `finish:${lease.task_id}`,
     });

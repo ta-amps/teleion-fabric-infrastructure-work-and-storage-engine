@@ -1,9 +1,13 @@
 import { agentStartAsset, withAgentStart } from "./agent_start.js";
 import { storageQuotaFailure } from "./storage_quota.js";
-import { namespaceReachable, publicPrincipal } from "./cloud_access.js";
+import { ipGroup, namespaceReachable, publicPrincipal } from "./cloud_access.js";
+import { edgeFromCf, publicActivityRoute } from "./edge_activity.js";
 import { accessDiscoveryRoute, accessRoute, accessDescriptionFor } from "./cloud_access_routes.js";
 import { handleA2a } from "./cloud_a2a.js";
-import { renderA2aCard } from "./library_contract.js";
+import { displayMask } from "./display_mask.js";
+import { HUMAN_LINK_INSTRUCTIONS, TOKEN_HEADER } from "./human_links.js";
+import { LIBRARY_CHECKER, libraryEnabled, renderA2aCard } from "./library_contract.js";
+import { LIBRARY_BODY_LIMIT, parseJsonBody, proposeThroughDoors, readCappedBody } from "./library_io.js";
 // Tessera Cloud Worker: 24/7 native cloud execution on Cloudflare Durable Object SQLite + D1
 // (`STORAGE_MODE = "cloud"`, the default) with optional Fly.io origin reverse-proxy fallback
 // (`STORAGE_MODE = "origin"`). Serves all Tessera Spec v0.2 HTTP routes (`/v1/*` and
@@ -13,7 +17,7 @@ import { renderA2aCard } from "./library_contract.js";
 
 import { loadCloudBlob, mirrorBucketObjectToD1, sha256Hex, storeCloudBlob, validateWireNumbers } from "./cloud_buckets.js";
 import { normalizeNamespace, sliceBytesResponse, tagMatchesCategory } from "./cloud_intelligence.js";
-import { govFields, handleMcpRequest, MCP_TOOLS } from "./cloud_mcp.js";
+import { govFields, handleMcpRequest, mcpToolsFor } from "./cloud_mcp.js";
 import {
   ROBOTS_TXT,
   renderAgentCard,
@@ -46,7 +50,7 @@ import {
 export { TesseraCoordinator };
 
 const DEFAULT_ORIGIN = "https://tessera-fabric.fly.dev";
-const DEFAULT_PUBLIC_URL = "https://tessera.ta-amps.workers.dev";
+const DEFAULT_PUBLIC_URL = "https://fabric.teleionlabs.com";
 const DEFAULT_REPO_URL = "https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine";
 const NAMESPACE_RE = /^[a-z0-9][a-z0-9_.-]{0,63}$/;
 const SHA256_RE = /^[0-9a-f]{64}$/;
@@ -110,6 +114,7 @@ const POST_ONLY_EXACT = new Set([
   "/v1/tasks/resume",
   "/v1/tasks/cancel",
   "/v1/admin/reap",
+  "/v1/admin/activity-map/clear",
   "/v1/stores/batch",
   "/v1/blobs",
   "/v1/buckets/define",
@@ -326,7 +331,7 @@ async function proxyToOrigin(request, env) {
       redirect: "manual",
     });
   } catch {
-    return problem(502, "unavailable", "The Tessera origin service did not answer.");
+    return problem(502, "unavailable", "The Teleion Fabric origin service did not answer.");
   }
   return withSecurity(upstream, { isWrite: !isRead, noStore: !isRead });
 }
@@ -380,7 +385,7 @@ function discoveryResponse(path, method, env, publicUrl, repoUrl) {
   const access = accessDiscoveryRoute(path, method, publicUrl, env, jsonResp, htmlResp);
   if (access) return access;
   if (path === "/" || path === "/connect") {
-    return htmlResp(renderConnectHtml(publicUrl, repoUrl, MCP_TOOLS));
+    return htmlResp(renderConnectHtml(publicUrl, repoUrl, mcpToolsFor(env)));
   }
   if (path === "/favicon.svg") {
     return withSecurity(
@@ -396,7 +401,7 @@ function discoveryResponse(path, method, env, publicUrl, repoUrl) {
   }
   if (path === "/llms.txt") {
     return withSecurity(
-      new Response(renderLlmsTxt(publicUrl, repoUrl, MCP_TOOLS) + "\n\nExternal harnesses and personal assistants: POST /v1/session/anonymous without secrets, then use Authorization: Bearer <session_token> for demo nouns and verbs. See /connect.json. tools/list is public; tool counts and schemas are authoritative there. Keyed production work remains protected.\n\nSeed-pack library: propose one task object (noun), one task template (verb) or a whole pack with POST /v1/library/proposals, the MCP library tools or A2A message/send at /a2a (agent card /.well-known/agent.json). A different reviewer claims the library.review verb; proposing runs, activates and admits nothing. Status: GET /v1/library/proposals/<proposal_id>.\n", {
+      new Response(renderLlmsTxt(publicUrl, repoUrl, mcpToolsFor(env)) + "\n\n" + HUMAN_LINK_INSTRUCTIONS + " POST /v1/human-links, then GET /v1/human-links/<id>." + "\n\nExternal harnesses and personal assistants: POST /v1/session/anonymous without secrets, then use Authorization: Bearer <session_token> for demo nouns and verbs. See /connect.json. tools/list is public; tool counts and schemas are authoritative there. Keyed production work remains protected.\n" + (libraryEnabled(env) ? "\nSeed-pack library: propose one task object (noun), one task template (verb) or a whole pack with POST /v1/library/proposals, the MCP library tools or A2A message/send at /a2a (agent card /.well-known/agent.json). A different reviewer claims the library.review verb; proposing runs, activates and admits nothing. Status: GET /v1/library/proposals/<proposal_id>.\n" : ""), {
         status: 200,
         headers: { "content-type": "text/plain; charset=utf-8" },
       }),
@@ -405,16 +410,16 @@ function discoveryResponse(path, method, env, publicUrl, repoUrl) {
   }
   if (path === "/llms-full.txt") {
     return withSecurity(
-      new Response(renderLlmsFullTxt(publicUrl, repoUrl, MCP_TOOLS) + "\n\n" + JSON.stringify(accessDescriptionFor(publicUrl, env), null, 2), {
+      new Response(renderLlmsFullTxt(publicUrl, repoUrl, mcpToolsFor(env)) + "\n\n" + JSON.stringify(accessDescriptionFor(publicUrl, env), null, 2), {
         status: 200,
         headers: { "content-type": "text/plain; charset=utf-8" },
       }),
       { noStore: false }
     );
   }
-  if (path === "/.well-known/agent.json") return jsonResp(renderA2aCard(publicUrl, repoUrl));
+  if (path === "/.well-known/agent.json") return libraryEnabled(env) ? jsonResp(renderA2aCard(publicUrl, repoUrl, env)) : problem(404, "not_found", "the library door is not enabled on this fabric");
   if (path === "/.well-known/agent-card.json") {
-    return jsonResp({ ...renderAgentCard(publicUrl, repoUrl, MCP_TOOLS), authentication: { discovery: "none", demo: "tan_ bearer session", keyed: "tsk_ bearer key" }, capabilities: { streaming: "long-poll", tools: true }, access: accessDescriptionFor(publicUrl, env) });
+    return jsonResp({ ...renderAgentCard(publicUrl, repoUrl, mcpToolsFor(env)), authentication: { discovery: "none", demo: "tan_ bearer session", keyed: "tsk_ bearer key" }, capabilities: { streaming: "long-poll", tools: true }, access: accessDescriptionFor(publicUrl, env) });
   }
   if (path === "/robots.txt") {
     return withSecurity(
@@ -445,13 +450,14 @@ const STORAGELESS_STUB = new Proxy({}, { get: (_target, name) => () => { throw n
 
 
 // The seed-pack library door. POST /v1/library/proposals files one proposal (a noun, a verb template
-// or a whole pack) under the caller's own key or tracked session; the GET routes read the public
-// proposals, catalog and instruction nouns without a key. /a2a maps A2A message/send to the same path.
-const LIBRARY_BODY_LIMIT = 600 * 1024;
+// or a whole pack) under the caller's own key or tracked session; the GET routes read proposal
+// status stubs, the public catalog and the instruction nouns without a key, and a proposal's content
+// with its proposer's or a reviewer's key. /a2a maps A2A message/send to the same path.
 function libraryOut(out) {
   if (out.ok) return jsonResp(out.data, out.status || 200);
   const extra = {};
   if (out.extra?.findings) Object.assign(extra, { findings: out.extra.findings, refusal_sha256: out.extra.refusal_sha256 });
+  if (out.extra?.budget) extra.budget = out.extra.budget;
   if (out.code === "version_conflict") extra.current_version = out.extra?.current_version ?? null;
   const headers = out.code === "rate_limited" && out.extra?.retry_after != null ? { "retry-after": String(Math.max(1, Math.ceil(Number(out.extra.retry_after)))) } : {};
   if (out.code === "rate_limited") extra.retry_after = out.extra?.retry_after ?? null;
@@ -460,16 +466,15 @@ function libraryOut(out) {
 async function libraryRoute(request, path, url, method, bearer, stub, publicUrl) {
   if (path === "/a2a") {
     if (method !== "POST") return problem(405, "method_not_allowed", "A2A JSON-RPC accepts POST /a2a", {}, { allow: "POST" });
-    return withSecurity(await handleA2a(request, { bearer, propose: body => stub.libraryPropose(bearer, body, "a2a"), read: (what, args) => stub.libraryRead(what, args), sessionUrl: `${publicUrl}/v1/session/anonymous` }), { isWrite: true });
+    return withSecurity(await handleA2a(request, { bearer, propose: body => stub.libraryPropose(bearer, body, "a2a"), read: (what, args) => stub.libraryRead(what, args, bearer), sessionUrl: `${publicUrl}/v1/session/anonymous` }), { isWrite: true });
   }
   if (path !== "/v1/library" && !path.startsWith("/v1/library/")) return null;
   if (path === "/v1/library/proposals" && method === "POST") {
-    const raw = await request.text();
-    if (raw.length > LIBRARY_BODY_LIMIT) return problem(413, "payload_too_large", `a proposal request holds at most ${LIBRARY_BODY_LIMIT} bytes`);
-    let body;
-    try { body = JSON.parse(raw); } catch { return problem(400, "invalid_request", "request body must be valid JSON"); }
-    if (!bearer) return problem(401, "unauthorized", "send Authorization: Bearer <contributor key or tracked session token>; POST /v1/session/anonymous opens a tracked session without secrets");
-    return libraryOut(await stub.libraryPropose(bearer, body, "http"));
+    const read = await readCappedBody(request);
+    if (read.status) return problem(read.status, read.code, read.detail);
+    const parsed = parseJsonBody(read.text);
+    if (parsed.status) return problem(parsed.status, parsed.code, parsed.detail);
+    return libraryOut(await stub.libraryPropose(bearer, parsed.body, "http"));
   }
   if (method !== "GET" && method !== "HEAD") return problem(405, "method_not_allowed", "library reads are GET; proposals are POST /v1/library/proposals", {}, { allow: path === "/v1/library/proposals" ? "GET, HEAD, POST" : "GET, HEAD" });
   const q = name => url.searchParams.get(name);
@@ -481,7 +486,7 @@ async function libraryRoute(request, path, url, method, bearer, stub, publicUrl)
   if (one) {
     let id;
     try { id = decodeURIComponent(one[2]); } catch { return problem(400, "invalid_request", "bad escape in path"); }
-    return libraryOut(await stub.libraryRead(one[1] === "proposals" ? "proposal" : "catalog_item", one[1] === "proposals" ? { proposal_id: id } : { key: id }));
+    return libraryOut(await stub.libraryRead(one[1] === "proposals" ? "proposal" : "catalog_item", one[1] === "proposals" ? { proposal_id: id } : { key: id }, bearer));
   }
   return problem(404, "not_found", "no such library resource");
 }
@@ -502,6 +507,10 @@ const worker = {
     const repoUrl = env.REPO_URL || DEFAULT_REPO_URL;
     // Discovery needs no storage. Answer it before any Durable Object call, so pages, agent
     // instructions and MCP tool discovery stay up while the storage allowance is exhausted.
+    // People reach Fabric through its page on teleionlabs.com; agents keep /connect, /connect.json and /llms.txt here.
+    if (path === "/" && method === "GET" && (request.headers.get("accept") || "").includes("text/html")) {
+      return Response.redirect("https://teleionlabs.com/fabric/", 302);
+    }
     const discovery = discoveryResponse(path, method, env, publicUrl, repoUrl);
     if (discovery) return discovery;
     if (path === "/mcp" && method === "POST" && (await mcpNeedsNoStorage(request))) {
@@ -509,13 +518,29 @@ const worker = {
     }
     const coordBinding = env.COORDINATOR || env.TESSERA_COORDINATOR;
     const primary = coordBinding.get(coordBinding.idFromName("primary"));
+    // The public activity map needs no principal: aggregated, cached and limited per address.
+    const activity = await publicActivityRoute(request, { path, method, namespace, env, primary, problem, withSecurity, address: ipGroup(request.headers.get("cf-connecting-ip")) });
+    if (activity) return activity;
+    // A person answering a human link has no key: the token in the header is the whole credential.
+    if (path === "/v1/human-links/public") {
+      const token = request.headers.get(TOKEN_HEADER) || "";
+      const noindex = { "x-robots-tag": "noindex" };
+      if (method === "GET") return jsonResp(await primary.humanLinkRead(token), 200, noindex);
+      if (method === "POST") {
+        const { body, error } = await readJsonBody(request);
+        if (error) return error;
+        const out = await primary.humanLinkAnswer(token, body);
+        return jsonResp(out.data, out.status, noindex);
+      }
+      return problem(405, "method_not_allowed", "method not allowed");
+    }
     const requestBearer = extractBearer(request);
     // Unauthenticated public reads of the main namespace need no identity or key lookup.
     if (!requestBearer && namespace === "main" && (method === "GET" || method === "HEAD")) {
       if (["/v1/health", "/api/health", "/healthz", "/health"].includes(path)) return jsonResp(await primary.publicHealthAndBoard(false, "main"));
       if (path === "/board") {
         const info = await primary.publicHealthAndBoard(true, "main");
-        return htmlResp(renderBoardHtml(info.health, info.snapshot, repoUrl));
+        return htmlResp(renderBoardHtml(info.health, info.snapshot, repoUrl, displayMask(env)));
       }
       if (path === "/v1/public/activity" && method === "GET") return jsonResp(await primary.publicActivity());
     }
@@ -525,7 +550,9 @@ const worker = {
     isPrimary = namespace === "main";
     const rawStub = coordBinding.get(coordBinding.idFromName(isPrimary ? "primary" : `ns:${namespace}`));
     const identity = await primary.requestIdentity(request.headers.get("cf-connecting-ip"), request.headers.get("user-agent"));
-    const meta = { ...identity, request_id: request.headers.get("x-request-id") || crypto.randomUUID(), route: path, bytes_in: Number(request.headers.get("content-length") || 0) };
+    // edge: where Cloudflare received this request (data center and continent), from request.cf
+    // only. It is set after every client field, so no body, header or tool argument can name a place.
+    const meta = { ...identity, request_id: request.headers.get("x-request-id") || crypto.randomUUID(), route: path, bytes_in: Number(request.headers.get("content-length") || 0), edge: edgeFromCf(request.cf) };
     // Authentication and namespace authorization happen here, before any namespace object is
     // touched: a caller without a valid key, or without a grant for the namespace it named,
     // neither writes a row nor creates a coordinator object for that name. The coordinator
@@ -550,10 +577,12 @@ const worker = {
       publicHealthAndBoard: (...args) => rawStub.publicHealthAndBoard(...args),
       bootstrapOrIssueKey: (secret, bootstrap, body) => primary.bootstrapOrIssueKey(secret, bootstrap, { ...body, access_meta: meta }),
       openAnonymousSession: body => primary.openAnonymousSession(body, meta),
+      humanLink: (secret, op, args) => primary.humanLink(secret, op, args, meta),
       auditForToken: (secret, args) => primary.auditForToken(secret, args),
-      // The library door always works in the shared namespace, under the caller's own principal.
-      libraryPropose: (secret, body, door) => primary.libraryPropose(secret, body, { ...meta, door }),
-      libraryRead: (what, args) => primary.libraryRead(what, args),
+      // The library door always works in the shared namespace, under the caller's own principal;
+      // its content checks run in the separate library-checks object, never in the primary one.
+      libraryPropose: (secret, body, door) => proposeThroughDoors({ primary, checker: coordBinding.get(coordBinding.idFromName(LIBRARY_CHECKER)), secret, body, meta: { ...meta, door } }),
+      libraryRead: (what, args, secret = null) => primary.libraryRead(what, args, secret),
     };
     const bearer = requestBearer;
     const surfaceHeader = (request.headers.get("x-surface-id") || "").trim();
@@ -567,6 +596,18 @@ const worker = {
     if (accessResponse) return accessResponse;
     const libraryResponse = await libraryRoute(request, path, url, method, bearer, stub, publicUrl);
     if (libraryResponse) return libraryResponse;
+    if (path === "/v1/human-links") {
+      if (method !== "POST") return problem(405, "method_not_allowed", "method not allowed");
+      const { body, error } = await readJsonBody(request);
+      if (error) return error;
+      return rpcResponse(await stub.humanLink(bearer, "issue", body));
+    }
+    if (path.startsWith("/v1/human-links/")) {
+      const id = decodeURIComponent(path.slice("/v1/human-links/".length));
+      if (method === "GET") return rpcResponse(await stub.humanLink(bearer, "get", { id }));
+      if (method === "DELETE") return rpcResponse(await stub.humanLink(bearer, "cancel", { id }));
+      return problem(405, "method_not_allowed", "method not allowed");
+    }
 
 
     // 1. Streamable HTTP MCP Door (`/mcp`)
@@ -604,7 +645,7 @@ const worker = {
     }
     if (path === "/board" && (method === "GET" || method === "HEAD")) {
       const info = await stub.publicHealthAndBoard(true, namespace);
-      return htmlResp(renderBoardHtml(info.health, info.snapshot, repoUrl));
+      return htmlResp(renderBoardHtml(info.health, info.snapshot, repoUrl, displayMask(env)));
     }
 
     // 4. Keyed browser work forms (`/work`, `/work/claim`, `/work/heartbeat`, `/work/submit`, `/work/resume`)
@@ -757,6 +798,9 @@ const worker = {
     }
     if (path === "/v1/admin/reap" && method === "POST") {
       return rpcResponse(await stub.rpcCall(bearer, "reap", { ...baseRpc }));
+    }
+    if (path === "/v1/admin/activity-map/clear" && method === "POST") {
+      return rpcResponse(await stub.rpcCall(bearer, "clearActivityMap", { ...baseRpc }));
     }
     if (path === "/v1/admin/keys") {
       if (method === "GET") {
@@ -1579,6 +1623,7 @@ const worker = {
 // routes themselves, not to any path that contains "/blobs" (H-65); Python applies the same caps.
 export function bodyRoute(pathname) {
   const path = pathname.replace(/^\/ns\/[^/]+(?=\/)/, "");
+  if (path === "/v1/library/proposals" || path === "/a2a") return { kind: "json", limit: LIBRARY_BODY_LIMIT };
   if (path === "/v1/blobs") return { kind: "bytes", limit: 16 * 1024 * 1024 };
   if (/^\/v1\/buckets\/[^/]+\/objects\/./.test(path)) return { kind: "bytes", limit: 16 * 1024 * 1024 };
   if (path === "/work" || path.startsWith("/work/")) return { kind: "form", limit: 1024 * 1024 };
@@ -1589,7 +1634,7 @@ const onboardingApplication = {
   scheduled: worker.scheduled,
   async fetch(request, env, ctx) {
     const requestId = /^[a-zA-Z0-9._:-]{1,100}$/.test(request.headers.get("x-request-id") || "") ? request.headers.get("x-request-id") : crypto.randomUUID();
-    const headers = { "access-control-allow-origin": "*", "access-control-allow-methods": "GET, HEAD, POST, PUT, DELETE, OPTIONS", "access-control-allow-headers": "Authorization, Content-Type, If-Match, X-Request-Id, X-Agent-Label, Idempotency-Key, X-Namespace, X-Tessera-Namespace, X-Surface-Id, MCP-Protocol-Version, MCP-Session-Id", "access-control-expose-headers": "ETag, Retry-After, X-Request-Id, MCP-Session-Id", "x-request-id": requestId, "cache-control": "no-store" };
+    const headers = { "access-control-allow-origin": "*", "access-control-allow-methods": "GET, HEAD, POST, PUT, DELETE, OPTIONS", "access-control-allow-headers": "Authorization, Content-Type, If-Match, X-Request-Id, X-Agent-Label, Idempotency-Key, X-Namespace, X-Teleion Fabric-Namespace, X-Surface-Id, MCP-Protocol-Version, MCP-Session-Id", "access-control-expose-headers": "ETag, Retry-After, X-Request-Id, MCP-Session-Id, Age", "x-request-id": requestId, "cache-control": "no-store" };
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers });
     try {
       // A broken percent escape (H-54) or a control character (H-65) anywhere in the path is
@@ -1601,6 +1646,8 @@ const onboardingApplication = {
       if (request.body) {
         const route = bodyRoute(new URL(request.url).pathname);
         const limit = (h.get("authorization") || "").startsWith("Bearer tan_") ? 65536 : route.limit;
+        // A declared length over the limit is refused before a byte is read.
+        if (h.has("content-length") && !(Number(h.get("content-length")) <= limit)) return problem(413, "payload_too_large", "request exceeds byte limit", {}, headers);
         const reader = request.body.getReader(); const chunks = []; let size = 0;
         while (true) {
           const { done, value } = await reader.read(); if (done) break;
@@ -1617,7 +1664,10 @@ const onboardingApplication = {
       } else request = new Request(request, { headers: h });
       const response = await worker.fetch(request, env, ctx);
       const outHeaders = new Headers(response.headers);
-      for (const [k,v] of Object.entries(headers)) outHeaders.set(k,v);
+      // A read that chose to be publicly cacheable (the favicon, the public activity map) keeps its
+      // cache-control; every other answer, and every write, is never stored.
+      const cacheable = (request.method === "GET" || request.method === "HEAD") && /^public\b/.test(response.headers.get("cache-control") || "");
+      for (const [k,v] of Object.entries(headers)) if (!(cacheable && k === "cache-control")) outHeaders.set(k,v);
       return new Response(response.body, { status: response.status, headers: outHeaders });
     } catch (e) {
       // A path segment with a broken percent escape is the client's mistake, not a fault (H-54).

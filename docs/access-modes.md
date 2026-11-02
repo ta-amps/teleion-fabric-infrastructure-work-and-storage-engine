@@ -69,7 +69,7 @@ visibility, namespace or surface header.
 Anonymous callers can search/list their demo nouns and verbs, claim, heartbeat,
 write CAS records, submit, cancel and inspect their own audit. Bucket/blob writes,
 admin calls, production queues and other principals' namespaces are denied.
-Use synthetic examples and `example.com` addresses. Demo writes reject common
+Use examples and `example.com` addresses. Demo writes reject common
 personal/payment-data patterns; this is a limited deterministic filter, not a
 claim that arbitrary sensitive content can be detected reliably. A submitted
 result may repeat a public phone number or street address that appears in a
@@ -177,7 +177,7 @@ PY
 curl --fail-with-body -sS "$BASE/v1/tasks/heartbeat" -H @"$scratch/authorization" \
   -H 'Content-Type: application/json' --data-binary @"$scratch/heartbeat.json"
 curl --fail-with-body -sS "$BASE/v1/stores/demo.artifacts/records/result" -H @"$scratch/authorization" \
-  -H 'Content-Type: application/json' -d '{"expected_version":0,"value":{"synthetic":true,"message":"ping"}}'
+  -H 'Content-Type: application/json' -d '{"expected_version":0,"value":{"example_only":true,"message":"ping"}}'
 curl --fail-with-body -sS "$BASE/v1/tasks/submit" -H @"$scratch/authorization" \
   -H @"$scratch/idempotency" -H 'Content-Type: application/json' --data-binary @"$scratch/submit.json"
 curl --fail-with-body -sS "$BASE/v1/me/audit" -H @"$scratch/authorization"
@@ -233,6 +233,10 @@ rotates, still counts against the hour that hash belongs to.
 resource type, status and fixed demo labels. It omits resource/account/session
 identifiers and client labels. The portal uses this redacted endpoint.
 
+`GET /v1/public/activity/map` aggregates where workers connect (a Cloudflare data center, or its
+continent below two workers of the same kind) and whether the Tasks they claim are a nonprofit's, shared,
+checks or their own, with no names, ids, addresses or coordinates. See [the activity map](activity-map.md).
+
 `GET /v1/claims/{task_id}/events?after=<seq>&wait=15` provides authorized,
 bounded long-poll. `claim_events` offers the MCP counterpart. Event cursors are
 monotonic storage sequences. This release advertises `streaming: long-poll`;
@@ -242,7 +246,7 @@ MCP and HTTP agent routes answer CORS preflight with `204`. They allow bearer
 headers with `Access-Control-Allow-Origin: *`, without cookies or
 `Allow-Credentials`. Allowed headers include Authorization, Content-Type,
 If-Match, X-Request-Id and X-Agent-Label. ETag, Retry-After and X-Request-Id are
-exposed. Python retains configured MCP Host checks while permitting valid
+exposed; the Worker also exposes MCP-Session-Id, and Age for the activity map. Python retains configured MCP Host checks while permitting valid
 external HTTP(S) origins. Origin is never a source of authorization.
 
 The local HTTP schema is generated at `/v1/openapi.json`. Regression coverage:

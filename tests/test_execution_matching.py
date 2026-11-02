@@ -206,7 +206,7 @@ def test_actual_input_numeric_hash_uses_existing_receipt_canonicalization() -> N
 
 def test_embedding_identity_validation_and_candidate_only_comparison() -> None:
     emb = {
-        "model": "synthetic",
+        "model": "example",
         "revision": "v1",
         "preprocessing": "text-v1",
         "dimensions": 2,

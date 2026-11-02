@@ -82,7 +82,7 @@ def test_anonymous_full_loop_and_durable_provenance(
     saved = client.post(
         path,
         json={
-            "value": {"synthetic": True},
+            "value": {"example_only": True},
             "expected_version": 0,
             "visibility_scope": "public_commons",
             "tags": ["demo:false", "untrusted:false"],
@@ -193,13 +193,13 @@ def test_sessions_cannot_cross_namespaces_or_admin(
     assert guessed.status_code == 404
 
 
-def test_persistent_quota_and_synthetic_policy(
+def test_persistent_quota_and_example_policy(
     access: tuple[TestClient, Store, FakeClock, str],
 ) -> None:
     client, store, _, _ = access
     session = anonymous(client)
     h = auth(session["session_token"])
-    path = "/v1/stores/demo.artifacts/records/synthetic"
+    path = "/v1/stores/demo.artifacts/records/example"
     for value in ("person@real.invalid", "123-45-6789", "4111 1111 1111 1111"):
         assert client.post(path, json={"value": value}, headers=h).status_code == 400
     assert client.post(path, json={"value": "adult@example.com"}, headers=h).status_code == 200
@@ -643,7 +643,7 @@ def test_denied_and_no_op_requests_are_counted_not_written_per_request(
     assert client.get("/v1/counts", headers=auth(worker)).status_code == 200
     before = rows()
     assert client.get("/v1/counts").status_code == 401
-    assert client.get("/v1/counts", headers=auth("synthetic-invalid-bearer")).status_code == 401
+    assert client.get("/v1/counts", headers=auth("example-invalid-bearer")).status_code == 401
     claim = {"queue": "conformance-counted", "worker": "w"}
     for _ in range(5):
         assert client.post("/v1/tasks/claim", json=claim, headers=auth(worker)).status_code == 204
@@ -669,7 +669,7 @@ def test_unhandled_errors_reach_the_audit_counters(tmp_path: Path) -> None:
     settings = ServiceSettings(reaper_seconds=86400, public_url="http://testserver")
 
     def broken() -> Any:
-        raise RuntimeError("synthetic fault")
+        raise RuntimeError("example fault")
 
     with TestClient(create_app(store, settings), raise_server_exceptions=False) as client:
         original = store.counts

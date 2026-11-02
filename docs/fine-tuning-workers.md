@@ -19,7 +19,7 @@ management status does not authorize server inference.
 
 | Module | Responsibility |
 | --- | --- |
-| `examples/finetuning/data.py` | Owned synthetic observations, complete target JSON, provenance, immutable fingerprints, source and project family separation |
+| `examples/finetuning/data.py` | Owned example observations, complete target JSON, provenance, immutable fingerprints, source and project family separation |
 | `examples/finetuning/encoding.py` | Completion-only labels, exact template-prefix check and full-sequence fit rejection |
 | `examples/finetuning/peft_backend.py` | Optional CPU/CUDA LoRA or single-device NF4 QLoRA, loss measurements, save/reload proof and environment report |
 | `examples/finetuning/author.py` | Offline `RecordWrite` and `TaskSpec` previews; no client, enqueue or model import |
@@ -31,7 +31,7 @@ The example authors 20 deterministic observations: 12 training, four development
 and four test examples. Both source families and project families remain disjoint
 across the three splits. The generator, source policy, instruction hash, row IDs,
 file hashes and dataset hash are recorded. Targets are repository-authored
-synthetic templates under this repository's MIT license. No model outputs,
+example templates under this repository's MIT license. No model outputs,
 private histories, hidden reasoning or third-party datasets are training data.
 
 The existing noun categories carry dataset/split manifests (`noun.benchmark_suite`),
@@ -60,8 +60,8 @@ python -m examples.finetuning.run train \
   --output /tmp/tessera-training-cpu --device cpu
 ```
 
-Choose new output paths for each run. The smoke creates a random 110,784-parameter
-Llama architecture including 3,584 trainable LoRA parameters, uses its own byte
+Choose new output paths for each run. The smoke creates a random 186,176-parameter
+decoder (OPT layout) including 4,096 trainable LoRA parameters, uses its own byte
 tokenizer, trains for the recipe's 12 optimizer steps, and saves the random base
 and adapter separately. It compares unchanged-base and adapter teacher-forced
 loss on development/test families, hashes the artifacts, checks that frozen
@@ -70,27 +70,29 @@ fails if reload logits or held-out losses disagree beyond its recorded tolerance
 Run the same command with `--device cuda` in a compatible GPU environment.
 
 This is a real adapter update on a tiny random model. It is **not pretrained
-Meta Llama or Muse Glimmer fine-tuning**, and lower synthetic loss does not establish
+model fine-tuning**, and lower example loss does not establish
 factual grounding, relevance or useful task decomposition. The report leaves
 those quality metrics unmeasured. The unchanged baseline remains the candidate
 for use until a separate meaningful evaluation and review justify replacement.
 
-The [October 29 smoke evidence](../examples/finetuning/evidence/smoke-2026-10-29.json)
-records successful CPU and RTX 3060 local fabric runs. Both saved six base/adapter
+The October 29 smoke evidence (`examples/finetuning/evidence/smoke-2026-10-29.json`,
+in this repository's history at commit `95e434e`) used an earlier random architecture. It records successful CPU and RTX 3060 local fabric runs. Both saved six base/adapter
 blobs, captured the training execution and denied a different principal record,
 blob and execution reads. The GPU run used 3,584 trainable parameters, measured
 41,225,728 bytes peak allocated memory, and reloaded with zero probe-logit
-difference. Its synthetic test loss changed from 5.586128 to 5.396280. Those
-measurements qualify this tiny plumbing example only.
+difference. Its example test loss changed from 5.586128 to 5.396280. Those
+measurements qualify this tiny plumbing example only. A CPU rerun of the current smoke on
+November 1 moved example test loss from 5.563146 to 5.395074 and reloaded with zero
+probe-logit difference.
 
-Pretrained models have since been tuned on synthetic tasks: typed tool calls for
+Pretrained models have since been tuned on example tasks: typed tool calls for
 Tessera's own tools. Their training rows came from repository templates, and no
 model wrote any of them. [Continuous tuning](continuous-tuning.md#measured-results)
-has the Llama 3.2 1B and 3B rounds. A Muse Glimmer 30B QLoRA adapter, trained on
-Kaggle's free GPUs, went from 93.3% to 99.3% exact match on a fresh synthetic test of
+has the rounds on a 1B and a 3B open-weight instruct model. A Muse Glimmer 30B QLoRA adapter, trained on
+Kaggle's free GPUs, went from 93.3% to 99.3% exact match on a fresh example test of
 150 rows whose hashes were registered before scoring. The
 [evidence](https://github.com/ta-amps/agora-public-overview-architecture-setup-and-contribution/tree/main/evidence/glimmer-30b-2026-10-29)
-is in Agora. These are synthetic tasks, not a measured improvement on real work.
+is in Agora. These are example tasks, not a measured improvement on real work.
 Nothing was promoted, admitted or registered, the adapter weights are not published,
 and useful-task quality runs remain unrun.
 
@@ -146,31 +148,33 @@ supervisor. A completed dependency may have failed; inspect its receipt and
 required artifacts before continuing. Store larger adapter bytes in the existing
 content-addressed blob/bucket contract, with their digest referenced by the noun.
 
-## Pretrained 1B/3B GPU recipes
+## Pretrained GPU recipes
 
-The `llama-1b-qlora.json` and `llama-3b-qlora.json` recipes pin Meta Llama 3.2 Instruct
-revisions and use frozen NF4 weights, rank-8 adapters on `q_proj`/`v_proj`, gradient
+A pretrained recipe names a model you are licensed to train and pins its exact
+revision; the repository ships none for a particular model (the October 29 1B and 3B
+pilot recipes are in this repository's history at commit `95e434e`, under `examples/finetuning/recipes/`).
+Those recipes used frozen NF4 weights, rank-8 adapters on `q_proj`/`v_proj`, gradient
 checkpointing, a microbatch of one and explicit accumulation. They target one
 16 GB T4 or 12 GB RTX 3060 as small pilot configurations; actual fit and throughput
 must be measured on the worker. No memory-fit guarantee or training cost estimate
 is inferred from a recipe. The 1B model is the smaller starting point.
 
-Install `bitsandbytes==0.50.2` in the optional CUDA environment. These model cards
-require existing authorized access under the Llama 3.2 Community License. By
+Install `bitsandbytes==0.50.2` in the optional CUDA environment. A model card may
+require existing authorized access under the model's license. By
 default, the runner uses only an already available cache. If access and downloads
 are already authorized, `--allow-download` fetches the exact pinned revision; it
-does not accept a license. An inference API or Ollama cloud key does not provide
+does not accept a license. An inference API key does not provide
 training weights, a training GPU or license acceptance.
 
 ```bash
 python -m examples.finetuning.run train \
   --dataset /tmp/tessera-training-data \
-  --recipe examples/finetuning/recipes/llama-1b-qlora.json \
+  --recipe /private/recipes/pretrained-1b.json \
   --output /tmp/tessera-training-1b
 ```
 
 This runner compares the adapter with the **same quantized base** and unchanged
-prompt/schema on held-out families. A synthetic smoke remains a plumbing check
+prompt/schema on held-out families. An example smoke remains a plumbing check
 even when pretrained weights are used. For a useful pilot, curate permitted and
 reviewed task inputs/final outputs/evidence, hold out whole source/project families,
 freeze acceptance criteria and compare grounding, useful decomposition, failure
@@ -215,6 +219,4 @@ current official cookbook path includes `muse-glimmer/` before `post-training/`.
 
 Library and model references checked October 29, 2026:
 [PEFT adapters](https://huggingface.co/docs/peft/main/en/quicktour),
-[Transformers bitsandbytes](https://huggingface.co/docs/transformers/main/en/quantization/bitsandbytes),
-[Llama 3.2 1B](https://huggingface.co/meta-llama/Llama-3.2-1B-Instruct),
-[Llama 3.2 3B](https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct).
+[Transformers bitsandbytes](https://huggingface.co/docs/transformers/main/en/quantization/bitsandbytes).

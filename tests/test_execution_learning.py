@@ -43,10 +43,10 @@ NS = "conformance-learning"
 SOURCE = "conformance-source"
 LEARNERS = "conformance-learners"
 GOALS = [
-    "SYNTHETIC convert an mp4 clip into png frames at 24 fps",
-    "SYNTHETIC extract png frames from an mp4 video at 30 fps",
-    "SYNTHETIC summarize statute cards for wage law",
-    "SYNTHETIC convert a webm clip into png frames",
+    "EXAMPLE convert an mp4 clip into png frames at 24 fps",
+    "EXAMPLE extract png frames from an mp4 video at 30 fps",
+    "EXAMPLE summarize statute cards for wage law",
+    "EXAMPLE convert a webm clip into png frames",
 ]
 
 
@@ -56,7 +56,7 @@ class Harness:
 
     def key(self, queues: list[str], *, surfaces: tuple[str, ...] = ()) -> str:
         token, _ = self.store.issue_key(
-            "synthetic-learning",
+            "example-learning",
             queues=queues,
             scopes=[
                 "nouns:read",
@@ -95,11 +95,11 @@ class Harness:
             TaskSpec(
                 queue=SOURCE,
                 kind="verb.solve_draft",
-                brief={"goal": goal, "contract": "tessera.synthetic.v1"},
+                brief={"goal": goal, "contract": "tessera.example.v1"},
                 visibility_scope="private",
             )
         )
-        lease = api.claim(SOURCE, "synthetic-worker")
+        lease = api.claim(SOURCE, "example-worker")
         assert lease is not None and lease.task_id == task_id
         report = {
             "model": None,
@@ -117,10 +117,10 @@ class Harness:
         api.submit(
             lease.task_id,
             lease.fencing_token,
-            {"synthetic": True},
+            {"example_only": True},
             idempotency_key=f"{lease.task_id}:{lease.fencing_token}",
             ok=ok,
-            error=None if ok else "SYNTHETIC ffmpeg missing\nstack line",
+            error=None if ok else "EXAMPLE ffmpeg missing\nstack line",
             execution_report=report,
         )
         return task_id
@@ -141,7 +141,7 @@ class Harness:
         task = run_spec(request, learner)
         assert task.idempotency_key is not None
         api.enqueue(task, idempotency_key=task.idempotency_key)
-        lease = api.claim(LEARNERS, "synthetic-learner")
+        lease = api.claim(LEARNERS, "example-learner")
         assert lease is not None and lease.task_id == task.task_id
         return run_claimed(api, lease)
 
@@ -176,7 +176,7 @@ def test_learning_block_is_optional_stored_and_adds_no_rows(harness: Harness) ->
 
     def changes(**kwargs: Any) -> tuple[int, str]:
         before = connection.total_changes
-        task_id = harness.work(api, "SYNTHETIC count rows", **kwargs)
+        task_id = harness.work(api, "EXAMPLE count rows", **kwargs)
         return connection.total_changes - before, task_id
 
     with_learning, task_id = changes()
@@ -188,8 +188,8 @@ def test_learning_block_is_optional_stored_and_adds_no_rows(harness: Harness) ->
     tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master")}
     assert not {name for name in tables if "learning" in name or "learner" in name}
 
-    api.enqueue(TaskSpec(queue=SOURCE, brief={"goal": "SYNTHETIC invalid"}, task_id="bad"))
-    lease = api.claim(SOURCE, "synthetic-worker")
+    api.enqueue(TaskSpec(queue=SOURCE, brief={"goal": "EXAMPLE invalid"}, task_id="bad"))
+    lease = api.claim(SOURCE, "example-worker")
     assert lease is not None
     for learning in ({"outcome": "great"}, {"duration_seconds": None}, {"surprise": 1}):
         with pytest.raises(InvalidRequest, match=r"report\.learning"):
@@ -217,7 +217,7 @@ def test_observations_are_permission_filtered_paginated_and_bounded(harness: Har
     assert len(set(seen)) == 3
     item = first["observations"][0]
     assert item["category"] == "verb.solve_draft"
-    assert item["brief"]["template"] == "tessera.synthetic.v1"
+    assert item["brief"]["template"] == "tessera.example.v1"
     assert item["report"]["learning"]["path"] == {"shim": "json-native"}
     assert item["trust"]["telemetry"] == "worker_reported"
     assert "input_snapshot" not in item and "output" not in item
@@ -244,7 +244,7 @@ def test_mcp_observation_tool_uses_the_same_permissions(harness: Harness) -> Non
     init = {
         "protocolVersion": "2025-06-18",
         "capabilities": {},
-        "clientInfo": {"name": "synthetic", "version": "0"},
+        "clientInfo": {"name": "example", "version": "0"},
     }
     headers = {
         "Authorization": "Bearer " + token,
@@ -293,7 +293,7 @@ def test_memory_learner_indexes_asynchronously_and_recalls_with_statistics(
     assert own["report"]["model"] is None and own["report"]["usage"]["total_tokens"] == 0
     assert own["report"]["learning"]["outcome"] == "succeeded"
 
-    harness.work(api, "SYNTHETIC convert an mkv clip into png frames")
+    harness.work(api, "EXAMPLE convert an mkv clip into png frames")
     second = harness.learn(api, memory_request(pin, state_version=1), learner)
     assert second["output"]["observations_read"] == 1
     head = api.get_record("learn.memory", memory.head_key(SOURCE))
@@ -302,9 +302,9 @@ def test_memory_learner_indexes_asynchronously_and_recalls_with_statistics(
     # The same state version is one verb identity: a duplicate schedule tick adds no work.
     again = run_spec(memory_request(pin, state_version=1), learner)
     assert api.enqueue(again, idempotency_key=again.idempotency_key or "") == again.task_id
-    assert api.claim(LEARNERS, "synthetic-learner") is None
+    assert api.claim(LEARNERS, "example-learner") is None
     # A different run pinned to an older state cannot overwrite the newer head.
-    harness.work(api, "SYNTHETIC convert an avi clip into png frames")
+    harness.work(api, "EXAMPLE convert an avi clip into png frames")
     stale_request = memory_request(pin, state_version=1).model_copy(update={"max_observations": 50})
     stale = harness.learn(api, stale_request, learner)
     assert stale["output"]["outcome"] == "superseded"
@@ -316,8 +316,8 @@ def test_memory_learner_indexes_asynchronously_and_recalls_with_statistics(
         queue=SOURCE,
         category="verb.solve_draft",
         brief={
-            "goal": "SYNTHETIC convert a mov clip into png frames",
-            "contract": "tessera.synthetic.v1",
+            "goal": "EXAMPLE convert a mov clip into png frames",
+            "contract": "tessera.example.v1",
         },
         report={"learning": {"types": {"input": "video", "output": "image/png[]"}}},
     )
@@ -327,7 +327,7 @@ def test_memory_learner_indexes_asynchronously_and_recalls_with_statistics(
     assert recalled["executions"][0]["similarity"] >= recalled["executions"][-1]["similarity"]
     statistics = recalled["statistics"]
     assert statistics["failed"] == 1 and statistics["failure_reasons"][0]["reason"] == (
-        "synthetic ffmpeg missing"
+        "example ffmpeg missing"
     )
     assert statistics["acceptance_rate"] == statistics["accepted"] / statistics["attempts"]
     assert recalled["advice"]["record_version"] == 2
@@ -335,7 +335,7 @@ def test_memory_learner_indexes_asynchronously_and_recalls_with_statistics(
     assert all("statute" not in json.dumps(e) for e in recalled["executions"])
 
     # Recording the advice used is part of the ordinary report.
-    harness.work(api, "SYNTHETIC uses advice", learning={"advice": [recalled["advice"]]})
+    harness.work(api, "EXAMPLE uses advice", learning={"advice": [recalled["advice"]]})
 
     # Index nouns stay private to the learner's principal.
     stranger = harness.client(harness.key([SOURCE]))
@@ -349,7 +349,7 @@ def test_path_statistics_scorecards_are_deterministic(harness: Harness) -> None:
     api = harness.client(harness.key([SOURCE, LEARNERS]))
     for i, goal in enumerate(GOALS):
         harness.work(api, goal, ok=i != 1)
-    harness.work(api, "SYNTHETIC other shim", learning={"path": {"shim": "xml-tags"}})
+    harness.work(api, "EXAMPLE other shim", learning={"path": {"shim": "xml-tags"}})
     observations = api.execution_observations(SOURCE)["observations"]
     shuffled = copy.deepcopy(observations)
     random.Random(7).shuffle(shuffled)
@@ -439,7 +439,7 @@ def test_learner_specs_config_and_run_pins(harness: Harness) -> None:
         expected_version=record.version,
         visibility_scope="private",
     )
-    lease = api.claim(LEARNERS, "synthetic-learner")
+    lease = api.claim(LEARNERS, "example-learner")
     assert lease is not None
     tampered = lease.model_copy(
         update={"brief": {**lease.brief, "spec": {**pin.model_dump(), "version": 2}}}
@@ -463,7 +463,7 @@ def test_brief_cannot_widen_the_pinned_spec_visibility(harness: Harness) -> None
     forged = {**learner.consumers.model_dump(), "visibility_scope": "public_commons"}
     task = task.model_copy(update={"brief": {**task.brief, "consumers": forged}})
     api.enqueue(task, idempotency_key=task.idempotency_key or "")
-    lease = api.claim(LEARNERS, "synthetic-learner")
+    lease = api.claim(LEARNERS, "example-learner")
     assert lease is not None and lease.task_id == task.task_id
     with pytest.raises(ValueError, match="consumers"):
         load_run(api, lease)
@@ -604,4 +604,4 @@ def test_routing_weights_advise_with_evidence_thresholds_and_exploration(harness
         "key": noun.key,
         "record_version": noun.version,
     }
-    harness.work(api, "SYNTHETIC routed by weights", learning={"advice": [advice]})
+    harness.work(api, "EXAMPLE routed by weights", learning={"advice": [advice]})

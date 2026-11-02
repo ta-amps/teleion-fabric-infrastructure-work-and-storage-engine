@@ -1,7 +1,7 @@
 # Opportunity Lab
 
 Opportunity Lab turns eleven startup themes into versioned input nouns and
-claimable ideation verbs. It is a synthetic showcase for worker-generated
+claimable ideation verbs. It is an example showcase for worker-generated
 alternatives, not a set of validated businesses or an endorsement by YC.
 The source is the [YC Requests for Startups page](https://www.ycombinator.com/rfs),
 observed October 29, 2026. The pack does not independently verify the source's
@@ -69,5 +69,5 @@ benchmark with recorded hardware, model, harness, inputs and baseline.
 
 Reasoning runs in the authorized worker. The server stores nouns and coordinates
 verbs. Public admission, deployment, real customer decisions and external effects
-need their own authorization and evidence. The synthetic pack activates none of
+need their own authorization and evidence. The example pack activates none of
 those actions.

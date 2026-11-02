@@ -364,7 +364,7 @@ def test_T15_receipts_match_results(backend: Any, make_queue: Any) -> None:
     make_queue("q-receipt")
     ids = enqueue_n(backend, "q-receipt", 20)
     while (lease := backend.claim("q-receipt", "w1")) is not None:
-        output = {"task": lease.task_id, "values": [lease.brief["n"], "SYNTHETIC", None, 1.5]}
+        output = {"task": lease.task_id, "values": [lease.brief["n"], "EXAMPLE", None, 1.5]}
         receipt = backend.submit(lease.task_id, lease.fencing_token, output, idempotency_key=ikey())
         assert receipt.receipt_hash == spec_receipt_hash(
             lease.task_id, lease.fencing_token, True, output, None

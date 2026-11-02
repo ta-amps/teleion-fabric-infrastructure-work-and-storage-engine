@@ -34,6 +34,6 @@
   "ablation": "When a round trains several strategies, dev selects one. Test results for the others are analysis only and never change the decision.",
   "caveats": [
     "The frozen test is evaluated once per round, so later rounds carry multiple-comparison risk; each round's fresh holdout is the check against that",
-    "Synthetic templates measure this task only; no claim about other tasks or real user traffic follows"
+    "Example templates measure this task only; no claim about other tasks or real user traffic follows"
   ]
 }

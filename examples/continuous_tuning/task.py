@@ -147,7 +147,7 @@ def objects(name: str, d: Draw) -> Any:
         return {"event": event, "key": d.choice(VOCAB["key"]), "version": d.below(12) + 1}
     if name == "metadata":
         if d.chance(0.5):
-            return {"source": "synthetic", "rows": d.below(500) + 1}
+            return {"source": "example", "rows": d.below(500) + 1}
         return {"lang": "en", "pages": d.below(40) + 1}
     raise KeyError(name)
 

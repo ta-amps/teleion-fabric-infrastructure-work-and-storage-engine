@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 # Import the example without installing ML packages or adding a service dependency.
 sys.path.insert(0, str(ROOT))
 from examples.finetuning.author import payloads  # noqa: E402
-from examples.finetuning.data import digest, load, prepare, synthetic_rows, validate_rows  # noqa: E402
+from examples.finetuning.data import digest, example_rows, load, prepare, validate_rows  # noqa: E402
 from examples.finetuning.encoding import ByteTokenizer, encode  # noqa: E402
 from examples.finetuning.glimmer import MODEL, MODEL_REVISION, configure  # noqa: E402
 from examples.finetuning.peft_backend import recipe_from  # noqa: E402
@@ -29,7 +29,7 @@ def test_dataset_is_reproducible_and_families_do_not_overlap(tmp_path: Path) -> 
     first, second = prepare(tmp_path / "a"), prepare(tmp_path / "b")
     assert first == second
     manifest, splits = load(tmp_path / "a")
-    assert manifest["dataset_sha256"] == digest(synthetic_rows())
+    assert manifest["dataset_sha256"] == digest(example_rows())
     assert [len(splits[split]) for split in ("train", "dev", "test")] == [12, 4, 4]
     for field in ("source_family", "project_family"):
         sets = [{row[field] for row in rows} for rows in splits.values()]
@@ -41,14 +41,14 @@ def test_dataset_is_reproducible_and_families_do_not_overlap(tmp_path: Path) -> 
 
 @pytest.mark.parametrize("field", ["source_family", "project_family"])
 def test_family_leakage_is_rejected(field: str) -> None:
-    rows = synthetic_rows()
+    rows = example_rows()
     rows[-1][field] = rows[0][field]
     with pytest.raises(ValueError, match="family leaks"):
         validate_rows(rows)
 
 
 def test_duplicate_identity_and_activated_target_are_rejected() -> None:
-    rows = synthetic_rows()
+    rows = example_rows()
     with pytest.raises(ValueError, match="unique"):
         validate_rows([*rows, rows[0]])
     rows[0]["output"]["follow_up"]["activation"] = "active"
@@ -74,7 +74,7 @@ def test_changed_data_or_split_manifest_is_rejected(tmp_path: Path) -> None:
 
 
 def test_completion_mask_preserves_full_targets_and_refuses_truncation() -> None:
-    row = synthetic_rows()[0]
+    row = example_rows()[0]
     encoded = encode(row, ByteTokenizer(), 1536)
     ids, labels = encoded["input_ids"], encoded["labels"]
     assert len(ids) == len(labels)
@@ -94,7 +94,7 @@ def test_nonprefix_chat_template_is_rejected() -> None:
             return [1] if kwargs["add_generation_prompt"] else [2, 3]
 
     with pytest.raises(ValueError, match="completion-prefix"):
-        encode(synthetic_rows()[0], Incompatible(), 1536)
+        encode(example_rows()[0], Incompatible(), 1536)
 
 
 def test_authoring_runs_without_importing_training_libraries(tmp_path: Path) -> None:
@@ -114,7 +114,7 @@ def test_payloads_round_trip_existing_store_and_dependency_contracts(tmp_path: P
     store = Store(tmp_path / "fabric.db")
     namespace = queue = "conformance-finetune"
     _, grant = store.issue_key(
-        "synthetic-worker", queues=[queue], scopes=["store", "namespace:" + namespace]
+        "example-worker", queues=[queue], scopes=["store", "namespace:" + namespace]
     )
     try:
         with store.scope_context(namespace=namespace, key_id=grant.key_id):
@@ -135,9 +135,9 @@ def test_payloads_round_trip_existing_store_and_dependency_contracts(tmp_path: P
                 assert not task.brief["execution"]["automatic_promotion"]
                 assert task.visibility_scope == "private"
                 assert store.enqueue(task) == task.task_id
-            claimed = store.claim(queue, "synthetic-worker")
+            claimed = store.claim(queue, "example-worker")
             assert claimed is not None and claimed.brief["stage"] == "curate_split"
-            assert store.claim(queue, "other-synthetic-worker") is None
+            assert store.claim(queue, "other-example-worker") is None
     finally:
         store.close()
 
@@ -152,12 +152,22 @@ def test_wrong_report_cannot_attach_to_different_dataset(tmp_path: Path) -> None
         payloads(tmp_path / "data", RECIPE, report_path=report)
 
 
-def test_pretrained_recipes_pin_weights_and_explicit_resource_allowance() -> None:
-    for name in ("llama-1b-qlora", "llama-3b-qlora"):
-        recipe = recipe_from(RECIPE.with_name(name + ".json"))
-        assert recipe["quantization"] == "nf4" and recipe["device"] == "cuda"
-        assert len(recipe["revision"]) == 40 and recipe["steps"] > 0
-        assert recipe["sequence_budget"] > 0
+def test_pretrained_recipes_pin_weights_and_explicit_resource_allowance(tmp_path: Path) -> None:
+    # A pretrained recipe names the model it trains. This one is made up, so nothing is downloaded.
+    path = tmp_path / "pretrained.json"
+    path.write_text(json.dumps({
+        "version": 1, "mode": "pretrained", "model_id": "example-org/example-1b-instruct",
+        "revision": "0" * 40, "license": "Example license; existing authorized access required",
+        "quantization": "nf4", "device": "cuda", "sequence_budget": 1536, "steps": 8,
+        "gradient_accumulation": 4, "learning_rate": 0.0002, "rank": 8, "seed": 17,
+        "target_modules": ["q_proj", "v_proj"],
+        "hardware_target": "One 16 GB GPU; verify actual peak memory locally, not a fit guarantee",
+        "purpose": "Bounded example plumbing run; not a quality benchmark",
+    }))  # fmt: skip
+    recipe = recipe_from(path)
+    assert recipe["quantization"] == "nf4" and recipe["device"] == "cuda"
+    assert len(recipe["revision"]) == 40 and recipe["steps"] > 0
+    assert recipe["sequence_budget"] > 0
 
 
 def test_glimmer_bridge_keeps_test_separate_and_tracking_disabled(tmp_path: Path) -> None:

@@ -1,6 +1,6 @@
 // Real Worker: every published access description (connect.json, the agent card, llms-full.txt,
 // MCP explain_access_modes and the MCP sign-in hint) agrees with ANONYMOUS_ACCESS_ENABLED and
-// REQUESTER_SIGNUP_ENABLED (F-054; same rule as tests/test_requester_keys.py). Synthetic only.
+// REQUESTER_SIGNUP_ENABLED (F-054; same rule as tests/test_requester_keys.py). Example data only.
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { build } from "esbuild";

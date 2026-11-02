@@ -1,5 +1,5 @@
 // Real Worker/SQLite: content identity comes from the uploaded bytes, never from a client header.
-// Synthetic keys and bytes only; no remote requests.
+// Example keys and bytes only; no remote requests.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
@@ -26,7 +26,7 @@ async function setup() {
     compatibilityDate: "2026-10-01",
     durableObjects: { COORDINATOR: { className: "FixtureCoordinator", useSQLite: true } },
     d1Databases: ["FABRIC_DB", "BUCKETS_DB"],
-    bindings: { STORAGE_MODE: "cloud", ANONYMOUS_ACCESS_ENABLED: "false", FRAGILITY_PLANNER_ENABLED: "false", BOOTSTRAP_SECRET: "synthetic-blob-bootstrap" },
+    bindings: { STORAGE_MODE: "cloud", ANONYMOUS_ACCESS_ENABLED: "false", FRAGILITY_PLANNER_ENABLED: "false", BOOTSTRAP_SECRET: "example-blob-bootstrap" },
     outboundService: () => { throw new Error("External requests are prohibited in this fixture"); },
   }] }));
   runtimes.push(runtime);
@@ -50,7 +50,7 @@ async function setup() {
     try { data = JSON.parse(new TextDecoder().decode(bytes)); } catch { /* binary body */ }
     return { status: response.status, data, bytes };
   };
-  const admin = (await request("/v1/admin/keys", { label: "synthetic-operator", queues: ["*"], scopes: ["admin", "store"], effect_classes: ["read", "write-internal"] }, undefined, { "X-Bootstrap-Secret": "synthetic-blob-bootstrap" })).data;
+  const admin = (await request("/v1/admin/keys", { label: "example-operator", queues: ["*"], scopes: ["admin", "store"], effect_classes: ["read", "write-internal"] }, undefined, { "X-Bootstrap-Secret": "example-blob-bootstrap" })).data;
   const key = async (label, ns) => {
     const issued = await request("/v1/admin/keys", { label, queues: ["none"], scopes: ["store", "nouns:read", "cas:write", `namespace:${ns}`], effect_classes: ["read", "write-internal"] }, admin.key);
     assert.equal(issued.status, 201, JSON.stringify(issued.data));
@@ -62,14 +62,14 @@ const governance = value => ({ "x-tessera-governance": JSON.stringify(value) });
 
 test("a claimed blob digest cannot bind another namespace's private bytes", async () => {
   const { request, stub, key } = await setup();
-  const victim = await key("synthetic-victim", "conformance-victim");
-  const attacker = await key("synthetic-attacker", "conformance-attacker");
-  const secret = new TextEncoder().encode("SYNTHETIC private bytes for the identity test");
+  const victim = await key("example-victim", "conformance-victim");
+  const attacker = await key("example-attacker", "conformance-attacker");
+  const secret = new TextEncoder().encode("EXAMPLE private bytes for the identity test");
   const uploaded = await request("/ns/conformance-victim/v1/blobs", secret, victim, governance({ visibility_scope: "private" }));
   assert.equal(uploaded.status, 201, JSON.stringify(uploaded.data));
   assert.equal(uploaded.data.sha256, sha(secret));
 
-  const dummy = new TextEncoder().encode("synthetic attacker bytes");
+  const dummy = new TextEncoder().encode("example attacker bytes");
   const spoof = await request("/ns/conformance-attacker/v1/blobs", dummy, attacker, governance({ sha256: sha(secret), visibility_scope: "private" }));
   assert.equal(spoof.status, 400);
   assert.equal(spoof.data.code, "invalid_request");
@@ -80,7 +80,7 @@ test("a claimed blob digest cannot bind another namespace's private bytes", asyn
 
   const read = await request(`/ns/conformance-attacker/v1/blobs/${sha(secret)}`, undefined, attacker);
   assert.equal(read.status, 404);
-  assert.ok(!new TextDecoder().decode(read.bytes).includes("SYNTHETIC private"));
+  assert.ok(!new TextDecoder().decode(read.bytes).includes("EXAMPLE private"));
   assert.deepEqual((await stub("ns:conformance-attacker").testBlobRows()).map(r => r.sha256), []);
 
   // A matching claim is an accepted integrity check; the stored identity is still computed.
@@ -88,26 +88,26 @@ test("a claimed blob digest cannot bind another namespace's private bytes", asyn
   assert.equal(honest.status, 201, JSON.stringify(honest.data));
   assert.equal(honest.data.sha256, sha(dummy));
   assert.deepEqual((await stub("ns:conformance-attacker").testBlobRows()).map(r => r.sha256), [sha(dummy)]);
-  assert.equal(Buffer.from((await request(`/ns/conformance-attacker/v1/blobs/${sha(dummy)}`, undefined, attacker)).bytes).toString(), "synthetic attacker bytes");
+  assert.equal(Buffer.from((await request(`/ns/conformance-attacker/v1/blobs/${sha(dummy)}`, undefined, attacker)).bytes).toString(), "example attacker bytes");
 
   // The owner still reads; another key in the owner's namespace does not.
   const own = await request(`/ns/conformance-victim/v1/blobs/${sha(secret)}`, undefined, victim);
   assert.equal(own.status, 200);
-  assert.equal(Buffer.from(own.bytes).toString(), "SYNTHETIC private bytes for the identity test");
-  const neighbour = await key("synthetic-neighbour", "conformance-victim");
+  assert.equal(Buffer.from(own.bytes).toString(), "EXAMPLE private bytes for the identity test");
+  const neighbour = await key("example-neighbour", "conformance-victim");
   assert.equal((await request(`/ns/conformance-victim/v1/blobs/${sha(secret)}`, undefined, neighbour)).status, 404);
 });
 
 test("governance headers cannot replace bucket, key, namespace or content identity", async () => {
   const { request, stub, key } = await setup();
-  const victim = await key("synthetic-victim", "conformance-victim");
-  const attacker = await key("synthetic-attacker", "conformance-attacker");
-  const secret = new TextEncoder().encode("SYNTHETIC private object bytes");
+  const victim = await key("example-victim", "conformance-victim");
+  const attacker = await key("example-attacker", "conformance-attacker");
+  const secret = new TextEncoder().encode("EXAMPLE private object bytes");
   const stored = await request("/ns/conformance-victim/v1/buckets/nouns/objects/private/report.txt", secret, victim, { ...governance({ visibility_scope: "private" }), "Content-Type": "text/plain" });
   assert.equal(stored.status, 201, JSON.stringify(stored.data));
   assert.equal(stored.data.sha256, sha(secret));
 
-  const dummy = new TextEncoder().encode("synthetic attacker object");
+  const dummy = new TextEncoder().encode("example attacker object");
   const spoof = await request("/ns/conformance-attacker/v1/buckets/nouns/objects/mine.txt", dummy, attacker, governance({ sha256: sha(secret), size: secret.byteLength }));
   assert.equal(spoof.status, 400);
   assert.equal(spoof.data.code, "invalid_request");
@@ -124,17 +124,17 @@ test("governance headers cannot replace bucket, key, namespace or content identi
   assert.equal(ignored.data.size, dummy.byteLength);
   const fetched = await request("/ns/conformance-attacker/v1/buckets/nouns/objects/mine.txt", undefined, attacker);
   assert.equal(fetched.status, 200);
-  assert.equal(Buffer.from(fetched.bytes).toString(), "synthetic attacker object");
+  assert.equal(Buffer.from(fetched.bytes).toString(), "example attacker object");
   assert.deepEqual((await stub("ns:conformance-victim").testObjectRows()).map(r => `${r.bucket}/${r.key}:${r.sha256}`), [`nouns/private/report.txt:${sha(secret)}`]);
   assert.deepEqual((await stub("ns:conformance-attacker").testBlobRows()).map(r => r.sha256), [sha(dummy)]);
 });
 
 test("the MCP object door also stores the computed digest", async () => {
   const { request, key } = await setup();
-  const writer = await key("synthetic-writer", "conformance-mcp");
-  const call = await request("/ns/conformance-mcp/mcp", { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "put_object", arguments: { bucket: "nouns", key: "note.txt", content: "synthetic mcp bytes", sha256: "0".repeat(64), size: 1 } } }, writer);
+  const writer = await key("example-writer", "conformance-mcp");
+  const call = await request("/ns/conformance-mcp/mcp", { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "put_object", arguments: { bucket: "nouns", key: "note.txt", content: "example mcp bytes", sha256: "0".repeat(64), size: 1 } } }, writer);
   assert.equal(call.status, 200);
   const object = call.data.result.structuredContent.object;
-  assert.equal(object.sha256, sha(Buffer.from("synthetic mcp bytes")));
-  assert.equal(object.size, Buffer.byteLength("synthetic mcp bytes"));
+  assert.equal(object.sha256, sha(Buffer.from("example mcp bytes")));
+  assert.equal(object.size, Buffer.byteLength("example mcp bytes"));
 });

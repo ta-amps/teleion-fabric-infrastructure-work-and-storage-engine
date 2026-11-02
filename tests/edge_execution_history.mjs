@@ -1,15 +1,15 @@
 import assert from 'node:assert/strict';
 import { initExecutions } from '../deploy/cloudflare/cloud_executions.js';
-const report = {version:1,harness:{name:'synthetic-node'},model:{name:'none'},summaries:{problem:'SYNTHETIC add two integers',input:'one and two',solution:'three'},contract:{input_schema:{type:'object'},output_schema:{type:'object'},context_hash:'a'.repeat(64),environment_hash:'b'.repeat(64),toolchain_hash:'c'.repeat(64)},usage:{source:'deterministic_fixture',input_tokens:0,output_tokens:0}};
+const report = {version:1,harness:{name:'example-node'},model:{name:'none'},summaries:{problem:'EXAMPLE add two integers',input:'one and two',solution:'three'},contract:{input_schema:{type:'object'},output_schema:{type:'object'},context_hash:'a'.repeat(64),environment_hash:'b'.repeat(64),toolchain_hash:'c'.repeat(64)},usage:{source:'deterministic_fixture',input_tokens:0,output_tokens:0}};
 async function setup(h) {
-  const operator=await h.admin(),owner=await h.key(operator,'synthetic-owner'),other=await h.key(operator,'synthetic-other');
+  const operator=await h.admin(),owner=await h.key(operator,'example-owner'),other=await h.key(operator,'example-other');
   assert.equal((await h.post('/v1/queues/define',{name:'conformance-agent'},operator.key)).status,200);
   return {operator,owner,other};
 }
 async function claim(h,token,queue='conformance-agent',extra={}) {
-  const r=await h.post('/v1/tasks',{queue,kind:'synthetic',brief:{synthetic:true,a:1,b:2},visibility_scope:'private',...extra},token);
+  const r=await h.post('/v1/tasks',{queue,kind:'example',brief:{example_only:true,a:1,b:2},visibility_scope:'private',...extra},token);
   assert.equal(r.status,201,JSON.stringify(r.data));
-  const c=await h.post('/v1/tasks/claim',{queue,worker:'synthetic-node'},token);
+  const c=await h.post('/v1/tasks/claim',{queue,worker:'example-node'},token);
   assert.equal(c.status,200,JSON.stringify(c.data));return c.data;
 }
 const fields=l=>({task_id:l.task_id,fencing_token:l.fencing_token});
@@ -44,7 +44,7 @@ export async function executionHistoryTests(test) {
     assert.equal((await submit(h,owner.key,l)).status,200);const first=await run(h,owner.key,l);
     assert.equal((await h.req('/v1/executions/'+first.run_id,{token:other.key})).status,404);
     assert.equal((await h.req(`/ns/conformance-other/v1/executions/${first.run_id}`,{token:owner.key})).status,403);
-    const reader=await h.key(operator,'synthetic-reader',{queues:['elsewhere']});
+    const reader=await h.key(operator,'example-reader',{queues:['elsewhere']});
     assert.equal((await h.req('/v1/executions/'+first.run_id,{token:reader.key})).status,404);
     const next=await claim(h,owner.key,'conformance-agent',{visibility_scope:'public_commons'});
     assert.equal((await h.post('/v1/executions/recall',{...fields(next),execution_report:report},other.key)).status,403);
@@ -59,10 +59,10 @@ export async function executionHistoryTests(test) {
   });
   await test('execution Worker private artifact revocation hides history without breaking receipt replay',async h=>{
     const {owner,operator}=await setup(h),l=await claim(h,owner.key);
-    const p=await h.post('/v1/stores/history.logs/records/log',{expected_version:0,value:{synthetic:true},visibility_scope:'private'},owner.key);assert.equal(p.status,200);
+    const p=await h.post('/v1/stores/history.logs/records/log',{expected_version:0,value:{example_only:true},visibility_scope:'private'},owner.key);assert.equal(p.status,200);
     const logged={...report,artifact_refs:[{store:'history.logs',key:'log',version:1}]};
     assert.equal((await submit(h,owner.key,l,{execution_report:logged})).status,200);const first=await run(h,owner.key,l);
-    assert.equal((await h.post('/v1/stores/history.logs/records/log',{expected_version:1,value:{synthetic:true,restricted:true},visibility_scope:'private'},operator.key)).status,200);
+    assert.equal((await h.post('/v1/stores/history.logs/records/log',{expected_version:1,value:{example_only:true,restricted:true},visibility_scope:'private'},operator.key)).status,200);
     assert.equal((await h.req('/v1/executions/'+first.run_id,{token:owner.key})).status,404);
     assert.equal((await submit(h,owner.key,l,{execution_report:logged})).status,200);
   });
@@ -80,27 +80,27 @@ export async function executionHistoryTests(test) {
   });
   await test('execution Worker failed attempts are warnings, not reusable success',async h=>{
     const {owner}=await setup(h),l=await claim(h,owner.key);
-    assert.equal((await submit(h,owner.key,l,{ok:false,error:'synthetic failure'})).status,200);
+    assert.equal((await submit(h,owner.key,l,{ok:false,error:'example failure'})).status,200);
     const next=await claim(h,owner.key),r=await h.post('/v1/executions/recall',{...fields(next),execution_report:report},owner.key);
     assert.equal(r.status,200,JSON.stringify(r.data));assert.equal(r.data.matches[0].match_kind,'failure_warning');assert.equal(r.data.matches[0].execution.ok,false);
   });
   await test('execution Worker telemetry cannot smuggle PII past anonymous content boundary',async h=>{
-    const a=await h.mint(),l=(await h.post('/v1/tasks/claim',{queue:'demo.ping',worker:'synthetic'},a.session_token)).data;
-    const bad=await submit(h,a.session_token,l,{execution_report:{summaries:{problem:'synthetic@invalid.test'}}});assert.equal(bad.status,400);assert.equal(bad.data.code,'synthetic_only');
+    const a=await h.mint(),l=(await h.post('/v1/tasks/claim',{queue:'demo.ping',worker:'example'},a.session_token)).data;
+    const bad=await submit(h,a.session_token,l,{execution_report:{summaries:{problem:'example@invalid.test'}}});assert.equal(bad.status,400);assert.equal(bad.data.code,'example_only');
     const list=await h.req(`/v1/tasks/${l.task_id}/executions`,{token:a.session_token});assert.deepEqual(list.data.executions,[]);
   });
   await test('execution Worker upgrade restricts legacy derived heads without deleting content',async h=>{
     const {owner,other,operator}=await setup(h);
     assert.equal((await h.post('/v1/queues/define',{name:'conformance-agent',max_attempts:1},operator.key)).status,200);
     const l=await claim(h,owner.key);
-    assert.equal((await submit(h,owner.key,l,{ok:false,error:'SYNTHETIC private diagnostic'})).status,200);
+    assert.equal((await submit(h,owner.key,l,{ok:false,error:'EXAMPLE private diagnostic'})).status,200);
     const entry=[...h.entries.values()].find(e=>e.db.prepare("SELECT key FROM record_heads WHERE store='negative.knowledge' AND key=?").get(l.task_id));
     assert.ok(entry);
     entry.db.prepare("UPDATE record_heads SET visibility_scope='public_commons' WHERE store='negative.knowledge' AND key=?").run(l.task_id);
     entry.db.prepare("DELETE FROM meta WHERE key='task_tombstone_privacy_v1'").run();
     initExecutions(entry.instance);initExecutions(entry.instance);
     assert.equal((await h.req('/v1/stores/negative.knowledge/records/'+l.task_id,{token:other.key})).status,404);
-    const own=await h.req('/v1/stores/negative.knowledge/records/'+l.task_id,{token:owner.key});assert.equal(own.status,200);assert.equal(own.data.value.reason,'SYNTHETIC private diagnostic');
+    const own=await h.req('/v1/stores/negative.knowledge/records/'+l.task_id,{token:owner.key});assert.equal(own.status,200);assert.equal(own.data.value.reason,'EXAMPLE private diagnostic');
   });
   await test('execution Worker tools discovery includes typed history operations',async h=>{
     const r=await h.post('/mcp',{jsonrpc:'2.0',id:1,method:'tools/list'});

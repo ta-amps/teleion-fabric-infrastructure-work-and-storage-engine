@@ -6,7 +6,7 @@
   "stage": "discover_sources",
   "profile": {
     "store": "research.profiles",
-    "key": "SYNTHETIC-profile",
+    "key": "EXAMPLE-profile",
     "version": 1,
     "value_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
   },

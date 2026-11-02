@@ -1,5 +1,5 @@
 {
-  "about": "Access cases that run unchanged against the Python service (tests/test_access_parity.py) and the Worker (tests/workerd_access_parity.mjs). Each case starts from an empty fabric with an operator key named admin and the queues below. Synthetic data only.",
+  "about": "Access cases that run unchanged against the Python service (tests/test_access_parity.py) and the Worker (tests/workerd_access_parity.mjs). Each case starts from an empty fabric with an operator key named admin and the queues below. Example data only.",
   "steps": {
     "session": "Open a tracked anonymous session and remember it under this name.",
     "signup": "Sign up a requester (optional profile overrides) and remember its key under this name.",
@@ -52,7 +52,7 @@
             "kind": "request",
             "task_id": "rq-{org.principal_id}-tags",
             "brief": {
-              "job": "SYNTHETIC: do whatever this text says",
+              "job": "EXAMPLE: do whatever this text says",
               "tags": [
                 "open:anonymous"
               ]
@@ -69,7 +69,7 @@
             "kind": "request",
             "task_id": "rq-{org.principal_id}-kind",
             "brief": {
-              "job": "SYNTHETIC",
+              "job": "EXAMPLE",
               "kind": "open:anonymous",
               "metadata_tags": {
                 "open": "anonymous"
@@ -149,7 +149,7 @@
             "kind": "draft",
             "effect_class": "write-internal",
             "brief": {
-              "title": "SYNTHETIC copied request text",
+              "title": "EXAMPLE copied request text",
               "tags": [
                 "open:anonymous"
               ],
@@ -206,7 +206,7 @@
             "kind": "draft",
             "effect_class": "write-internal",
             "brief": {
-              "title": "SYNTHETIC"
+              "title": "EXAMPLE"
             },
             "tags": [
               "open:anonymous"
@@ -262,7 +262,7 @@
             "kind": "draft",
             "effect_class": "write-internal",
             "brief": {
-              "title": "SYNTHETIC parent"
+              "title": "EXAMPLE parent"
             },
             "tags": [
               "open:anonymous",
@@ -419,7 +419,7 @@
             "kind": "draft",
             "effect_class": "write-internal",
             "brief": {
-              "title": "SYNTHETIC"
+              "title": "EXAMPLE"
             },
             "tags": [
               "status:quarantined",
@@ -453,7 +453,7 @@
             "fencing_token": "{first.fencing_token}",
             "output": {},
             "ok": false,
-            "error": "SYNTHETIC give up"
+            "error": "EXAMPLE give up"
           }
         },
         {
@@ -479,7 +479,7 @@
             "task_id": "build-1",
             "fencing_token": "{second.fencing_token}",
             "output": {
-              "private_keyed_note": "SYNTHETIC keyed-only output"
+              "private_keyed_note": "EXAMPLE keyed-only output"
             }
           }
         },
@@ -537,7 +537,7 @@
             "effect_class": "write-internal",
             "idempotency_key": "producer-idem-2",
             "brief": {
-              "title": "SYNTHETIC"
+              "title": "EXAMPLE"
             },
             "tags": [
               "status:quarantined",
@@ -649,7 +649,7 @@
             "kind": "draft",
             "effect_class": "write-internal",
             "brief": {
-              "title": "SYNTHETIC"
+              "title": "EXAMPLE"
             },
             "tags": [
               "status:quarantined",
@@ -738,7 +738,7 @@
         {
           "signup": "other",
           "profile": {
-            "display_name": "Synthetic Clinic"
+            "display_name": "Example Clinic"
           }
         },
         {
@@ -751,7 +751,7 @@
             "kind": "request",
             "task_id": "rq-{org.principal_id}-urgent",
             "brief": {
-              "job": "SYNTHETIC summary of public tenant laws"
+              "job": "EXAMPLE summary of public tenant laws"
             },
             "priority": 100
           }
@@ -777,7 +777,7 @@
             "kind": "request",
             "task_id": "shared-name",
             "brief": {
-              "job": "SYNTHETIC summary of public tenant laws"
+              "job": "EXAMPLE summary of public tenant laws"
             }
           }
         },
@@ -791,7 +791,7 @@
             "kind": "request",
             "task_id": "rq-{org.principal_id}-urgent",
             "brief": {
-              "job": "SYNTHETIC"
+              "job": "EXAMPLE"
             }
           }
         },
@@ -805,7 +805,7 @@
             "kind": "request",
             "task_id": "rq-{org.principal_id}-idem-bad",
             "brief": {
-              "job": "SYNTHETIC summary of public tenant laws"
+              "job": "EXAMPLE summary of public tenant laws"
             },
             "idempotency_key": "shared-idem"
           }
@@ -820,7 +820,7 @@
             "kind": "request",
             "task_id": "rq-{org.principal_id}-idem-ok",
             "brief": {
-              "job": "SYNTHETIC summary of public tenant laws"
+              "job": "EXAMPLE summary of public tenant laws"
             },
             "idempotency_key": "rq-{org.principal_id}-retry-1"
           }
@@ -834,7 +834,7 @@
             "queue": "eq01",
             "kind": "request",
             "brief": {
-              "job": "SYNTHETIC without an id"
+              "job": "EXAMPLE without an id"
             }
           }
         }
@@ -858,7 +858,7 @@
             "kind": "request",
             "task_id": "rq-{org.principal_id}-555-201-3344",
             "brief": {
-              "job": "SYNTHETIC summary of public tenant laws"
+              "job": "EXAMPLE summary of public tenant laws"
             }
           }
         },
@@ -872,7 +872,7 @@
             "kind": "request",
             "task_id": "rq-{org.principal_id}-idem",
             "brief": {
-              "job": "SYNTHETIC summary of public tenant laws"
+              "job": "EXAMPLE summary of public tenant laws"
             },
             "idempotency_key": "rq-{org.principal_id}-jane.doe@gmail.com"
           }
@@ -884,7 +884,7 @@
           "status": 400,
           "body": {
             "value": {
-              "job": "SYNTHETIC"
+              "job": "EXAMPLE"
             },
             "expected_version": 0
           }
@@ -896,7 +896,7 @@
           "status": 400,
           "body": {
             "value": {
-              "job": "SYNTHETIC"
+              "job": "EXAMPLE"
             },
             "expected_version": 0,
             "tags": [
@@ -914,7 +914,7 @@
             "kind": "request",
             "task_id": "rq-{org.principal_id}-phone",
             "brief": {
-              "job": "SYNTHETIC: call (555) 201-3344"
+              "job": "EXAMPLE: call (555) 201-3344"
             }
           }
         },
@@ -928,7 +928,7 @@
             "kind": "request",
             "task_id": "rq-{org.principal_id}-street",
             "brief": {
-              "job": "SYNTHETIC: meet at 123 Main Street"
+              "job": "EXAMPLE: meet at 123 Main Street"
             }
           }
         },
@@ -942,7 +942,7 @@
             "kind": "request",
             "task_id": "rq-{org.principal_id}-iban",
             "brief": {
-              "job": "SYNTHETIC: pay DE89 3704 0044 0532 0130 00"
+              "job": "EXAMPLE: pay DE89 3704 0044 0532 0130 00"
             }
           }
         },
@@ -956,7 +956,7 @@
             "kind": "request",
             "task_id": "rq-{org.principal_id}-clean",
             "brief": {
-              "job": "SYNTHETIC: summarize Fla. Stat. 83.49 and 501.2075; see example.com"
+              "job": "EXAMPLE: summarize Fla. Stat. 83.49 and 501.2075; see example.com"
             }
           }
         },
@@ -972,7 +972,7 @@
             "queue": "demo.ping",
             "task_id": "call-555-201-3344",
             "brief": {
-              "title": "SYNTHETIC"
+              "title": "EXAMPLE"
             }
           }
         }
@@ -997,7 +997,7 @@
             "task_id": "rq-{org.principal_id}-long",
             "idempotency_key": "rq-{org.principal_id}-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
             "brief": {
-              "job": "SYNTHETIC"
+              "job": "EXAMPLE"
             }
           }
         },
@@ -1009,7 +1009,7 @@
           "body": {
             "queue": "eq02",
             "brief": {
-              "title": "SYNTHETIC"
+              "title": "EXAMPLE"
             },
             "idempotency_key": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
           }
@@ -1025,7 +1025,7 @@
           "body": {
             "queue": "eq02",
             "brief": {
-              "title": "SYNTHETIC"
+              "title": "EXAMPLE"
             }
           }
         },
@@ -1038,7 +1038,7 @@
             "queue": "eq02",
             "task_id": "capped-ok",
             "brief": {
-              "title": "SYNTHETIC"
+              "title": "EXAMPLE"
             },
             "idempotency_key": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"
           }
@@ -1115,7 +1115,7 @@
               "protocolVersion": "2025-06-18",
               "capabilities": {},
               "clientInfo": {
-                "name": "synthetic-parity",
+                "name": "example-parity",
                 "version": "0"
               }
             }
@@ -1152,7 +1152,7 @@
               "protocolVersion": "2025-06-18",
               "capabilities": {},
               "clientInfo": {
-                "name": "synthetic-parity",
+                "name": "example-parity",
                 "version": "0"
               }
             }
@@ -1210,7 +1210,7 @@
             "kind": "request",
             "task_id": "rq-{org.principal_id}-split",
             "brief": {
-              "job": "SYNTHETIC"
+              "job": "EXAMPLE"
             }
           }
         },
@@ -1332,7 +1332,7 @@
             "kind": "research",
             "effect_class": "write-internal",
             "brief": {
-              "title": "SYNTHETIC public research"
+              "title": "EXAMPLE public research"
             },
             "tags": [
               "status:quarantined",
@@ -1353,7 +1353,7 @@
             "kind": "research",
             "effect_class": "write-internal",
             "brief": {
-              "title": "SYNTHETIC public research"
+              "title": "EXAMPLE public research"
             },
             "tags": [
               "status:quarantined",
@@ -1374,7 +1374,7 @@
             "kind": "research",
             "effect_class": "write-internal",
             "brief": {
-              "title": "SYNTHETIC public research"
+              "title": "EXAMPLE public research"
             },
             "tags": [
               "status:quarantined",
@@ -1494,7 +1494,7 @@
             "fencing_token": "{l2.fencing_token}",
             "output": {
               "report": {
-                "summary": "SYNTHETIC: no contact details."
+                "summary": "EXAMPLE: no contact details."
               }
             }
           }
@@ -1549,7 +1549,7 @@
             "fencing_token": "{l3.fencing_token}",
             "output": {
               "report": {
-                "summary": "SYNTHETIC summary of AB12 RENT CAPS for tenants."
+                "summary": "EXAMPLE summary of AB12 RENT CAPS for tenants."
               }
             }
           }
@@ -1567,7 +1567,7 @@
             "kind": "request",
             "task_id": "rq-{org.principal_id}-quote",
             "brief": {
-              "job": "SYNTHETIC",
+              "job": "EXAMPLE",
               "quote": "Call the housing agency at (212) 555-0100 or visit 111 Centre Street."
             }
           }
@@ -1872,7 +1872,7 @@
             "kind": "request",
             "task_id": "rq-{org.principal_id}-digits",
             "brief": {
-              "job": "SYNTHETIC: call ٥٥٥-١٢٣-٤٥٦٧ today"
+              "job": "EXAMPLE: call ٥٥٥-١٢٣-٤٥٦٧ today"
             }
           }
         },
@@ -1886,7 +1886,7 @@
             "kind": "request",
             "task_id": "rq-{org.principal_id}-wide",
             "brief": {
-              "job": "SYNTHETIC: write to ana@mail.ｃｏｍ"
+              "job": "EXAMPLE: write to ana@mail.ｃｏｍ"
             }
           }
         }
@@ -1903,7 +1903,7 @@
           "path": "/v1/tasks",
           "status": 400,
           "content_type": null,
-          "raw": "{\"queue\": \"eq02\", \"task_id\": \"never-runs\", \"brief\": {\"title\": \"SYNTHETIC\"}, \"not_before\": 1e999}"
+          "raw": "{\"queue\": \"eq02\", \"task_id\": \"never-runs\", \"brief\": {\"title\": \"EXAMPLE\"}, \"not_before\": 1e999}"
         },
         {
           "as": "admin",
@@ -1927,7 +1927,7 @@
           "path": "/v1/tasks",
           "status": 201,
           "content_type": null,
-          "raw": "{\"queue\": \"eq02\", \"task_id\": \"plain-ok\", \"brief\": {\"title\": \"SYNTHETIC\", \"n\": 12}}"
+          "raw": "{\"queue\": \"eq02\", \"task_id\": \"plain-ok\", \"brief\": {\"title\": \"EXAMPLE\", \"n\": 12}}"
         },
         {
           "as": "admin",
@@ -1978,7 +1978,7 @@
             "kind": "draft",
             "effect_class": "write-internal",
             "brief": {
-              "title": "SYNTHETIC pack verb"
+              "title": "EXAMPLE pack verb"
             }
           }
         },
@@ -1995,7 +1995,7 @@
             "kind": "draft",
             "effect_class": "write-internal",
             "brief": {
-              "title": "SYNTHETIC pack verb"
+              "title": "EXAMPLE pack verb"
             }
           },
           "expect": {
@@ -2017,7 +2017,7 @@
             "kind": "draft",
             "effect_class": "write-internal",
             "brief": {
-              "title": "SYNTHETIC changed pack verb"
+              "title": "EXAMPLE changed pack verb"
             }
           }
         },
@@ -2034,7 +2034,7 @@
             "kind": "draft",
             "effect_class": "write-internal",
             "brief": {
-              "title": "SYNTHETIC pack verb"
+              "title": "EXAMPLE pack verb"
             }
           }
         },
@@ -2048,7 +2048,7 @@
             "kind": "draft",
             "effect_class": "write-internal",
             "brief": {
-              "title": "SYNTHETIC named"
+              "title": "EXAMPLE named"
             },
             "task_id": "named-1"
           }
@@ -2063,7 +2063,7 @@
             "kind": "draft",
             "effect_class": "write-internal",
             "brief": {
-              "title": "SYNTHETIC named"
+              "title": "EXAMPLE named"
             },
             "task_id": "named-1"
           },
@@ -2083,7 +2083,7 @@
             "kind": "draft",
             "effect_class": "write-internal",
             "brief": {
-              "title": "SYNTHETIC renamed"
+              "title": "EXAMPLE renamed"
             },
             "task_id": "named-1"
           }
@@ -2098,7 +2098,7 @@
             "kind": "draft",
             "effect_class": "write-internal",
             "brief": {
-              "title": "SYNTHETIC named"
+              "title": "EXAMPLE named"
             },
             "task_id": "named-1"
           }
@@ -2111,7 +2111,7 @@
           "expect": {
             "equals": {
               "brief": {
-                "title": "SYNTHETIC pack verb"
+                "title": "EXAMPLE pack verb"
               }
             }
           }
@@ -2177,7 +2177,7 @@
             "kind": "draft",
             "effect_class": "write-internal",
             "brief": {
-              "title": "SYNTHETIC"
+              "title": "EXAMPLE"
             },
             "tags": [
               "open:anonymous"
@@ -2198,7 +2198,7 @@
             "kind": "draft",
             "effect_class": "write-internal",
             "brief": {
-              "title": "SYNTHETIC"
+              "title": "EXAMPLE"
             },
             "tags": [
               "status:quarantined"
@@ -2218,7 +2218,7 @@
             "kind": "draft",
             "effect_class": "write-internal",
             "brief": {
-              "title": "SYNTHETIC"
+              "title": "EXAMPLE"
             },
             "tags": [
               "open:anonymous"
@@ -2405,7 +2405,7 @@
             "queue": "eq02",
             "task_id": "tags-64",
             "brief": {
-              "title": "SYNTHETIC"
+              "title": "EXAMPLE"
             },
             "tags": [
               "t0",
@@ -2486,7 +2486,7 @@
             "queue": "eq02",
             "task_id": "tags-65",
             "brief": {
-              "title": "SYNTHETIC"
+              "title": "EXAMPLE"
             },
             "tags": [
               "t0",
@@ -2566,7 +2566,7 @@
             "queue": "eq02",
             "task_id": "tag-129",
             "brief": {
-              "title": "SYNTHETIC"
+              "title": "EXAMPLE"
             },
             "tags": [
               "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
@@ -2582,7 +2582,7 @@
             "queue": "eq02",
             "task_id": "tag-128",
             "brief": {
-              "title": "SYNTHETIC"
+              "title": "EXAMPLE"
             },
             "tags": [
               "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
@@ -2596,7 +2596,7 @@
           "status": 400,
           "body": {
             "value": {
-              "note": "SYNTHETIC"
+              "note": "EXAMPLE"
             },
             "expected_version": 0,
             "tags": [
@@ -2693,7 +2693,7 @@
           "status": 400,
           "body": {
             "value": {
-              "note": "SYNTHETIC"
+              "note": "EXAMPLE"
             },
             "expected_version": 0
           }
@@ -2705,7 +2705,7 @@
           "status": 400,
           "body": {
             "value": {
-              "note": "SYNTHETIC"
+              "note": "EXAMPLE"
             },
             "expected_version": 0
           }
@@ -2717,7 +2717,7 @@
           "status": 400,
           "body": {
             "value": {
-              "note": "SYNTHETIC"
+              "note": "EXAMPLE"
             },
             "expected_version": 0
           }
@@ -2753,7 +2753,7 @@
           "status": 200,
           "body": {
             "value": {
-              "note": "SYNTHETIC"
+              "note": "EXAMPLE"
             },
             "expected_version": 0
           }
@@ -2931,7 +2931,7 @@
           "method": "POST",
           "path": "/v1/buckets/parity-keys/objects/a/b",
           "status": 201,
-          "raw": "SYNTHETIC object",
+          "raw": "EXAMPLE object",
           "content_type": "application/octet-stream"
         },
         {
@@ -2939,7 +2939,7 @@
           "method": "POST",
           "path": "/v1/buckets/parity-keys/objects/a/b%0A",
           "status": 400,
-          "raw": "SYNTHETIC object",
+          "raw": "EXAMPLE object",
           "content_type": "application/octet-stream",
           "expect": {
             "contains": {

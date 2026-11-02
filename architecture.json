@@ -20,10 +20,11 @@
     "spec": "conformance-draft/SPEC.md",
     "operations": "docs/operations.md",
     "expansion": "docs/expansion.md",
-    "opencode_ollama": "docs/opencode-and-ollama.md",
+    "opencode_bilateral": "docs/opencode-bilateral.md",
     "making_of": "docs/making-of.md",
     "handoff": "docs/handoff.md",
     "access_modes": "docs/access-modes.md",
+    "activity_map": "docs/activity-map.md",
     "frontier_publication": "docs/frontier-publication.md",
     "work_design_and_evidence": "docs/work-design-and-evidence.md",
     "work_routing": "docs/work-routing.md"
@@ -36,7 +37,7 @@
     "docs/setup.md",
     "docs/access-modes.md",
     "docs/expansion.md",
-    "docs/opencode-and-ollama.md",
+    "docs/opencode-bilateral.md",
     "docs/comparison.md",
     "docs/generalizing.md",
     "docs/decisions.md",
@@ -404,7 +405,10 @@
         "deploy/cloudflare/cloud_library.js",
         "deploy/cloudflare/library_checks.js",
         "deploy/cloudflare/library_contract.js",
-        "deploy/cloudflare/cloud_a2a.js"
+        "deploy/cloudflare/cloud_a2a.js",
+        "deploy/cloudflare/cloud_library_reads.js",
+        "deploy/cloudflare/library_io.js",
+        "deploy/cloudflare/edge_activity.js"
       ],
       "kind": "edge",
       "domain": "neutral",
@@ -416,7 +420,9 @@
         "tests/workerd_blob_first_uploader.mjs",
         "tests/test_board.py::test_cloudflare_pages_parity",
         "tests/test_phase4_atomicity_and_vectors.py::test_l26_receipt_vectors_python_and_cloudflare_edge_node_parity",
-        "tests/workerd_agent_tool_listings.mjs"
+        "tests/workerd_agent_tool_listings.mjs",
+        "tests/workerd_activity_map.mjs",
+        "tests/threshold_window.test.mjs"
       ]
     },
     {

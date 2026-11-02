@@ -1,6 +1,6 @@
 // Real Worker/SQLite: a tracked anonymous session claims, heartbeats and submits only verbs whose
 // producer tagged them open:anonymous, reads only its own work, never approves or publishes, and
-// is capped per session and per IP hash. Same rule as tests/test_open_verbs.py. Synthetic only.
+// is capped per session and per IP hash. Same rule as tests/test_open_verbs.py. Example data only.
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { build } from "esbuild";
@@ -35,7 +35,7 @@ async function setup() {
     compatibilityDate: "2026-10-01",
     durableObjects: { COORDINATOR: { className: "FixtureCoordinator", useSQLite: true } },
     d1Databases: ["FABRIC_DB", "BUCKETS_DB"],
-    bindings: { STORAGE_MODE: "cloud", ANONYMOUS_ACCESS_ENABLED: "true", FRAGILITY_PLANNER_ENABLED: "false", BOOTSTRAP_SECRET: "synthetic-open-verbs-bootstrap" },
+    bindings: { STORAGE_MODE: "cloud", ANONYMOUS_ACCESS_ENABLED: "true", FRAGILITY_PLANNER_ENABLED: "false", BOOTSTRAP_SECRET: "example-open-verbs-bootstrap" },
     outboundService: () => { throw new Error("External requests are prohibited in this fixture"); },
   }] }));
   runtimes.push(runtime);
@@ -52,7 +52,7 @@ async function setup() {
     try { data = text ? JSON.parse(text) : null; } catch { data = text; }
     return { status: response.status, data, headers: response.headers };
   };
-  const issued = await request("/v1/admin/keys", { label: "synthetic-operator", queues: ["*"], scopes: ["admin", "store"], effect_classes: ["read", "write-internal"] }, undefined, { "X-Bootstrap-Secret": "synthetic-open-verbs-bootstrap" });
+  const issued = await request("/v1/admin/keys", { label: "example-operator", queues: ["*"], scopes: ["admin", "store"], effect_classes: ["read", "write-internal"] }, undefined, { "X-Bootstrap-Secret": "example-open-verbs-bootstrap" });
   assert.equal(issued.status, 201, JSON.stringify(issued.data));
   const admin = issued.data.key;
   for (const name of ["eq01", "eq02", "eq03"]) {
@@ -60,7 +60,7 @@ async function setup() {
     assert.equal(defined.status, 200, JSON.stringify(defined.data));
   }
   const verb = async (task_id, extra = {}) => {
-    const queued = await request("/v1/tasks", { queue: "eq02", task_id, kind: "draft", effect_class: "write-internal", brief: { title: "SYNTHETIC kit build", kit_id: "KIT-OPEN-01" }, tags: OPEN, ...GOVERNANCE, ...extra }, admin);
+    const queued = await request("/v1/tasks", { queue: "eq02", task_id, kind: "draft", effect_class: "write-internal", brief: { title: "EXAMPLE kit build", kit_id: "KIT-OPEN-01" }, tags: OPEN, ...GOVERNANCE, ...extra }, admin);
     assert.equal(queued.status, 201, JSON.stringify(queued.data));
   };
   const session = async (label = "volunteer-agent", ip = "192.0.2.10") => {
@@ -75,7 +75,7 @@ async function setup() {
     if (taskId) assert.equal(lease.task_id, taskId);
     const ref = { task_id: lease.task_id, fencing_token: lease.fencing_token };
     assert.equal((await request("/ns/main/v1/tasks/heartbeat", ref, token)).status, 200);
-    const submitted = await request("/ns/main/v1/tasks/submit", { ...ref, output: { node: "draft", note: "SYNTHETIC result, see example.com" } }, token, { "Idempotency-Key": `${lease.task_id}:${lease.fencing_token}` });
+    const submitted = await request("/ns/main/v1/tasks/submit", { ...ref, output: { node: "draft", note: "EXAMPLE result, see example.com" } }, token, { "Idempotency-Key": `${lease.task_id}:${lease.fencing_token}` });
     assert.equal(submitted.status, 200, JSON.stringify(submitted.data));
     return { lease, receipt: submitted.data };
   };
@@ -131,7 +131,7 @@ test("review, approval, publication and nouns stay closed to anonymous sessions"
   assert.equal((await request("/v1/tasks/review-1", undefined, admin)).data.state, "ready");
   // The store itself refuses an anonymous approver of keyed work.
   await verb("build-2");
-  const drafter = await request("/v1/admin/keys", { label: "synthetic-drafter", queues: ["eq02"], scopes: ["store", "surface:eranos"], effect_classes: ["read", "write-internal"] }, admin);
+  const drafter = await request("/v1/admin/keys", { label: "example-drafter", queues: ["eq02"], scopes: ["store", "surface:eranos"], effect_classes: ["read", "write-internal"] }, admin);
   assert.equal(drafter.status, 201, JSON.stringify(drafter.data));
   await request("/v1/tasks/cancel", { task_id: "review-1" }, admin);
   const keyed = await request("/v1/tasks/claim", { queue: "eq02", worker: "keyed-volunteer" }, drafter.data.key, { "X-Surface-Id": "eranos" });
@@ -186,7 +186,7 @@ test("open claims are capped per session and per IP hash", async () => {
 
 test("the claimant gets the brief, not related outputs", async () => {
   const { request, admin, verb, session } = await setup();
-  const checker = await request("/v1/admin/keys", { label: "synthetic-checker", queues: ["eq01"], scopes: ["store", "surface:eranos"], effect_classes: ["read", "write-internal"] }, admin);
+  const checker = await request("/v1/admin/keys", { label: "example-checker", queues: ["eq01"], scopes: ["store", "surface:eranos"], effect_classes: ["read", "write-internal"] }, admin);
   await request("/v1/tasks", { queue: "eq01", task_id: "check-1", kind: "spec", effect_class: "read", brief: { title: "check" }, ...GOVERNANCE }, admin);
   const lease = await request("/v1/tasks/claim", { queue: "eq01", worker: "checker" }, checker.data.key, { "X-Surface-Id": "eranos" });
   assert.equal(lease.status, 200, JSON.stringify(lease.data));

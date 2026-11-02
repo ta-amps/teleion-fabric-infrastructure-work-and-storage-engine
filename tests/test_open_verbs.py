@@ -59,7 +59,7 @@ def build_verb(store: Store, task_id: str, *, tags: list[str] = OPEN_TAGS, **ext
             task_id=task_id,
             kind="draft",
             effect_class="write-internal",
-            brief={"title": "SYNTHETIC kit build", "kit_id": "KIT-OPEN-01"},
+            brief={"title": "EXAMPLE kit build", "kit_id": "KIT-OPEN-01"},
             tags=tags,
             **QUARANTINE,
             **extra,
@@ -81,7 +81,7 @@ def work(client: TestClient, secret: str, task_id: str | None = None) -> dict[st
     assert client.post("/ns/main/v1/tasks/heartbeat", json=ref, headers=h).status_code == 200
     submitted = client.post(
         "/ns/main/v1/tasks/submit",
-        json={**ref, "output": {"node": "draft", "note": "SYNTHETIC result, see example.com"}},
+        json={**ref, "output": {"node": "draft", "note": "EXAMPLE result, see example.com"}},
         headers={**h, "Idempotency-Key": f"{lease['task_id']}:{lease['fencing_token']}"},
     )
     assert submitted.status_code == 200, submitted.text

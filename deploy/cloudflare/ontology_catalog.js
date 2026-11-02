@@ -1888,7 +1888,7 @@ export const NOUN_CATALOG = {
       ],
       "preflight_context": [
         "Load linked noun.statute_card records and regional language/literacy constraints.",
-        "Check brief rules and SYNTHETIC disclosure requirements."
+        "Check brief rules and AI-generated media disclosure requirements."
       ],
       "required_mcp_tools": [
         "corpus.lookup_statute",
@@ -2743,7 +2743,7 @@ export const NOUN_CATALOG = {
         "Verify asset URIs, frame budgets, and non-overlapping collision bounds."
       ],
       "post_condition_receipt_rules": [
-        "Record deterministic seed, scene graph SHA-256, and SYNTHETIC watermark metadata if rendered."
+        "Record deterministic seed, scene graph SHA-256, and generated-media watermark metadata if rendered."
       ],
       "preflight_context": [
         "Inspect coordinate-system convention, bounding boxes, and linked noun.motion_profile assets."

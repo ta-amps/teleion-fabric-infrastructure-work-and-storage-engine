@@ -19,7 +19,7 @@ from tessera.clock import FakeClock
 from tessera.service import create_app
 
 PROFILE = {
-    "display_name": "Synthetic Food Bank",
+    "display_name": "Example Food Bank",
     "organization_type": "Food pantry",
     "causes": ["food security"],
 }
@@ -73,7 +73,7 @@ def request_verb(
         "kind": "request",
         "effect_class": "write-internal",
         "task_id": tid(org, suffix),
-        "brief": brief or {"job": "SYNTHETIC summary of public tenant laws"},
+        "brief": brief or {"job": "EXAMPLE summary of public tenant laws"},
     }
 
 
@@ -94,12 +94,12 @@ def test_sign_up_mints_a_narrow_hashed_key_and_a_profile_noun(
     }
     assert org["labels"]["origin"] == "requester" and org["quotas"]["request_verbs_per_hour"] == 5
     stored = database_text(store)
-    assert "Synthetic Food Bank" in stored, "the check must see the rows this sign-up wrote"
+    assert "Example Food Bank" in stored, "the check must see the rows this sign-up wrote"
     assert org["key"] not in stored
     h = auth(org["key"])
     assert client.get("/v1/me", headers=h).json()["namespace"] == org["namespace"]
     profile = client.get("/v1/stores/org.profile/records/profile", headers=h).json()
-    assert profile["value"]["display_name"] == "Synthetic Food Bank"
+    assert profile["value"]["display_name"] == "Example Food Bank"
     assert profile["visibility_scope"] == "private" and "origin:requester" in profile["tags"]
     contract = client.get("/connect.json").json()["requester"]
     assert contract["enabled"] is True and contract["quotas"]["signups_per_ip_hour"] == 3
@@ -109,7 +109,7 @@ def test_requester_files_and_follows_only_its_own_request_verbs(
     fabric: tuple[TestClient, Store, str],
 ) -> None:
     client, store, _ = fabric
-    first, second = sign_up(client), sign_up(client, display_name="Synthetic Clinic")
+    first, second = sign_up(client), sign_up(client, display_name="Example Clinic")
     h, other = auth(first["key"]), auth(second["key"])
     filed = client.post("/ns/main/v1/tasks", json=request_verb(first, "1"), headers=h)
     assert filed.status_code == 201, filed.text
@@ -143,7 +143,7 @@ def test_requester_files_and_follows_only_its_own_request_verbs(
     )
     own = client.post(
         "/v1/stores/org.requests/records/r1",
-        json={"value": {"job": "SYNTHETIC"}, "expected_version": 0},
+        json={"value": {"job": "EXAMPLE"}, "expected_version": 0},
         headers=h,
     )
     assert own.status_code == 200 and own.json()["visibility_scope"] == "private"
@@ -151,7 +151,7 @@ def test_requester_files_and_follows_only_its_own_request_verbs(
 
 def test_requester_keys_reach_nothing_else(fabric: tuple[TestClient, Store, str]) -> None:
     client, _, _ = fabric
-    first, second = sign_up(client), sign_up(client, display_name="Synthetic Clinic")
+    first, second = sign_up(client), sign_up(client, display_name="Example Clinic")
     h = auth(first["key"])
     store_writes = (
         ("/v1/stores/eranos.requests/records/r1", {"value": {}}),
@@ -271,8 +271,8 @@ def test_a_payload_namespace_never_redirects_a_write(
     org = sign_up(client)
     producer, _ = store.issue_key("producer", queues=["eq01"], scopes=["store"])
     filed = {**request_verb(org, "cross"), "namespace": "victim-ns"}
-    queued = {"queue": "eq01", "task_id": "t-cross", "brief": {"job": "SYNTHETIC"}}
-    write = {"store": "notes", "key": "n1", "value": {"note": "SYNTHETIC"}, "expected_version": 0}
+    queued = {"queue": "eq01", "task_id": "t-cross", "brief": {"job": "EXAMPLE"}}
+    write = {"store": "notes", "key": "n1", "value": {"note": "EXAMPLE"}, "expected_version": 0}
     for path, body, key in (
         ("/ns/main/v1/tasks", filed, org["key"]),
         ("/v1/tasks", {**queued, "namespace": "victim-ns"}, producer),
@@ -298,7 +298,7 @@ def test_an_expired_requester_key_and_its_namespace_are_purged(
     client, store, _ = fabric
     org = sign_up(client)
     h = auth(org["key"])
-    note = {"value": {"job": "SYNTHETIC"}, "expected_version": 0}
+    note = {"value": {"job": "EXAMPLE"}, "expected_version": 0}
     assert (
         client.post("/v1/stores/org.requests/records/r1", json=note, headers=h).status_code == 200
     )
@@ -324,7 +324,7 @@ def test_a_failed_sign_up_leaves_no_key_and_spends_no_allowance(
     keys_before = {g.key_id for g in store.list_keys()}
 
     def refuse(*_: Any, **__: Any) -> None:
-        raise InvalidRequest("SYNTHETIC storage failure")
+        raise InvalidRequest("EXAMPLE storage failure")
 
     with monkeypatch.context() as patched:
         patched.setattr(store, "put_records", refuse)

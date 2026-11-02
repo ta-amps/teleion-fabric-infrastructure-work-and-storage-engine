@@ -434,8 +434,8 @@ class PrincipalOps(AccessSchemaOps):
                         kind="demo",
                         brief={
                             "title": name,
-                            "synthetic": True,
-                            "instruction": "Read demo.instructions, create a small synthetic artifact in demo.artifacts, then submit its record key and version.",
+                            "example_only": True,
+                            "instruction": "Read demo.instructions, create a small example artifact in demo.artifacts, then submit its record key and version.",
                             "labels": labels,
                         },
                         visibility_scope="private",
@@ -449,8 +449,8 @@ class PrincipalOps(AccessSchemaOps):
                         key="welcome",
                         expected_version=0,
                         value={
-                            "title": "Synthetic agent practice",
-                            "synthetic": True,
+                            "title": "Agent practice",
+                            "example_only": True,
                             "goal": "Complete a fenced noun/verb loop without real personal data.",
                             "labels": labels,
                         },

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -26,10 +27,9 @@ PACK_VERSION = "1.0.0"
 FORMAT = "tessera.continuous-tuning.seed-pack.v1"
 STORE = "tuning.specs"
 METHOD = "continuous-tuning.pack-dimensions.v1"
-BASES = (
-    "recipes/base-llama-3.2-1b-instruct.json",
-    "recipes/base-llama-3.2-3b-instruct.json",
-)
+# Base-model descriptions are configuration: a worker passes its own with `pack --base`. The
+# descriptions used for the 2026-10-29 runs are kept in archive/.
+BASES: tuple[Path, ...] = ()
 SPECS = {
     "trigger": ("trigger.json", "trigger"),
     "rule": ("promotion_rule.json", "promotion_rule"),
@@ -74,7 +74,9 @@ def safety(value: dict[str, Any]) -> float:
     return round(sum(checks) / len(checks), 6)
 
 
-def build_pack(namespace: str = NAMESPACE, queue: str = QUEUE) -> dict[str, Any]:
+def build_pack(
+    namespace: str = NAMESPACE, queue: str = QUEUE, bases: Sequence[Path] = BASES
+) -> dict[str, Any]:
     records: list[dict[str, Any]] = []
     refs: dict[str, dict[str, Any]] = {}
     categories: dict[str, str] = {}
@@ -120,18 +122,18 @@ def build_pack(namespace: str = NAMESPACE, queue: str = QUEUE) -> dict[str, Any]
                 "key": key,
                 "expected_version": 0,
                 "value": value,
-                "tags": [f"category:{category}", f"role:{role}", "status:proposal", "data:synthetic", "spdx:MIT"],
+                "tags": [f"category:{category}", f"role:{role}", "status:proposal", "data:example", "spdx:MIT"],
             }
         )  # fmt: skip
         refs[name] = {"store": STORE, "key": key, "version": 1, "value_sha256": digest(value)}
         categories[name] = category
 
     noun("tools", "noun.mcp_server", "tool_snapshot", load_snapshot())
-    bases = []
-    for path in BASES:
+    base_values = []
+    for path in bases:
         base = json.loads((HERE / path).read_bytes())
         noun(f"base:{base['base_id']}", "noun.model_spec", "base_model", base)
-        bases.append(base)
+        base_values.append(base)
     for name, (path, role) in SPECS.items():
         noun(name, "noun.code_node", role, json.loads((HERE / path).read_bytes()))
     for stage, template in VERBS.items():
@@ -147,7 +149,7 @@ def build_pack(namespace: str = NAMESPACE, queue: str = QUEUE) -> dict[str, Any]
     spec = json.loads((HERE / "learner_spec.json").read_bytes())
     components = [
         "tools",
-        *[f"base:{b['base_id']}" for b in bases],
+        *[f"base:{b['base_id']}" for b in base_values],
         *SPECS,
         *[f"verb:{s}" for s in VERBS],
     ]
@@ -164,7 +166,7 @@ def build_pack(namespace: str = NAMESPACE, queue: str = QUEUE) -> dict[str, Any]
         [*components, "learner_spec"],
     )  # fmt: skip
     tasks = []
-    for base in bases:
+    for base in base_values:
         spec_refs = {
             "tools": refs["tools"],
             "base_model": refs[f"base:{base['base_id']}"],
@@ -194,7 +196,7 @@ def build_pack(namespace: str = NAMESPACE, queue: str = QUEUE) -> dict[str, Any]
                 "kind": "verb.decompose_dag",
                 "effect_class": "write-internal",
                 "idempotency_key": "continuous-tuning-seed:" + digest({"queue": queue, "brief": brief}),
-                "tags": ["category:verb.decompose_dag", "stage:tick", "status:proposal", "data:synthetic"],
+                "tags": ["category:verb.decompose_dag", "stage:tick", "status:proposal", "data:example"],
                 "brief": brief,
             }
         )  # fmt: skip
@@ -203,12 +205,12 @@ def build_pack(namespace: str = NAMESPACE, queue: str = QUEUE) -> dict[str, Any]
         "pack_id": PACK_ID,
         "version": PACK_VERSION,
         "status": "offline_candidate",
-        "synthetic": True,
+        "example_only": True,
         "license": "MIT",
         "importer": None,
         "importer_reason": "No manifest endpoint or generic importer exists. An owner writes the records with the batch-record API, verifies version-1 readback, then explicitly enqueues a tick seed in an existing queue.",
         "does_not": ["execute", "enqueue", "activate", "admit", "publish", "carry weights", "carry credentials", "grant permissions"],
-        "base_model_license": "Any base weights a worker supplies keep their own license (Llama 3.2 Community License and Acceptable Use Policy for the pinned bases); the pack carries none.",
+        "base_model_license": "Any base weights a worker supplies keep their own license and acceptable use policy; the pack carries none.",
         "records": records,
         "tasks": tasks,
     }  # fmt: skip
@@ -249,8 +251,8 @@ def manifest(pack: dict[str, Any], files: dict[str, str]) -> dict[str, Any]:
     }  # fmt: skip
 
 
-def write_pack(directory: Path) -> dict[str, Any]:
-    pack = build_pack()
+def write_pack(directory: Path, bases: Sequence[Path] = BASES) -> dict[str, Any]:
+    pack = build_pack(bases=bases)
     files = pack_files(pack)
     for stale in [*directory.glob("records/*.json"), *directory.glob("tasks/*.json")]:
         if str(stale.relative_to(directory)) not in files:

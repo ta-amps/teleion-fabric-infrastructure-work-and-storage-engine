@@ -2,6 +2,7 @@
 // Queue, lease and CAS operations remain in TesseraCoordinator.
 import { extractTags } from "./cloud_intelligence.js";
 import { sha256Hex, canonicalJson } from "./cloud_buckets.js";
+import { showOnMapLabel } from "./edge_activity.js";
 
 export const DEMO_QUOTAS = Object.freeze({
   session_seconds: 3600, retention_seconds: 86400, claims_per_hour: 20,
@@ -368,7 +369,7 @@ export async function mintAnonymous(c, body, meta) {
   const digest = await sha256Hex(new TextEncoder().encode(token));
   const id = `a_${crypto.randomUUID().replaceAll("-", "")}`;
   const namespace = `demo.${id}`;
-  const labels = { ...ANON_LABELS, agent_label: safeLabel(body.agent_label) };
+  const labels = { ...ANON_LABELS, agent_label: safeLabel(body.agent_label), ...showOnMapLabel(body.show_on_map) };
   const scopes = ["store", "nouns:read", "verbs:claim", "verbs:submit", "cas:write", `namespace:${namespace}`];
   const grant = { key_id: id, principal_id: id, session_id: id, principal_kind: "anonymous", account_id: null,
     namespace, labels, scopes, expires_at: now + DEMO_QUOTAS.session_seconds };
@@ -467,9 +468,9 @@ export function seedDemo(c, grant, purgeAt) {
       const taskId = `${grant.principal_id}_${name.replaceAll(".", "_")}`;
       if (!c._one("SELECT id FROM tasks WHERE namespace=? AND id=?", grant.namespace, taskId))
         c._insertTask(taskId, name, null, "demo", "write-internal", 50,
-          { title: name, synthetic: true, instruction: "Read demo.instructions, create a small synthetic artifact in demo.artifacts, then submit its record key and version.", labels: grant.labels }, 0, now, [], taskId, gov);
+          { title: name, example_only: true, instruction: "Read demo.instructions, create a small example artifact in demo.artifacts, then submit its record key and version.", labels: grant.labels }, 0, now, [], taskId, gov);
     }
-    const value = canonicalJson({ title: "Synthetic agent practice", synthetic: true, goal: "Complete a fenced noun/verb loop without real personal data.", labels: grant.labels });
+    const value = canonicalJson({ title: "Agent practice", example_only: true, goal: "Complete a fenced noun/verb loop without real personal data.", labels: grant.labels });
     c.ctx.storage.sql.exec("INSERT OR IGNORE INTO record_heads(namespace,store,key,version,producer_surface,visibility_scope,allowed_surfaces,target_cohorts,tags,owner_key_id) VALUES (?,'demo.instructions','welcome',1,'surface:tessera','private','[]','[\"all\"]',?,?)", grant.namespace, JSON.stringify(tags), grant.key_id);
     c.ctx.storage.sql.exec("INSERT OR IGNORE INTO records(namespace,store,key,version,value,created_at,producer_surface,visibility_scope,allowed_surfaces,target_cohorts,tags,owner_key_id) VALUES (?,'demo.instructions','welcome',1,?,?,'surface:tessera','private','[]','[\"all\"]',?,?)", grant.namespace, value, now, JSON.stringify(tags), grant.key_id);
     c._syncNounTags("record", "demo.instructions", "welcome", tags);
@@ -526,7 +527,7 @@ export function enforceAccess(c, grant, action, args) {
   });
   const payload = storedPayload(action, args);
   if (WRITE_ACTIONS.has(action) && (action === "submit" ? submissionHasPersonalData(payload, args.output) : hasPersonalData(payload)))
-    throw error(400, "synthetic_only", "demo payloads must not contain personal or payment data; use example.com");
+    throw error(400, "example_only", "demo payloads must not contain personal or payment data; use example.com");
   const bytes = new TextEncoder().encode(payload).length;
   if (bytes > DEMO_QUOTAS.request_bytes) throw error(413, "payload_too_large", "demo request exceeds byte limit");
   const writing = WRITE_ACTIONS.has(action);
@@ -599,7 +600,7 @@ function enforceRequester(c, grant, action, args, ns) {
   }
   const writing = action === "putRecords" || action === "enqueue";
   const payload = storedPayload(action, args);
-  if (writing && hasPersonalData(payload)) throw error(400, "synthetic_only", "requests and nouns must not contain personal or payment data");
+  if (writing && hasPersonalData(payload)) throw error(400, "example_only", "requests and nouns must not contain personal or payment data");
   const bytes = new TextEncoder().encode(payload).length;
   if (bytes > REQUESTER_QUOTAS.request_bytes) throw error(413, "payload_too_large", "requester request exceeds byte limit");
   return [args, { kind: "requester", action, namespace: ns, bytes: writing ? bytes : 0, writing }];

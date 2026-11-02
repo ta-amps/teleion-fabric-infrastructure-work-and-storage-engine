@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""Local Meta Model API `/v1/responses` bridge backed by Meta open-weight models (`muse-spark-open`)
-on any OpenAI/Ollama-compatible `/chat/completions` endpoint.
+"""Local Meta Model API `/v1/responses` bridge backed by Meta's open-weight Muse model
+(`muse-spark-open`) on an OpenAI-compatible `/chat/completions` endpoint.
 
 Why this exists:
-- Product surfaces like Shamash (`shamash/lanes/muse.py`) speak strictly to Meta's Responses API
-  (`/v1/responses`, `/v1/responses/{id}`, `/v1/responses/{id}/cancel`, `/v1/models`) in Standard mode.
+- Clients that speak strictly to Meta's Responses API (`/v1/responses`, `/v1/responses/{id}`,
+  `/v1/responses/{id}/cancel`, `/v1/models`) in Standard mode run unchanged against it.
 - Before switching to hosted Meta Model API keys (`https://api.meta.ai/v1`), teams can run the exact
   same client code, background polling, schema formatting, token accounting, and `-contributor`
-  refusal against `muse-spark-open` on Ollama Cloud (`https://ollama.com/v1`) or a local Ollama host:
+  refusal against `muse-spark-open` on any OpenAI-compatible host that serves it:
 
-    OLLAMA_API_KEY=<key> uv run python tools/meta_open_bridge.py --port 7799
-    MODEL_API_BASE=http://127.0.0.1:7799/v1 MODEL_API_KEY=local-bridge uv run shamash muse-smoke
+    BRIDGE_UPSTREAM_BASE=<host>/v1 BRIDGE_UPSTREAM_KEY=<key> uv run python tools/meta_open_bridge.py --port 7799
+    MODEL_API_BASE=http://127.0.0.1:7799/v1 MODEL_API_KEY=local-bridge <a Responses API client>
 """
 
 from __future__ import annotations
@@ -25,7 +25,6 @@ import httpx
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 
-DEFAULT_UPSTREAM_BASE = "https://ollama.com/v1"
 DEFAULT_UPSTREAM_MODEL = "muse-spark-open"
 MAX_STORED_RESPONSES = 512
 
@@ -73,9 +72,11 @@ def create_bridge_app(
     dry_upstream: bool = False,
     transport: httpx.BaseTransport | None = None,
 ) -> FastAPI:
-    base = (
-        upstream_base or os.environ.get("BRIDGE_UPSTREAM_BASE") or DEFAULT_UPSTREAM_BASE
-    ).rstrip("/")
+    base = (upstream_base or os.environ.get("BRIDGE_UPSTREAM_BASE") or "").rstrip("/")
+    if not base and not dry_upstream:
+        raise ValueError(
+            "set BRIDGE_UPSTREAM_BASE or --upstream-base to the host that serves the model"
+        )
     target_model = (
         upstream_model or os.environ.get("BRIDGE_UPSTREAM_MODEL") or DEFAULT_UPSTREAM_MODEL
     )
@@ -85,7 +86,7 @@ def create_bridge_app(
     def _api_key(req: Request) -> str:
         if upstream_api_key:
             return upstream_api_key
-        if env_key := (os.environ.get("OLLAMA_API_KEY") or os.environ.get("BRIDGE_UPSTREAM_KEY")):
+        if env_key := os.environ.get("BRIDGE_UPSTREAM_KEY"):
             return env_key
         auth = req.headers.get("authorization", "")
         if auth.lower().startswith("bearer "):
@@ -129,7 +130,7 @@ def create_bridge_app(
 
         if dry_upstream:
             text_out = (
-                json.dumps({"ok": True, "note": "SYNTHETIC dry bridge response"})
+                json.dumps({"ok": True, "note": "EXAMPLE dry bridge response"})
                 if want_json
                 else "ready"
             )
@@ -139,7 +140,7 @@ def create_bridge_app(
             if not key:
                 raise HTTPException(
                     status_code=401,
-                    detail="Missing OLLAMA_API_KEY or BRIDGE_UPSTREAM_KEY for upstream open-weights endpoint",
+                    detail="Missing BRIDGE_UPSTREAM_KEY for the upstream open-weights endpoint",
                 )
             chat_req: dict[str, Any] = {
                 "model": target_model,
@@ -224,9 +225,7 @@ def main() -> int:
     )
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=7799)
-    p.add_argument(
-        "--upstream-base", default=os.environ.get("BRIDGE_UPSTREAM_BASE", DEFAULT_UPSTREAM_BASE)
-    )
+    p.add_argument("--upstream-base", default=os.environ.get("BRIDGE_UPSTREAM_BASE", ""))
     p.add_argument(
         "--upstream-model", default=os.environ.get("BRIDGE_UPSTREAM_MODEL", DEFAULT_UPSTREAM_MODEL)
     )

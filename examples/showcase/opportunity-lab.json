@@ -1,7 +1,7 @@
 {
   "version": 1,
   "name": "Opportunity Lab",
-  "synthetic": true,
+  "example_only": true,
   "source": {
     "title": "YC Requests for Startups, Winter 2027",
     "url": "https://www.ycombinator.com/rfs",
@@ -15,9 +15,9 @@
     {"id": "robot-components", "title": "Robot components", "question": "Which component and manufacturing options improve robotics resilience?", "starter_direction": "A component substitution graph with compatibility tests and provenance."},
     {"id": "expressive-writing", "title": "Expressive writing", "question": "How can a model preserve voice and write for different audiences?", "starter_direction": "A blinded voice-preservation benchmark with diverse human preferences."},
     {"id": "benefit-evidence", "title": "Reusable benefit evidence", "question": "How can repeated benefit document handling be reduced?", "starter_direction": "Consent-scoped evidence envelopes with freshness and revocation checks."},
-    {"id": "physical-capital", "title": "Physical AI capital", "question": "Which tools clarify hardware economics and uncertainty?", "starter_direction": "A synthetic equipment cash-flow simulator with matched scenarios."},
+    {"id": "physical-capital", "title": "Physical AI capital", "question": "Which tools clarify hardware economics and uncertainty?", "starter_direction": "An example equipment cash-flow simulator with matched scenarios."},
     {"id": "specialist-models", "title": "Specialist models", "question": "Where do specialized models offer a measurable advantage?", "starter_direction": "Task-and-hardware matched evaluation contracts for accuracy and compute cost."},
-    {"id": "civic-workflows", "title": "Civic workflows", "question": "Which public-service administrative tasks can be improved?", "starter_direction": "Synthetic permit completeness checks that leave official decisions to staff."},
+    {"id": "civic-workflows", "title": "Civic workflows", "question": "Which public-service administrative tasks can be improved?", "starter_direction": "Example permit completeness checks that leave official decisions to staff."},
     {"id": "compute-supply", "title": "Compute infrastructure supply", "question": "Which dependencies constrain infrastructure construction?", "starter_direction": "A source-backed component lead-time graph with uncertainty and alternatives."},
     {"id": "offline-intelligence", "title": "Offline intelligence", "question": "How can useful model workflows operate without internet access?", "starter_direction": "An offline noun bundle and reproducible evaluation kit with no egress."},
     {"id": "owned-intelligence", "title": "Owned intelligence", "question": "How can operational expertise become maintainable model capability?", "starter_direction": "Failure-to-evaluation-to-training lineage that survives model upgrades."}
@@ -30,7 +30,7 @@
     },
     "ideate": {
       "kind": "verb.solve_draft",
-      "instructions": "Create up to three distinct proposals: a practical approach, a cross-domain remix, and an unconventional alternative when useful. Start with a beneficiary and a mechanism. Challenge an assumption rather than merely adding an AI label. Name reusable nouns and independently schedulable verbs, plus one inexpensive falsifiable test for each. Keep these synthetic proposals, not verified claims. Prefer diversity before ranking. Do not fabricate sources or measurements.",
+      "instructions": "Create up to three distinct proposals: a practical approach, a cross-domain remix, and an unconventional alternative when useful. Start with a beneficiary and a mechanism. Challenge an assumption rather than merely adding an AI label. Name reusable nouns and independently schedulable verbs, plus one inexpensive falsifiable test for each. Keep these example proposals, not verified claims. Prefer diversity before ranking. Do not fabricate sources or measurements.",
       "outputs": ["idea candidates matching idea-contract"]
     },
     "remix": {
@@ -47,7 +47,7 @@
     },
     "design_benchmark": {
       "kind": "verb.solve_draft",
-      "instructions": "Define a baseline, fixed task, synthetic fixture, success and failure criteria, resource ceiling and reproducible procedure. Include a negative control and what would falsify the claimed advantage. Propose execution as a separate authorized verb when permissions or capabilities differ.",
+      "instructions": "Define a baseline, fixed task, test fixture, success and failure criteria, resource ceiling and reproducible procedure. Include a negative control and what would falsify the claimed advantage. Propose execution as a separate authorized verb when permissions or capabilities differ.",
       "outputs": ["benchmark contract noun", "fixture noun", "proposed execution verb"]
     },
     "propose_seeds": {
@@ -78,7 +78,7 @@
     "required_context": ["task and data versions", "hardware and model", "harness and tools", "resource and latency measurements", "baseline", "evidence references", "confidence with reason"]
   },
   "boundaries": [
-    "Synthetic fixtures and public sources only; no customer records.",
+    "Test fixtures and public sources only; no customer records.",
     "Real benefits, healthcare, legal, financial and government decisions remain with authorized qualified humans.",
     "A seed grants no account signup, messages, purchases, deployment or public admission.",
     "Executable tool candidates stay quarantined until applicable provenance, license, test and admission checks pass.",

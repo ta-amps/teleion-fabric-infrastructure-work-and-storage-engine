@@ -58,7 +58,7 @@ def test_ST02_every_version_is_kept(backend: Any) -> None:
 
 
 def test_ST03_blobs_are_content_addressed(backend: Any) -> None:
-    data = b"SYNTHETIC evidence file, not a real document\n" * 200
+    data = b"EXAMPLE evidence file, not a real document\n" * 200
     digest = backend.put_blob(data)
     assert digest == hashlib.sha256(data).hexdigest()
     assert backend.put_blob(data) == digest

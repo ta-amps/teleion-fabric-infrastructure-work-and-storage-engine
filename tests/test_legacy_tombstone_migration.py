@@ -12,23 +12,23 @@ from tessera.models import RecordWrite
 def test_upgrade_restricts_legacy_task_heads_without_rewriting_payloads(tmp_path: Path) -> None:
     path = tmp_path / "history.db"
     store = Store(path)
-    _, owner = store.issue_key("synthetic-owner", queues=["conformance-legacy"], scopes=["store"])
-    _, peer = store.issue_key("synthetic-peer", queues=["conformance-legacy"], scopes=["store"])
+    _, owner = store.issue_key("example-owner", queues=["conformance-legacy"], scopes=["store"])
+    _, peer = store.issue_key("example-peer", queues=["conformance-legacy"], scopes=["store"])
     store.define_queue(QueueConfig(name="conformance-legacy", max_attempts=1))
     with store.scope_context(key_id=owner.key_id):
         task = store.enqueue(
             TaskSpec(
-                queue="conformance-legacy", brief={"synthetic": True}, visibility_scope="private"
+                queue="conformance-legacy", brief={"example_only": True}, visibility_scope="private"
             )
         )
-        lease = store.claim("conformance-legacy", "synthetic", key_id=owner.key_id)
+        lease = store.claim("conformance-legacy", "example", key_id=owner.key_id)
         assert lease
         store.submit(
             task,
             lease.fencing_token,
             {},
             ok=False,
-            error="SYNTHETIC private diagnostic",
+            error="EXAMPLE private diagnostic",
             idempotency_key="fail",
         )
         before = store.get_record("negative.knowledge", task).value
@@ -38,7 +38,7 @@ def test_upgrade_restricts_legacy_task_heads_without_rewriting_payloads(tmp_path
                     store="negative.knowledge",
                     key="manual",
                     expected_version=0,
-                    value={"synthetic": True},
+                    value={"example_only": True},
                     visibility_scope="public_commons",
                 )
             ]
@@ -54,7 +54,7 @@ def test_upgrade_restricts_legacy_task_heads_without_rewriting_payloads(tmp_path
         with store.scope_context(key_id=peer.key_id):
             with pytest.raises(NotFound):
                 store.get_record("negative.knowledge", task)
-            assert store.get_record("negative.knowledge", "manual").value == {"synthetic": True}
+            assert store.get_record("negative.knowledge", "manual").value == {"example_only": True}
         with store.scope_context(key_id=owner.key_id):
             assert store.get_record("negative.knowledge", task).value == before
         store.close()

@@ -1,0 +1,43 @@
+{
+ "format": "tessera.continuous-tuning.base-model.v1",
+ "base_id": "example-1b-instruct",
+ "model_id": "example-org/example-1b-instruct",
+ "source": {
+  "kind": "local_files",
+  "path_env": "TUNING_BASE_PATH",
+  "obtained_via": "Test fixture: no weights exist; only the fixture backend reads this description",
+  "downloaded_by_this_code": false
+ },
+ "files_sha256": {
+  "config.json": "3fa1b815c78b14424fb69cdcddf96344f100abae16a8dec9c67686e5dcbf98fa",
+  "generation_config.json": "4aef4d8390435095186ffa8313ea07c300e0ee52ae6a30ef44cd8ded2ef2b2b1",
+  "model.safetensors": "4de46b11acf9f743b8566b034f32a65eb42ccf23bfa9cda49ce0bd7aaf9f1729",
+  "special_tokens_map.json": "dca09da9e9129a62753657190c33f5ad8d00d519ae1e6289ccb6006ad674226f",
+  "tokenizer.json": "3e045b28958eaaddd520f28dd1e7c19b4e83733a9134ff496d8a3daa95a81f27",
+  "tokenizer_config.json": "2d7af7e0602b2c4b79934f4b78f04939c7f9e17e8b8e78b140abb1c7de94dd18",
+  "LICENSE.txt": "c8db92733199b0719df7295dfc1c1c92646890fd5b4c592de69705056089e110"
+ },
+ "license": {
+  "name": "Example license (test fixture)",
+  "files": [
+   "LICENSE.txt"
+  ],
+  "attribution": "none",
+  "acceptable_use": "test fixture only",
+  "weights_distribution": "none: there are no weights"
+ },
+ "dtype": "bfloat16",
+ "quantization": "none",
+ "chat_template_kwargs": {},
+ "pad_token": "<pad>",
+ "eos_token_ids": [
+  2
+ ],
+ "lora_target_modules": [
+  "q_proj",
+  "k_proj",
+  "v_proj",
+  "o_proj"
+ ],
+ "context_tokens": 4096
+}

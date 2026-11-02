@@ -1,4 +1,4 @@
-"""Prepare synthetic data or run one explicitly bounded optional worker training job."""
+"""Prepare example data or run one explicitly bounded optional worker training job."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "prepare":
         manifest = prepare(args.output)
-        print(json.dumps({"dataset_sha256": manifest["dataset_sha256"], "synthetic": True}))
+        print(json.dumps({"dataset_sha256": manifest["dataset_sha256"], "example_only": True}))
     else:
         from .peft_backend import recipe_from, run
 

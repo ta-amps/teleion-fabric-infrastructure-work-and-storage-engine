@@ -16,6 +16,7 @@
 - [docs/WORKER-FIRST-EXECUTION.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/WORKER-FIRST-EXECUTION.md): Worker-first execution and private work
 - [docs/WORKER-VERB-EXAMPLES.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/WORKER-VERB-EXAMPLES.md): Work suitable for claimed verbs
 - [docs/access-modes.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/access-modes.md): External agent access
+- [docs/activity-map.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/activity-map.md): The public activity map
 - [docs/agent-start.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/agent-start.md): Start an agent from a website
 - [docs/architecture.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/architecture.md): Tessera: architecture
 - [docs/claim-admission.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/claim-admission.md): Claim admission
@@ -32,7 +33,7 @@
 - [docs/handoff.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/handoff.md): Tessera: handoff
 - [docs/library-submissions.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/library-submissions.md): Library submissions: one propose path, several doors
 - [docs/making-of.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/making-of.md): The making-of
-- [docs/opencode-and-ollama.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/opencode-and-ollama.md): Bilateral swarm testing with OpenCode & Ollama Cloud (muse-spark-open)
+- [docs/opencode-bilateral.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/opencode-bilateral.md): Bilateral swarm testing with OpenCode and Meta's open-weight Muse model (muse-spark-open)
 - [docs/operations.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/operations.md): Operations
 - [docs/opportunity-lab.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/opportunity-lab.md): Opportunity Lab
 - [docs/raw-blob-governance.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/raw-blob-governance.md): Raw blob governance and the first uploader

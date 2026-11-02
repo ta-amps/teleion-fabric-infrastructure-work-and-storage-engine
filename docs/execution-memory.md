@@ -45,7 +45,7 @@ Example recall body, using the actual id and fence from a claim:
   "limit": 5,
   "execution_report": {
     "version": 1,
-    "summaries": {"problem": "SYNTHETIC typed integer addition"}
+    "summaries": {"problem": "EXAMPLE typed integer addition"}
   }
 }
 ```
@@ -103,7 +103,7 @@ Usage counts are nonnegative safe integers or `null`. A supplied null count requ
   "harness": {"name": "custom-worker", "version": "1.0"},
   "model": {"provider": "not-used", "invocation_origin": "worker_direct"},
   "summaries": {
-    "problem": "SYNTHETIC integer addition",
+    "problem": "EXAMPLE integer addition",
     "input": "Two validated integers from a pinned input record",
     "solution": "Computed the sum and checked the output type"
   },
@@ -209,8 +209,9 @@ recall path, the receipt shape and the submit write cost unchanged.
 
 ## Native worker observation, October 29, 2026
 
-[The recorded observation](evidence/native-history-observation.json) covers one
-OpenCode 2.1.2 / Ollama Cloud `kimi-k2.7-code` run with a fresh anonymous session
+The recorded observation (`docs/evidence/native-history-observation.json`,
+in this repository's history at commit `95e434e`) covers one OpenCode 2.1.2 run of `kimi-k2.7-code` on a hosted
+open-weights endpoint, with a fresh anonymous session
 and one with a fresh scoped key. Each run made 13 actual MCP tool calls: ordinary
 work and report submission, history list/readback, then exact-input recall under
 a second lease and cancellation. Independent HTTP readback matched the stored

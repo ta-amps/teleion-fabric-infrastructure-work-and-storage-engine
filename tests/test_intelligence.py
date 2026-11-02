@@ -19,12 +19,12 @@ def test_l0_search_dead_ends_feeds_reflexes_and_http_206(tmp_path: Path) -> None
     store = Store(tmp_path / "intel.db")
     try:
         # 1. Seed a large noun + bucket artifact and verify L0 progressive disclosure caps size
-        large_notes = "SYNTHETIC detailed evidence note. " * 200
+        large_notes = "EXAMPLE detailed evidence note. " * 200
         store.put_record(
             "shamash.cases",
             "C-IM-US-01",
             {
-                "title": "Synthetic Impersonation Wire Hold Case",
+                "title": "Example Impersonation Wire Hold Case",
                 "summary": "Safe-account phone impersonation demanding instant wire transfer; matched twin clears.",
                 "domain": "shamash",
                 "tags": ["impersonation", "wire-transfer"],
@@ -46,7 +46,7 @@ def test_l0_search_dead_ends_feeds_reflexes_and_http_206(tmp_path: Path) -> None
             },
             expected_version=None,
         )
-        blob_sha = store.put_blob(b"HEADER:SYNTHETIC_PAYLOAD:FOOTER")
+        blob_sha = store.put_blob(b"HEADER:EXAMPLE_PAYLOAD:FOOTER")
 
         scents = store.search_nouns("impersonation wire")
         assert scents and scents[0].key == "C-IM-US-01"
@@ -146,10 +146,10 @@ def test_l0_search_dead_ends_feeds_reflexes_and_http_206(tmp_path: Path) -> None
             # HTTP 206 on raw content-addressed blob
             b206 = tc.get(
                 f"/v1/blobs/{blob_sha}",
-                headers={**auth, "range": "bytes=7-23"},
+                headers={**auth, "range": "bytes=7-21"},
             )
             assert b206.status_code == 206
-            assert b206.content == b"SYNTHETIC_PAYLOAD"
+            assert b206.content == b"EXAMPLE_PAYLOAD"
 
             def _dispatch(req: httpx.Request) -> httpx.Response:
                 r = tc.request(

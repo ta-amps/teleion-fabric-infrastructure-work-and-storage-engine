@@ -1,9 +1,8 @@
 {
- "base_model_license": "Any base weights a worker supplies keep their own license (Llama 3.2 Community License and Acceptable Use Policy for the pinned bases); the pack carries none.",
+ "base_model_license": "Any base weights a worker supplies keep their own license and acceptable use policy; the pack carries none.",
  "categories": {
   "noun.code_node": 14,
   "noun.mcp_server": 1,
-  "noun.model_spec": 2,
   "noun.skill_pack": 1
  },
  "does_not": [
@@ -20,86 +19,71 @@
   "reason": "A pack holds specifications; measured results live in evidence/ and are not pack content.",
   "result": null
  },
+ "example_only": true,
  "files": [
   {
-   "path": "records/base_model.35f7440ce8870ef2.json",
-   "sha256": "036411d29ae845fcd2661b96544e6b2cd6f9481aedff105bef54e80d4824b5bd"
+   "path": "records/learner_spec.e0eac5dd3fe06608.json",
+   "sha256": "4e75cc1a4ed9eab16831c79a7be5a7ae98569e0b6a81f98f919fb3b5f075adf3"
   },
   {
-   "path": "records/base_model.a7110b742efbc097.json",
-   "sha256": "ee19407b6a5c7cc513aeb5f531387b88095bf817f68089841193325170f6e2fc"
+   "path": "records/pack_index.e2e6c6b957e38a59.json",
+   "sha256": "66333bfe7b9da668ad33f1ba8edf413cba2331a0b62fd06a0e9a52f22d7a7d1d"
   },
   {
-   "path": "records/learner_spec.c4fc7ab6d0eb99c5.json",
-   "sha256": "766c90ae22205a38afeafb4b491e96568fcd5297fcad61f0d8fb3423cf21f7dd"
-  },
-  {
-   "path": "records/pack_index.0adb151fcd9eae2d.json",
-   "sha256": "67b613c4a608aea165ef77b2eae9245ea43a20e2c1f5bac4a1860f686cdd425e"
-  },
-  {
-   "path": "records/promotion_rule.520abffa83ef6080.json",
-   "sha256": "7e1636f905d1ee3f3eafade5a5b3acd5cbf6cd5eb63dfc94380c781175f47090"
+   "path": "records/promotion_rule.515680228c2832d6.json",
+   "sha256": "debaa3ed6e5b2d8f344b560cb6c60ccc42080688395726970d7961293d635dfc"
   },
   {
    "path": "records/search_space.099ed35b5dcc4f07.json",
-   "sha256": "1c189656104b6e7d51d61d98a0d3116cf839ed2774401d8b66f79c4f64f57d6f"
+   "sha256": "2970947844035af7c453dbde405fc97aabd31e6aa29b457c896cc2e94107fb73"
   },
   {
-   "path": "records/tool_snapshot.04b90e2ce2e7b3b0.json",
-   "sha256": "b9daa32a721e6021fc0a8e20caf2fdaeb6578f0e784a4b7e1ae2e17fc37e9123"
+   "path": "records/tool_snapshot.eee4fbf3d5b22f9a.json",
+   "sha256": "30f944e37d92c3aadcb1aed20860f3fd8e35f4da5ba0695c4c77669b8b0c9024"
   },
   {
    "path": "records/training_recipe.c538f95f751732b8.json",
-   "sha256": "354fee3143f194caf49a71b1028923463dfdb4b80b0a55fd75b31fe36029ae97"
+   "sha256": "08c8cd249a642b619a9146a0cfbe1f02c7edf5a75183cea0534c48c149b42b0b"
   },
   {
    "path": "records/trigger.06b5614255fea258.json",
-   "sha256": "b5e0c95149da6d6310681681a9edc3b8f84ff1c61ece4e86d9d1b4b9b12b49d7"
+   "sha256": "bc25336a553efede8fdbac4a85e08a727d7fbde821e4e74745a7a229a5da41ff"
   },
   {
    "path": "records/verb_template.090e0a551bfb3b91.json",
-   "sha256": "00e3fe8f0b9df765cbdd9ed8b4dfe3e448eb23bc6edb36b767f720725645588b"
+   "sha256": "ca05cc8318d7c38de57b0cd1ed523ce8b1fc1c402a2d0c301f8588b8163aa556"
   },
   {
    "path": "records/verb_template.0dfc5a4aaf86364a.json",
-   "sha256": "cf95904fe46848a6b4d137a6eca112bad4999cee99a20596b1e50bdd64ad0e7a"
+   "sha256": "ecb733b5e1d3f1ba93b9dbe61c0152ea7d1a2c04594d860e75dd32762217c863"
   },
   {
    "path": "records/verb_template.0eca35dba157fbe0.json",
-   "sha256": "c8c8ca088ab1b9fd560abfd78b938e6c652dc156c952c7e81d06a757e171a9b3"
+   "sha256": "beb44a99a6cb840edfccc07bf14e09be39a4f312f05c338510115d24ac88e544"
   },
   {
    "path": "records/verb_template.10b97ac15340c5ee.json",
-   "sha256": "3f3d9c7fba206c98f10f396bb759493d49f11386b435357f021ad06dac6fcea0"
+   "sha256": "e93bec08d97799b9c6c6f73a9e81f5fa5157273e52163f0ae999f85dd3e6d503"
   },
   {
    "path": "records/verb_template.34d9a5878c6d511a.json",
-   "sha256": "84af3323345f9c15099fe72e70d13a601354d9d79f38715324a6ceb195fdad79"
+   "sha256": "d4f3d4b94f581eba9ed7c5dc50ae9887237ab4be4a43aa0160ab2070017919ab"
   },
   {
    "path": "records/verb_template.3dbf10fcd634a9fd.json",
-   "sha256": "a702f5a6d0fac45e3ce9af97d475afc5f24014b771821a0ae6d2ada55cad9bea"
+   "sha256": "3a53627e0cdff1f6b5032f0c366612a937940bf274d7cd2c81d5225f0a2c8da6"
   },
   {
-   "path": "records/verb_template.a625527e2177c54e.json",
-   "sha256": "569b25f7ca02a76afb21e0a7b28cd9779ccb39a46fcc922908107abad07e313a"
+   "path": "records/verb_template.8459a01edb35cd10.json",
+   "sha256": "1e3f9757d51f2f5c5977b4022620bed5041847ac20c8a3dcb8428d42360b0f3c"
   },
   {
    "path": "records/verb_template.aa85127ec175f228.json",
-   "sha256": "a246887bc01b0622643b19435e9b917f9fbae95b43f0ccf6774e55aa19dc9e2c"
+   "sha256": "9969d9f8e8683d6331321bbb5ebbbbcd98af505de36f3ca9ed67a5a8e2d42c3c"
   },
   {
    "path": "records/verb_template.f7654361e9bb3583.json",
-   "sha256": "60bd15727b5642a2a75915e51093d72a18d9afdd0934e453be52c3bb9a59b8f3"
-  },
-  {
-   "path": "tasks/tick.llama-3.2-1b-instruct.json",
-   "sha256": "00a512d4126a9d03ad22d30d9f7b7f720a6a13171fe55021f32fac98308dd030"
-  },
-  {
-   "path": "tasks/tick.llama-3.2-3b-instruct.json",
-   "sha256": "cdb4b6c68d6aca8e0eecdeb726cb4cdfba78a67c5cc3fc667c2c8b7832f2e9df"
+   "sha256": "8087ccb291b309946ca68089f30ac4230991c1c33b072d008684ce99f723eab1"
   }
  ],
  "format": "tessera.continuous-tuning.seed-pack.v1",
@@ -107,9 +91,8 @@
  "importer_reason": "No manifest endpoint or generic importer exists. An owner writes the records with the batch-record API, verifies version-1 readback, then explicitly enqueues a tick seed in an existing queue.",
  "license": "MIT",
  "pack_id": "continuous-tuning.tool-call-specialist",
- "records": 18,
+ "records": 16,
  "status": "offline_candidate",
- "synthetic": true,
- "tasks": 2,
+ "tasks": 0,
  "version": "1.0.0"
 }

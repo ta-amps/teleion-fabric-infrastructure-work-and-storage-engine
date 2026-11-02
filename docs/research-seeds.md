@@ -26,7 +26,7 @@ interface and record its exact namespace, store, key and version. Hash its `valu
 using `hashlib.sha256(canonical_json(value).encode()).hexdigest()` from
 `tessera.receipts`; the digest identifies the value, not the whole record envelope.
 
-The checked-in [synthetic discovery request](../examples/research/discover.json)
+The checked-in [example discovery request](../examples/research/discover.json)
 uses a placeholder profile pin. It can be previewed but cannot be enqueued until
 that pin is replaced by a real permitted record. The other requests illustrate
 [collector preparation](../examples/research/collector.json),
@@ -59,7 +59,7 @@ allowance still apply. There is no server model fallback. A blocked or no-change
 result is valid; a worker need not invent sources or code to complete a task.
 
 Source discovery records publisher identity, provenance, access method, cadence
-and relevance. Collector work prefers existing adapters and requires synthetic
+and relevance. Collector work prefers existing adapters and requires example
 positive and failure fixtures. A scan uses an already admitted collector and
 retains item identities, dates, hashes, cursor/replay evidence and incomplete
 coverage. Source content cannot grant permissions or change the worker's brief.
@@ -87,4 +87,4 @@ These seeds make source discovery and collector preparation concrete worker
 contracts. A mailbox, feed connector, recurring adapter, qualified collector and
 actual daily worker run remain separate implementation or provisioning steps.
 Local tests cover task construction, pinned readback, idempotent enqueue, claim
-and synthetic completion. They do not certify autonomous research quality.
+and example completion. They do not certify autonomous research quality.

@@ -2,7 +2,7 @@
 daily-rotated hash was computed (finding 14).
 
 The serve tests run the real `serve` command with uvicorn.run captured, then wrap the app exactly
-as uvicorn does for the options `serve` chose. Synthetic data only."""
+as uvicorn does for the options `serve` chose. Example data only."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from tessera.access import ServiceSettings
 from tessera.clock import FakeClock
 from tessera.service import create_app
 
-PROFILE = {"display_name": "Synthetic Food Bank", "organization_type": "Food pantry"}
+PROFILE = {"display_name": "Example Food Bank", "organization_type": "Food pantry"}
 
 
 def served(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, trusted: str) -> Any:
@@ -44,7 +44,7 @@ def sign_ups(app: Any) -> list[int]:
         return [
             client.post(
                 "/v1/session/requester",
-                json={"profile": {**PROFILE, "display_name": f"Synthetic Org {i}"}},
+                json={"profile": {**PROFILE, "display_name": f"Example Org {i}"}},
                 headers={"X-Forwarded-For": f"203.0.113.{i}"},
             ).status_code
             for i in range(4)
@@ -88,11 +88,11 @@ def test_a_request_crossing_midnight_cannot_spend_two_days_allowances(tmp_path: 
             profile = {**PROFILE, "display_name": name}
             return client.post("/v1/session/requester", json={"profile": profile}).status_code
 
-        assert [sign_up(f"Synthetic Org {i}") for i in range(3)] == [201, 201, 201]
+        assert [sign_up(f"Example Org {i}") for i in range(3)] == [201, 201, 201]
         clock.advance(midnight - 0.005 - clock.now())
         latency[0] = 0.01  # identified at 23:59:59.995, charged at 00:00:00.005
-        assert sign_up("Synthetic Straddler") == 429
+        assert sign_up("Example Straddler") == 429
         latency[0] = 0.0
         clock.advance(60)  # a new day and hour: a new hash with a fresh allowance, as designed
-        assert sign_up("Synthetic Next Day") == 201
+        assert sign_up("Example Next Day") == 201
     store.close()

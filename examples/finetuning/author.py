@@ -72,7 +72,7 @@ def payloads(
             value=value,
             expected_version=0,
             visibility_scope="private",
-            tags=["category:" + value["category_id"], "status:proposal", "data:synthetic"],
+            tags=["category:" + value["category_id"], "status:proposal", "data:example"],
         )
         for name, value in noun_values.items()
     ]
@@ -100,7 +100,7 @@ def payloads(
         (
             "evaluate",
             "verb.benchmark_harness",
-            "Compare the unchanged same-model/prompt/schema baseline with the adapter on held-out families. Measure factual grounding, useful task decomposition, failures, latency and resource use; synthetic loss alone is insufficient.",
+            "Compare the unchanged same-model/prompt/schema baseline with the adapter on held-out families. Measure factual grounding, useful task decomposition, failures, latency and resource use; example loss alone is insufficient.",
         ),
         (
             "review",
@@ -118,7 +118,7 @@ def payloads(
             effect_class="write-internal",
             visibility_scope="private",
             depends_on=[tasks[-1].task_id] if tasks else [],
-            tags=["category:" + kind, "stage:" + stage, "data:synthetic"],
+            tags=["category:" + kind, "stage:" + stage, "data:example"],
             brief={
                 "stage": stage,
                 "outcome": outcome,

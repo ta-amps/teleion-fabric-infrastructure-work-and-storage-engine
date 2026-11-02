@@ -1,4 +1,7 @@
+import { humanLinkAction, humanLinkPublicAnswer, humanLinkPublicRead } from "./human_links.js";
 import { initExecutions, checkedReport, prepareExecution, validatePrepared, captureExecution, recallExecution, getExecution, listExecutions } from "./cloud_executions.js";
+import { NO_EDGE, activityMap, catalogModels, cleanEdge, clearActivity, edgeStatus, edgeWorker, flushEdge, recordClaim, recordModel, recordPresence, showOnMapLabel } from "./edge_activity.js";
+import { displayTest } from "./display_mask.js";
 import { initAccess, principalMetadata, requestIdentity, mintAnonymous, mintRequester, seedDemo, ensureDemoSeeded, ensureRequesterSeeded, enforceAccess, chargeAccess, claimCaps, checkClaimCaps, chargeClaimCaps, audit, auditMode, countAccess, ownAudit, publicActivity, publicPrincipal, requesterVerbGovernance, CLOSED_TO_ANONYMOUS, filesRequests, openToAnonymous, usesOpenVerbs } from "./cloud_access.js";
 // TesseraCoordinator: single-writer SQLite Durable Object (`new_sqlite_classes`) implementing
 // 100% of Tessera Spec v0.2 (queues, 5 verbs, dependencies, waves, park/resume, model jobs,
@@ -9,7 +12,8 @@ import { initAccess, principalMetadata, requestIdentity, mintAnonymous, mintRequ
 import { canonicalSha256, planFragilityRechecks } from "./ontology_engine.js";
 import { reviewProof, publicationProof } from "./cloud_publication.js";
 import { frontierVerificationProof, frontierReviewProof, frontierPublicationProof } from "./cloud_frontier_publication.js";
-import { libraryGuard, libraryReviewOutcome, proposeToLibrary, readLibrary } from "./cloud_library.js";
+import { inspectForLibrary, libraryAttempt as attemptLibrary, libraryGuard, libraryRefusal as refuseLibrary, libraryReviewOutcome, writeProposal } from "./cloud_library.js";
+import { readLibrary } from "./cloud_library_reads.js";
 import { LIBRARY } from "./library_contract.js";
 import { DurableObject } from "cloudflare:workers";
 import { TESSERA_VERSION } from "./cloud_pages.js";
@@ -458,7 +462,7 @@ const DEFAULT_BUCKETS = [
   ["nouns", "Canonical and proposed atomic noun schemas, packs, and structured artifacts"],
   ["verbs", "Atomic verb briefs, worker recipes, and multi-stage workflow templates"],
   ["kits", "Eranos agent kits: nouns and verbs made for nonprofits' agents, with their checks"],
-  ["cases", "Synthetic multi-document harm bundles and deterministic verdicts"],
+  ["cases", "Example multi-document harm bundles and deterministic verdicts"],
   ["provisions", "Herma coding-harness rule packs, prompt fragments, and URI documents"],
   ["traces", "Bilateral agent execution traces, audit logs, and SHA-256 receipts"],
 ];
@@ -1628,6 +1632,7 @@ export class TesseraCoordinator extends DurableObject {
           : [...EFFECTS];
       const scopes = Array.isArray(body.scopes) ? body.scopes.map(String) : [];
       const days = body.days == null ? 14.0 : Number(body.days);
+      const mapLabels = showOnMapLabel(body.show_on_map); // a worker that leaves the map keeps no place, from its first claim
       if (!label) throw badReq("label is required");
       if (!queues.length) throw badReq("a key needs at least one queue pattern");
       if (effect_classes.includes("public")) throw badReq("no key may hold the public effect class");
@@ -1672,7 +1677,7 @@ export class TesseraCoordinator extends DurableObject {
         this._event("key_issued", now, {
           detail: { key_id: keyId, label, queues, scopes },
         });
-        this.ctx.storage.sql.exec("INSERT INTO access_principals(key_id,principal_kind,principal_id,account_id,namespace,key_prefix,labels,quota_tier,last_used_at,purge_at) VALUES (?,?,?,?,?,?,?,?,NULL,NULL)", keyId, scopes.some(s => s.startsWith("surface:")) ? "service_binding" : "keyed", keyId, String(body.account_id || issuer?.account_id || `operator:${keyId}`).slice(0,128), "main", keySecret.slice(0,8), "{}", "standard");
+        this.ctx.storage.sql.exec("INSERT INTO access_principals(key_id,principal_kind,principal_id,account_id,namespace,key_prefix,labels,quota_tier,last_used_at,purge_at) VALUES (?,?,?,?,?,?,?,?,NULL,NULL)", keyId, scopes.some(s => s.startsWith("surface:")) ? "service_binding" : "keyed", keyId, String(body.account_id || issuer?.account_id || `operator:${keyId}`).slice(0,128), "main", keySecret.slice(0,8), JSON.stringify(mapLabels), "standard");
         audit(this, issuer || { principal_kind: "service_binding", principal_id: "bootstrap" }, "mint_key", { key: keyId }, { ok: true, status: 201, data: {} }, body.access_meta || {});
       });
 
@@ -1925,6 +1930,13 @@ export class TesseraCoordinator extends DurableObject {
     } catch (e) { return this._errOut(e); }
   }
   async requestIdentity(ip, ua) { return requestIdentity(this, ip, ua); }
+  // Human links live in the primary object: the person's token names no namespace (human_links.js).
+  async humanLink(secret, op, args, meta) {
+    try { return await humanLinkAction(this, secret, op, args, meta); }
+    catch (e) { return this._errOut(e); }
+  }
+  async humanLinkRead(token) { return humanLinkPublicRead(this, token); }
+  async humanLinkAnswer(token, body) { return humanLinkPublicAnswer(this, token, body); }
   async openAnonymousSession(body, meta) {
     try { return { ok: true, status: 201, data: await mintAnonymous(this, body, meta) }; }
     catch (e) { return this._errOut(e); }
@@ -1953,16 +1965,27 @@ export class TesseraCoordinator extends DurableObject {
     try { this.ctx.storage.transactionSync(() => chargeClaimCaps(this, [[who.key_id, 0, "", null]])); return { ok: true }; } catch (e) { return this._errOut(e); }
   }
   publicActivity() { return publicActivity(this); }
-  // The seed-pack library door (cloud_library.js); always the shared namespace.
-  async libraryPropose(secret, body, meta) { return proposeToLibrary(this, secret, body, meta); }
-  libraryRead(what, args) { return readLibrary(this, what, args); }
+  // The aggregated activity map (edge_activity.js): a read of the shared namespace's projection only.
+  publicActivityMap(windowName, replay = false) {
+    this._ensureSchema(); this.namespace = "main"; this.isPrimary = true;
+    const scale = this.env.ACTIVITY_MEMO_SCALE === undefined ? 1 : Number(this.env.ACTIVITY_MEMO_SCALE);
+    return activityMap(this, windowName, { allowed: () => catalogModels(this, this.env), banned: displayTest(this.env), replay, memo: this.edgeMemo || (this.edgeMemo = new Map()), scale });
+  }
+  // The seed-pack library door (cloud_library.js). Attempts, writes and reads run in the primary
+  // object; libraryInspect runs only in the separate library-checks instance and touches no storage.
+  async libraryAttempt(secret, meta) { return attemptLibrary(this, secret, meta); }
+  async libraryInspect(body, opts) { return inspectForLibrary(this, body, opts); }
+  async libraryPropose(secret, inspected, meta) { return writeProposal(this, secret, inspected, meta); }
+  async libraryRefusal(secret, out, meta) { return refuseLibrary(this, secret, out, meta); }
+  async libraryRead(what, args, secret) { return readLibrary(this, what, args, secret); }
   recordAccessEvent(grant, action, args, out, meta) { audit(this, grant, action, args, out, meta); }
   countAccessEvent(grant, action, args, out, meta) { countAccess(this, grant, action, args, out, meta); }
   async auditForToken(secret, args = {}) {
     try {
       const grant = await this._grantFromSecret(secret);
       if (args.admin && !grant.is_admin) throw forbid("admin scope required");
-      return { ok: true, status: 200, data: ownAudit(this, grant, args) };
+      // An admin's read also says how many of the activity map's writes failed here (edge_activity.js).
+      return { ok: true, status: 200, data: args.admin ? { ...ownAudit(this, grant, args), activity_map: edgeStatus(this) } : ownAudit(this, grant, args) };
     } catch (e) { return this._errOut(e); }
   }
   async rpcCall(secret, action, args = {}) {
@@ -2118,6 +2141,13 @@ export class TesseraCoordinator extends DurableObject {
             detail: JSON.parse(r.detail),
           }));
           return { ok: true, status: 200, data: { events } };
+        }
+
+        case "clearActivityMap": {
+          // The rollback step for the public activity map (docs/activity-map.md): empty its two tables.
+          if (!grant.is_admin) throw forbid("this needs a key with the admin scope");
+          if (!this.isPrimary || this.namespace !== "main") throw badReq("the activity map lives in the shared namespace");
+          return { ok: true, status: 200, data: clearActivity(this) };
         }
 
         case "reap": {
@@ -2394,6 +2424,10 @@ export class TesseraCoordinator extends DurableObject {
           const effects = grant.effectFilter(args.effect_classes || null);
           const kinds = grant.kindFilter(args.kinds || null);
           let lease = null;
+          // Where Cloudflare received this claim, as the Worker read it from request.cf; none for a worker that
+          // registered with show_on_map false.
+          const who = await edgeWorker(this, grant);
+          const edge = who?.hidden ? NO_EDGE : cleanEdge(args.access_meta?.edge);
 
           // An anonymous session's claim limits are counted in the primary object: there in this
           // transaction, from a demo namespace once its lease is granted.
@@ -2454,6 +2488,8 @@ export class TesseraCoordinator extends DurableObject {
                 token,
                 detail: { attempt },
               });
+              // The map's write is this transaction's last write (failure isolation, edge_activity.js).
+              recordClaim(this, who, edge, row, token, now, grant);
               lease = {
                 namespace: this.namespace,
                 task_id: row.id,
@@ -2473,6 +2509,7 @@ export class TesseraCoordinator extends DurableObject {
                 inputs: this._inputs(row.id),
               };
             });
+            flushEdge(this);
             if (lease) await this._scheduleNextAlarm();
             if (lease && anonymous && !caps && this.env.COORDINATOR) await this._primary().chargeClaimFor({ key_id: grant.key_id });
           }
@@ -2485,6 +2522,8 @@ export class TesseraCoordinator extends DurableObject {
           this._requireHolder(grant, taskId);
           let lease = null;
           let staleMsg = null;
+          const who = await edgeWorker(this, grant);
+          const edge = who?.hidden ? NO_EDGE : cleanEdge(args.access_meta?.edge);
           this.ctx.storage.transactionSync(() => {
             const now = Date.now() / 1000;
             const [row, stale] = this._liveLease(taskId, token, now);
@@ -2525,6 +2564,8 @@ export class TesseraCoordinator extends DurableObject {
               worker: row.worker,
               token,
             });
+            // The map's write is this transaction's last write (failure isolation, edge_activity.js).
+            recordPresence(this, who, edge, task, now);
             lease = {
               namespace: this.namespace,
               task_id: taskId,
@@ -2544,6 +2585,7 @@ export class TesseraCoordinator extends DurableObject {
               inputs: this._inputs(taskId),
             };
           });
+          flushEdge(this);
           if (!lease) throw staleLease(staleMsg || "lease is not live");
           await this._scheduleNextAlarm();
           return { ok: true, status: 200, data: lease };
@@ -2667,6 +2709,8 @@ export class TesseraCoordinator extends DurableObject {
               token,
               detail: { ok: okFlag, receipt_hash: digest, state_after: stateAfter },
             });
+            // The map's write is this transaction's last write (failure isolation, edge_activity.js).
+            recordModel(this, taskId, token, report);
             receipt = {
               task_id: taskId,
               fencing_token: token,

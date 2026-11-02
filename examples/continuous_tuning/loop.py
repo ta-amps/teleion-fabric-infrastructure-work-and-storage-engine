@@ -211,7 +211,7 @@ def task_spec(ctx, learner, round_id, item, depends_on, tick_id) -> TaskSpec:
             f"category:{category}",
             f"stage:{item['stage']}",
             f"round:{round_id}",
-            "data:synthetic",
+            "data:example",
         ],
         brief={
             "stage": item["stage"],

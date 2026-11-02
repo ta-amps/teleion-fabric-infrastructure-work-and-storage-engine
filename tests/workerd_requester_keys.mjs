@@ -1,6 +1,6 @@
 // Real Worker/SQLite: a self-serve requester key writes nouns only in its own org.<id> namespace,
 // files request verbs into the shared request queue and follows only its own. Same rule as
-// tests/test_requester_keys.py. Synthetic data only.
+// tests/test_requester_keys.py. Example data only.
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { build } from "esbuild";
@@ -14,7 +14,7 @@ import { TesseraCoordinator } from './deploy/cloudflare/cloud_store.js';
 export class FixtureCoordinator extends TesseraCoordinator {}
 `;
 const built = await build({ stdin: { contents: fixture, resolveDir: process.cwd(), sourcefile: "requester-fixture.mjs" }, bundle: true, format: "esm", platform: "browser", write: false, external: ["cloudflare:workers"] });
-const PROFILE = { display_name: "Synthetic Food Bank", organization_type: "Food pantry", causes: ["food security"] };
+const PROFILE = { display_name: "Example Food Bank", organization_type: "Food pantry", causes: ["food security"] };
 
 async function setup(enabled = "true") {
   const runtime = new Miniflare(convertV4MiniflareOptions({ cf: false, workers: [{
@@ -22,7 +22,7 @@ async function setup(enabled = "true") {
     compatibilityDate: "2026-10-01",
     durableObjects: { COORDINATOR: { className: "FixtureCoordinator", useSQLite: true } },
     d1Databases: ["FABRIC_DB", "BUCKETS_DB"],
-    bindings: { STORAGE_MODE: "cloud", ANONYMOUS_ACCESS_ENABLED: "true", REQUESTER_SIGNUP_ENABLED: enabled, FRAGILITY_PLANNER_ENABLED: "false", BOOTSTRAP_SECRET: "synthetic-requester-bootstrap" },
+    bindings: { STORAGE_MODE: "cloud", ANONYMOUS_ACCESS_ENABLED: "true", REQUESTER_SIGNUP_ENABLED: enabled, FRAGILITY_PLANNER_ENABLED: "false", BOOTSTRAP_SECRET: "example-requester-bootstrap" },
     outboundService: () => { throw new Error("External requests are prohibited in this fixture"); },
   }] }));
   runtimes.push(runtime);
@@ -38,7 +38,7 @@ async function setup(enabled = "true") {
     try { data = text ? JSON.parse(text) : null; } catch { data = text; }
     return { status: response.status, data, headers: response.headers };
   };
-  const issued = await request("/v1/admin/keys", { label: "synthetic-operator", queues: ["*"], scopes: ["admin", "store"], effect_classes: ["read", "write-internal"] }, undefined, { "X-Bootstrap-Secret": "synthetic-requester-bootstrap" });
+  const issued = await request("/v1/admin/keys", { label: "example-operator", queues: ["*"], scopes: ["admin", "store"], effect_classes: ["read", "write-internal"] }, undefined, { "X-Bootstrap-Secret": "example-requester-bootstrap" });
   assert.equal(issued.status, 201, JSON.stringify(issued.data));
   const signUp = async (profile = {}) => request("/v1/session/requester", { profile: { ...PROFILE, ...profile } });
   return { request, admin: issued.data.key, signUp };
@@ -46,7 +46,7 @@ async function setup(enabled = "true") {
 
 // A requester names its own request verbs rq-<principal_id>-<suffix>.
 const tid = (org, suffix) => `rq-${org.principal_id}-${suffix}`;
-const verb = (org, suffix, brief = { job: "SYNTHETIC summary of public tenant laws" }) => ({ queue: "eq01", kind: "request", effect_class: "write-internal", task_id: tid(org, suffix), brief });
+const verb = (org, suffix, brief = { job: "EXAMPLE summary of public tenant laws" }) => ({ queue: "eq01", kind: "request", effect_class: "write-internal", task_id: tid(org, suffix), brief });
 
 test("sign-up mints a narrow key and writes the profile noun in its own namespace", async () => {
   const { request, signUp } = await setup();
@@ -61,7 +61,7 @@ test("sign-up mints a narrow key and writes the profile noun in its own namespac
   assert.equal(me.data.namespace, org.data.namespace);
   const profile = await request("/v1/stores/org.profile/records/profile", undefined, org.data.key);
   assert.equal(profile.status, 200, JSON.stringify(profile.data));
-  assert.equal(profile.data.value.display_name, "Synthetic Food Bank");
+  assert.equal(profile.data.value.display_name, "Example Food Bank");
   assert.equal(profile.data.visibility_scope, "private");
   const contract = await request("/connect.json");
   assert.equal(contract.data.requester.quotas.request_verbs_per_hour, 5);
@@ -69,7 +69,7 @@ test("sign-up mints a narrow key and writes the profile noun in its own namespac
 
 test("a requester files and follows only its own request verbs", async () => {
   const { request, admin, signUp } = await setup();
-  const first = (await signUp()).data, second = (await signUp({ display_name: "Synthetic Clinic" })).data;
+  const first = (await signUp()).data, second = (await signUp({ display_name: "Example Clinic" })).data;
   const filed = await request("/ns/main/v1/tasks", verb(first, "1"), first.key);
   assert.equal(filed.status, 201, JSON.stringify(filed.data));
   const view = await request(`/v1/tasks/${tid(first, "1")}`, undefined, admin);
@@ -83,7 +83,7 @@ test("a requester files and follows only its own request verbs", async () => {
 
 test("requester keys reach nothing else", async () => {
   const { request, signUp } = await setup();
-  const first = (await signUp()).data, second = (await signUp({ display_name: "Synthetic Clinic" })).data;
+  const first = (await signUp()).data, second = (await signUp({ display_name: "Example Clinic" })).data;
   for (const [path, body] of [
     ["/v1/stores/eranos.requests/records/r1", { value: {} }],
     ["/ns/main/v1/stores/eranos.catalog/records/KIT-X-01", { value: {} }],

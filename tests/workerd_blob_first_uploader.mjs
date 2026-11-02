@@ -1,5 +1,5 @@
 // Real Worker/SQLite: a key can always read back bytes it uploaded, whoever stored them first,
-// and gains no access to anything else. See docs/raw-blob-governance.md. Synthetic keys and
+// and gains no access to anything else. See docs/raw-blob-governance.md. Example keys and
 // bytes only; no remote requests.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -20,7 +20,7 @@ async function setup() {
     compatibilityDate: "2026-10-01",
     durableObjects: { COORDINATOR: { className: "TesseraCoordinator", useSQLite: true } },
     d1Databases: ["FABRIC_DB", "BUCKETS_DB"],
-    bindings: { STORAGE_MODE: "cloud", ANONYMOUS_ACCESS_ENABLED: "false", FRAGILITY_PLANNER_ENABLED: "false", BOOTSTRAP_SECRET: "synthetic-uploader-bootstrap" },
+    bindings: { STORAGE_MODE: "cloud", ANONYMOUS_ACCESS_ENABLED: "false", FRAGILITY_PLANNER_ENABLED: "false", BOOTSTRAP_SECRET: "example-uploader-bootstrap" },
     outboundService: () => { throw new Error("External requests are prohibited in this fixture"); },
   }] }));
   runtimes.push(runtime);
@@ -42,7 +42,7 @@ async function setup() {
     try { data = JSON.parse(new TextDecoder().decode(bytes)); } catch { /* binary body */ }
     return { status: response.status, data, bytes };
   };
-  const admin = (await request("/v1/admin/keys", { label: "synthetic-operator", queues: ["*"], scopes: ["admin", "store"], effect_classes: ["read", "write-internal"] }, undefined, { "X-Bootstrap-Secret": "synthetic-uploader-bootstrap" })).data;
+  const admin = (await request("/v1/admin/keys", { label: "example-operator", queues: ["*"], scopes: ["admin", "store"], effect_classes: ["read", "write-internal"] }, undefined, { "X-Bootstrap-Secret": "example-uploader-bootstrap" })).data;
   const key = async label => {
     const issued = await request("/v1/admin/keys", { label, queues: ["none"], scopes: ["store", "nouns:read", "cas:write", `namespace:${NS}`], effect_classes: ["read", "write-internal"] }, admin.key);
     assert.equal(issued.status, 201, JSON.stringify(issued.data));
@@ -56,8 +56,8 @@ const text = bytes => Buffer.from(bytes).toString();
 
 test("a later uploader reads back bytes another key stored privately; nobody else gains access", async () => {
   const { key, blob, read } = await setup();
-  const [first, later, other] = [await key("synthetic-first"), await key("synthetic-later"), await key("synthetic-other")];
-  const shared = new TextEncoder().encode("SYNTHETIC bytes that two keys both hold");
+  const [first, later, other] = [await key("example-first"), await key("example-later"), await key("example-other")];
+  const shared = new TextEncoder().encode("EXAMPLE bytes that two keys both hold");
   assert.equal((await blob(first, shared, { visibility_scope: "private" })).status, 201);
   const stored = await blob(later, shared, { visibility_scope: "private" });
   assert.equal(stored.status, 201, JSON.stringify(stored.data));
@@ -66,18 +66,18 @@ test("a later uploader reads back bytes another key stored privately; nobody els
   // The 201-then-404 pair revealed that another key held these bytes privately.
   const readBack = await read(later, sha(shared));
   assert.equal(readBack.status, 200, JSON.stringify(readBack.data));
-  assert.equal(text(readBack.bytes), "SYNTHETIC bytes that two keys both hold");
+  assert.equal(text(readBack.bytes), "EXAMPLE bytes that two keys both hold");
   assert.equal((await read(first, sha(shared))).status, 200);
 
   assert.equal((await read(other, sha(shared))).status, 404);
-  assert.equal((await blob(other, new TextEncoder().encode("synthetic other bytes"))).status, 201);
+  assert.equal((await blob(other, new TextEncoder().encode("example other bytes"))).status, 201);
   assert.equal((await read(other, sha(shared))).status, 404, "an upload grants no access to other bytes");
 });
 
 test("bytes behind another key's private object read back for the key that uploads them", async () => {
   const { request, key, blob, read } = await setup();
-  const [owner, later, other] = [await key("synthetic-owner"), await key("synthetic-later"), await key("synthetic-other")];
-  const held = new TextEncoder().encode("SYNTHETIC private object bytes");
+  const [owner, later, other] = [await key("example-owner"), await key("example-later"), await key("example-other")];
+  const held = new TextEncoder().encode("EXAMPLE private object bytes");
   const object = await request(`/ns/${NS}/v1/buckets/nouns/objects/private/held.txt`, held, owner, { "x-tessera-governance": JSON.stringify({ visibility_scope: "private" }), "Content-Type": "text/plain" });
   assert.equal(object.status, 201, JSON.stringify(object.data));
   assert.equal((await read(owner, sha(held))).status, 200);

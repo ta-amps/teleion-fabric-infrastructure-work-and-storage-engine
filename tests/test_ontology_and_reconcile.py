@@ -194,7 +194,7 @@ for(const [key,spec] of Object.entries({...NOUN_CATEGORIES,...VERB_CATEGORIES}))
   const dimensions=Object.fromEntries(Object.entries(spec.dimensions).map(([name,d])=>[name,d.dtype==='categorical'?d.allowed_values.at(-1):d.dtype==='int'?Math.ceil(d.min_val):d.min_val]));
   validations[key]=validateCategoryPayload(key,dimensions);
 }
-const alias=adaptNounView({noun_id:'synthetic',category_id:'noun.code_node',title:'Synthetic'},'swarm_worker');
+const alias=adaptNounView({noun_id:'example',category_id:'noun.code_node',title:'Example'},'swarm_worker');
 console.log(JSON.stringify({nouns:NOUN_CATEGORIES,verbs:VERB_CATEGORIES,profiles:CALLER_PROFILES,validations,alias_profile:alias.profile_id}));
 """
     result = subprocess.run(

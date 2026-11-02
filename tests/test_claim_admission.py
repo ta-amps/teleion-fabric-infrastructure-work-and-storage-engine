@@ -18,12 +18,12 @@ from tessera.service import create_app
 def test_same_key_can_make_more_than_sixty_healthy_claims(tmp_path: Path) -> None:
     store = Store(tmp_path / "admission.db")
     store.define_queue(QueueConfig(name="conformance-admission"))
-    key, _ = store.issue_key("synthetic", queues=["conformance-admission"])
+    key, _ = store.issue_key("example", queues=["conformance-admission"])
     with TestClient(create_app(store, ServiceSettings())) as client:
         for _ in range(100):
             response = client.post(
                 "/v1/tasks/claim",
-                json={"queue": "conformance-admission", "worker": "synthetic"},
+                json={"queue": "conformance-admission", "worker": "example"},
                 headers={"authorization": f"Bearer {key}"},
             )
             assert response.status_code == 204
@@ -98,9 +98,9 @@ def test_slow_service_reduces_concurrency_and_healthy_service_recovers() -> None
 def test_failed_claim_always_releases_admission() -> None:
     async def scenario() -> None:
         limiter = ClaimLimiter()
-        with pytest.raises(ValueError, match="synthetic store failure"):
+        with pytest.raises(ValueError, match="example store failure"):
             async with limiter.admit("a"):
-                raise ValueError("synthetic store failure")
+                raise ValueError("example store failure")
         assert limiter.admission.active == 0
 
     asyncio.run(scenario())
@@ -121,8 +121,10 @@ def test_revoked_waiting_worker_cannot_claim(tmp_path: Path) -> None:
     async def scenario() -> None:
         store = Store(tmp_path / "revocation.db")
         store.define_queue(QueueConfig(name="conformance-admission"))
-        task_id = store.enqueue(TaskSpec(queue="conformance-admission", brief={"synthetic": True}))
-        _, grant = store.issue_key("synthetic", queues=["conformance-admission"])
+        task_id = store.enqueue(
+            TaskSpec(queue="conformance-admission", brief={"example_only": True})
+        )
+        _, grant = store.issue_key("example", queues=["conformance-admission"])
         gate = Gate(store)
         limiter = ClaimLimiter(
             settings=ServiceSettings(claim_initial_concurrency=1, claim_max_concurrency=1)
@@ -132,7 +134,7 @@ def test_revoked_waiting_worker_cannot_claim(tmp_path: Path) -> None:
         async def claim() -> None:
             async with limiter.admit(grant.key_id):
                 gate.recheck(grant)
-                store.claim("conformance-admission", "synthetic", key_id=grant.key_id)
+                store.claim("conformance-admission", "example", key_id=grant.key_id)
 
         pending = asyncio.create_task(claim())
         await asyncio.sleep(0)
@@ -162,9 +164,9 @@ def test_empty_claim_hints_match_the_worker_and_reset_on_work(tmp_path: Path) ->
     assert idle.empty("main", "q", "k2") == 5
     store = Store(tmp_path / "idle.db")
     store.define_queue(QueueConfig(name="conformance-idle"))
-    key, _ = store.issue_key("synthetic", queues=["conformance-idle"])
+    key, _ = store.issue_key("example", queues=["conformance-idle"])
     headers = {"authorization": f"Bearer {key}"}
-    claim = {"queue": "conformance-idle", "worker": "synthetic"}
+    claim = {"queue": "conformance-idle", "worker": "example"}
     with TestClient(create_app(store, ServiceSettings())) as client:
         hints = [client.post("/v1/tasks/claim", json=claim, headers=headers) for _ in range(4)]
         assert [(r.status_code, r.headers["retry-after"]) for r in hints] == [
@@ -173,7 +175,7 @@ def test_empty_claim_hints_match_the_worker_and_reset_on_work(tmp_path: Path) ->
             (204, "20"),
             (204, "40"),
         ]
-        task = {"queue": "conformance-idle", "brief": {"synthetic": True}}
+        task = {"queue": "conformance-idle", "brief": {"example_only": True}}
         assert client.post("/v1/tasks", json=task, headers=headers).status_code == 201
         assert client.post("/v1/tasks/claim", json=claim, headers=headers).status_code == 200
         empty = client.post("/v1/tasks/claim", json=claim, headers=headers)

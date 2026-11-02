@@ -71,7 +71,7 @@ def test_category_aliases_conflicts_and_underscore_identity(tmp_path: Path) -> N
         store.put_object(
             "examples",
             "bad.txt",
-            b"synthetic",
+            b"example",
             expected_version=0,
             metadata={"category_id": "noun.code_node"},
             tags=["cat:noun.feed_source"],
@@ -82,7 +82,7 @@ def test_category_aliases_conflicts_and_underscore_identity(tmp_path: Path) -> N
 def test_category_prefilter_legacy_rows_and_http_rankings(tmp_path: Path) -> None:
     clock = FakeClock()
     store = Store(tmp_path / "legacy.db", clock=clock)
-    common = {"trials": 1, "successes": 1, "synthetic": True}
+    common = {"trials": 1, "successes": 1, "example_only": True}
     store.put_record(
         "examples",
         "z-target",
@@ -122,9 +122,9 @@ def test_category_prefilter_legacy_rows_and_http_rankings(tmp_path: Path) -> Non
         {**common, "category_id": "noun.mcp_server"},
         expected_version=0,
         visibility_scope="private",
-        owner_key_id="synthetic-other",
+        owner_key_id="example-other",
     )
-    key, _ = store.issue_key("synthetic-reader", queues=["conformance-query"], scopes=["store"])
+    key, _ = store.issue_key("example-reader", queues=["conformance-query"], scopes=["store"])
     app = create_app(store, ServiceSettings(db_path=store.path, reaper_seconds=3600))
     with TestClient(app) as client:
         headers = {"Authorization": "Bearer " + key}
@@ -152,7 +152,7 @@ def test_bucket_category_prefilter_after_unrelated_objects(tmp_path: Path) -> No
     store.put_object(
         "examples",
         "z-target.txt",
-        b"synthetic",
+        b"example",
         expected_version=0,
         metadata={"category_id": "noun.code_node"},
     )
@@ -160,7 +160,7 @@ def test_bucket_category_prefilter_after_unrelated_objects(tmp_path: Path) -> No
         store.put_object(
             "examples",
             f"a-{i:04}.txt",
-            b"synthetic",
+            b"example",
             expected_version=0,
             metadata={"category_id": "noun.feed_source"},
         )
