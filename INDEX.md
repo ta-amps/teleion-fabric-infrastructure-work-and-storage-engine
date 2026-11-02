@@ -231,7 +231,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [scripts/build_ontology_catalog.py](scripts/build_ontology_catalog.py) | Generate the Worker ontology catalog from the canonical Python category/profile models. |
 | [scripts/check_architecture.py](scripts/check_architecture.py) | Check that architecture.json still describes this repo truthfully. |
 | [scripts/check_public.py](scripts/check_public.py) | Fail if a file headed for a public repo holds a secret or a private name. |
-| [scripts/deploy_guard.py](scripts/deploy_guard.py) | Guards to run before every Tessera Worker deploy (rule 15). |
+| [scripts/deploy_guard.py](scripts/deploy_guard.py) | Guards to run before every Tessera Worker deploy (rules 15 and 16). |
 | [scripts/dev_stack.sh](scripts/dev_stack.sh) | Run Tessera on this machine behind the real Cloudflare edge code (wrangler dev), with the origin |
 | [scripts/suite_http_local.py](scripts/suite_http_local.py) | Run the whole conformance suite over HTTP against a real tessera serve process on this machine. |
 

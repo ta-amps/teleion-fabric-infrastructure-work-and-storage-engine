@@ -94,7 +94,7 @@ agent-start-check: ## Check public agent onboarding instructions and HTTP bounda
 claim-admission-check: ## Adaptive pacing, fair waiting, recovery and bounded overload
 	node --test tests/claim_admission.test.mjs
 
-deploy-guard: ## Before any Worker deploy: clean, light, no banned words, live commit is an ancestor (LIVE_SOURCE_COMMIT or DEPLOY_LOCK)
+deploy-guard: ## Before any Worker deploy: clean, light, banned words from BANNED_WORDS_FILE, live commit is an ancestor (LIVE_SOURCE_COMMIT or DEPLOY_LOCK)
 	uv run python scripts/deploy_guard.py
 
 deploy: deploy-guard ## Guarded Worker deploy; the message names the source commit
