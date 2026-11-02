@@ -113,6 +113,7 @@ const POST_ONLY_EXACT = new Set([
   "/v1/tasks/resume",
   "/v1/tasks/cancel",
   "/v1/admin/reap",
+  "/v1/admin/activity-map/clear",
   "/v1/stores/batch",
   "/v1/blobs",
   "/v1/buckets/define",
@@ -766,6 +767,9 @@ const worker = {
     }
     if (path === "/v1/admin/reap" && method === "POST") {
       return rpcResponse(await stub.rpcCall(bearer, "reap", { ...baseRpc }));
+    }
+    if (path === "/v1/admin/activity-map/clear" && method === "POST") {
+      return rpcResponse(await stub.rpcCall(bearer, "clearActivityMap", { ...baseRpc }));
     }
     if (path === "/v1/admin/keys") {
       if (method === "GET") {

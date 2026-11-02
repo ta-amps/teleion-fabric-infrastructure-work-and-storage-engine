@@ -58,6 +58,12 @@ places, continents and claims by class, which include workers that left the map)
   `unknown`) always agrees. A reader that merges the view, such as Herma, should take a data-center row
   only with `placed: "data_center"` and a matching place of 2 or more workers, and count anything else
   under the continent.
+- **Who counts toward placement:** only established workers, the claimer included: a keyed worker whose key
+  was issued at least 24 hours before (`ESTABLISHED_SECONDS`). A free anonymous session never counts, nor does a
+  key issued less than a day ago, so nobody can open one next to a lone volunteer to make its claims show at that
+  data center. Their own claims count under the continent unless two established workers of their kind were
+  there. The rule a reader sees stays "2 or more workers". A reissued key starts its day again: after a worker's
+  keys are replaced, its claims count under the continent for 24 hours.
 - A data center is a place only once a claim was placed there in the window. Its `workers` are the most
   of each kind that were there together when one was, added up, so never a worker that was there
   alone. Every other claim and its worker count under the continent, and so does a worker seen in the
@@ -95,7 +101,9 @@ identity lookup.
 Reading it is bounded in rows, because the storage allowance is small. The coordinator keeps what it computed:
 the aggregate (the one scan of the window's claims, at most 20,000 rows) for 30 s (15m), 60 s (1h), 180 s (6h) or
 300 s (24h), the last 20 claims for 15 s and the replay (at most 300 rows) for 30 s, whoever asks and from
-whichever isolate. `ACTIVITY_MEMO_SCALE` multiplies those times (0 turns the cache off, as the tests do). A
+whichever isolate. `ACTIVITY_MEMO_SCALE` multiplies those times (0 turns the cache off, as the tests do). The
+model catalog is read only when something is computed, so a read the coordinator answers from what it kept runs
+no SQL at all. A
 window with no claims is never kept, so reading a quiet map is free and the first claim shows at once. The counts
 of a busy window can therefore lag by up to those times; the feed lags by 15 s.
 
@@ -110,6 +118,7 @@ object and never logged with a value.
 
 ## Admins
 
+`POST /v1/admin/activity-map/clear` (admin scope) empties the map's tables; see Rolling back.
 `GET /v1/admin/audit` and MCP `admin_audit` (admin scope) also return `activity_map`: `write_failures`, the
 map writes that failed in the coordinator instance since `counted_since`. A failure leaves that request off
 the map and changes nothing else, so a count that keeps growing means the map has stopped recording. The
@@ -117,9 +126,13 @@ Python service has no map and does not return the field.
 
 ## Rolling back
 
-The previous version ignores the two tables, so a rollback needs no step. While it is rolled back, though,
-nothing prunes them: their rows (keyed worker tags, data centers, continents and Task ids) stay past 25 hours
-until the map is deployed again, whose first claim deletes everything older.
+The previous version ignores the two tables, but nothing prunes them while it is live: their rows (keyed worker
+tags, data centers, continents and Task ids) would stay past 25 hours. So before `wrangler rollback`:
+
+1. With an admin key, `POST /v1/admin/activity-map/clear` (empty body). It empties both tables and answers with
+   how many rows went, `{"cleared": {"claims": n, "presence": m}}`; any other key gets 403.
+2. Then roll back. If a rollback happened without step 1, the map's next deploy deletes everything older than
+   25 hours at its first claim.
 
 ## Rows it costs
 

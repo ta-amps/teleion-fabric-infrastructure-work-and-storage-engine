@@ -1,5 +1,5 @@
 import { initExecutions, checkedReport, prepareExecution, validatePrepared, captureExecution, recallExecution, getExecution, listExecutions } from "./cloud_executions.js";
-import { NO_EDGE, activityMap, catalogModels, cleanEdge, edgeStatus, edgeWorker, flushEdge, recordClaim, recordModel, recordPresence, showOnMapLabel } from "./edge_activity.js";
+import { NO_EDGE, activityMap, catalogModels, cleanEdge, clearActivity, edgeStatus, edgeWorker, flushEdge, recordClaim, recordModel, recordPresence, showOnMapLabel } from "./edge_activity.js";
 import { displayTest } from "./display_mask.js";
 import { initAccess, principalMetadata, requestIdentity, mintAnonymous, mintRequester, seedDemo, ensureDemoSeeded, ensureRequesterSeeded, enforceAccess, chargeAccess, claimCaps, checkClaimCaps, chargeClaimCaps, audit, auditMode, countAccess, ownAudit, publicActivity, publicPrincipal, requesterVerbGovernance, CLOSED_TO_ANONYMOUS, filesRequests, openToAnonymous, usesOpenVerbs } from "./cloud_access.js";
 // TesseraCoordinator: single-writer SQLite Durable Object (`new_sqlite_classes`) implementing
@@ -1961,7 +1961,7 @@ export class TesseraCoordinator extends DurableObject {
   publicActivityMap(windowName, replay = false) {
     this._ensureSchema(); this.namespace = "main"; this.isPrimary = true;
     const scale = this.env.ACTIVITY_MEMO_SCALE === undefined ? 1 : Number(this.env.ACTIVITY_MEMO_SCALE);
-    return activityMap(this, windowName, { allowed: catalogModels(this, this.env), banned: displayTest(this.env), replay, memo: this.edgeMemo || (this.edgeMemo = new Map()), scale });
+    return activityMap(this, windowName, { allowed: () => catalogModels(this, this.env), banned: displayTest(this.env), replay, memo: this.edgeMemo || (this.edgeMemo = new Map()), scale });
   }
   // The seed-pack library door (cloud_library.js). Attempts, writes and reads run in the primary
   // object; libraryInspect runs only in the separate library-checks instance and touches no storage.
@@ -2133,6 +2133,13 @@ export class TesseraCoordinator extends DurableObject {
             detail: JSON.parse(r.detail),
           }));
           return { ok: true, status: 200, data: { events } };
+        }
+
+        case "clearActivityMap": {
+          // The rollback step for the public activity map (docs/activity-map.md): empty its two tables.
+          if (!grant.is_admin) throw forbid("this needs a key with the admin scope");
+          if (!this.isPrimary || this.namespace !== "main") throw badReq("the activity map lives in the shared namespace");
+          return { ok: true, status: 200, data: clearActivity(this) };
         }
 
         case "reap": {

@@ -15,6 +15,7 @@ after(async () => { await Promise.all(runtimes.map((runtime) => runtime.dispose(
 const fixture = `
 export { default } from './deploy/cloudflare/worker.js';
 import { TesseraCoordinator } from './deploy/cloudflare/cloud_store.js';
+import { EDGE_DDL } from './deploy/cloudflare/edge_activity.js';
 export class FixtureCoordinator extends TesseraCoordinator {
   // Test-only: log each SQL cursor while asked, to count rows written (workerd's rowsWritten, index entries included).
   constructor(ctx, env) {
@@ -31,8 +32,19 @@ export class FixtureCoordinator extends TesseraCoordinator {
   testFailMapDdl(on) { this.failMapDdl = on; }
   testBreakMap() { this.ctx.storage.sql.exec("DROP TABLE IF EXISTS edge_claims"); this.ctx.storage.sql.exec("DROP TABLE IF EXISTS edge_presence"); }
   testEdgeFailures() { return this.edgeFailures || 0; }
+  // Test-only: the two tables as the live version (0607fb6) made them, before the established column.
+  testLiveTables() {
+    this._ensureDdl([
+      ...EDGE_DDL.filter((statement) => !/edge_presence/.test(statement)),
+      "CREATE TABLE IF NOT EXISTS edge_presence (worker_tag TEXT NOT NULL, colo TEXT NOT NULL, continent TEXT NOT NULL, worker_kind TEXT NOT NULL, last_ts REAL NOT NULL, PRIMARY KEY (worker_tag, colo, continent, worker_kind))",
+      "CREATE INDEX IF NOT EXISTS edge_presence_ts ON edge_presence (last_ts)",
+    ]);
+  }
+  testHasColumn(table, column) { return this._hasColumn(table, column); }
+  testAgeKey(keyId, seconds) { this.ctx.storage.sql.exec("UPDATE keys SET created_at = created_at - ? WHERE key_id = ?", seconds, keyId); }
+  async testAgeSecret(secret, seconds) { const g = await this.resolveKeyGrant(secret); this.testAgeKey(g.key_id, seconds); return g.principal_kind; }
   testSeenEarlier(tag, colo, continent, kind, ts, task) {
-    this.ctx.storage.sql.exec("INSERT INTO edge_presence (worker_tag, colo, continent, worker_kind, last_ts) VALUES (?, ?, ?, ?, ?) ON CONFLICT (worker_tag, colo, continent, worker_kind) DO UPDATE SET last_ts = excluded.last_ts", tag, colo, continent, kind, ts);
+    this.ctx.storage.sql.exec("INSERT INTO edge_presence (worker_tag, colo, continent, worker_kind, last_ts, established) VALUES (?, ?, ?, ?, ?, 1) ON CONFLICT (worker_tag, colo, continent, worker_kind) DO UPDATE SET last_ts = excluded.last_ts", tag, colo, continent, kind, ts);
     this.ctx.storage.sql.exec("INSERT INTO edge_claims (ts, task_id, fencing_token, claim_class, model, colo, continent, worker_kind, worker_tag, shown, together) VALUES (?, ?, 1, 'shared', NULL, ?, ?, ?, ?, 1, 0)", ts, task, colo, continent, kind, tag);
   }
   testRowsStart() { this.rowLog = []; }
@@ -95,9 +107,11 @@ async function setup(bindings = {}) {
     const defined = await request("/v1/queues/define", { body: { name, lease_seconds: 1800, max_attempts: 10 }, token: admin });
     assert.equal(defined.status, 200, JSON.stringify(defined.data));
   }
-  const key = async (label, account_id, extra = {}) => {
+  // Keys are made two days old unless a test asks for a young one: only established workers count toward placement.
+  const key = async (label, account_id, { young = false, ...extra } = {}) => {
     const made = await request("/v1/admin/keys", { body: { label, account_id, queues: ["eq02"], scopes: ["store"], effect_classes: ["read", "write-internal"], ...extra }, token: admin });
     assert.equal(made.status, 201, JSON.stringify(made.data));
+    if (!young) await primary.testAgeKey(made.data.key_id, 2 * 86400);
     return made.data;
   };
   const task = async (task_id, extra = {}, token = admin) => {
@@ -448,6 +462,73 @@ test("a worker alone at a data center is placed there in no window; one joined w
   assert.deepEqual(views["15m&replay=1"].replay.claims.slice(-2).map((r) => r.place), ["EU", "FRA"]);
 });
 
+test("an anonymous session or a key issued under 24 hours ago never counts toward a claim's placement", async () => {
+  const { task, key, claim, map, request, primary } = await setup();
+  const ana = await key("example-volunteer-ana", "volunteer-ana"); // established
+  const placedRows = async (window) => (await map(window)).data.recent.filter((r) => r.placed === "data_center").length;
+  await task("t-1");
+  await claim(ana.key, FRA, "ana-1");
+  // A free anonymous session claims through FRA right after: neither its claim nor Ana's next one is placed.
+  await task("open-1", { tags: ["open:anonymous", "status:quarantined"], producer_surface: "surface:eranos", visibility_scope: "surface_only" });
+  const minted = await request("/v1/session/anonymous", { body: { agent_label: "example-helper" }, cf: FRA });
+  assert.equal(minted.status, 201, JSON.stringify(minted.data));
+  // Made two days old, so only its being anonymous keeps it from counting.
+  assert.equal(await primary.testAgeSecret(minted.data.session_token, 2 * 86400), "anonymous");
+  const helper = await request("/ns/main/v1/tasks/claim", { body: { queue: "eq02", worker: "helper" }, token: minted.data.session_token, cf: FRA });
+  assert.equal(helper.status, 200, JSON.stringify(helper.data));
+  await task("t-2");
+  await claim(ana.key, FRA, "ana-2");
+  assert.equal(await placedRows("15m"), 0, "an anonymous session made a placement");
+  // A key issued a minute ago is not established either.
+  const young = await key("example-volunteer-new", "volunteer-new", { young: true });
+  await task("t-3");
+  await claim(young.key, FRA, "new-1");
+  await task("t-4");
+  await claim(ana.key, FRA, "ana-3");
+  assert.equal(await placedRows("1h"), 0, "a new key made a placement");
+  // An established second volunteer does: its claim is placed, with 2 workers there together.
+  const ben = await key("example-volunteer-ben", "volunteer-ben");
+  await task("t-5");
+  await claim(ben.key, FRA, "ben-1");
+  const view = (await map("6h")).data;
+  assertPlacement(view, "6h");
+  assert.deepEqual(view.recent.map((r) => r.placed), ["data_center", "continent", "continent", "continent", "continent", "continent"]);
+  assert.deepEqual(view.places.find((p) => p.place === "FRA")?.workers, 2);
+});
+
+test("an admin empties the map's two tables before a rollback; nobody else can", async () => {
+  const { task, key, claim, map, request, admin, primary } = await setup();
+  const ana = await key("example-volunteer-ana", "volunteer-ana");
+  const ben = await key("example-volunteer-ben", "volunteer-ben");
+  for (let i = 1; i <= 2; i++) await task(`t-${i}`);
+  await claim(ana.key, FRA, "ana-1");
+  await claim(ben.key, FRA, "ben-1");
+  assert.equal((await request("/v1/admin/activity-map/clear", { body: {}, token: ana.key })).status, 403);
+  assert.equal((await request("/v1/admin/activity-map/clear", { token: admin })).status, 405);
+  const cleared = await request("/v1/admin/activity-map/clear", { body: {}, token: admin });
+  assert.equal(cleared.status, 200, JSON.stringify(cleared.data));
+  assert.deepEqual(cleared.data.cleared, { claims: 2, presence: 2 });
+  const rows = await primary.testEdgeRows();
+  assert.deepEqual([rows.claims.length, rows.presence.length], [0, 0]);
+  assert.deepEqual((await map("24h")).data.totals.claims, 0);
+});
+
+test("tables the live version made get the established column at their first claim, and placement then works", async () => {
+  const { task, key, claim, map, primary } = await setup();
+  await primary.testLiveTables();
+  assert.equal(await primary.testHasColumn("edge_presence", "established"), false);
+  const ana = await key("example-volunteer-ana", "volunteer-ana");
+  const ben = await key("example-volunteer-ben", "volunteer-ben");
+  for (let i = 1; i <= 2; i++) await task(`t-${i}`);
+  await claim(ana.key, FRA, "ana-1");
+  assert.equal(await primary.testHasColumn("edge_presence", "established"), true);
+  await claim(ben.key, FRA, "ben-1");
+  assert.equal(await primary.testEdgeFailures(), 0);
+  const view = (await map("1h")).data;
+  assertPlacement(view, "1h");
+  assert.deepEqual(view.recent.map((r) => r.placed), ["data_center", "continent"]);
+});
+
 test("private Tasks stay off the map", async () => {
   const { task, key, claim, map, primary } = await setup();
   const ana = await key("example-volunteer-ana", "volunteer-ana");
@@ -558,7 +639,9 @@ test("the coordinator keeps the aggregate for a while, so a public read never co
   await claim(ana.key, FRA, "ana-1");
   assert.equal((await primary.publicActivityMap("24h")).totals.claims, 1); // the first claim shows at once
   await claim(ben.key, FRA, "ben-1");
+  await primary.testRowsStart();
   const kept = await primary.publicActivityMap("24h");
+  assert.deepEqual(await primary.testRowsStop(), [], "a read the memo answers runs no SQL, not even the catalog's");
   assert.deepEqual([kept.totals.claims, kept.recent.length], [1, 1], "the aggregate and the last claims are kept for their time");
   await primary.testClearMemo();
   const fresh = await primary.publicActivityMap("24h");

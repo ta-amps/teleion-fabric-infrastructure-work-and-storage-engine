@@ -38,6 +38,11 @@ export const CACHE_SECONDS = 30;
 // workers were there together, so every view places it the same way whichever window is read: a worker
 // alone at a data center is never shown there, not in a count, the feed, the replay or a last-claim time.
 export const PLACE_SPAN_SECONDS = 900;
+// Only an established worker counts toward placing a claim, the claimer's own included: a keyed worker whose
+// key was issued at least ESTABLISHED_SECONDS ago. A free anonymous session never counts, so nobody can open
+// one (or register a new key) next to a lone volunteer to make its claims show at that data center. The rule
+// a reader sees stays "2 or more workers".
+export const ESTABLISHED_SECONDS = 86400;
 export const WORKER_LABELS = Object.freeze({ volunteer: "a volunteer's AI", dedicated: "a dedicated worker run by ta-amps" });
 export const NO_EDGE = Object.freeze({ colo: null, continent: null });
 const RETAIN_SECONDS = WINDOWS["24h"] + 3600;
@@ -61,7 +66,7 @@ export const EDGE_DDL = [
   `CREATE TABLE IF NOT EXISTS edge_claims (seq INTEGER PRIMARY KEY, ts REAL NOT NULL, task_id TEXT NOT NULL, fencing_token INTEGER NOT NULL, claim_class TEXT NOT NULL, model TEXT, colo TEXT, continent TEXT, worker_kind TEXT NOT NULL, worker_tag TEXT NOT NULL, shown INTEGER NOT NULL DEFAULT 1, together INTEGER NOT NULL DEFAULT 0)`,
   `CREATE INDEX IF NOT EXISTS edge_claims_ts ON edge_claims (ts)`,
   `CREATE INDEX IF NOT EXISTS edge_claims_attempt ON edge_claims (task_id, fencing_token)`,
-  `CREATE TABLE IF NOT EXISTS edge_presence (worker_tag TEXT NOT NULL, colo TEXT NOT NULL, continent TEXT NOT NULL, worker_kind TEXT NOT NULL, last_ts REAL NOT NULL, PRIMARY KEY (worker_tag, colo, continent, worker_kind))`,
+  `CREATE TABLE IF NOT EXISTS edge_presence (worker_tag TEXT NOT NULL, colo TEXT NOT NULL, continent TEXT NOT NULL, worker_kind TEXT NOT NULL, last_ts REAL NOT NULL, established INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (worker_tag, colo, continent, worker_kind))`,
   `CREATE INDEX IF NOT EXISTS edge_presence_ts ON edge_presence (last_ts)`,
 ];
 
@@ -77,6 +82,11 @@ export function edgeFromCf(cf) {
 // every client field, and keeps nothing but the two codes.
 export function cleanEdge(value) {
   return edgeFromCf(value && typeof value === "object" ? value : null);
+}
+
+export function established(grant, now = Date.now() / 1000) {
+  const issued = Number(grant?.created_at);
+  return grant?.principal_kind !== "anonymous" && Number.isFinite(issued) && issued > 0 && issued <= now - ESTABLISHED_SECONDS;
 }
 
 export function workerKind(grant, env = {}) {
@@ -135,7 +145,7 @@ export async function edgeWorker(c, grant) {
     }
     const mac = new Uint8Array(await crypto.subtle.sign("HMAC", c.edgeTagKey, enc.encode(String(grant.principal_id || grant.key_id))));
     const tag = Array.from(mac.slice(0, 12), (b) => b.toString(16).padStart(2, "0")).join("");
-    return { tag, kind: workerKind(grant, c.env), hidden: grant.labels?.show_on_map === false };
+    return { tag, kind: workerKind(grant, c.env), hidden: grant.labels?.show_on_map === false, established: established(grant) };
   } catch {
     failed(c);
     return null; // this request is left off the map
@@ -148,6 +158,20 @@ export async function edgeWorker(c, grant) {
 // logged with any value.
 function failed(c) {
   c.edgeFailures = (c.edgeFailures || 0) + 1;
+}
+
+// The rollback step (docs/activity-map.md): an admin empties the map's two tables before rolling back to a version
+// without the map, which would otherwise leave them unpruned. Returns how many rows went.
+export function clearActivity(c) {
+  const out = { claims: 0, presence: 0 };
+  if (hasTable(c, "edge_claims")) out.claims = Number(c._one("SELECT COUNT(*) AS n FROM edge_claims")?.n || 0);
+  if (hasTable(c, "edge_presence")) out.presence = Number(c._one("SELECT COUNT(*) AS n FROM edge_presence")?.n || 0);
+  c.ctx.storage.transactionSync(() => {
+    if (hasTable(c, "edge_claims")) c.ctx.storage.sql.exec("DELETE FROM edge_claims");
+    if (hasTable(c, "edge_presence")) c.ctx.storage.sql.exec("DELETE FROM edge_presence");
+  });
+  c.edgeMemo?.clear();
+  return { cleared: out };
 }
 
 // What an admin's audit read shows about the map's writes in this coordinator instance.
@@ -178,8 +202,8 @@ function prune(c, now) {
 
 function writeSeen(c, item) {
   c.ctx.storage.sql.exec(
-    "INSERT INTO edge_presence (worker_tag, colo, continent, worker_kind, last_ts) VALUES (?, ?, ?, ?, ?) ON CONFLICT (worker_tag, colo, continent, worker_kind) DO UPDATE SET last_ts = excluded.last_ts WHERE edge_presence.last_ts < excluded.last_ts - ?",
-    item.who.tag, item.edge.colo || "", item.edge.continent || "", item.who.kind, item.now, PRESENCE_REFRESH_SECONDS
+    "INSERT INTO edge_presence (worker_tag, colo, continent, worker_kind, last_ts, established) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (worker_tag, colo, continent, worker_kind) DO UPDATE SET last_ts = excluded.last_ts, established = excluded.established WHERE edge_presence.last_ts < excluded.last_ts - ?",
+    item.who.tag, item.edge.colo || "", item.edge.continent || "", item.who.kind, item.now, item.who.established ? 1 : 0, PRESENCE_REFRESH_SECONDS
   );
 }
 
@@ -194,17 +218,25 @@ function writeClaim(c, item) {
   );
 }
 
-// How many workers of the claimer's kind were at that data center in the PLACE_SPAN_SECONDS before this claim,
-// the claimer included, when that is at least MIN_WORKERS; else 0 (an indexed read of the last-seen rows of
-// that span). Workers left off the map never count, for anyone.
+// How many established workers of the claimer's kind were at that data center in the PLACE_SPAN_SECONDS before
+// this claim, the claimer included when it is established, when that is at least MIN_WORKERS; else 0 (an indexed
+// read of the last-seen rows of that span). Workers left off the map never count, for anyone.
 function togetherNow(c, item) {
   if (item.who.hidden || !item.edge.colo) return 0;
   const others = c._one(
-    "SELECT COUNT(DISTINCT worker_tag) AS n FROM edge_presence WHERE last_ts >= ? AND colo = ? AND worker_kind = ? AND worker_tag != ?",
+    "SELECT COUNT(DISTINCT worker_tag) AS n FROM edge_presence WHERE last_ts >= ? AND colo = ? AND worker_kind = ? AND worker_tag != ? AND established = 1",
     item.now - PLACE_SPAN_SECONDS, item.edge.colo, item.who.kind, item.who.tag
   );
-  const together = Number(others?.n || 0) + 1;
+  const together = Number(others?.n || 0) + (item.who.established ? 1 : 0);
   return together >= MIN_WORKERS ? together : 0;
+}
+
+// Tables made before the established column (0607fb6, live on Nov 2) get it once per object instance, in the
+// write it is first needed by (never on a read or an empty poll).
+function edgeColumns(c) {
+  if (c.edgeColumnsReady) return;
+  if (!c._hasColumn("edge_presence", "established")) c.ctx.storage.sql.exec("ALTER TABLE edge_presence ADD COLUMN established INTEGER NOT NULL DEFAULT 0");
+  c.edgeColumnsReady = true;
 }
 
 function record(c, item) {
@@ -212,6 +244,7 @@ function record(c, item) {
     c.edgePending.push(item); // the first rows after a deploy: flushEdge makes the tables once this commits
     return;
   }
+  edgeColumns(c);
   prune(c, item.now);
   if (!item.who.hidden) writeSeen(c, item);
   if (item.task_id) writeClaim(c, item);
@@ -237,6 +270,7 @@ export function flushEdge(c) {
   if (!edgeTables(c)) quietly(c, () => c._ensureDdl(EDGE_DDL));
   if (!edgeTables(c)) return;
   quietly(c, () => c.ctx.storage.transactionSync(() => {
+    edgeColumns(c);
     for (const item of items) {
       if (!item.who.hidden) writeSeen(c, item);
       if (item.task_id) writeClaim(c, item);
@@ -412,9 +446,12 @@ function replayClaims(c, { allowed, banned }, now) {
 
 // The public view. It reads and never writes (a GET changes nothing). `memo` (a Map the coordinator keeps) and
 // `scale` bound the cost of reading it: see AGGREGATE_SECONDS.
+// `allowed` is the Set of model ids the view may name, or a function that returns it; a function is called only
+// when something is computed, so a read the memo answers never reads the catalog.
 export function activityMap(c, windowName, { allowed = new Set(), banned = () => false, replay = false, now = Date.now() / 1000, memo = null, scale = 1 } = {}) {
   const name = WINDOWS[windowName] ? windowName : DEFAULT_WINDOW;
-  const ctx = { allowed, banned };
+  let models = typeof allowed === "function" ? null : allowed;
+  const ctx = { get allowed() { return models || (models = allowed()); }, banned };
   const kept = (key, ttl, make, keep = () => true) => {
     if (!memo || !(scale > 0)) return make();
     const hit = memo.get(key);
