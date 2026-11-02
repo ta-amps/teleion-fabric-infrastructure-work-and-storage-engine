@@ -397,7 +397,7 @@ function discoveryResponse(path, method, env, publicUrl, repoUrl) {
   }
   if (path === "/llms.txt") {
     return withSecurity(
-      new Response(renderLlmsTxt(publicUrl, repoUrl, mcpToolsFor(env)) + "\n\nExternal harnesses and personal assistants: POST /v1/session/anonymous without secrets, then use Authorization: Bearer <session_token> for demo nouns and verbs. See /connect.json. tools/list is public; tool counts and schemas are authoritative there. Keyed production work remains protected.\n\nSeed-pack library: propose one task object (noun), one task template (verb) or a whole pack with POST /v1/library/proposals, the MCP library tools or A2A message/send at /a2a (agent card /.well-known/agent.json). A different reviewer claims the library.review verb; proposing runs, activates and admits nothing. Status: GET /v1/library/proposals/<proposal_id>.\n", {
+      new Response(renderLlmsTxt(publicUrl, repoUrl, mcpToolsFor(env)) + "\n\nExternal harnesses and personal assistants: POST /v1/session/anonymous without secrets, then use Authorization: Bearer <session_token> for demo nouns and verbs. See /connect.json. tools/list is public; tool counts and schemas are authoritative there. Keyed production work remains protected.\n" + (libraryEnabled(env) ? "\nSeed-pack library: propose one task object (noun), one task template (verb) or a whole pack with POST /v1/library/proposals, the MCP library tools or A2A message/send at /a2a (agent card /.well-known/agent.json). A different reviewer claims the library.review verb; proposing runs, activates and admits nothing. Status: GET /v1/library/proposals/<proposal_id>.\n" : ""), {
         status: 200,
         headers: { "content-type": "text/plain; charset=utf-8" },
       }),
@@ -513,7 +513,7 @@ const worker = {
     const requestBearer = extractBearer(request);
     // Unauthenticated public reads of the main namespace need no identity or key lookup.
     if (!requestBearer && namespace === "main" && (method === "GET" || method === "HEAD")) {
-      if (["/v1/health", "/api/health", "/healthz"].includes(path)) return jsonResp(await primary.publicHealthAndBoard(false, "main"));
+      if (["/v1/health", "/api/health", "/healthz", "/health"].includes(path)) return jsonResp(await primary.publicHealthAndBoard(false, "main"));
       if (path === "/board") {
         const info = await primary.publicHealthAndBoard(true, "main");
         return htmlResp(renderBoardHtml(info.health, info.snapshot, repoUrl));
@@ -560,7 +560,7 @@ const worker = {
     const bearer = requestBearer;
     const surfaceHeader = (request.headers.get("x-surface-id") || "").trim();
     const baseRpc = { namespace, isPrimary, surfaceHeader };
-    if (namespace !== "main" && ["/board", "/healthz", "/v1/health", "/api/health"].includes(path)) {
+    if (namespace !== "main" && ["/board", "/healthz", "/health", "/v1/health", "/api/health"].includes(path)) {
       const access = await stub.rpcCall(bearer, "verifyKey", baseRpc);
       if (!access.ok) return rpcResponse(access);
     }
@@ -598,7 +598,7 @@ const worker = {
 
     // 3. Public health & agent door pages
     if (
-      (path === "/v1/health" || path === "/api/health" || path === "/healthz") &&
+      (path === "/v1/health" || path === "/api/health" || path === "/healthz" || path === "/health") &&
       (method === "GET" || method === "HEAD")
     ) {
       const health = await stub.publicHealthAndBoard(false, namespace);

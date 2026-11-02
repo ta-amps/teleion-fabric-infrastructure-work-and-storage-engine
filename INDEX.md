@@ -13,7 +13,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [CLAUDE.md](CLAUDE.md) | Worker execution direction |
 | [LICENSE](LICENSE) | MIT License |
 | [Makefile](Makefile) | Tessera: atomic work queue and atomic storage. |
-| [README.md](README.md) | Tessera – the work and storage engine |
+| [README.md](README.md) | Tessera – the durable task queue and storage engine |
 | [architecture.json](architecture.json) | tessera |
 | [keywords.txt](keywords.txt) | Terms for KEYWORDS.md, one per line: "term" or "term: alias, alias". |
 | [package.json](package.json) | tessera-worker-tests |
@@ -222,7 +222,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [harness/limits.toml](harness/limits.toml) | Starting limits for the work harness (workstream W). |
 | [harness/rubrics.toml](harness/rubrics.toml) | Task rating rubric and priority weights. |
 
-## scripts/ (7)
+## scripts/ (8)
 
 | File | What it is |
 |---|---|
@@ -231,6 +231,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [scripts/build_ontology_catalog.py](scripts/build_ontology_catalog.py) | Generate the Worker ontology catalog from the canonical Python category/profile models. |
 | [scripts/check_architecture.py](scripts/check_architecture.py) | Check that architecture.json still describes this repo truthfully. |
 | [scripts/check_public.py](scripts/check_public.py) | Fail if a file headed for a public repo holds a secret or a private name. |
+| [scripts/deploy_guard.py](scripts/deploy_guard.py) | Guards to run before every Tessera Worker deploy (rule 15). |
 | [scripts/dev_stack.sh](scripts/dev_stack.sh) | Run Tessera on this machine behind the real Cloudflare edge code (wrangler dev), with the origin |
 | [scripts/suite_http_local.py](scripts/suite_http_local.py) | Run the whole conformance suite over HTTP against a real tessera serve process on this machine. |
 
@@ -303,7 +304,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [src/tessera/store.py](src/tessera/store.py) | The in-process Tessera store: the reference implementation of SPEC.md. |
 | [src/tessera/testing.py](src/tessera/testing.py) | Factories the conformance suite loads by name (TESSERABACKENDFACTORY="module:function"). |
 
-## tests/ (76)
+## tests/ (77)
 
 | File | What it is |
 |---|---|
@@ -338,6 +339,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [tests/test_continuous_tuning.py](tests/test_continuous_tuning.py) | Continuous tuning example: real tool definitions, held-out splits, contamination checks, strict metrics, mini… |
 | [tests/test_core_boundaries.py](tests/test_core_boundaries.py) | Privacy over version history, strict outcomes, deadline boundaries and category plans. |
 | [tests/test_dead_letter_privacy.py](tests/test_dead_letter_privacy.py) | Failure diagnostics remain private even when the source verb was shared. |
+| [tests/test_deploy_guard.py](tests/test_deploy_guard.py) | The deploy guard's light, banned-word and ancestry checks (scripts/deployguard.py). |
 | [tests/test_execution_adapters.py](tests/test_execution_adapters.py) | HTTP client framing and real local MCP execution-report flow, without inference. |
 | [tests/test_execution_distillation.py](tests/test_execution_distillation.py) | Bounded task authoring and private local claim fixtures, without model execution. |
 | [tests/test_execution_history.py](tests/test_execution_history.py) | Execution recall uses accepted results and rechecks source permissions and expiry. |

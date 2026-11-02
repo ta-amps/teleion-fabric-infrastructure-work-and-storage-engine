@@ -506,4 +506,6 @@ test("with the door switched off it refuses, the card is withdrawn and the publi
   const listed = (await t.mcp(undefined, null, {}, "tools/list")).tools.map(tool => tool.name);
   for (const name of ["propose_task_object", "propose_task", "submit_pack", "proposal_status"]) assert.ok(!listed.includes(name), name);
   for (const path of ["/llms.txt", "/.well-known/agent-card.json"]) assert.ok(!(await t.request(path)).text.includes("propose_task_object"), path);
+  const llms = (await t.request("/llms.txt")).text;
+  assert.ok(!llms.includes("/v1/library/proposals") && !llms.includes("/a2a"), "llms.txt names no library door while it is off");
 });

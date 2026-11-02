@@ -379,6 +379,10 @@ def test_expiry_retention_and_cors(access: tuple[TestClient, Store, FakeClock, s
     unknown = client.get("/v1/me", headers=auth("tsk_invalid"))
     assert missing.status_code == unknown.status_code == 401
     assert missing.json()["detail"] != unknown.json()["detail"]
+    anon_reflex = client.get("/v1/reflexes/match?q=test", headers=auth(session["session_token"]))
+    assert anon_reflex.status_code == 403
+    assert "requires a contributor key" in anon_reflex.json()["detail"]
+    assert "X-Namespace: main" in anon_reflex.json()["detail"]
     clock.advance(3601)
     assert client.get("/v1/me", headers=auth(session["session_token"])).status_code == 401
     clock.advance(86400)

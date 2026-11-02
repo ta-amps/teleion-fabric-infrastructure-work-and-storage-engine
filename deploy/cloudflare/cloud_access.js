@@ -506,12 +506,12 @@ export function enforceAccess(c, grant, action, args) {
   if (grant.principal_kind === "requester") return enforceRequester(c, grant, action, args, ns);
   if (grant.principal_kind !== "anonymous") return [args, null];
   if (openVerbs) {
-    if (!OPEN_VERB_ACTIONS.has(action)) throw error(403, "scope_denied", "outside its own namespace an anonymous session may only claim, heartbeat and submit open verbs");
+    if (!OPEN_VERB_ACTIONS.has(action)) throw error(403, "scope_denied", `outside its own namespace an anonymous session may only claim, heartbeat and submit open verbs (action '${action}' requires a contributor key; allowed open-verb actions: claim, heartbeat, listVerbs, me, my_audit, results, submit, task)`);
     if (args.queue && CLOSED_TO_ANONYMOUS.has(String(args.queue))) throw error(403, "scope_denied", "review, approval and publication verbs are closed to anonymous");
     if (OWN_WORK_ACTIONS.has(action) && !c._one("SELECT 1 AS own FROM leases WHERE namespace=? AND task_id=? AND key_id=? UNION ALL SELECT 1 AS own FROM results WHERE namespace=? AND task_id=? AND completed_by_key=? LIMIT 1", ns, String(args.task_id || ""), grant.key_id, ns, String(args.task_id || ""), grant.key_id))
       throw error(404, "not_found", "task does not exist");
   } else {
-    if (!ANON_ACTIONS.has(action)) throw error(403, "scope_denied", "anonymous sessions may only use isolated demo nouns and verbs");
+    if (!ANON_ACTIONS.has(action)) throw error(403, "scope_denied", `anonymous sessions may only use isolated demo nouns and verbs (action '${action}' requires a contributor key; for shared open verbs send X-Namespace: main to /v1/verbs or /v1/tasks/claim)`);
     if (args.queue && !String(args.queue).startsWith("demo.")) throw error(403, "scope_denied", "anonymous sessions cannot access production verbs");
     if (args.store && !String(args.store).startsWith("demo.")) throw error(403, "scope_denied", "anonymous sessions cannot access production nouns");
   }

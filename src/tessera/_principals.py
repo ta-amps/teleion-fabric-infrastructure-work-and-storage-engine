@@ -492,7 +492,11 @@ class PrincipalOps(AccessSchemaOps):
         if open_verbs:
             self._enforce_open_verb(grant, action, args, namespace)
         elif action not in ANON_ACTIONS:
-            raise ScopeDenied("anonymous sessions may only use isolated demo nouns and verbs")
+            raise ScopeDenied(
+                "anonymous sessions may only use isolated demo nouns and verbs "
+                f"(action {action!r} requires a contributor key; for shared open verbs "
+                "send X-Namespace: main to /v1/verbs or /v1/tasks/claim)"
+            )
         else:
             for name in ("queue", "store", "store_name"):
                 if args.get(name) and not str(args[name]).startswith("demo."):
@@ -548,7 +552,9 @@ class PrincipalOps(AccessSchemaOps):
         if action not in OPEN_VERB_ACTIONS:
             raise ScopeDenied(
                 "outside its own namespace an anonymous session may only claim, heartbeat and"
-                " submit open verbs"
+                f" submit open verbs (action {action!r} requires a contributor key; allowed"
+                " open-verb actions: claim, heartbeat, listVerbs, me, my_audit, results, submit,"
+                " task)"
             )
         if args.get("queue") and str(args["queue"]) in CLOSED_TO_ANONYMOUS:
             raise ScopeDenied("review, approval and publication verbs are closed to anonymous")

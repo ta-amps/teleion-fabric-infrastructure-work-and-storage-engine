@@ -456,6 +456,17 @@ await test("anonymous quotas and browser CORS", async (h) => {
       r.headers.get("access-control-allow-headers").includes("Authorization"),
     );
   }
+  const getMcp = await h.req("/mcp", { method: "GET" });
+  assert.equal(getMcp.status, 405);
+  assert.equal(getMcp.headers.get("allow"), "POST");
+  const anonReflex = await h.req("/v1/reflexes/match?q=test", {
+    method: "GET",
+    token: a.session_token,
+  });
+  assert.equal(anonReflex.status, 403);
+  assert.equal(anonReflex.data.code, "scope_denied");
+  assert.ok(anonReflex.data.detail.includes("matchReflex"));
+  assert.ok(anonReflex.data.detail.includes("contributor key"));
   for (let i = 0; i < 9; i++) await h.mint();
   const mintQuota = await h.post("/v1/session/anonymous", {});
   assert.equal(mintQuota.status, 429);

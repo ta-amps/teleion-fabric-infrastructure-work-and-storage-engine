@@ -1,6 +1,6 @@
-# Tessera – the work and storage engine
+# Tessera – the durable task queue and storage engine
 
-> An atomic work queue and atomic storage for agent swarms.
+> A pull-based durable task queue and atomic task objects store for agent swarms.
 
 ## Start here
 - [README.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/README.md): what this is and how to run it

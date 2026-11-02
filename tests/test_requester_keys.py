@@ -121,6 +121,26 @@ def test_requester_files_and_follows_only_its_own_request_verbs(
     assert client.get(path, headers=h).json()["state"] == "ready"
     assert client.get(path, headers=other).status_code == 404
     assert client.get(path).status_code == 401
+    eranos_surface, _ = store.issue_key(
+        "eranos-surface-read",
+        queues=["eq02", "eq03"],
+        scopes=["nouns:read", "surface:eranos"],
+    )
+    other_surface, _ = store.issue_key(
+        "shamash-surface-read",
+        queues=["eq02", "eq03"],
+        scopes=["nouns:read", "surface:shamash"],
+    )
+    assert client.get(path, headers=auth(eranos_surface)).status_code == 200
+    assert client.get(path, headers=auth(other_surface)).status_code == 404
+    assert (
+        client.post(
+            "/ns/main/v1/tasks/claim",
+            json={"queue": "eq01", "worker": "surface"},
+            headers=auth(eranos_surface),
+        ).status_code
+        == 403
+    )
     own = client.post(
         "/v1/stores/org.requests/records/r1",
         json={"value": {"job": "EXAMPLE"}, "expected_version": 0},

@@ -9,7 +9,7 @@ FACTORY_store := tessera.testing:create_store_backend
 FACTORY_http := tessera.testing:create_http_backend
 FACTORY_empty := tessera.testing:create_empty_backend
 
-.PHONY: openapi-check help setup check lint types test test-worker suite suite-stub suite-http-local public lock-suite clean serve dev seed expand-demo bilateral-demo index index-check architecture
+.PHONY: openapi-check help setup check lint types test test-worker suite suite-stub suite-http-local public lock-suite clean serve dev seed expand-demo bilateral-demo index index-check architecture deploy-guard deploy
 
 help: ## List the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-12s %s\n", $$1, $$2}'
@@ -93,3 +93,9 @@ agent-start-check: ## Check public agent onboarding instructions and HTTP bounda
 .PHONY: claim-admission-check
 claim-admission-check: ## Adaptive pacing, fair waiting, recovery and bounded overload
 	node --test tests/claim_admission.test.mjs
+
+deploy-guard: ## Before any Worker deploy: clean, light, no banned words, live commit is an ancestor (LIVE_SOURCE_COMMIT or DEPLOY_LOCK)
+	uv run python scripts/deploy_guard.py
+
+deploy: deploy-guard ## Guarded Worker deploy; the message names the source commit
+	npx -y wrangler@4.154.0 deploy --config deploy/cloudflare/wrangler.jsonc --message "source $$(git rev-parse HEAD)"

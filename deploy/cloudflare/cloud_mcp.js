@@ -836,9 +836,9 @@ export async function handleMcpRequest(
         title: "Method Not Allowed",
         status: 405,
         code: "method_not_allowed",
-        detail: "MCP Streamable HTTP accepts POST /mcp",
+        detail: "MCP Streamable HTTP accepts JSON-RPC 2.0 via POST /mcp (stateless JSON response; server-sent GET streams are not used; REST equivalents live under /v1/...)",
       }),
-      { status: 405, headers: { "content-type": "application/problem+json" } }
+      { status: 405, headers: { "content-type": "application/problem+json", allow: "POST" } }
     );
   }
   const surfaceHeader = (request.headers.get("x-surface-id") || "").trim();
