@@ -881,6 +881,8 @@ export async function handleMcpRequest(
       let out;
       if (toolName === "open_anonymous_session") out = await stub.openAnonymousSession(toolArgs);
       else if (toolName === "explain_access_modes") out = { ok: true, data: accessDescriptionFor(env.PUBLIC_URL || new URL(request.url).origin, env) };
+      else if (toolName === "request_human_link") out = await stub.humanLink(bearerSecret, "issue", toolArgs);
+      else if (toolName === "get_human_link") out = await stub.humanLink(bearerSecret, "get", { id: toolArgs.id });
       else if (toolName === "whoami") out = await stub.rpcCall(bearerSecret, "me", routeCtx);
       else if (toolName === "my_audit" || toolName === "admin_audit") out = await stub.auditForToken(bearerSecret, { ...toolArgs, admin: toolName === "admin_audit" });
       else if (toolName === "cancel") out = await stub.rpcCall(bearerSecret, "cancel", { ...toolArgs, ...routeCtx });

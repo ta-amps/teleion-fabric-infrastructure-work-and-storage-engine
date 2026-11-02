@@ -5,6 +5,7 @@ import { edgeFromCf, publicActivityRoute } from "./edge_activity.js";
 import { accessDiscoveryRoute, accessRoute, accessDescriptionFor } from "./cloud_access_routes.js";
 import { handleA2a } from "./cloud_a2a.js";
 import { displayMask } from "./display_mask.js";
+import { HUMAN_LINK_INSTRUCTIONS, TOKEN_HEADER } from "./human_links.js";
 import { LIBRARY_CHECKER, libraryEnabled, renderA2aCard } from "./library_contract.js";
 import { LIBRARY_BODY_LIMIT, parseJsonBody, proposeThroughDoors, readCappedBody } from "./library_io.js";
 // Tessera Cloud Worker: 24/7 native cloud execution on Cloudflare Durable Object SQLite + D1
@@ -49,7 +50,7 @@ import {
 export { TesseraCoordinator };
 
 const DEFAULT_ORIGIN = "https://tessera-fabric.fly.dev";
-const DEFAULT_PUBLIC_URL = "https://tessera.ta-amps.workers.dev";
+const DEFAULT_PUBLIC_URL = "https://tessera.teleionlabs.com";
 const DEFAULT_REPO_URL = "https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine";
 const NAMESPACE_RE = /^[a-z0-9][a-z0-9_.-]{0,63}$/;
 const SHA256_RE = /^[0-9a-f]{64}$/;
@@ -400,7 +401,7 @@ function discoveryResponse(path, method, env, publicUrl, repoUrl) {
   }
   if (path === "/llms.txt") {
     return withSecurity(
-      new Response(renderLlmsTxt(publicUrl, repoUrl, mcpToolsFor(env)) + "\n\nExternal harnesses and personal assistants: POST /v1/session/anonymous without secrets, then use Authorization: Bearer <session_token> for demo nouns and verbs. See /connect.json. tools/list is public; tool counts and schemas are authoritative there. Keyed production work remains protected.\n" + (libraryEnabled(env) ? "\nSeed-pack library: propose one task object (noun), one task template (verb) or a whole pack with POST /v1/library/proposals, the MCP library tools or A2A message/send at /a2a (agent card /.well-known/agent.json). A different reviewer claims the library.review verb; proposing runs, activates and admits nothing. Status: GET /v1/library/proposals/<proposal_id>.\n" : ""), {
+      new Response(renderLlmsTxt(publicUrl, repoUrl, mcpToolsFor(env)) + "\n\n" + HUMAN_LINK_INSTRUCTIONS + " POST /v1/human-links, then GET /v1/human-links/<id>." + "\n\nExternal harnesses and personal assistants: POST /v1/session/anonymous without secrets, then use Authorization: Bearer <session_token> for demo nouns and verbs. See /connect.json. tools/list is public; tool counts and schemas are authoritative there. Keyed production work remains protected.\n" + (libraryEnabled(env) ? "\nSeed-pack library: propose one task object (noun), one task template (verb) or a whole pack with POST /v1/library/proposals, the MCP library tools or A2A message/send at /a2a (agent card /.well-known/agent.json). A different reviewer claims the library.review verb; proposing runs, activates and admits nothing. Status: GET /v1/library/proposals/<proposal_id>.\n" : ""), {
         status: 200,
         headers: { "content-type": "text/plain; charset=utf-8" },
       }),
@@ -516,6 +517,19 @@ const worker = {
     // The public activity map needs no principal: aggregated, cached and limited per address.
     const activity = await publicActivityRoute(request, { path, method, namespace, env, primary, problem, withSecurity, address: ipGroup(request.headers.get("cf-connecting-ip")) });
     if (activity) return activity;
+    // A person answering a human link has no key: the token in the header is the whole credential.
+    if (path === "/v1/human-links/public") {
+      const token = request.headers.get(TOKEN_HEADER) || "";
+      const noindex = { "x-robots-tag": "noindex" };
+      if (method === "GET") return jsonResp(await primary.humanLinkRead(token), 200, noindex);
+      if (method === "POST") {
+        const { body, error } = await readJsonBody(request);
+        if (error) return error;
+        const out = await primary.humanLinkAnswer(token, body);
+        return jsonResp(out.data, out.status, noindex);
+      }
+      return problem(405, "method_not_allowed", "method not allowed");
+    }
     const requestBearer = extractBearer(request);
     // Unauthenticated public reads of the main namespace need no identity or key lookup.
     if (!requestBearer && namespace === "main" && (method === "GET" || method === "HEAD")) {
@@ -559,6 +573,7 @@ const worker = {
       publicHealthAndBoard: (...args) => rawStub.publicHealthAndBoard(...args),
       bootstrapOrIssueKey: (secret, bootstrap, body) => primary.bootstrapOrIssueKey(secret, bootstrap, { ...body, access_meta: meta }),
       openAnonymousSession: body => primary.openAnonymousSession(body, meta),
+      humanLink: (secret, op, args) => primary.humanLink(secret, op, args, meta),
       auditForToken: (secret, args) => primary.auditForToken(secret, args),
       // The library door always works in the shared namespace, under the caller's own principal;
       // its content checks run in the separate library-checks object, never in the primary one.
@@ -577,6 +592,18 @@ const worker = {
     if (accessResponse) return accessResponse;
     const libraryResponse = await libraryRoute(request, path, url, method, bearer, stub, publicUrl);
     if (libraryResponse) return libraryResponse;
+    if (path === "/v1/human-links") {
+      if (method !== "POST") return problem(405, "method_not_allowed", "method not allowed");
+      const { body, error } = await readJsonBody(request);
+      if (error) return error;
+      return rpcResponse(await stub.humanLink(bearer, "issue", body));
+    }
+    if (path.startsWith("/v1/human-links/")) {
+      const id = decodeURIComponent(path.slice("/v1/human-links/".length));
+      if (method === "GET") return rpcResponse(await stub.humanLink(bearer, "get", { id }));
+      if (method === "DELETE") return rpcResponse(await stub.humanLink(bearer, "cancel", { id }));
+      return problem(405, "method_not_allowed", "method not allowed");
+    }
 
 
     // 1. Streamable HTTP MCP Door (`/mcp`)

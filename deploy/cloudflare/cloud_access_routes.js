@@ -2,9 +2,12 @@ import { FAVICON_SVG } from "./cloud_pages.js";
 import ACCESS_OPENAPI from "./access_openapi.json" with { type: "json" };
 // Public discovery and bearer-only onboarding; navigation never mints a session.
 import { ANON_LABELS, DEMO_QUOTAS, REQUESTER_QUOTAS, openVerbsDescription, requesterDescription } from "./cloud_access.js";
+import { HUMAN_LINK_INSTRUCTIONS, HUMAN_LINK_OPENAPI_PATHS, humanLinkDescription } from "./human_links.js";
 import { libraryAnonymousEnabled, libraryBudgets, libraryDescription, libraryEnabled } from "./library_contract.js";
 
 export const ACCESS_TOOLS = [
+  { name: "request_human_link", description: `${HUMAN_LINK_INSTRUCTIONS} Returns a link that works once and ends by itself.`, inputSchema: { type: "object", required: ["kind", "text"], properties: { kind: { type: "string", enum: ["confirm", "ask"] }, text: { type: "string", maxLength: 2000 }, agent_note: { type: "string", maxLength: 200 }, ttl_seconds: { type: "integer", minimum: 60, maximum: 86400 } }, additionalProperties: false } },
+  { name: "get_human_link", description: "Read the state and answer of a link this principal requested.", inputSchema: { type: "object", required: ["id"], properties: { id: { type: "string" } }, additionalProperties: false } },
   { name: "list_verbs", description: "List ready verbs visible to this principal, with optional queue and status filters.", inputSchema: {type:"object",properties:{queue:{type:"string"},status:{type:"string",enum:["ready","leased","waiting","done","dead","cancelled"]},limit:{type:"integer",minimum:1,maximum:100}},additionalProperties:false}},
   { name: "open_anonymous_session", description: "Open a tracked, one-hour practice session without secrets. Use the returned session_token as Authorization: Bearer for subsequent calls. No production access.", inputSchema: { type: "object", properties: { agent_label: { type: "string", maxLength: 64 } }, additionalProperties: false } },
   { name: "explain_access_modes", description: "Public connection instructions, limits, labels and keyed upgrade path.", inputSchema: { type: "object", properties: {}, additionalProperties: false } },
@@ -28,6 +31,7 @@ export function accessDescription(url, enabled, requesterEnabled, libraryOn = fa
     requester: { ...requesterDescription(requesterEnabled), endpoint: `${url}/v1/session/requester`, method: "POST", quotas: REQUESTER_QUOTAS },
     keyed: { endpoint: `${url}/v1/keys`, method: "POST", authorization: "Existing operator admin key required to issue an account-bound key; paste an issued key to connect", token_prefix: "tsk_", signup_mode: "admin_assisted", secret_shown_once: true },
     library: libraryDescription(url, libraryOn, libraryAnonymousOn, libraryBudgetValues),
+    human_links: humanLinkDescription(url),
     authorization_header: "Authorization: Bearer <session_token_or_api_key>",
     demo_flow: ["open_anonymous_session", "search_nouns(query=practice)", "claim(queue=demo.ping,worker=your-agent)", "heartbeat", "put_record(store_name=demo.artifacts,expected_version=0)", "submit", "my_audit"],
     audit_retention_seconds: 86400, example: { method: "POST", url: `${url}/v1/session/anonymous`, json: { agent_label: "my-assistant" } } };
@@ -39,7 +43,7 @@ export function renderAccessHtml(url) {
 
 // Storage-free access discovery; the Worker serves it before any Durable Object call.
 export function accessDiscoveryRoute(path, method, publicUrl, env, jsonResp, htmlResp) {
-  if (path === "/v1/openapi.json" && method === "GET") return jsonResp({ ...ACCESS_OPENAPI, servers: [{ url: publicUrl }] });
+  if (path === "/v1/openapi.json" && method === "GET") return jsonResp({ ...ACCESS_OPENAPI, paths: { ...ACCESS_OPENAPI.paths, ...HUMAN_LINK_OPENAPI_PATHS }, servers: [{ url: publicUrl }] });
   if (path === "/connect.json" && method === "GET") return jsonResp(accessDescriptionFor(publicUrl, env));
   if ((path === "/connect" || path === "/") && method === "GET") return htmlResp(renderAccessHtml(publicUrl), 200, { "content-security-policy": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'" });
   return null;

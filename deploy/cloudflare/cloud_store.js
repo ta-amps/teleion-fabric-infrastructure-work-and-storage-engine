@@ -1,3 +1,4 @@
+import { humanLinkAction, humanLinkPublicAnswer, humanLinkPublicRead } from "./human_links.js";
 import { initExecutions, checkedReport, prepareExecution, validatePrepared, captureExecution, recallExecution, getExecution, listExecutions } from "./cloud_executions.js";
 import { NO_EDGE, activityMap, catalogModels, cleanEdge, clearActivity, edgeStatus, edgeWorker, flushEdge, recordClaim, recordModel, recordPresence, showOnMapLabel } from "./edge_activity.js";
 import { displayTest } from "./display_mask.js";
@@ -1929,6 +1930,13 @@ export class TesseraCoordinator extends DurableObject {
     } catch (e) { return this._errOut(e); }
   }
   async requestIdentity(ip, ua) { return requestIdentity(this, ip, ua); }
+  // Human links live in the primary object: the person's token names no namespace (human_links.js).
+  async humanLink(secret, op, args, meta) {
+    try { return await humanLinkAction(this, secret, op, args, meta); }
+    catch (e) { return this._errOut(e); }
+  }
+  async humanLinkRead(token) { return humanLinkPublicRead(this, token); }
+  async humanLinkAnswer(token, body) { return humanLinkPublicAnswer(this, token, body); }
   async openAnonymousSession(body, meta) {
     try { return { ok: true, status: 201, data: await mintAnonymous(this, body, meta) }; }
     catch (e) { return this._errOut(e); }
