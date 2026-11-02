@@ -254,6 +254,19 @@ function parseBoolParam(val) {
   return ["1", "true", "yes"].includes(String(val || "").trim().toLowerCase());
 }
 
+function mergeIdempotencyHeader(request, body) {
+  const hdrIdem = (request.headers.get("idempotency-key") || "").trim();
+  if (body.idempotency_key !== undefined && body.idempotency_key !== null && typeof body.idempotency_key !== "string") {
+    return { error: problem(400, "invalid_request", "idempotency_key must be text") };
+  }
+  const bodyIdem = typeof body.idempotency_key === "string" ? body.idempotency_key.trim() : "";
+  if (hdrIdem && bodyIdem && hdrIdem !== bodyIdem) {
+    return { error: problem(400, "invalid_request", "Idempotency-Key header and body idempotency_key must match") };
+  }
+  const effective = bodyIdem || hdrIdem;
+  return { body: effective ? { ...body, idempotency_key: effective } : body };
+}
+
 function parseLayer2Params(searchParams) {
   return {
     q: searchParams.get("q") || "",
@@ -401,8 +414,12 @@ function discoveryResponse(path, method, env, publicUrl, repoUrl) {
     );
   }
   if (path === "/llms.txt") {
+    const openWindow = isOpenFreeWindow(env);
+    const accessProse = openWindow
+      ? "\n\nDirect open access through December 31, 2026: any agent may call /mcp and /v1/... directly with no login, credential, session setup or rate-limit gate (optional X-Agent-Label isolates a practice workspace, or POST /v1/session/anonymous for an isolated session token). See /connect.json. tools/list is public; tool counts and schemas are authoritative there. Operator and admin routes remain protected.\n"
+      : "\n\nExternal harnesses and personal assistants: POST /v1/session/anonymous without secrets, then use Authorization: Bearer <session_token> for practice Tasks and Task Objects. See /connect.json. tools/list is public; tool counts and schemas are authoritative there. Keyed production work remains protected.\n";
     return withSecurity(
-      new Response(renderLlmsTxt(publicUrl, repoUrl, mcpToolsFor(env)) + "\n\n" + HUMAN_LINK_INSTRUCTIONS + " POST /v1/human-links, then GET /v1/human-links/<id>." + "\n\nExternal harnesses and personal assistants: POST /v1/session/anonymous without secrets, then use Authorization: Bearer <session_token> for demo nouns and verbs. See /connect.json. tools/list is public; tool counts and schemas are authoritative there. Keyed production work remains protected.\n" + (libraryEnabled(env) ? "\nSeed-pack library: propose one task object (noun), one task template (verb) or a whole pack with POST /v1/library/proposals, the MCP library tools or A2A message/send at /a2a (agent card /.well-known/agent.json). A different reviewer claims the library.review verb; proposing runs, activates and admits nothing. Status: GET /v1/library/proposals/<proposal_id>.\n" : ""), {
+      new Response(renderLlmsTxt(publicUrl, repoUrl, mcpToolsFor(env)) + "\n\n" + HUMAN_LINK_INSTRUCTIONS + " POST /v1/human-links, then GET /v1/human-links/<id>." + accessProse + (libraryEnabled(env) ? "\nSeed-pack library: propose one task object (noun), one task template (verb) or a whole pack with POST /v1/library/proposals, the MCP library tools or A2A message/send at /a2a (agent card /.well-known/agent.json). A different reviewer claims the library.review verb; proposing runs, activates and admits nothing. Status: GET /v1/library/proposals/<proposal_id>.\n" : ""), {
         status: 200,
         headers: { "content-type": "text/plain; charset=utf-8" },
       }),
@@ -420,7 +437,7 @@ function discoveryResponse(path, method, env, publicUrl, repoUrl) {
   }
   if (path === "/.well-known/agent.json") return libraryEnabled(env) ? jsonResp(renderA2aCard(publicUrl, repoUrl, env)) : problem(404, "not_found", "the library door is not enabled on this fabric");
   if (path === "/.well-known/agent-card.json") {
-    return jsonResp({ ...renderAgentCard(publicUrl, repoUrl, mcpToolsFor(env)), authentication: { discovery: "none", demo: "tan_ bearer session", keyed: "tsk_ bearer key" }, capabilities: { streaming: "long-poll", tools: true }, access: accessDescriptionFor(publicUrl, env) });
+    return jsonResp({ ...renderAgentCard(publicUrl, repoUrl, mcpToolsFor(env)), authentication: { discovery: "none", demo: isOpenFreeWindow(env) ? "none required through 2026-12-31 (optional X-Agent-Label or tan_ bearer session)" : "tan_ bearer session", keyed: "tsk_ bearer key" }, capabilities: { streaming: "long-poll", tools: true }, access: accessDescriptionFor(publicUrl, env) });
   }
   if (path === "/robots.txt") {
     return withSecurity(
@@ -531,7 +548,9 @@ const worker = {
       if (method === "POST") {
         const { body, error } = await readJsonBody(request);
         if (error) return error;
-        const out = await primary.humanLinkAnswer(token, body);
+        const merged = mergeIdempotencyHeader(request, body);
+        if (merged.error) return merged.error;
+        const out = await primary.humanLinkAnswer(token, merged.body);
         return jsonResp(out.data, out.status, { ...noindex, ...(out.headers || {}) });
       }
       return problem(405, "method_not_allowed", "method not allowed");
@@ -604,9 +623,9 @@ const worker = {
       if (method !== "POST") return problem(405, "method_not_allowed", "method not allowed");
       const { body, error } = await readJsonBody(request);
       if (error) return error;
-      const hdrIdem = (request.headers.get("idempotency-key") || "").trim();
-      const issueBody = body.idempotency_key === undefined && hdrIdem ? { ...body, idempotency_key: hdrIdem } : body;
-      return rpcResponse(await stub.humanLink(bearer, "issue", issueBody));
+      const merged = mergeIdempotencyHeader(request, body);
+      if (merged.error) return merged.error;
+      return rpcResponse(await stub.humanLink(bearer, "issue", merged.body));
     }
     if (path.startsWith("/v1/human-links/")) {
       const id = decodeURIComponent(path.slice("/v1/human-links/".length));

@@ -1,6 +1,7 @@
 // The library door's public contract: store and queue names, rates, the MCP tools, the connect.json
 // section and the A2A agent card. Storage-free, so discovery stays up when storage is exhausted.
 // Every door (HTTP, MCP, A2A) maps to the same propose verb; none of them is a queue or an agent.
+import { isOpenFreeWindow } from "./cloud_access.js";
 import { TESSERA_VERSION } from "./cloud_pages.js";
 import { BUNDLE_FORMAT, LIBRARY_LICENSES, LIBRARY_LIMITS } from "./library_checks.js";
 
@@ -26,7 +27,7 @@ export const REVIEW_SCHEMA = "ta-amps.library.review.v1";
 export const LIBRARY_CHECKER = "library-checks";
 export const CHECK_TIMEOUT_MS = 5000;
 export const libraryEnabled = env => String(env?.LIBRARY_PROPOSALS_ENABLED || "false") === "true";
-export const libraryAnonymousEnabled = env => libraryEnabled(env) && String(env?.LIBRARY_ANON_PROPOSALS_ENABLED || "false") === "true";
+export const libraryAnonymousEnabled = env => libraryEnabled(env) && (String(env?.LIBRARY_ANON_PROPOSALS_ENABLED || "false") === "true" || isOpenFreeWindow(env));
 
 const COMMON = {
   license: { type: "string", enum: [...LIBRARY_LICENSES] },

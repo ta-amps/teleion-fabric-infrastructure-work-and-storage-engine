@@ -27,6 +27,9 @@ export default {
 export class FixtureCoordinator extends TesseraCoordinator {
   testAge(id, seconds) { this.ctx.storage.sql.exec("UPDATE human_links SET expires_at = expires_at - ? WHERE id=?", seconds, id); }
   testRows() { return this._all("SELECT * FROM human_links"); }
+  testIdemRows() { return this._tableExists("human_link_idempotency") ? this._all("SELECT * FROM human_link_idempotency") : []; }
+  testAnswerIdemRows() { return this._tableExists("human_link_answer_idempotency") ? this._all("SELECT * FROM human_link_answer_idempotency") : []; }
+  testMetaRows() { return this._all("SELECT * FROM meta"); }
   testEvents() { return this._all("SELECT * FROM access_events"); }
   testSetUsage(subject, requests, bytes) {
     const window = Math.floor(Date.now() / 3600000);
@@ -61,7 +64,7 @@ async function setup(extraBindings = {}) {
   const bearer = (token) => ({ authorization: `Bearer ${token}` });
   const issue = async (token, body, extraHeaders = {}) => json("POST", "/v1/human-links", body, { ...bearer(token), ...extraHeaders });
   const read = (linkToken) => call("/v1/human-links/public", { headers: linkToken === null ? {} : { "x-human-link-token": linkToken } });
-  const answer = (linkToken, body) => json("POST", "/v1/human-links/public", body, { "x-human-link-token": linkToken });
+  const answer = (linkToken, body, extraHeaders = {}) => json("POST", "/v1/human-links/public", body, { "x-human-link-token": linkToken, ...extraHeaders });
   const status = (token, id) => call(`/v1/human-links/${id}`, { headers: bearer(token) });
   const ns = await runtime.getDurableObjectNamespace("COORDINATOR");
   const primary = ns.get(ns.idFromName("primary"));
@@ -202,18 +205,34 @@ test("only the issuer can read or cancel a link; everyone else gets 404", async 
 test("only the token's hash is stored; the token appears in no row, audit event or request address", async () => {
   const t = await setup();
   const { agent, link, token } = await open(t);
+  const idemRes = await t.issue(agent, { kind: "ask", text: "Idempotent secret check?" }, { "idempotency-key": "no-raw-token-idem-1" });
+  assert.equal(idemRes.status, 201);
+  const idemLink = await idemRes.json();
+  const idemToken = tokenOf(idemLink.url);
+
   await t.read(token);
   await t.answer(token, { answer: "confirm" });
+  await t.answer(idemToken, { answer: "send", value: "private-answer-text" }, { "idempotency-key": "ans-no-raw-1" });
   await t.status(agent, link.id);
   const rows = await t.primary.testRows();
-  assert.equal(rows.length, 1);
-  assert.match(rows[0].token_hash, /^[0-9a-f]{64}$/);
-  assert.notEqual(rows[0].token_hash, token);
-  assert.ok(!JSON.stringify(rows).includes(token));
+  assert.equal(rows.length, 2);
+  const idemRows = await t.primary.testIdemRows();
+  assert.equal(idemRows.length, 1);
+  assert.ok(!("response_json" in idemRows[0]), "human_link_idempotency stores no response_json");
+  const ansIdemRows = await t.primary.testAnswerIdemRows();
+  assert.equal(ansIdemRows.length, 1);
+  assert.ok(!JSON.stringify(ansIdemRows).includes("private-answer-text"), "answer idempotency stores only digest, never value");
+  const metaRows = await t.primary.testMetaRows();
   const events = await t.primary.testEvents();
   assert.ok(events.some((e) => e.action === "human_link_issue"), "issuing is on the record");
-  assert.ok(!JSON.stringify(events).includes(token));
-  assert.ok(!t.seen.some((path) => path.includes(token)), "no request carried the token in its address");
+  for (const rawTok of [token, idemToken]) {
+    assert.ok(!JSON.stringify(rows).includes(rawTok), "human_links stores no raw token");
+    assert.ok(!JSON.stringify(idemRows).includes(rawTok), "human_link_idempotency stores no raw token");
+    assert.ok(!JSON.stringify(ansIdemRows).includes(rawTok), "human_link_answer_idempotency stores no raw token");
+    assert.ok(!JSON.stringify(metaRows).includes(rawTok), "meta stores no raw token");
+    assert.ok(!JSON.stringify(events).includes(rawTok), "access_events stores no raw token");
+    assert.ok(!t.seen.some((path) => path.includes(rawTok)), "no request carried the token in its address");
+  }
 });
 
 test("MCP tools request and read a link; discovery lists them on the canonical host", async () => {
@@ -337,6 +356,39 @@ test("Idempotency-Key header and MCP idempotency_key deduplicate identical issua
   assert.equal(mismatch.status, 409);
   assert.equal((await mismatch.json()).code, "idempotency_conflict");
 
+  const disagree = await t.issue(token, { ...body, idempotency_key: "idem-body-other" }, { "idempotency-key": "idem-http-1" });
+  assert.equal(disagree.status, 400);
+  assert.equal((await disagree.json()).code, "invalid_request");
+
+  // Answer Idempotency-Key: same payload replays 200 without leaking value; different payload -> 409; omitted -> 409; header/body mismatch -> 400.
+  const ansDisagree = await t.answer(tokenOf(d1.url), { answer: "send", value: "alpha", idempotency_key: "ans-b" }, { "idempotency-key": "ans-a" });
+  assert.equal(ansDisagree.status, 400);
+  const ans1 = await t.answer(tokenOf(d1.url), { answer: "send", value: "alpha" }, { "idempotency-key": "ans-idem-1" });
+  assert.equal(ans1.status, 200);
+  const ansReplay = await t.answer(tokenOf(d1.url), { answer: "send", value: "alpha" }, { "idempotency-key": "ans-idem-1" });
+  assert.equal(ansReplay.status, 200);
+  const ansReplayJson = await ansReplay.json();
+  assert.equal(ansReplayJson.ok, true);
+  assert.equal(ansReplayJson.replayed, true);
+  assert.equal(ansReplayJson.state, "answered");
+  assert.equal(ansReplayJson.link.state, "answered");
+  assert.ok(!("value" in ansReplayJson) && !("value" in ansReplayJson.link));
+  assert.equal((await t.answer(tokenOf(d1.url), { answer: "send", value: "beta" }, { "idempotency-key": "ans-idem-1" })).status, 409);
+  assert.equal((await t.answer(tokenOf(d1.url), { answer: "send", value: "alpha" })).status, 409);
+
+  // Post-TTL replay replaces an expired link and issues a fresh live link instead of replaying an expired one.
+  const expRes = await t.issue(token, { kind: "confirm", text: "Short-lived?", ttl_seconds: 60 }, { "idempotency-key": "idem-expiring-1" });
+  assert.equal(expRes.status, 201);
+  const expLink = await expRes.json();
+  await t.primary.testAge(expLink.id, 61);
+  const freshRes = await t.issue(token, { kind: "confirm", text: "Short-lived?", ttl_seconds: 60 }, { "idempotency-key": "idem-expiring-1" });
+  assert.equal(freshRes.status, 201);
+  const freshLink = await freshRes.json();
+  assert.equal(freshLink.replayed, undefined);
+  assert.notEqual(freshLink.id, expLink.id);
+  assert.notEqual(freshLink.url, expLink.url);
+  assert.equal((await (await t.read(tokenOf(freshLink.url))).json()).state, "open");
+
   const mcpCall = async (args) => (await (await t.json("POST", "/mcp", {
     jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "request_human_link", arguments: args },
   }, t.bearer(token))).json()).result;
@@ -346,7 +398,7 @@ test("Idempotency-Key header and MCP idempotency_key deduplicate identical issua
   assert.equal(m2.isError, false);
   assert.equal(m2.structuredContent.replayed, true);
   assert.equal(m2.structuredContent.id, m1.structuredContent.id);
-  assert.equal((await t.primary.testRows()).length, 2);
+  assert.equal((await t.primary.testRows()).length, 4);
 
   const m3 = await mcpCall({ kind: "confirm", text: "Changed?", idempotency_key: "idem-mcp-1" });
   assert.equal(m3.isError, true);
@@ -396,13 +448,19 @@ test("terminal links redact text and agent_note on public GET and duplicate POST
 });
 
 test("open free window through 2026-12-31 allows zero-auth agent work & human links, enforces zero 429 barriers while recording accounting, keeps admin/bad-token protected, and serves valid CORS header tokens", async () => {
-  const t = await setup({ BOOTSTRAP_SECRET: "example-open-bootstrap" });
+  const t = await setup({ BOOTSTRAP_SECRET: "example-open-bootstrap", LIBRARY_PROPOSALS_ENABLED: "true", LIBRARY_ANON_PROPOSALS_ENABLED: "false" });
 
-  // 1. CORS preflight: every Access-Control-Allow-Headers item is a valid HTTP token (zero spaces), with X-Tessera-Namespace restored.
+  // 1. CORS preflight & open-window discovery surfaces (/llms.txt, /connect, /connect.json).
   const preflight = await (await t.call("/__test_preflight")).json();
   assert.equal(preflight.status, 204);
-  const getHeaders = (await t.call("/connect.json")).headers.get("access-control-allow-headers") || "";
+  const connectRes = await t.call("/connect.json");
+  const getHeaders = connectRes.headers.get("access-control-allow-headers") || "";
   assert.equal(preflight.headers["access-control-allow-headers"], getHeaders);
+  const connectContract = await connectRes.json();
+  assert.equal(connectContract.demo_flow[0], "search_nouns(query=practice)");
+  assert.equal(connectContract.library.anonymous_enabled, true);
+  assert.match(await (await t.call("/llms.txt")).text(), /December 31, 2026/);
+  assert.match(await (await t.call("/connect")).text(), /December 31, 2026/);
   const allowHeaders = preflight.headers["access-control-allow-headers"].split(",").map((h) => h.trim()).filter(Boolean);
   assert.ok(allowHeaders.includes("X-Tessera-Namespace"));
   assert.ok(allowHeaders.includes("X-Teleion-Fabric-Namespace"));
@@ -438,12 +496,36 @@ test("open free window through 2026-12-31 allows zero-auth agent work & human li
   assert.equal((await t.call("/v1/verbs", { headers: { "x-tessera-namespace": "main" } })).status, 200);
   assert.equal((await t.call("/v1/verbs", { headers: { "x-teleion-fabric-namespace": "main" } })).status, 200);
 
-  // Keyless human-link lifecycle + X-Agent-Label isolation.
+  // Keyless human-link lifecycle + X-Agent-Label isolation + audit redaction + cross-caller Idempotency-Key isolation.
   const openLinkRes = await t.json("POST", "/v1/human-links", { kind: "ask", text: "Keyless prompt?" }, { "x-agent-label": "helper-alpha" });
   assert.equal(openLinkRes.status, 201);
   const openLink = await openLinkRes.json();
   assert.equal((await t.call(`/v1/human-links/${openLink.id}`)).status, 404, "isolated from default o_open");
   assert.equal((await t.call(`/v1/human-links/${openLink.id}`, { headers: { "x-agent-label": "helper-alpha" } })).status, 200);
+
+  const sharedLinkRes = await t.json("POST", "/v1/human-links", { kind: "ask", text: "Shared keyless prompt?" }, { "cf-connecting-ip": "198.51.100.10", "idempotency-key": "predictable-step-1" });
+  assert.equal(sharedLinkRes.status, 201);
+  const sharedLink = await sharedLinkRes.json();
+  const otherCallerSameIdem = await t.json("POST", "/v1/human-links", { kind: "ask", text: "Shared keyless prompt?" }, { "cf-connecting-ip": "198.51.100.99", "idempotency-key": "predictable-step-1" });
+  assert.equal(otherCallerSameIdem.status, 201);
+  const otherCallerLink = await otherCallerSameIdem.json();
+  assert.notEqual(otherCallerLink.id, sharedLink.id, "distinct keyless caller cannot replay another caller's live link");
+  assert.notEqual(otherCallerLink.url, sharedLink.url);
+
+  const keylessAudit = await (await t.call("/v1/me/audit")).json();
+  const auditText = JSON.stringify(keylessAudit);
+  assert.ok(!auditText.includes(sharedLink.id) && !auditText.includes(otherCallerLink.id), "keyless /v1/me/audit never exposes raw hl_<uuid> capability IDs");
+  assert.doesNotMatch(auditText, /\bhl_[0-9a-f]{32}\b/);
+  assert.match(auditText, /hl_sha256:[0-9a-f]{16}/);
+
+  // Keyless library proposal succeeds even when LIBRARY_ANON_PROPOSALS_ENABLED is "false" (default wrangler.jsonc).
+  const libRes = await t.json("POST", "/v1/library/proposals", {
+    type: "noun",
+    license: "MIT",
+    summary: "Helps an example pantry check intake forms.",
+    noun: { slug: "open-window-checklist", category: "noun.recovery_playbook", role: "template", title: "Open window checklist", value: { steps: ["Check date"] } },
+  });
+  assert.equal(libRes.status, 201, await libRes.clone().text());
 
   const mcpKeyless = await (await t.json("POST", "/mcp", {
     jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "whoami", arguments: {} },

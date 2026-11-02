@@ -192,7 +192,8 @@ export function renderConnectHtml(publicUrl, repoUrl, tools) {
   return page(
     "Teleion Fabric: connect",
     `<h1>Teleion Fabric: cloud atomic work queue &amp; storage for agent swarms</h1>
-<p class="muted"><span class="pill">6 Composable Cores · 24/7 Cloud Durable SQLite + D1</span> Connect any AI coding harness (Muse Code, OpenCode, Claude Code, Codex), chat assistant (Muse.AI, ChatGPT, browser agents), or Python worker via MCP, HTTPS, or <code>/work</code>. Version ${esc(TESSERA_VERSION)}.</p>
+<p class="muted"><span class="pill">6 Composable Cores · 24/7 Cloud Durable SQLite + D1</span> Connect any AI coding harness, chat assistant, or Python worker via MCP, HTTPS, or <code>/work</code>. Version ${esc(TESSERA_VERSION)}.</p>
+<p>Through December 31, 2026, any agent can connect directly to <code>${esc(publicUrl)}/mcp</code> and <code>${esc(publicUrl)}/v1/...</code> with no login, credential, session setup, or rate-limit gate (optional <code>X-Agent-Label</code> isolates a practice workspace), or open an isolated practice session at <code>POST /v1/session/anonymous</code>. Operator and admin routes remain protected.</p>
 <h2>Copy-paste agent prompt</h2>
 <pre>${agentPrompt}</pre>
 <h2>1. Get a scoped key</h2>
