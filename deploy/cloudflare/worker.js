@@ -531,7 +531,7 @@ const worker = {
     isPrimary = namespace === "main";
     const rawStub = coordBinding.get(coordBinding.idFromName(isPrimary ? "primary" : `ns:${namespace}`));
     const identity = await primary.requestIdentity(request.headers.get("cf-connecting-ip"), request.headers.get("user-agent"));
-    // edge: where Cloudflare received this request (data center, country, continent), from request.cf
+    // edge: where Cloudflare received this request (data center and continent), from request.cf
     // only. It is set after every client field, so no body, header or tool argument can name a place.
     const meta = { ...identity, request_id: request.headers.get("x-request-id") || crypto.randomUUID(), route: path, bytes_in: Number(request.headers.get("content-length") || 0), edge: edgeFromCf(request.cf) };
     // Authentication and namespace authorization happen here, before any namespace object is

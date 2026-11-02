@@ -8,24 +8,24 @@ location, so it has no such route.
 
 ## What is recorded
 
-On every claim and heartbeat the Worker reads three codes from `request.cf`, as Cloudflare set them:
-the data center the connection came through (`colo`, an airport code such as `FRA`), the country and
-the continent. Nothing the client sends can set them: not a body field, not a header such as
+On every claim and heartbeat the Worker reads two codes from `request.cf`, as Cloudflare set them: the
+data center the connection came through (`colo`, an airport code such as `FRA`) and its continent. The
+country is never read. Nothing the client sends can set them: not a body field, not a header such as
 `CF-IPCountry`, not an MCP argument. The Worker adds them to the coordinator call after every client
 field, and the coordinator checks their shape again.
 
-- The codes join the attempt's facts: the `claimed` and `heartbeat` events get `detail.edge`. Only an
-  admin key reads event details.
+- The codes are kept only in the map's own rows below, for 25 hours. The event log, which is kept for
+  good, never gets them: the `claimed` and `heartbeat` events are as they were before the map.
 - In the shared namespace, a claim of a Task that is not private adds one row to a projection
-  (`edge_claims`): its time, the claim's class, the three codes, the kind of worker and a keyed hash of
+  (`edge_claims`): its time, the claim's class, the two codes, the kind of worker and a keyed hash of
   the worker's principal. A claim or heartbeat also moves that worker's "last seen" for the data
   center (`edge_presence`). The submit's execution report adds the model it names.
 - The claim's class is one of four, worked out when it happens: `own` (the Task's owner key is the
   claimer), `check` (a review or verify Task: its kind ends in review or is verify, or its queue is eq03,
   frontier.review, frontier.verify or library.review), `nonprofit` (filed by a requester key; the children a
   request is split into keep that owner), or `shared` (everything else).
-- Never recorded: IP addresses, cities, coordinates, postal codes, networks, user agents, worker names, key
-  ids, Task titles.
+- Never recorded: countries, IP addresses, cities, coordinates, postal codes, networks, user agents, worker
+  names, key ids, Task titles.
 - Rows older than 25 hours are deleted by the next claim or heartbeat.
 
 ## show_on_map
@@ -33,21 +33,29 @@ field, and the coordinator checks their shape again.
 A worker registers with `show_on_map: false` (default true): in the body of `POST /v1/session/anonymous`, or of
 `POST /v1/admin/keys` and `POST /v1/keys` when a key is issued. Anything but true or false is a 400. The
 choice lives in the principal's immutable labels, so it holds from the worker's first claim. From then on
-nothing about where it connected is kept: its claim rows carry no data center, country or continent and are
-marked not shown, it has no last-seen row, and its event details carry no `edge`. Its claims count in the
+nothing about where it connected is kept: its claim rows carry no data center or continent and are marked
+not shown, and it has no last-seen row. Its claims count in the
 totals (claims, workers, `by_class`) and appear nowhere else: not under a data center, not in `places`, not
 in `recent` or `replay`. A later change is not supported yet; register a new session or key.
 
 ## What is shown
 
 `places`, each with its claims by class, by model and by kind of worker, its newest claim's time
-(`last_claim_at`) and its distinct workers as an exact number; `recent`, the last 20 claims, each with its class, model, place, time (`at`, ISO) and worker label;
+(`last_claim_at`) and its workers as an exact number; `recent`, the last 20 claims, each with its class, model, place, time (`at`, ISO) and worker label;
 `replay` (with `replay=1`), the last hour's claims, oldest first, up to 300; and `totals` (claims, workers,
 places, continents and claims by class, which include workers that left the map).
 
-- A data center is a place only when at least two different workers of the same kind connected
-  through it in the window. Otherwise their claims and workers count under the continent, so a
-  label never singles anyone out. A request Cloudflare could not place is `unknown`.
+- A claim is placed at its data center only when another worker of the same kind had come through it
+  in the 15 minutes before the claim (`PLACE_SPAN_SECONDS`). That is decided once, when the claim is
+  written, from the last-seen rows (which move at least every 10 minutes), and kept with the claim as
+  how many workers of its kind were there together. Every view then places the claim the same way, in
+  `places`, `recent`, `replay` and `last_claim_at`, whichever window is read: comparing two windows
+  never shows where a worker that was alone connected. Its first claims before a second worker of its
+  kind arrives stay under the continent.
+- A data center is a place only once a claim was placed there in the window. Its `workers` are the most
+  of each kind that were there together when one was, added up, so never a worker that was there
+  alone. Every other claim and its worker count under the continent, and so does a worker seen in the
+  window with no claim of its own. A request Cloudflare could not place is `unknown`.
 - A worker is "a volunteer's AI" when it is an anonymous session or its key's account is listed in
   `VOLUNTEER_WORKER_ACCOUNTS`. Every other key was issued by the operator and is "a dedicated worker
   run by ta-amps", so the map never shows more volunteers than there are.
@@ -55,8 +63,8 @@ places, continents and claims by class, which include workers that left the map)
   id, with a `-contributor` or `-standard` tier suffix removed, and the catalog does not call it an
   agent app. Otherwise the claim counts as `other_model`, `no_model` (the report said none) or
   `not_reported` (no report yet).
-- The view never carries names, ids, keys, hashes, Task ids, what a Task says, addresses, cities or
-  coordinates.
+- The view never carries names, ids, keys, hashes, Task ids, what a Task says, countries, addresses,
+  cities or coordinates.
 
 ## The shared word list (rule 16)
 
@@ -71,7 +79,9 @@ No pattern from the list is kept in this repository; without the var nothing is 
 
 GET and HEAD only; other methods get 405. Any other namespace gets 404, any other window 400 and a `replay`
 other than 0 or 1 a 400. The answer is JSON with `Access-Control-Allow-Origin: *` and
-`Cache-Control: public, max-age=30`. Each Worker isolate keeps one view per window (and one per replay) for
+`Cache-Control: public, max-age=<30 + Age>`: `Age` says how old the isolate's copy is, and max-age counts
+from it, so each client keeps its copy 30 seconds from when it got it, and a page or agent that polls faster
+is answered from its own cache without a Worker request. Each Worker isolate keeps one view per window (and one per replay) for
 30 seconds, and the read writes nothing. Each address (IPv6 by /64) may read it `PUBLIC_ACTIVITY_PER_MINUTE`
 times a minute (60 by default) in an isolate; more get 429 with Retry-After. The answer needs no key and no
 identity lookup.
@@ -87,8 +97,23 @@ of a busy window can therefore lag by up to those times; the feed lags by 15 s.
 
 A map write never changes the claim, heartbeat or submit it rides on. Inside their transactions a failed
 statement is undone on its own and the request goes on; after a claim has committed, a failed first write
-(the tables, then the first rows) is dropped. The request is then simply not on the map. Failures are counted
-on the object and never logged with a value.
+(the tables, then the first rows) is dropped. The request is then simply not on the map. The map's write is
+the last write of each of those transactions, so even an error that undoes a whole transaction cannot leave a
+later write of the request outside it (a test checks the order in the source). Failures are counted on the
+object and never logged with a value.
+
+## Admins
+
+`GET /v1/admin/audit` and MCP `admin_audit` (admin scope) also return `activity_map`: `write_failures`, the
+map writes that failed in the coordinator instance since `counted_since`. A failure leaves that request off
+the map and changes nothing else, so a count that keeps growing means the map has stopped recording. The
+Python service has no map and does not return the field.
+
+## Rolling back
+
+The previous version ignores the two tables, so a rollback needs no step. While it is rolled back, though,
+nothing prunes them: their rows (keyed worker tags, data centers, continents and Task ids) stay past 25 hours
+until the map is deployed again, whose first claim deletes everything older.
 
 ## Rows it costs
 
@@ -99,6 +124,7 @@ production bill.
 | Request | Rows written without the map | With the map |
 | --- | ---: | ---: |
 | Claim (a public Task, the worker seen at that data center in the last 600 s) | 13 | 16 |
+| (each claim also reads the last-seen rows of the past 15 minutes, to decide its place) | | |
 | Claim, the worker's first time through that data center in 25 hours | 13 | 19 |
 | Heartbeat | 10 | 10 |
 | Heartbeat or claim of a busy worker, at most once per 600 s per data center | (in the above) | +2 |

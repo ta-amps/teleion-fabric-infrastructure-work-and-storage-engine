@@ -1,14 +1,14 @@
 // Where workers connect, for the public activity map (GET /v1/public/activity/map).
 //
-// On every claim and heartbeat the Worker passes the coordinator three codes from request.cf as
-// Cloudflare set them: the data center the connection came through (colo), the country and the
-// continent. Nothing a client sends (a header, a body field, MCP arguments) can set them. They join
-// the attempt's facts in the event log, which only an admin key reads. In the shared namespace they
-// also go into a small projection that the public map reads: one row per claim of a Task that is not
-// private, and one "last seen" row per worker and data center. A worker appears there only as a keyed
-// hash of its principal; its name, ids and keys are never written, and no IP address, city,
-// coordinate, network or user agent is recorded at all. Rows older than RETAIN_SECONDS are deleted on
-// the next write.
+// On every claim and heartbeat the Worker passes the coordinator two codes from request.cf as
+// Cloudflare set them: the data center the connection came through (colo) and its continent. Nothing a
+// client sends (a header, a body field, MCP arguments) can set them. They are kept in one place only, a
+// small projection in the shared namespace that the public map reads: one row per claim of a Task that
+// is not private, and one "last seen" row per worker and data center. The event log never gets them, so
+// no lasting record of where a worker connected exists. A worker appears in the projection only as a
+// keyed hash of its principal; its name, ids and keys are never written, and no country, IP address,
+// city, coordinate, network or user agent is recorded at all. Rows older than RETAIN_SECONDS are
+// deleted on the next write.
 //
 // show_on_map: a worker registers with show_on_map false (an anonymous session or an issued key keeps
 // it in its immutable labels), and from then on nothing about where it connected is kept: its claims
@@ -32,8 +32,14 @@ export const FEED_SIZE = 20;
 export const REPLAY_SECONDS = 3600;
 export const REPLAY_ROWS = 300;
 export const CACHE_SECONDS = 30;
+// A claim is placed at its data center only when another worker of its kind had been seen there in the
+// PLACE_SPAN_SECONDS before it. That is worked out once, when the claim is written (from the last-seen rows,
+// which move at least every PRESENCE_REFRESH_SECONDS, a shorter time), and kept with the claim as how many
+// workers were there together, so every view places it the same way whichever window is read: a worker
+// alone at a data center is never shown there, not in a count, the feed, the replay or a last-claim time.
+export const PLACE_SPAN_SECONDS = 900;
 export const WORKER_LABELS = Object.freeze({ volunteer: "a volunteer's AI", dedicated: "a dedicated worker run by ta-amps" });
-export const NO_EDGE = Object.freeze({ colo: null, country: null, continent: null });
+export const NO_EDGE = Object.freeze({ colo: null, continent: null });
 const RETAIN_SECONDS = WINDOWS["24h"] + 3600;
 // A worker's "last seen" moves at most this often. Each move is 2 rows written; 600 s is under the smallest
 // window (15 minutes), so a worker that keeps working always counts in every window.
@@ -52,35 +58,25 @@ const enc = new TextEncoder();
 // seq is the rowid: it only orders claims made in the same instant and is never shown, so it has no
 // AUTOINCREMENT, whose sequence row would cost one more row written per claim.
 export const EDGE_DDL = [
-  `CREATE TABLE IF NOT EXISTS edge_claims (seq INTEGER PRIMARY KEY, ts REAL NOT NULL, task_id TEXT NOT NULL, fencing_token INTEGER NOT NULL, claim_class TEXT NOT NULL, model TEXT, colo TEXT, country TEXT, continent TEXT, worker_kind TEXT NOT NULL, worker_tag TEXT NOT NULL, shown INTEGER NOT NULL DEFAULT 1)`,
+  `CREATE TABLE IF NOT EXISTS edge_claims (seq INTEGER PRIMARY KEY, ts REAL NOT NULL, task_id TEXT NOT NULL, fencing_token INTEGER NOT NULL, claim_class TEXT NOT NULL, model TEXT, colo TEXT, continent TEXT, worker_kind TEXT NOT NULL, worker_tag TEXT NOT NULL, shown INTEGER NOT NULL DEFAULT 1, together INTEGER NOT NULL DEFAULT 0)`,
   `CREATE INDEX IF NOT EXISTS edge_claims_ts ON edge_claims (ts)`,
   `CREATE INDEX IF NOT EXISTS edge_claims_attempt ON edge_claims (task_id, fencing_token)`,
   `CREATE TABLE IF NOT EXISTS edge_presence (worker_tag TEXT NOT NULL, colo TEXT NOT NULL, continent TEXT NOT NULL, worker_kind TEXT NOT NULL, last_ts REAL NOT NULL, PRIMARY KEY (worker_tag, colo, continent, worker_kind))`,
   `CREATE INDEX IF NOT EXISTS edge_presence_ts ON edge_presence (last_ts)`,
 ];
 
-// The three codes, or null for each one Cloudflare did not give in the expected form (a local run, a
-// Tor exit's T1 country, an unknown XX). The Worker calls this with request.cf only.
+// The two codes, or null for each one Cloudflare did not give in the expected form (a local run, an
+// unknown place). The Worker calls this with request.cf only; it never reads the country.
 export function edgeFromCf(cf) {
   const colo = typeof cf?.colo === "string" && /^[A-Z]{3}$/.test(cf.colo) ? cf.colo : null;
-  const country = typeof cf?.country === "string" && /^[A-Z]{2}$/.test(cf.country) && !["XX", "T1"].includes(cf.country) ? cf.country : null;
   const continent = typeof cf?.continent === "string" && CONTINENT_SET.has(cf.continent) ? cf.continent : null;
-  return { colo, country, continent };
+  return { colo, continent };
 }
 
 // The coordinator checks the shape again: it reads only access_meta.edge, which the Worker sets after
-// every client field, and keeps nothing but the three codes.
+// every client field, and keeps nothing but the two codes.
 export function cleanEdge(value) {
   return edgeFromCf(value && typeof value === "object" ? value : null);
-}
-
-export function edgeKnown(edge) {
-  return Boolean(edge.colo || edge.country || edge.continent);
-}
-
-// An event's detail with the edge codes added, when Cloudflare gave any.
-export function withEdge(detail, edge) {
-  return edgeKnown(edge) ? { ...detail, edge } : detail;
 }
 
 export function workerKind(grant, env = {}) {
@@ -131,6 +127,7 @@ function hasTable(c, name) {
 export async function edgeWorker(c, grant) {
   c.edgePending = [];
   if (!c.isPrimary || c.namespace !== "main") return null;
+  if (!c.edgeCountingSince) c.edgeCountingSince = Date.now() / 1000;
   try {
     if (!c.edgeTagKey) {
       const salt = c._one("SELECT value FROM meta WHERE key='access_hash_salt'")?.value || "";
@@ -151,6 +148,15 @@ export async function edgeWorker(c, grant) {
 // logged with any value.
 function failed(c) {
   c.edgeFailures = (c.edgeFailures || 0) + 1;
+}
+
+// What an admin's audit read shows about the map's writes in this coordinator instance.
+export function edgeStatus(c) {
+  return {
+    write_failures: c.edgeFailures || 0,
+    counted_since: c.edgeCountingSince ? iso(c.edgeCountingSince) : null,
+    note: "Map writes that failed in this coordinator instance since it started. A failure leaves that request off the map and changes nothing else.",
+  };
 }
 
 function quietly(c, write) {
@@ -177,15 +183,28 @@ function writeSeen(c, item) {
   );
 }
 
-// A worker that asked to be left off the map keeps no place: its claim row carries no data center, country
+// A worker that asked to be left off the map keeps no place: its claim row carries no data center
 // or continent and is marked not shown, so it counts in the totals and nowhere else.
 function writeClaim(c, item) {
   const hidden = item.who.hidden;
   c.ctx.storage.sql.exec(
-    "INSERT INTO edge_claims (ts, task_id, fencing_token, claim_class, model, colo, country, continent, worker_kind, worker_tag, shown) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)",
-    item.now, item.task_id, item.token, item.claim_class, hidden ? null : item.edge.colo, hidden ? null : item.edge.country, hidden ? null : item.edge.continent,
-    item.who.kind, item.who.tag, hidden ? 0 : 1
+    "INSERT INTO edge_claims (ts, task_id, fencing_token, claim_class, model, colo, continent, worker_kind, worker_tag, shown, together) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)",
+    item.now, item.task_id, item.token, item.claim_class, hidden ? null : item.edge.colo, hidden ? null : item.edge.continent,
+    item.who.kind, item.who.tag, hidden ? 0 : 1, togetherNow(c, item)
   );
+}
+
+// How many workers of the claimer's kind were at that data center in the PLACE_SPAN_SECONDS before this claim,
+// the claimer included, when that is at least MIN_WORKERS; else 0 (an indexed read of the last-seen rows of
+// that span). Workers left off the map never count, for anyone.
+function togetherNow(c, item) {
+  if (item.who.hidden || !item.edge.colo) return 0;
+  const others = c._one(
+    "SELECT COUNT(DISTINCT worker_tag) AS n FROM edge_presence WHERE last_ts >= ? AND colo = ? AND worker_kind = ? AND worker_tag != ?",
+    item.now - PLACE_SPAN_SECONDS, item.edge.colo, item.who.kind, item.who.tag
+  );
+  const together = Number(others?.n || 0) + 1;
+  return together >= MIN_WORKERS ? together : 0;
 }
 
 function record(c, item) {
@@ -292,79 +311,80 @@ export const REPLAY_CACHE_SECONDS = 30;
 const MAX_AGGREGATE_ROWS = 20000; // claims one aggregate reads at most, whatever the traffic
 
 const emptyAggregate = (name, seconds, now) => ({
-  rows: 0, placeOf: () => ({ place: "unknown", level: "unknown" }),
+  rows: 0,
   view: {
     service: "Tessera", window: name, window_seconds: seconds, as_of: Math.round(now * 1000) / 1000,
     min_workers: MIN_WORKERS, places: [], recent: [], totals: { claims: 0, workers: 0, places: 0, continents: 0, by_class: {} },
-    shows: "The Cloudflare data center each worker's connection came through, by its airport code, or its continent when fewer than two workers of the same kind connected through that data center in the window; whether each Task claimed was a nonprofit's, a shared one, a check or a worker's own; the model the worker reported; whether the worker is a volunteer's AI or a dedicated worker run by ta-amps; counts of claims and of distinct workers. A worker that set show_on_map to false is counted in the totals and appears nowhere else.",
-    never_shows: "IP addresses, cities, coordinates, network names, user agents, worker names, ids, keys, Task ids or what a Task says.",
+    shows: "The Cloudflare data center each claim came through, by its airport code, only when another worker of the same kind had come through it in the 15 minutes before the claim, and otherwise its continent; whether each Task claimed was a nonprofit's, a shared one, a check or a worker's own; the model the worker reported; whether the worker is a volunteer's AI or a dedicated worker run by ta-amps; counts of claims and of distinct workers. A worker that set show_on_map to false is counted in the totals and appears nowhere else.",
+    never_shows: "Countries, IP addresses, cities, coordinates, network names, user agents, worker names, ids, keys, Task ids or what a Task says.",
   },
 });
 
-// The heavy part: one scan of the window's claims and last-seen rows into places and totals. It also returns
-// how a claim is placed (a data center only once two workers of its kind came through it).
+// The heavy part: one scan of the window's claims and last-seen rows into places and totals. Each claim counts
+// where it was placed when it was made (placeOfClaim). A data center appears only once a claim was placed there
+// in the window, and its workers are the most of each kind that were there together when one was (so never a
+// worker who was there alone). Every other claim and its worker count under the continent, and so does a worker
+// seen in the window with no claim of its own.
+export function placeOfClaim(r) {
+  if (r.colo && r.together >= MIN_WORKERS) return { place: r.colo, level: "colo" };
+  return continentOf(r);
+}
+
+function continentOf(r) {
+  return CONTINENT_SET.has(r.continent) ? { place: r.continent, level: "continent" } : { place: "unknown", level: "unknown" };
+}
+
 function loadAggregate(c, name, { allowed, banned, now }) {
   const seconds = WINDOWS[name];
   const out = emptyAggregate(name, seconds, now);
   if (!hasTable(c, "edge_claims") || !hasTable(c, "edge_presence")) return out;
   const since = now - seconds;
-  const claims = c._all("SELECT ts, claim_class, model, colo, continent, worker_kind, worker_tag, shown FROM edge_claims WHERE ts >= ? ORDER BY ts DESC, seq DESC LIMIT ?", since, MAX_AGGREGATE_ROWS);
+  const claims = c._all("SELECT ts, claim_class, model, colo, continent, worker_kind, worker_tag, shown, together FROM edge_claims WHERE ts >= ? ORDER BY ts DESC, seq DESC LIMIT ?", since, MAX_AGGREGATE_ROWS);
   const shownClaims = claims.filter((r) => r.shown);
   const seen = c._all("SELECT worker_tag, colo, continent, worker_kind FROM edge_presence WHERE last_ts >= ? LIMIT ?", since, MAX_ROWS)
     .map((r) => ({ ...r, colo: r.colo || null, continent: r.continent || null }));
-  const sightings = [...seen, ...shownClaims];
-  const atColo = new Map();
-  for (const r of sightings) {
-    if (!r.colo) continue;
-    const key = `${r.colo}|${r.worker_kind}`;
-    if (!atColo.has(key)) atColo.set(key, new Set());
-    atColo.get(key).add(r.worker_tag);
-  }
-  const placeOf = (r) => {
-    if (r.colo && (atColo.get(`${r.colo}|${r.worker_kind}`)?.size || 0) >= MIN_WORKERS) return { place: r.colo, level: "colo" };
-    if (CONTINENT_SET.has(r.continent)) return { place: r.continent, level: "continent" };
-    return { place: "unknown", level: "unknown" };
-  };
   const places = new Map();
-  const at = (r) => {
-    const where = placeOf(r);
+  const at = (where) => {
     const key = `${where.level}|${where.place}`;
-    if (!places.has(key)) places.set(key, { ...where, continents: {}, tags: new Set(), claims: 0, last: 0, by_class: {}, by_model: {}, by_worker: {} });
+    if (!places.has(key)) places.set(key, { ...where, continents: {}, tags: new Set(), together: {}, claims: 0, last: 0, by_class: {}, by_model: {}, by_worker: {} });
     return places.get(key);
   };
   // Every worker connected in the window counts in the totals, hidden ones included; only shown ones are placed.
   const everyone = new Set(claims.map((r) => r.worker_tag));
-  for (const r of sightings) {
-    const p = at(r);
-    p.tags.add(r.worker_tag);
+  const claimers = new Set(shownClaims.map((r) => r.worker_tag));
+  for (const r of seen) {
     everyone.add(r.worker_tag);
-    if (r.continent) bump(p.continents, r.continent);
+    if (!claimers.has(r.worker_tag)) at(continentOf(r)).tags.add(r.worker_tag);
   }
   for (const r of shownClaims) {
-    const p = at(r);
+    const where = placeOfClaim(r);
+    const p = at(where);
     const model = modelView(r.model, allowed, banned);
+    if (where.level === "colo") p.together[r.worker_kind] = Math.max(p.together[r.worker_kind] || 0, r.together);
+    else p.tags.add(r.worker_tag);
+    if (r.continent) bump(p.continents, r.continent);
     p.claims++;
     p.last = Math.max(p.last, r.ts);
     bump(p.by_class, r.claim_class);
     bump(p.by_model, model.model || model.status);
     bump(p.by_worker, r.worker_kind);
   }
-  const continentOf = (p) => (p.level === "continent" ? p.place : Object.entries(p.continents).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0] || null);
+  const workersAt = (p) => (p.level === "colo" ? Object.values(p.together).reduce((a, b) => a + b, 0) : p.tags.size);
+  const mainContinent = (p) => (p.level === "continent" ? p.place : Object.entries(p.continents).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0] || null);
   out.view.places = [...places.values()]
-    .map((p) => ({ place: p.place, level: p.level, continent: continentOf(p), workers: p.tags.size, claims: p.claims, last_claim_at: p.last ? iso(p.last) : null, by_class: p.by_class, by_model: p.by_model, by_worker: p.by_worker }))
+    .map((p) => ({ place: p.place, level: p.level, continent: mainContinent(p), workers: workersAt(p), claims: p.claims, last_claim_at: p.last ? iso(p.last) : null, by_class: p.by_class, by_model: p.by_model, by_worker: p.by_worker }))
     .sort((a, b) => b.claims - a.claims || a.level.localeCompare(b.level) || a.place.localeCompare(b.place));
   const byClass = {};
   for (const r of claims) bump(byClass, r.claim_class);
   const continents = new Set(out.view.places.map((p) => p.continent).filter(Boolean));
   out.view.totals = { claims: claims.length, workers: everyone.size, places: out.view.places.length, continents: continents.size, by_class: byClass };
   out.rows = claims.length + seen.length;
-  out.placeOf = placeOf;
   return out;
 }
 
 // One claim as the view shows it.
-function claimRow(r, placeOf, allowed, banned) {
-  const where = placeOf(r);
+function claimRow(r, allowed, banned) {
+  const where = placeOfClaim(r);
   const model = modelView(r.model, allowed, banned);
   return { at: iso(r.ts), class: r.claim_class, model: model.model, model_status: model.status, place: where.place, level: where.level,
     continent: where.level === "continent" ? where.place : r.continent || null,
@@ -373,16 +393,16 @@ function claimRow(r, placeOf, allowed, banned) {
 
 // The light parts: the last claims of the window, and the last hour's, oldest first. At most FEED_SIZE and
 // REPLAY_ROWS rows are read, whatever the traffic.
-function lastClaims(c, placeOf, { allowed, banned }, since) {
+function lastClaims(c, { allowed, banned }, since) {
   if (!hasTable(c, "edge_claims")) return [];
-  return c._all("SELECT ts, claim_class, model, colo, continent, worker_kind FROM edge_claims WHERE ts >= ? AND shown = 1 ORDER BY ts DESC, seq DESC LIMIT ?", since, FEED_SIZE)
-    .map((r) => claimRow(r, placeOf, allowed, banned));
+  return c._all("SELECT ts, claim_class, model, colo, continent, worker_kind, together FROM edge_claims WHERE ts >= ? AND shown = 1 ORDER BY ts DESC, seq DESC LIMIT ?", since, FEED_SIZE)
+    .map((r) => claimRow(r, allowed, banned));
 }
 
-function replayClaims(c, placeOf, { allowed, banned }, now) {
+function replayClaims(c, { allowed, banned }, now) {
   if (!hasTable(c, "edge_claims")) return [];
-  return c._all("SELECT ts, claim_class, model, colo, continent, worker_kind FROM edge_claims WHERE ts >= ? AND shown = 1 ORDER BY ts DESC, seq DESC LIMIT ?", now - REPLAY_SECONDS, REPLAY_ROWS)
-    .reverse().map((r) => claimRow(r, placeOf, allowed, banned));
+  return c._all("SELECT ts, claim_class, model, colo, continent, worker_kind, together FROM edge_claims WHERE ts >= ? AND shown = 1 ORDER BY ts DESC, seq DESC LIMIT ?", now - REPLAY_SECONDS, REPLAY_ROWS)
+    .reverse().map((r) => claimRow(r, allowed, banned));
 }
 
 // The public view. It reads and never writes (a GET changes nothing). `memo` (a Map the coordinator keeps) and
@@ -400,8 +420,8 @@ export function activityMap(c, windowName, { allowed = new Set(), banned = () =>
   };
   const agg = kept(`aggregate|${name}`, AGGREGATE_SECONDS[name], () => loadAggregate(c, name, { ...ctx, now }), (a) => a.rows > 0);
   const view = { ...agg.view };
-  view.recent = kept(`recent|${name}`, RECENT_SECONDS, () => lastClaims(c, agg.placeOf, ctx, now - WINDOWS[name]), (rows) => rows.length > 0);
-  if (replay) view.replay = { from: iso(now - REPLAY_SECONDS), to: iso(now), claims: kept("replay", REPLAY_CACHE_SECONDS, () => replayClaims(c, agg.placeOf, ctx, now), (rows) => rows.length > 0) };
+  view.recent = kept(`recent|${name}`, RECENT_SECONDS, () => lastClaims(c, ctx, now - WINDOWS[name]), (rows) => rows.length > 0);
+  if (replay) view.replay = { from: iso(now - REPLAY_SECONDS), to: iso(now), claims: kept("replay", REPLAY_CACHE_SECONDS, () => replayClaims(c, ctx, now), (rows) => rows.length > 0) };
   return view;
 }
 
@@ -455,7 +475,9 @@ export async function publicActivityRoute(request, { path, method, namespace, en
   if (replayParam !== null && replayParam !== "" && replayParam !== "0" && replayParam !== "1") return problem(400, "invalid_request", "replay must be 1 to add the last hour's claims, oldest first", {}, cors);
   const entry = await cachedView(windowName, replayParam === "1", primary);
   const age = Math.max(0, Math.floor((Date.now() - entry.at) / 1000));
-  // Age says how long ago the view was read, so a page can count each claim's "seconds ago" on.
-  const headers = { "content-type": "application/json", "cache-control": `public, max-age=${CACHE_SECONDS}`, age: String(age), ...cors };
+  // Age says how long ago the view was read, so a page can count each claim's "seconds ago" on. max-age counts
+  // from that age, so each client keeps its copy CACHE_SECONDS from when it got it: a page or agent that polls
+  // faster is answered from its own cache and makes no Worker request.
+  const headers = { "content-type": "application/json", "cache-control": `public, max-age=${CACHE_SECONDS + age}`, age: String(age), ...cors };
   return withSecurity(new Response(entry.body, { status: 200, headers }), { noStore: false });
 }

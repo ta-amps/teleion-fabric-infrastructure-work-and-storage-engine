@@ -31,6 +31,10 @@ export class FixtureCoordinator extends TesseraCoordinator {
   testFailMapDdl(on) { this.failMapDdl = on; }
   testBreakMap() { this.ctx.storage.sql.exec("DROP TABLE IF EXISTS edge_claims"); this.ctx.storage.sql.exec("DROP TABLE IF EXISTS edge_presence"); }
   testEdgeFailures() { return this.edgeFailures || 0; }
+  testSeenEarlier(tag, colo, continent, kind, ts, task) {
+    this.ctx.storage.sql.exec("INSERT INTO edge_presence (worker_tag, colo, continent, worker_kind, last_ts) VALUES (?, ?, ?, ?, ?) ON CONFLICT (worker_tag, colo, continent, worker_kind) DO UPDATE SET last_ts = excluded.last_ts", tag, colo, continent, kind, ts);
+    this.ctx.storage.sql.exec("INSERT INTO edge_claims (ts, task_id, fencing_token, claim_class, model, colo, continent, worker_kind, worker_tag, shown, together) VALUES (?, ?, 1, 'shared', NULL, ?, ?, ?, ?, 1, 0)", ts, task, colo, continent, kind, tag);
+  }
   testRowsStart() { this.rowLog = []; }
   testRowsStop() { const out = (this.rowLog || []).map(([query, cursor]) => [query, cursor.rowsWritten]); this.rowLog = null; return out; }
   // Test-only: count the Worker's reads of the aggregated view, and show the projection's rows.
@@ -128,7 +132,7 @@ async function waitForRoomInThisMinute(seconds) {
   if (left < seconds) await new Promise((resolve) => setTimeout(resolve, (left + 0.2) * 1000));
 }
 
-test("a worker's place comes from request.cf, never from the client", async () => {
+test("a worker's place comes from request.cf, never from the client, and only the map's own rows keep it", async () => {
   const { task, key, claim, request, events, primary, map } = await setup();
   await task("research-1");
   const ana = await key("example-volunteer-ana", "volunteer-ana");
@@ -140,17 +144,21 @@ test("a worker's place comes from request.cf, never from the client", async () =
   }, { "cf-ipcountry": "AU", "x-colo": "SYD", "cf-ray": "0000000000000000-SYD", "x-forwarded-for": "203.0.113.9" });
   const beat = await request("/v1/tasks/heartbeat", { body: { task_id: lease.task_id, fencing_token: lease.fencing_token, edge: { colo: "SYD" } }, token: ana.key, cf: EWR, headers: { "cf-ipcountry": "AU" } });
   assert.equal(beat.status, 200, JSON.stringify(beat.data));
+  // The event log, which is never pruned, keeps no place: the claim's detail is as it always was and the
+  // heartbeat has none. Only the map's rows (25 hours) keep the data center and continent, and no country.
   const log = await events();
   const claimed = log.find((e) => e.type === "claimed" && e.task_id === "research-1");
-  assert.deepEqual(claimed.detail, { attempt: 1, edge: { colo: "FRA", country: "DE", continent: "EU" } });
+  assert.deepEqual(claimed.detail, { attempt: 1 });
   const heartbeat = log.find((e) => e.type === "heartbeat" && e.task_id === "research-1");
-  assert.deepEqual(heartbeat.detail, { edge: { colo: "EWR", country: "US", continent: "NA" } });
+  assert.ok(heartbeat, "the heartbeat is in the log");
+  assert.ok(log.every((e) => !e.detail || !("edge" in e.detail)), "no event detail keeps a place");
   const rows = await primary.testEdgeRows();
   assert.equal(rows.claims.length, 1);
-  assert.deepEqual([rows.claims[0].colo, rows.claims[0].country, rows.claims[0].continent], ["FRA", "DE", "EU"]);
+  assert.deepEqual([rows.claims[0].colo, rows.claims[0].continent], ["FRA", "EU"]);
+  assert.ok(!("country" in rows.claims[0]) && rows.presence.every((r) => !("country" in r)));
   assert.deepEqual(rows.presence.map((r) => r.colo).sort(), ["EWR", "FRA"]);
   const stored = JSON.stringify({ log, rows });
-  for (const never of ["SYD", "AU", "OC", "Frankfurt", "Newark", "Austin", "50.11", "8.68", "-74.17", "60311", "07102", "Hesse", "Example Net", "64500", "203.0.113.9", "192.0.2.80", "forged"]) {
+  for (const never of ["SYD", "AU", "OC", "DE", "US", "Frankfurt", "Newark", "Austin", "50.11", "8.68", "-74.17", "60311", "07102", "Hesse", "Example Net", "64500", "203.0.113.9", "192.0.2.80", "forged"]) {
     assert.ok(!stored.includes(`"${never}`) && !stored.includes(never + '"'), `recorded ${never}`);
   }
   // A request Cloudflare could not place is recorded without a place, and shown as unknown.
@@ -172,8 +180,8 @@ test("a claim made through the MCP door is placed by request.cf too, whatever it
     queue: "eq02", worker: "ana-mcp", access_meta: { edge: { colo: "SYD", country: "AU", continent: "OC" } }, edge: { colo: "SYD" }, colo: "SYD" } } }, token: ana.key, cf: FRA, headers: { accept: "application/json, text/event-stream" } });
   assert.equal(called.status, 200, called.text);
   const claimed = (await events()).find((e) => e.type === "claimed" && e.task_id === "research-1");
-  assert.deepEqual(claimed.detail, { attempt: 1, edge: { colo: "FRA", country: "DE", continent: "EU" } });
-  assert.deepEqual((await primary.testEdgeRows()).claims.map((r) => [r.colo, r.claim_class, r.worker_kind]), [["FRA", "shared", "volunteer"]]);
+  assert.deepEqual(claimed.detail, { attempt: 1 });
+  assert.deepEqual((await primary.testEdgeRows()).claims.map((r) => [r.colo, r.continent, r.claim_class, r.worker_kind]), [["FRA", "EU", "shared", "volunteer"]]);
   assert.deepEqual((await map("1h")).data.places.map((p) => [p.place, p.claims]), [["EU", 1]]);
 });
 
@@ -191,30 +199,37 @@ test("a data center shows only when two different workers of the same kind conne
   assert.ok(!JSON.stringify(view).includes("FRA"));
   view = await freshMap(map, "15m");
   assert.ok(!JSON.stringify(view).includes("FRA"));
-  // A second volunteer through FRA: now FRA is a place, with both volunteers' claims.
+  // A second volunteer through FRA: its claim is placed there, because Ana was seen there in the 15 minutes
+  // before it. Ana's own two claims came while she was alone, so they stay under Europe in every window.
   await claim(ben.key, FRA, "ben-1");
   // One dedicated worker through FRA too: alone of its kind there, so it counts under Europe.
   await claim(builders[0].key, FRA, "builder-1");
-  // Three dedicated workers through IAD, and an anonymous session alone through EWR.
+  // Three dedicated workers through IAD (the first claim there came alone), and an anonymous session alone
+  // through EWR.
   for (const [i, b] of builders.entries()) await claim(b.key, IAD, `dedicated-${i}`);
   const minted = await request("/v1/session/anonymous", { body: { agent_label: "example-helper" }, cf: EWR });
   assert.equal(minted.status, 201, JSON.stringify(minted.data));
   view = await freshMap(map, "6h");
   const places = Object.fromEntries(view.places.map((p) => [p.place, p]));
-  assert.deepEqual(Object.keys(places).sort(), ["EU", "FRA", "IAD"]);
-  assert.deepEqual([places.FRA.level, places.FRA.continent, places.FRA.workers, places.FRA.claims, places.FRA.by_worker], ["colo", "EU", 2, 3, { volunteer: 3 }]);
-  assert.deepEqual([places.EU.level, places.EU.workers, places.EU.claims, places.EU.by_worker], ["continent", 1, 1, { dedicated: 1 }]);
-  assert.deepEqual([places.IAD.level, places.IAD.continent, places.IAD.workers, places.IAD.claims, places.IAD.by_worker], ["colo", "NA", 3, 3, { dedicated: 3 }]);
-  assert.deepEqual(places.FRA.by_class, { shared: 3 });
+  assert.deepEqual(Object.keys(places).sort(), ["EU", "FRA", "IAD", "NA"]);
+  assert.deepEqual([places.FRA.level, places.FRA.continent, places.FRA.workers, places.FRA.claims, places.FRA.by_worker], ["colo", "EU", 2, 1, { volunteer: 1 }]);
+  assert.deepEqual([places.EU.level, places.EU.workers, places.EU.claims, places.EU.by_worker], ["continent", 2, 3, { volunteer: 2, dedicated: 1 }]);
+  assert.deepEqual([places.IAD.level, places.IAD.continent, places.IAD.workers, places.IAD.claims, places.IAD.by_worker], ["colo", "NA", 3, 2, { dedicated: 2 }]);
+  assert.deepEqual([places.NA.level, places.NA.workers, places.NA.claims, places.NA.by_worker], ["continent", 1, 1, { dedicated: 1 }]);
+  assert.deepEqual(places.FRA.by_class, { shared: 1 });
   assert.equal(view.min_workers, 2);
-  assert.deepEqual(view.totals, { claims: 7, workers: 5, places: 3, continents: 2, by_class: { shared: 7 } });
-  // The feed: newest first, each claim at its place, named by the kind of worker only.
+  assert.deepEqual(view.totals, { claims: 7, workers: 5, places: 4, continents: 2, by_class: { shared: 7 } });
+  // The feed: newest first, each claim where it was placed when it was made, named by the kind of worker only.
   assert.equal(view.recent.length, 7);
   assert.deepEqual(view.recent.slice(0, 4).map((r) => [r.place, r.worker, r.worker_label]), [
     ["IAD", "dedicated", "a dedicated worker run by ta-amps"], ["IAD", "dedicated", "a dedicated worker run by ta-amps"],
-    ["IAD", "dedicated", "a dedicated worker run by ta-amps"], ["EU", "dedicated", "a dedicated worker run by ta-amps"],
+    ["NA", "dedicated", "a dedicated worker run by ta-amps"], ["EU", "dedicated", "a dedicated worker run by ta-amps"],
   ]);
-  assert.deepEqual(view.recent.slice(4).map((r) => [r.place, r.level, r.worker_label]), [["FRA", "colo", "a volunteer's AI"], ["FRA", "colo", "a volunteer's AI"], ["FRA", "colo", "a volunteer's AI"]]);
+  assert.deepEqual(view.recent.slice(4).map((r) => [r.place, r.level, r.worker_label]), [["FRA", "colo", "a volunteer's AI"], ["EU", "continent", "a volunteer's AI"], ["EU", "continent", "a volunteer's AI"]]);
+  // Another window places every row the same way.
+  const quarter = (await map("15m&replay=1")).data;
+  assert.deepEqual(quarter.recent.map((r) => [r.at, r.place]), view.recent.map((r) => [r.at, r.place]));
+  assert.deepEqual(quarter.replay.claims.map((r) => [r.at, r.place]), [...view.recent].reverse().map((r) => [r.at, r.place]));
   assert.ok(view.recent.every((r) => r.class === "shared" && Math.abs(Date.parse(r.at) / 1000 - view.as_of) < 120));
   assert.ok(view.recent.every((r, i, all) => i === 0 || Date.parse(all[i - 1].at) >= Date.parse(r.at)));
   // An anonymous session claiming an open verb is a volunteer's AI; alone through EWR, it is North America.
@@ -223,7 +238,7 @@ test("a data center shows only when two different workers of the same kind conne
   assert.equal(helper.status, 200, JSON.stringify(helper.data));
   view = await freshMap(map, "24h");
   const na = view.places.find((p) => p.place === "NA");
-  assert.deepEqual([na.level, na.workers, na.claims, na.by_worker], ["continent", 1, 1, { volunteer: 1 }]);
+  assert.deepEqual([na.level, na.workers, na.claims, na.by_worker], ["continent", 2, 2, { dedicated: 1, volunteer: 1 }]);
   assert.deepEqual([view.recent[0].place, view.recent[0].worker_label], ["NA", "a volunteer's AI"]);
 });
 
@@ -269,19 +284,22 @@ test("a worker that registered with show_on_map false keeps no place and counts 
   const helper = await request("/ns/main/v1/tasks/claim", { body: { queue: "eq02", worker: "helper" }, token: minted.data.session_token, cf: EWR });
   assert.equal(helper.status, 200, JSON.stringify(helper.data));
   const view = (await map("1h")).data;
-  assert.deepEqual(view.places.map((p) => [p.place, p.level, p.workers, p.claims]), [["FRA", "colo", 2, 2]]);
+  // Ben's claim is placed at FRA (Ana was seen there just before); Ana's came first, alone, under Europe.
+  // The quiet worker never counts toward anyone's place.
+  assert.deepEqual(view.places.map((p) => [p.place, p.level, p.workers, p.claims]), [["FRA", "colo", 2, 1], ["EU", "continent", 1, 1]]);
   assert.equal(view.recent.length, 2);
-  assert.ok(view.recent.every((r) => r.place === "FRA"));
-  assert.deepEqual(view.totals, { claims: 4, workers: 4, places: 1, continents: 1, by_class: { shared: 4 } });
+  assert.deepEqual(view.recent.map((r) => r.place), ["FRA", "EU"]);
+  assert.deepEqual(view.totals, { claims: 4, workers: 4, places: 2, continents: 1, by_class: { shared: 4 } });
   assert.ok(!JSON.stringify(view).includes("EWR") && !JSON.stringify(view).includes('"NA"'));
   // Nothing about where they connected is kept: no place in the projection or the event log.
   const rows = await primary.testEdgeRows();
   const hidden = rows.claims.filter((r) => !r.shown);
   assert.equal(hidden.length, 2);
-  assert.ok(hidden.every((r) => r.colo === null && r.country === null && r.continent === null));
+  assert.ok(hidden.every((r) => r.colo === null && r.continent === null));
   assert.equal(rows.presence.length, 2, "only the two shown workers have a last-seen row");
   const log = (await events()).filter((e) => e.type === "claimed");
-  assert.deepEqual(log.map((e) => Boolean(e.detail.edge)), [true, true, false, false]);
+  assert.equal(log.length, 4);
+  assert.ok(log.every((e) => !("edge" in (e.detail || {}))), "no claim event keeps a place, shown or not");
   // Anything but true or false is refused, for an issued key and for a session.
   const bad = await request("/v1/admin/keys", { body: { label: "example-bad", queues: ["eq02"], scopes: ["store"], effect_classes: ["read"], show_on_map: "no" }, token: admin });
   assert.equal(bad.status, 400);
@@ -330,7 +348,7 @@ test("the map adds 3 rows written to a claim, 3 more for a new place, none to a 
 });
 
 test("a failed map write never changes a claim, heartbeat or submit", async () => {
-  const { task, key, claim, submit, request, primary, events } = await setup();
+  const { task, key, claim, submit, request, primary, events, admin } = await setup();
   const ana = await key("example-ops-ana", "example-ops");
   // The first claim after a deploy cannot make the map's tables: the claim still succeeds, off the map.
   await primary.testFailMapDdl(true);
@@ -357,6 +375,59 @@ test("a failed map write never changes a claim, heartbeat or submit", async () =
   assert.ok((await primary.testEdgeFailures()) >= before + 3, "the claim's, heartbeat's and submit's map writes each failed");
   const log = await events();
   for (const type of ["claimed", "heartbeat", "submitted"]) assert.ok(log.some((e) => e.type === type && e.task_id === "iso-3"), type);
+  // An admin's audit read says how many map writes failed; nobody else's does.
+  const audit = await request("/v1/admin/audit?limit=1", { token: admin });
+  assert.equal(audit.status, 200, JSON.stringify(audit.data));
+  assert.ok(audit.data.activity_map.write_failures >= before + 3);
+  assert.ok(audit.data.activity_map.counted_since);
+  const mine = await request("/v1/me/audit?limit=1", { token: ana.key });
+  assert.equal(mine.status, 200, JSON.stringify(mine.data));
+  assert.equal(mine.data.activity_map, undefined);
+});
+
+test("the map's write is the last write in the claim, heartbeat and submit transactions", async () => {
+  // If SQLite ever rolled a whole transaction back (disk full, I/O, memory), a write after the guarded map
+  // write would run outside it. So nothing that writes may follow the map's call before its transaction ends.
+  const { readFile } = await import("node:fs/promises");
+  const source = await readFile(new URL("../deploy/cloudflare/cloud_store.js", import.meta.url), "utf8");
+  const writes = /\.sql\.exec\(|this\._event\(|_moveCount\(|chargeClaimCaps\(|captureExecution\(|_childResolved\(|_dependencyResolved\(|this\._fail\(|\b(?:INSERT|UPDATE|DELETE|REPLACE)\b/;
+  for (const [call, end] of [["recordClaim(this", "flushEdge(this)"], ["recordPresence(this", "flushEdge(this)"], ["recordModel(this", "if (!receipt)"]]) {
+    const at = source.indexOf(call);
+    assert.ok(at > 0 && source.indexOf(call, at + 1) < 0, `${call} is called once`);
+    const tail = source.slice(at + call.length, source.indexOf(end, at));
+    assert.ok(tail.length > 0 && /\}\);\s*$/.test(tail), `${call}: its transaction ends before ${end}`);
+    assert.ok(!writes.test(tail), `${call} is followed by a write in its transaction`);
+  }
+});
+
+test("a worker alone at a data center is placed there in no window; one joined within 15 minutes is", async () => {
+  const { task, key, claim, map, primary } = await setup();
+  for (let i = 1; i <= 3; i++) await task(`research-${i}`);
+  const ana = await key("example-volunteer-ana", "volunteer-ana");
+  const ben = await key("example-volunteer-ben", "volunteer-ben");
+  const ops = await key("example-dedicated-1", "eranos-worker-builder");
+  await claim(ops.key, IAD, "ops-1"); // the first claim makes the tables
+  // Another volunteer passed through FRA 20 hours ago (made-up rows, as the claim path writes them).
+  await primary.testSeenEarlier("example-earlier-tag", "FRA", "EU", "volunteer", Date.now() / 1000 - 20 * 3600, "earlier-1");
+  // Ana is the only volunteer at FRA now: no window, feed, replay or last-claim time puts her there.
+  await claim(ana.key, FRA, "ana-1");
+  for (const window of ["15m", "1h", "24h&replay=1"]) {
+    const view = (await map(window)).data;
+    assert.ok(!view.places.some((p) => p.place === "FRA"), `${window}: a place at FRA`);
+    assert.ok(![...view.recent, ...(view.replay?.claims || [])].some((r) => r.place === "FRA"), `${window}: a row at FRA`);
+  }
+  // Ben comes through FRA while Ana is still there: his claim is placed at FRA, and hers stays under Europe,
+  // the same in every window.
+  await claim(ben.key, FRA, "ben-1");
+  const views = {};
+  for (const window of ["15m&replay=1", "6h", "24h"]) views[window] = (await map(window)).data;
+  for (const [window, view] of Object.entries(views)) {
+    const fra = view.places.find((p) => p.place === "FRA");
+    assert.deepEqual([fra.level, fra.workers, fra.claims], ["colo", 2, 1], window);
+    assert.equal(fra.last_claim_at, view.recent[0].at, window);
+    assert.deepEqual(view.recent.slice(0, 2).map((r) => [r.place, r.level]), [["FRA", "colo"], ["EU", "continent"]], window);
+  }
+  assert.deepEqual(views["15m&replay=1"].replay.claims.slice(-2).map((r) => r.place), ["EU", "FRA"]);
 });
 
 test("private Tasks stay off the map", async () => {
@@ -431,8 +502,10 @@ test("models come from execution reports and the catalog, never an agent app", a
   }
   await claim(ana.key, FRA, "still-working"); // in progress: nothing reported yet
   const answer = await map("1h");
+  // The first claim came before the second volunteer was there, so it counts under Europe.
   const fra = answer.data.places.find((p) => p.place === "FRA");
-  assert.deepEqual(fra.by_model, { "muse-spark-1.3": 2, other_model: 2, no_model: 1, not_reported: 2 });
+  assert.deepEqual(fra.by_model, { "muse-spark-1.3": 1, other_model: 2, no_model: 1, not_reported: 2 });
+  assert.deepEqual(answer.data.places.find((p) => p.place === "EU").by_model, { "muse-spark-1.3": 1 });
   assert.deepEqual(answer.data.recent.map((r) => [r.model, r.model_status]), [
     [null, "not_reported"], [null, "not_reported"], [null, "no_model"], [null, "other_model"], [null, "other_model"],
     ["muse-spark-1.3", "reported"], ["muse-spark-1.3", "reported"],
@@ -503,12 +576,14 @@ test("the route is GET only, cached, open to other sites and limited per address
   assert.equal(first.status, 200);
   assert.equal(first.headers.get("access-control-allow-origin"), "*");
   assert.match(first.headers.get("content-type"), /^application\/json/);
-  assert.equal(first.headers.get("cache-control"), "public, max-age=30");
+  assert.equal(first.headers.get("cache-control"), `public, max-age=${30 + Number(first.headers.get("age"))}`);
   assert.match(first.headers.get("access-control-expose-headers"), /\bAge\b/);
   assert.equal(first.headers.get("x-content-type-options"), "nosniff");
   const second = await map("1h", { headers: { "cf-connecting-ip": "198.51.100.1" } });
   assert.equal(second.text, first.text);
   assert.ok(Number(second.headers.get("age")) >= 0 && Number(second.headers.get("age")) <= 30);
+  // max-age counts from the view's age, so a client keeps its copy 30 s from when it got it.
+  assert.equal(second.headers.get("cache-control"), `public, max-age=${30 + Number(second.headers.get("age"))}`);
   assert.equal(await primary.testMapReads(), 1, "a second read within the cache time reaches the coordinator");
   const head = await map("1h", { method: "HEAD", headers: { "cf-connecting-ip": "198.51.100.1" } });
   assert.equal(head.status, 200);

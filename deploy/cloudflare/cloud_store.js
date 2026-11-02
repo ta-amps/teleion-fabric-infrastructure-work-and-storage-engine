@@ -1,5 +1,5 @@
 import { initExecutions, checkedReport, prepareExecution, validatePrepared, captureExecution, recallExecution, getExecution, listExecutions } from "./cloud_executions.js";
-import { NO_EDGE, activityMap, catalogModels, cleanEdge, edgeWorker, flushEdge, recordClaim, recordModel, recordPresence, showOnMapLabel, withEdge } from "./edge_activity.js";
+import { NO_EDGE, activityMap, catalogModels, cleanEdge, edgeStatus, edgeWorker, flushEdge, recordClaim, recordModel, recordPresence, showOnMapLabel } from "./edge_activity.js";
 import { displayTest } from "./display_mask.js";
 import { initAccess, principalMetadata, requestIdentity, mintAnonymous, mintRequester, seedDemo, ensureDemoSeeded, ensureRequesterSeeded, enforceAccess, chargeAccess, claimCaps, checkClaimCaps, chargeClaimCaps, audit, auditMode, countAccess, ownAudit, publicActivity, publicPrincipal, requesterVerbGovernance, CLOSED_TO_ANONYMOUS, filesRequests, openToAnonymous, usesOpenVerbs } from "./cloud_access.js";
 // TesseraCoordinator: single-writer SQLite Durable Object (`new_sqlite_classes`) implementing
@@ -1976,7 +1976,8 @@ export class TesseraCoordinator extends DurableObject {
     try {
       const grant = await this._grantFromSecret(secret);
       if (args.admin && !grant.is_admin) throw forbid("admin scope required");
-      return { ok: true, status: 200, data: ownAudit(this, grant, args) };
+      // An admin's read also says how many of the activity map's writes failed here (edge_activity.js).
+      return { ok: true, status: 200, data: args.admin ? { ...ownAudit(this, grant, args), activity_map: edgeStatus(this) } : ownAudit(this, grant, args) };
     } catch (e) { return this._errOut(e); }
   }
   async rpcCall(secret, action, args = {}) {
@@ -2470,8 +2471,9 @@ export class TesseraCoordinator extends DurableObject {
                 queue,
                 worker,
                 token,
-                detail: withEdge({ attempt }, edge),
+                detail: { attempt },
               });
+              // The map's write is this transaction's last write (failure isolation, edge_activity.js).
               recordClaim(this, who, edge, row, token, now, grant);
               lease = {
                 namespace: this.namespace,
@@ -2546,8 +2548,8 @@ export class TesseraCoordinator extends DurableObject {
               queue: task.queue,
               worker: row.worker,
               token,
-              detail: withEdge({}, edge),
             });
+            // The map's write is this transaction's last write (failure isolation, edge_activity.js).
             recordPresence(this, who, edge, task, now);
             lease = {
               namespace: this.namespace,
@@ -2685,7 +2687,6 @@ export class TesseraCoordinator extends DurableObject {
               JSON.stringify(grant.labels || {})
             );
             captureExecution(this,prepared,task,row,digest,now,grant.labels || {});
-            recordModel(this, taskId, token, report);
             this._event("submitted", now, {
               task_id: taskId,
               queue: task.queue,
@@ -2693,6 +2694,8 @@ export class TesseraCoordinator extends DurableObject {
               token,
               detail: { ok: okFlag, receipt_hash: digest, state_after: stateAfter },
             });
+            // The map's write is this transaction's last write (failure isolation, edge_activity.js).
+            recordModel(this, taskId, token, report);
             receipt = {
               task_id: taskId,
               fencing_token: token,

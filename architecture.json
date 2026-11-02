@@ -421,7 +421,8 @@
         "tests/test_board.py::test_cloudflare_pages_parity",
         "tests/test_phase4_atomicity_and_vectors.py::test_l26_receipt_vectors_python_and_cloudflare_edge_node_parity",
         "tests/workerd_agent_tool_listings.mjs",
-        "tests/workerd_activity_map.mjs"
+        "tests/workerd_activity_map.mjs",
+        "tests/threshold_window.test.mjs"
       ]
     },
     {

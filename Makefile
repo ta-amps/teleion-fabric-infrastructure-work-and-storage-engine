@@ -88,7 +88,7 @@ openapi-check: ## Generated access schema must match the HTTP route/model contra
 
 .PHONY: agent-start-check
 agent-start-check: ## Check public agent onboarding instructions and HTTP boundaries
-	node --test tests/agent_start.test.mjs tests/display_mask.test.mjs
+	node --test tests/agent_start.test.mjs tests/display_mask.test.mjs tests/threshold_window.test.mjs
 
 .PHONY: claim-admission-check
 claim-admission-check: ## Adaptive pacing, fair waiting, recovery and bounded overload
