@@ -507,6 +507,10 @@ const worker = {
     const repoUrl = env.REPO_URL || DEFAULT_REPO_URL;
     // Discovery needs no storage. Answer it before any Durable Object call, so pages, agent
     // instructions and MCP tool discovery stay up while the storage allowance is exhausted.
+    // People reach Fabric through its page on teleionlabs.com; agents keep /connect, /connect.json and /llms.txt here.
+    if (path === "/" && method === "GET" && (request.headers.get("accept") || "").includes("text/html")) {
+      return Response.redirect("https://teleionlabs.com/fabric/", 302);
+    }
     const discovery = discoveryResponse(path, method, env, publicUrl, repoUrl);
     if (discovery) return discovery;
     if (path === "/mcp" && method === "POST" && (await mcpNeedsNoStorage(request))) {
