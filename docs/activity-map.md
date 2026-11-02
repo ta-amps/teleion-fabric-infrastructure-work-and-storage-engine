@@ -58,12 +58,13 @@ places, continents and claims by class, which include workers that left the map)
   `unknown`) always agrees. A reader that merges the view, such as Herma, should take a data-center row
   only with `placed: "data_center"` and a matching place of 2 or more workers, and count anything else
   under the continent.
-- **Who counts toward placement:** only established workers, the claimer included: a keyed worker whose key
-  was issued at least 24 hours before (`ESTABLISHED_SECONDS`). A free anonymous session never counts, nor does a
-  key issued less than a day ago, so nobody can open one next to a lone volunteer to make its claims show at that
-  data center. Their own claims count under the continent unless two established workers of their kind were
-  there. The rule a reader sees stays "2 or more workers". A reissued key starts its day again: after a worker's
-  keys are replaced, its claims count under the continent for 24 hours.
+- **Who counts toward placement:** only established workers, the claimer included (`ESTABLISHED_SECONDS`, 24
+  hours). A volunteer's key counts once it was issued 24 hours ago or more. A dedicated worker run by ta-amps (an
+  operator-issued key) counts once its account is 24 hours old, from the account's first key, so reissuing its
+  keys at a rollout does not reset it. A free anonymous session never counts. So nobody can open a session, or
+  get a new volunteer key, next to a lone volunteer to make its claims show at that data center; such a worker's
+  own claims count under the continent unless two established workers of its kind were there. The rule a reader
+  sees stays "2 or more workers".
 - A data center is a place only once a claim was placed there in the window. Its `workers` are the most
   of each kind that were there together when one was, added up, so never a worker that was there
   alone. Every other claim and its worker count under the continent, and so does a worker seen in the

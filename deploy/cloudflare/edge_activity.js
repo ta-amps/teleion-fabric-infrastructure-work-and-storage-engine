@@ -38,10 +38,11 @@ export const CACHE_SECONDS = 30;
 // workers were there together, so every view places it the same way whichever window is read: a worker
 // alone at a data center is never shown there, not in a count, the feed, the replay or a last-claim time.
 export const PLACE_SPAN_SECONDS = 900;
-// Only an established worker counts toward placing a claim, the claimer's own included: a keyed worker whose
-// key was issued at least ESTABLISHED_SECONDS ago. A free anonymous session never counts, so nobody can open
-// one (or register a new key) next to a lone volunteer to make its claims show at that data center. The rule
-// a reader sees stays "2 or more workers".
+// Only an established worker counts toward placing a claim, the claimer's own included. A volunteer's key counts
+// once it was issued at least ESTABLISHED_SECONDS ago; a dedicated worker run by ta-amps (an operator-issued key)
+// once its account is that old, counted from the account's first key, so reissuing its keys at a rollout does not
+// reset it. A free anonymous session never counts, so nobody can open one (or register a new volunteer key) next
+// to a lone volunteer to make its claims show at that data center. The rule a reader sees stays "2 or more".
 export const ESTABLISHED_SECONDS = 86400;
 export const WORKER_LABELS = Object.freeze({ volunteer: "a volunteer's AI", dedicated: "a dedicated worker run by ta-amps" });
 export const NO_EDGE = Object.freeze({ colo: null, continent: null });
@@ -84,9 +85,25 @@ export function cleanEdge(value) {
   return edgeFromCf(value && typeof value === "object" ? value : null);
 }
 
-export function established(grant, now = Date.now() / 1000) {
-  const issued = Number(grant?.created_at);
-  return grant?.principal_kind !== "anonymous" && Number.isFinite(issued) && issued > 0 && issued <= now - ESTABLISHED_SECONDS;
+// `since` is when the worker's standing began: the key's issue time for a volunteer, the account's first key for a
+// dedicated worker (accountSince).
+export function established(grant, kind, since, now = Date.now() / 1000) {
+  if (grant?.principal_kind === "anonymous") return false;
+  const from = Number(kind === "dedicated" && since != null ? since : grant?.created_at);
+  return Number.isFinite(from) && from > 0 && from <= now - ESTABLISHED_SECONDS;
+}
+
+// When a dedicated worker's account got its first key (revoked keys included), read once per account in this
+// object instance; null for a volunteer or anonymous worker, or an account with no recorded key.
+function accountSince(c, grant, kind) {
+  const account = grant?.account_id;
+  if (kind !== "dedicated" || !account) return null;
+  const known = c.edgeAccountSince || (c.edgeAccountSince = new Map());
+  if (!known.has(account)) {
+    const row = c._one("SELECT MIN(k.created_at) AS first FROM keys k JOIN access_principals p ON p.key_id = k.key_id WHERE p.account_id = ?", account);
+    known.set(account, row?.first == null ? null : Number(row.first));
+  }
+  return known.get(account);
 }
 
 export function workerKind(grant, env = {}) {
@@ -145,7 +162,8 @@ export async function edgeWorker(c, grant) {
     }
     const mac = new Uint8Array(await crypto.subtle.sign("HMAC", c.edgeTagKey, enc.encode(String(grant.principal_id || grant.key_id))));
     const tag = Array.from(mac.slice(0, 12), (b) => b.toString(16).padStart(2, "0")).join("");
-    return { tag, kind: workerKind(grant, c.env), hidden: grant.labels?.show_on_map === false, established: established(grant) };
+    const kind = workerKind(grant, c.env);
+    return { tag, kind, hidden: grant.labels?.show_on_map === false, established: established(grant, kind, accountSince(c, grant, kind)) };
   } catch {
     failed(c);
     return null; // this request is left off the map

@@ -496,6 +496,32 @@ test("an anonymous session or a key issued under 24 hours ago never counts towar
   assert.deepEqual(view.places.find((p) => p.place === "FRA")?.workers, 2);
 });
 
+test("a dedicated worker counts again right after its keys are reissued; a volunteer's new key does not", async () => {
+  const { task, key, claim, map } = await setup();
+  // A dedicated account whose first key is two days old, and a second dedicated worker; then the first one's key is
+  // reissued (a key issued now on the same account), as the workers' rollouts do.
+  await key("example-builder-old", "eranos-worker-builder");
+  const reissued = await key("example-builder", "eranos-worker-builder", { young: true });
+  const planner = await key("example-planner", "eranos-worker-planner");
+  for (let i = 1; i <= 2; i++) await task(`d-${i}`);
+  await claim(planner.key, IAD, "planner-1");
+  await claim(reissued.key, IAD, "builder-1");
+  let view = (await map("15m")).data;
+  assertPlacement(view, "15m");
+  assert.deepEqual(view.recent.map((r) => [r.place, r.placed]), [["IAD", "data_center"], ["NA", "continent"]]);
+  // A volunteer account with an old key gets a new one: the new key does not count for 24 hours.
+  await key("example-volunteer-ana-old", "volunteer-ana");
+  const anaNew = await key("example-volunteer-ana", "volunteer-ana", { young: true });
+  const ben = await key("example-volunteer-ben", "volunteer-ben");
+  for (let i = 1; i <= 2; i++) await task(`v-${i}`);
+  await claim(ben.key, FRA, "ben-1");
+  await claim(anaNew.key, FRA, "ana-1");
+  view = (await map("1h")).data;
+  assertPlacement(view, "1h");
+  assert.deepEqual(view.recent.slice(0, 2).map((r) => [r.place, r.placed]), [["EU", "continent"], ["EU", "continent"]]);
+  assert.ok(!view.places.some((p) => p.place === "FRA"));
+});
+
 test("an admin empties the map's two tables before a rollback; nobody else can", async () => {
   const { task, key, claim, map, request, admin, primary } = await setup();
   const ana = await key("example-volunteer-ana", "volunteer-ana");
