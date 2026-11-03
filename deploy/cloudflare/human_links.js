@@ -23,10 +23,34 @@ const DDL = [
   `CREATE INDEX IF NOT EXISTS human_link_answer_idempotency_expiry ON human_link_answer_idempotency(expires_at)`,
 ];
 
+const EXPECTED_IDEM_COLS = ["principal_id", "idempotency_key", "request_sha256", "link_id", "expires_at"];
+
 function ensureHumanLinksSchema(c) {
   c._ensureDdl(DDL);
   if (!c._hasColumn("human_links", "owner_key_id")) {
     c.ctx.storage.sql.exec("ALTER TABLE human_links ADD COLUMN owner_key_id TEXT");
+  }
+  const idemCols = c._all("PRAGMA table_info(human_link_idempotency)").map(r => r.name);
+  if (idemCols.includes("response_json") || EXPECTED_IDEM_COLS.some(col => !idemCols.includes(col))) {
+    c.ctx.storage.transactionSync(() => {
+      c.ctx.storage.sql.exec("DROP TABLE IF EXISTS human_link_idempotency_new");
+      c.ctx.storage.sql.exec(
+        "CREATE TABLE human_link_idempotency_new (principal_id TEXT NOT NULL, idempotency_key TEXT NOT NULL, request_sha256 TEXT NOT NULL, link_id TEXT NOT NULL, expires_at REAL NOT NULL, PRIMARY KEY (principal_id, idempotency_key))",
+      );
+      if (EXPECTED_IDEM_COLS.every(col => idemCols.includes(col))) {
+        c.ctx.storage.sql.exec(
+          `INSERT INTO human_link_idempotency_new(principal_id, idempotency_key, request_sha256, link_id, expires_at)
+           SELECT i.principal_id, i.idempotency_key, i.request_sha256, i.link_id, MIN(i.expires_at, l.expires_at)
+           FROM human_link_idempotency i
+           JOIN human_links l ON l.id = i.link_id`,
+        );
+      }
+      c.ctx.storage.sql.exec("DROP TABLE human_link_idempotency");
+      c.ctx.storage.sql.exec("ALTER TABLE human_link_idempotency_new RENAME TO human_link_idempotency");
+      c.ctx.storage.sql.exec("CREATE INDEX IF NOT EXISTS human_link_idempotency_expiry ON human_link_idempotency(expires_at)");
+    });
+    c.schemaNames?.add("human_link_idempotency");
+    c.schemaNames?.add("human_link_idempotency_expiry");
   }
 }
 
@@ -145,15 +169,18 @@ async function issueLink(c, grant, args, meta, now) {
     ? await sha256Hex(new TextEncoder().encode(canonicalJson({ agent_note: note, kind, text, ttl_seconds: ttl })))
     : null;
   const idemSecret = cleanIdem ? idemSecretOf(c) : null;
+  let prior = null;
+  let priorTokenMatches = false;
   if (cleanIdem) {
-    const prior = c._one("SELECT * FROM human_link_idempotency WHERE principal_id=? AND idempotency_key=?", idemScope, cleanIdem);
+    prior = c._one("SELECT * FROM human_link_idempotency WHERE principal_id=? AND idempotency_key=?", idemScope, cleanIdem);
     if (prior) {
       const priorLink = c._one("SELECT * FROM human_links WHERE id=?", prior.link_id);
       if (prior.expires_at > now && priorLink && priorLink.expires_at > now) {
         if (prior.request_sha256 !== reqHash) throw fail(409, "idempotency_conflict", "this Idempotency-Key was already used with a different link request");
         if (effectiveState(priorLink, now) === "open") {
           const replayToken = await deriveIdemToken(idemSecret, idemScope, cleanIdem, reqHash, priorLink.id);
-          if ((await hashToken(replayToken)) === priorLink.token_hash) {
+          priorTokenMatches = (await hashToken(replayToken)) === priorLink.token_hash;
+          if (priorTokenMatches) {
             return { ok: true, status: 201, replayed: true, data: { id: priorLink.id, url: LINK_BASE + replayToken, expires_at: iso(priorLink.expires_at), replayed: true } };
           }
         }
@@ -168,13 +195,14 @@ async function issueLink(c, grant, args, meta, now) {
   let replayRow = null;
   c.ctx.storage.transactionSync(() => {
     if (cleanIdem) {
-      const prior = c._one("SELECT * FROM human_link_idempotency WHERE principal_id=? AND idempotency_key=?", idemScope, cleanIdem);
-      if (prior) {
-        const priorLink = c._one("SELECT * FROM human_links WHERE id=?", prior.link_id);
-        if (prior.expires_at > now && priorLink && priorLink.expires_at > now) {
-          if (prior.request_sha256 !== reqHash) throw fail(409, "idempotency_conflict", "this Idempotency-Key was already used with a different link request");
-          if (effectiveState(priorLink, now) === "open") {
-            replayRow = priorLink;
+      const txPrior = c._one("SELECT * FROM human_link_idempotency WHERE principal_id=? AND idempotency_key=?", idemScope, cleanIdem);
+      if (txPrior) {
+        const txPriorLink = c._one("SELECT * FROM human_links WHERE id=?", txPrior.link_id);
+        if (txPrior.expires_at > now && txPriorLink && txPriorLink.expires_at > now) {
+          if (txPrior.request_sha256 !== reqHash) throw fail(409, "idempotency_conflict", "this Idempotency-Key was already used with a different link request");
+          const hashVerified = txPrior.link_id === prior?.link_id ? priorTokenMatches : true;
+          if (hashVerified && effectiveState(txPriorLink, now) === "open") {
+            replayRow = txPriorLink;
             return;
           }
         }
@@ -204,7 +232,10 @@ async function issueLink(c, grant, args, meta, now) {
   });
   if (replayRow) {
     const replayToken = await deriveIdemToken(idemSecret, idemScope, cleanIdem, reqHash, replayRow.id);
-    return { ok: true, status: 201, replayed: true, data: { id: replayRow.id, url: LINK_BASE + replayToken, expires_at: iso(replayRow.expires_at), replayed: true } };
+    if ((await hashToken(replayToken)) === replayRow.token_hash) {
+      return { ok: true, status: 201, replayed: true, data: { id: replayRow.id, url: LINK_BASE + replayToken, expires_at: iso(replayRow.expires_at), replayed: true } };
+    }
+    return issueLink(c, grant, args, meta, now);
   }
   return { ok: true, status: 201, data: created };
 }

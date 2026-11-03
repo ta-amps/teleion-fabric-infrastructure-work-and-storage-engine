@@ -28,6 +28,25 @@ export class FixtureCoordinator extends TesseraCoordinator {
   testAge(id, seconds) { this.ctx.storage.sql.exec("UPDATE human_links SET expires_at = expires_at - ? WHERE id=?", seconds, id); }
   testRows() { return this._all("SELECT * FROM human_links"); }
   testIdemRows() { return this._tableExists("human_link_idempotency") ? this._all("SELECT * FROM human_link_idempotency") : []; }
+  testIdemCols() { return this._all("PRAGMA table_info(human_link_idempotency)").map((r) => r.name); }
+  testSeedLegacyIdem({ principalId, idemKey, reqHash, linkId, randomTokenHash, rawToken, text, ttlSeconds }) {
+    this._ensureSchema();
+    const now = Date.now() / 1000;
+    const expires = now + ttlSeconds;
+    this.ctx.storage.sql.exec("DROP TABLE IF EXISTS human_link_idempotency");
+    this.ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS human_links (id TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE, owner TEXT NOT NULL, owner_key_id TEXT, namespace TEXT NOT NULL, kind TEXT NOT NULL, text TEXT NOT NULL, agent_label TEXT NOT NULL, agent_note TEXT, state TEXT NOT NULL, value TEXT, created_at REAL NOT NULL, expires_at REAL NOT NULL, answered_at REAL)");
+    this.ctx.storage.sql.exec("CREATE TABLE human_link_idempotency (principal_id TEXT NOT NULL, idempotency_key TEXT NOT NULL, request_sha256 TEXT NOT NULL, link_id TEXT NOT NULL, response_json TEXT NOT NULL, expires_at REAL NOT NULL, PRIMARY KEY (principal_id, idempotency_key))");
+    this.schemaNames?.add("human_links");
+    this.schemaNames?.add("human_link_idempotency");
+    this.ctx.storage.sql.exec(
+      "INSERT INTO human_links(id,token_hash,owner,owner_key_id,namespace,kind,text,agent_label,agent_note,state,created_at,expires_at) VALUES (?,?,?,?,?,'ask',?,'legacy-bot',NULL,'open',?,?)",
+      linkId, randomTokenHash, principalId, principalId, "demo." + principalId, text, now, expires,
+    );
+    this.ctx.storage.sql.exec(
+      "INSERT INTO human_link_idempotency(principal_id,idempotency_key,request_sha256,link_id,response_json,expires_at) VALUES (?,?,?,?,?,?)",
+      principalId, idemKey, reqHash, linkId, JSON.stringify({ id: linkId, url: "https://teleionlabs.com/l/" + rawToken, expires_at: new Date(expires * 1000).toISOString() }), expires + 7 * 86400,
+    );
+  }
   testAnswerIdemRows() { return this._tableExists("human_link_answer_idempotency") ? this._all("SELECT * FROM human_link_answer_idempotency") : []; }
   testMetaRows() { return this._all("SELECT * FROM meta"); }
   testEvents() { return this._all("SELECT * FROM access_events"); }
@@ -551,4 +570,70 @@ test("open free window through 2026-12-31 allows zero-auth agent work & human li
   assert.equal((await t.call("/v1/admin/keys")).status, 401);
   assert.equal((await t.call("/ns/ungranted-private/v1/counts")).status, 403);
   assert.equal((await t.json("POST", "/v1/stores/demo.artifacts/records/pii", { value: { email: "person@realdomain.org" }, expected_version: 0 })).status, 400);
+});
+
+test("upgrading from legacy human_link_idempotency (response_json + random token) drops response_json, mints a working link on legacy replay, and accepts new idempotency keys without 500", async () => {
+  const { createHash } = await import("node:crypto");
+  const t = await setup({ STRICT_AUTH_AND_QUOTAS: "true" });
+  const info = await t.sessionInfo("legacy-upgrade-bot");
+  const bearerToken = info.session_token;
+  const principalId = info.principal_id;
+
+  const legacyRawToken = "legacyRandomTokenValue0123456789abcdefghijk";
+  const legacyRandomHash = createHash("sha256").update(legacyRawToken).digest("hex");
+  const body = { kind: "ask", text: "Upgrade check?", ttl_seconds: 600 };
+  const canonical = JSON.stringify({ agent_note: null, kind: "ask", text: "Upgrade check?", ttl_seconds: 600 });
+  const reqHash = createHash("sha256").update(canonical).digest("hex");
+
+  await t.primary.testSeedLegacyIdem({
+    principalId,
+    idemKey: "legacy-idem-1",
+    reqHash,
+    linkId: "hl_legacy00000000000000000000000001",
+    randomTokenHash: legacyRandomHash,
+    rawToken: legacyRawToken,
+    text: body.text,
+    ttlSeconds: body.ttl_seconds,
+  });
+  assert.ok((await t.primary.testIdemCols()).includes("response_json"));
+
+  // Mismatched body against migrated legacy idempotency key still returns 409 idempotency_conflict.
+  const conflict = await t.issue(bearerToken, { ...body, text: "Changed?" }, { "idempotency-key": "legacy-idem-1" });
+  assert.equal(conflict.status, 409);
+
+  // Repeating the legacy keyed request replaces the random-token idempotency row and returns a working capability URL.
+  const upgradedRepeat = await t.issue(bearerToken, body, { "idempotency-key": "legacy-idem-1" });
+  assert.equal(upgradedRepeat.status, 201);
+  const upgradedLink = await upgradedRepeat.json();
+  const upgradedToken = tokenOf(upgradedLink.url);
+  const pubRead = await (await t.read(upgradedToken)).json();
+  assert.equal(pubRead.state, "open", "upgraded capability URL resolves to an open link, never ended");
+  assert.equal(pubRead.text, "Upgrade check?");
+
+  // Second repeat now replays the upgraded HMAC-derived link identically.
+  const secondRepeat = await t.issue(bearerToken, body, { "idempotency-key": "legacy-idem-1" });
+  assert.equal(secondRepeat.status, 201);
+  const secondData = await secondRepeat.json();
+  assert.equal(secondData.replayed, true);
+  assert.equal(secondData.id, upgradedLink.id);
+  assert.equal(secondData.url, upgradedLink.url);
+
+  // Brand-new Idempotency-Key insert succeeds with 201 (no NOT NULL response_json 500).
+  const brandNew = await t.issue(bearerToken, { kind: "confirm", text: "Fresh after migration?" }, { "idempotency-key": "fresh-idem-2" });
+  assert.equal(brandNew.status, 201);
+  const brandNewLink = await brandNew.json();
+  const brandNewToken = tokenOf(brandNewLink.url);
+  assert.equal((await (await t.read(brandNewToken)).json()).state, "open");
+
+  // Schema no longer has response_json, and zero raw tokens appear anywhere in SQLite.
+  const colsAfter = await t.primary.testIdemCols();
+  assert.ok(!colsAfter.includes("response_json"), `response_json must be dropped, got ${colsAfter}`);
+  const allDump = JSON.stringify({
+    links: await t.primary.testRows(),
+    idem: await t.primary.testIdemRows(),
+    meta: await t.primary.testMetaRows(),
+  });
+  for (const tok of [legacyRawToken, upgradedToken, brandNewToken]) {
+    assert.ok(!allDump.includes(tok), "no raw capability token remains in SQLite");
+  }
 });
