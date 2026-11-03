@@ -87,7 +87,7 @@ async function setup(extraBindings = {}) {
   const status = (token, id) => call(`/v1/human-links/${id}`, { headers: bearer(token) });
   const ns = await runtime.getDurableObjectNamespace("COORDINATOR");
   const primary = ns.get(ns.idFromName("primary"));
-  return { call, json, sessionInfo, session, bearer, issue, read, answer, status, primary, seen };
+  return { runtime, call, json, sessionInfo, session, bearer, issue, read, answer, status, primary, seen };
 }
 const tokenOf = (url) => url.slice("https://teleionlabs.com/l/".length);
 const open = async (t, body = { kind: "confirm", text: "Add 40 Tasks to the queue harbor-tools?" }) => {
@@ -200,14 +200,26 @@ test("expired, cancelled and unknown tokens read exactly the same, and can't be 
   assert.equal((await (await t.status(cancelled.agent, cancelled.link.id)).json()).state, "cancelled");
 });
 
-test("cancel: only an open link; a link can't outlive the session that requested it", async () => {
-  const t = await setup();
-  const { agent, link, token } = await open(t);
-  await t.answer(token, { answer: "confirm" });
-  assert.equal((await t.call(`/v1/human-links/${link.id}`, { method: "DELETE", headers: t.bearer(agent) })).status, 409);
-  const long = await t.issue(agent, { kind: "ask", text: "x", ttl_seconds: 86400 });
-  const hours = (Date.parse((await long.json()).expires_at) - Date.now()) / 3600000;
-  assert.ok(hours <= 1.01, `clamped to the one-hour session, got ${hours}`);
+test("cancel: only an open link; strict sessions clamp ttl to 1h while the open window honors 24h ttl_seconds", async () => {
+  const strict = await setup({ STRICT_AUTH_AND_QUOTAS: "true" });
+  const { agent, link, token } = await open(strict);
+  await strict.answer(token, { answer: "confirm" });
+  assert.equal((await strict.call(`/v1/human-links/${link.id}`, { method: "DELETE", headers: strict.bearer(agent) })).status, 409);
+  const strictLong = await strict.issue(agent, { kind: "ask", text: "x", ttl_seconds: 86400 });
+  const strictHours = (Date.parse((await strictLong.json()).expires_at) - Date.now()) / 3600000;
+  assert.ok(strictHours <= 1.01, `strict mode clamps to the one-hour session, got ${strictHours}`);
+
+  const openEnv = await setup();
+  const openTan = await openEnv.session("open-24h-tan");
+  const tanLong = await openEnv.issue(openTan, { kind: "ask", text: "24h tan link?", ttl_seconds: 86400 });
+  assert.equal(tanLong.status, 201);
+  const tanHours = (Date.parse((await tanLong.json()).expires_at) - Date.now()) / 3600000;
+  assert.ok(tanHours >= 23.9 && tanHours <= 24.05, `open-window tan_ link honors 24h ttl_seconds, got ${tanHours}`);
+
+  const keylessLong = await openEnv.json("POST", "/v1/human-links", { kind: "confirm", text: "24h keyless link?", ttl_seconds: 86400 }, { "x-agent-label": "open-24h-keyless" });
+  assert.equal(keylessLong.status, 201);
+  const keylessHours = (Date.parse((await keylessLong.json()).expires_at) - Date.now()) / 3600000;
+  assert.ok(keylessHours >= 23.9 && keylessHours <= 24.05, `open-window keyless link honors 24h ttl_seconds, got ${keylessHours}`);
 });
 
 test("only the issuer can read or cancel a link; everyone else gets 404", async () => {
@@ -635,5 +647,135 @@ test("upgrading from legacy human_link_idempotency (response_json + random token
   });
   for (const tok of [legacyRawToken, upgradedToken, brandNewToken]) {
     assert.ok(!allDump.includes(tok), "no raw capability token remains in SQLite");
+  }
+});
+
+test("openapi.json alias, quickstart HTTP examples, and strict public_commons isolation for open-window reads in main", async () => {
+  const { readFileSync } = await import("node:fs");
+  const t = await setup({ BOOTSTRAP_SECRET: "test-bootstrap-secret", LIBRARY_PROPOSALS_ENABLED: "true", LIBRARY_ANON_PROPOSALS_ENABLED: "false" });
+  for (const [binding, file] of [["BUCKETS_DB", "d1-buckets.sql"], ["FABRIC_DB", "d1-fabric.sql"]]) {
+    const db = await t.runtime.getD1Database(binding);
+    const schema = readFileSync(new URL(`../deploy/cloudflare/${file}`, import.meta.url), "utf8").replace(/--[^\n]*\n/g, "\n");
+    for (const statement of schema.split(";").map((s) => s.trim()).filter(Boolean)) await db.prepare(statement).run();
+  }
+
+  // 1. /openapi.json serves the exact OpenAPI contract as /v1/openapi.json.
+  const oaRoot = await t.call("/openapi.json");
+  const oaV1 = await t.call("/v1/openapi.json");
+  assert.equal(oaRoot.status, 200);
+  assert.equal(oaV1.status, 200);
+  const oaRootJson = await oaRoot.json();
+  assert.deepEqual(oaRootJson, await oaV1.json());
+  assert.ok(oaRootJson.paths["/v1/human-links"]);
+
+  // 2. Public prose, quickstart examples, and POST /v1/stores/{store}/records convenience route.
+  const llms = await (await t.call("/llms.txt")).text();
+  assert.ok(!llms.includes("You need a key from the operator."), "retired operator-key gate removed from llms.txt");
+  assert.ok(llms.includes("## HTTP Quickstart Examples"), "llms.txt includes HTTP Quickstart Examples");
+  assert.ok(llms.includes("Idempotency-Key"), "llms.txt documents Idempotency-Key header");
+  assert.ok(llms.includes("/openapi.json"), "llms.txt links /openapi.json");
+  const connectData = await (await t.call("/connect.json")).json();
+  assert.ok(connectData.http_examples?.claim?.json?.queue === "demo.ping");
+  assert.match(connectData.library.who_may_propose, /no key, credential or session/i);
+  const boardHtml = await (await t.call("/board")).text();
+  assert.ok(boardHtml.includes("Live Task Queues"));
+
+  const keylessPostRec = await t.json("POST", "/v1/stores/demo.artifacts/records", { key: "out-1", value: { ok: true }, expected_version: 0 }, { "x-agent-label": "quickstart-agent" });
+  assert.equal(keylessPostRec.status, 200);
+  assert.equal((await keylessPostRec.json()).version, 1);
+
+  // 3. Demo-namespace zero-auth & tan_ reads on /v1/feeds, /v1/feeds/{feed}, and /v1/reflexes/match succeed (200).
+  const tanToken = await t.session("demo-reader");
+  for (const hdrs of [{ "x-agent-label": "quickstart-agent" }, t.bearer(tanToken)]) {
+    assert.equal((await t.call("/v1/feeds", { headers: hdrs })).status, 200);
+    assert.equal((await t.call("/v1/feeds/demo.events", { headers: hdrs })).status, 200);
+    assert.equal((await t.call("/v1/reflexes/match?q=practice", { headers: hdrs })).status, 200);
+  }
+
+  // 4. Seed main namespace with public_commons AND private / surface_only / allowlist_surfaces / quarantined / restricted-cohort items.
+  const adminRes = await t.json("POST", "/v1/admin/keys", { label: "main-seeder", queues: ["*"], scopes: ["admin", "store"], effect_classes: ["read", "write-internal"] }, { "x-bootstrap-secret": "test-bootstrap-secret" });
+  assert.equal(adminRes.status, 201);
+  const adminKey = (await adminRes.json()).key;
+  const adminHdr = t.bearer(adminKey);
+
+  // Records in main
+  assert.equal((await t.json("POST", "/v1/stores/shared.docs/records/pub-guide", { value: { title: "Public guide", note: "safe commons kit" }, expected_version: 0, visibility_scope: "public_commons" }, adminHdr)).status, 200);
+  assert.equal((await t.json("POST", "/v1/stores/shared.docs/records/priv-secret", { value: { title: "Private secret", note: "safe commons kit secret-private-marker" }, expected_version: 0, visibility_scope: "private" }, adminHdr)).status, 200);
+  assert.equal((await t.json("POST", "/v1/stores/shared.docs/records/surf-secret", { value: { title: "Surface secret", note: "safe commons kit secret-surface-marker" }, expected_version: 0, producer_surface: "surface:eranos", visibility_scope: "surface_only" }, adminHdr)).status, 200);
+  assert.equal((await t.json("POST", "/v1/stores/shared.docs/records/allow-secret", { value: { title: "Allowlist secret", note: "safe commons kit secret-allow-marker" }, expected_version: 0, visibility_scope: "allowlist_surfaces", allowed_surfaces: ["surface:eranos"] }, adminHdr)).status, 200);
+  assert.equal((await t.json("POST", "/v1/stores/shared.docs/records/quar-secret", { value: { title: "Quarantined guide", note: "safe commons kit secret-quarantine-marker" }, expected_version: 0, visibility_scope: "public_commons", tags: ["status:quarantined"] }, adminHdr)).status, 200);
+  assert.equal((await t.json("POST", "/v1/stores/shared.docs/records/cohort-secret", { value: { title: "Cohort guide", note: "safe commons kit secret-cohort-marker" }, expected_version: 0, visibility_scope: "public_commons", target_cohorts: ["cohort:internal_only"] }, adminHdr)).status, 200);
+
+  // Buckets & bucket objects in main (including an object with public_commons row scope inside a private bucket!)
+  assert.equal((await t.json("POST", "/v1/buckets/define", { name: "pub.kits", description: "Public kits", visibility_scope: "public_commons" }, adminHdr)).status, 200);
+  assert.equal((await t.json("POST", "/v1/buckets/define", { name: "priv.kits", description: "Private kits", visibility_scope: "private" }, adminHdr)).status, 200);
+  assert.equal((await t.call("/v1/buckets/pub.kits/objects/kit-open.json?visibility_scope=public_commons", { method: "POST", headers: { ...adminHdr, "content-type": "application/json" }, body: JSON.stringify({ title: "Open bucket kit" }) })).status, 201);
+  assert.equal((await t.call("/v1/buckets/pub.kits/objects/kit-priv.json?visibility_scope=private", { method: "POST", headers: { ...adminHdr, "content-type": "application/json" }, body: JSON.stringify({ title: "Private object kit secret-obj-marker" }) })).status, 201);
+  assert.equal((await t.call("/v1/buckets/priv.kits/objects/kit-in-priv-bucket.json?visibility_scope=public_commons", { method: "POST", headers: { ...adminHdr, "content-type": "application/json" }, body: JSON.stringify({ title: "Object inside private bucket secret-bucket-marker" }) })).status, 201);
+
+  // Reflexes in main
+  assert.equal((await t.json("POST", "/v1/stores/tessera.reflexes/records/rx-pub", { value: { reflex_id: "rx-pub", pattern: "compile commons kit", verified_hits: 3, steps: [{ op: "verify" }] }, expected_version: 0, visibility_scope: "public_commons", tags: ["status:verified"] }, adminHdr)).status, 200);
+  assert.equal((await t.json("POST", "/v1/stores/tessera.reflexes/records/rx-priv", { value: { reflex_id: "rx-priv", pattern: "compile commons kit", verified_hits: 5, steps: [{ op: "secret-reflex-marker" }] }, expected_version: 0, visibility_scope: "private", tags: ["status:verified"] }, adminHdr)).status, 200);
+  assert.equal((await t.json("POST", "/v1/stores/tessera.reflexes/records/rx-surf", { value: { reflex_id: "rx-surf", pattern: "compile commons kit", verified_hits: 5, steps: [{ op: "surface-reflex-marker" }] }, expected_version: 0, producer_surface: "surface:eranos", visibility_scope: "surface_only", tags: ["status:verified"] }, adminHdr)).status, 200);
+  assert.equal((await t.json("POST", "/v1/stores/tessera.reflexes/records/rx-quar", { value: { reflex_id: "rx-quar", pattern: "compile commons kit", verified_hits: 5, steps: [{ op: "quar-reflex-marker" }] }, expected_version: 0, visibility_scope: "public_commons", tags: ["status:verified", "status:quarantined"] }, adminHdr)).status, 200);
+
+  // Feeds in main
+  assert.equal((await t.json("POST", "/v1/feeds/pub.feed", { kind: "delta", summary: "Public update", payload: { ok: true }, visibility_scope: "public_commons" }, adminHdr)).status, 201);
+  assert.equal((await t.json("POST", "/v1/feeds/priv.feed", { kind: "delta", summary: "secret-feed-marker", payload: { secret: "priv" }, visibility_scope: "private" }, adminHdr)).status, 201);
+  assert.equal((await t.json("POST", "/v1/feeds/surf.feed", { kind: "delta", summary: "surface-feed-marker", payload: { secret: "surf" }, producer_surface: "surface:eranos", visibility_scope: "surface_only" }, adminHdr)).status, 201);
+  assert.equal((await t.json("POST", "/v1/feeds/mixed.feed", { kind: "delta", summary: "Mixed public entry", payload: { step: 1 }, visibility_scope: "public_commons" }, adminHdr)).status, 201);
+  assert.equal((await t.json("POST", "/v1/feeds/mixed.feed", { kind: "delta", summary: "Mixed private secret-mixed-marker", payload: { step: 2 }, visibility_scope: "private" }, adminHdr)).status, 201);
+
+  // 5. Verify both zero-auth and tan_ callers in main (even spoofing X-Surface-Id, include_restricted, cohort) ONLY see public_commons!
+  for (const callerHdrs of [
+    { "x-namespace": "main", "x-surface-id": "eranos" },
+    { ...t.bearer(tanToken), "x-namespace": "main", "x-surface-id": "eranos" },
+  ]) {
+    const searchRes = await t.call("/v1/search?q=kit&include_restricted=true", { headers: callerHdrs });
+    assert.equal(searchRes.status, 200);
+    const searchText = await searchRes.text();
+    const scents = JSON.parse(searchText).scents;
+    assert.deepEqual(scents.map((s) => `${s.container}/${s.key}`).sort(), ["pub.kits/kit-open.json", "shared.docs/pub-guide", "tessera.reflexes/rx-pub"]);
+    for (const s of scents) {
+      assert.equal(s.visibility_scope, "public_commons");
+      assert.equal(s.owner_key_id, null, "internal owner_key_id is never exposed to public_only callers");
+    }
+    for (const forbidden of ["secret-private-marker", "secret-surface-marker", "secret-allow-marker", "secret-quarantine-marker", "secret-cohort-marker", "secret-obj-marker", "secret-bucket-marker"]) {
+      assert.ok(!searchText.includes(forbidden), `leaked ${forbidden}`);
+    }
+
+    // Probing restricted cohort explicitly still yields zero restricted items
+    const cohortProbe = await (await t.call("/v1/search?q=kit&cohort=internal_only&include_restricted=true", { headers: callerHdrs })).json();
+    assert.ok(!cohortProbe.scents.some((s) => s.key === "cohort-secret"));
+
+    // Direct record GET in main remains closed (403) to anonymous/open callers
+    assert.equal((await t.call("/v1/stores/shared.docs/records/priv-secret", { headers: callerHdrs })).status, 403);
+
+    // /v1/feeds lists ONLY feeds that have at least one public_commons entry, counting ONLY public_commons entries
+    const feedsRes = await t.call("/v1/feeds", { headers: callerHdrs });
+    assert.equal(feedsRes.status, 200);
+    const feedsList = (await feedsRes.json()).feeds;
+    assert.deepEqual(feedsList.map((f) => ({ feed: f.feed, entries: f.entries })), [
+      { feed: "mixed.feed", entries: 1 },
+      { feed: "pub.feed", entries: 1 },
+    ]);
+
+    // Polling priv.feed or surf.feed reveals zero entries and zero cursor advance
+    for (const hiddenFeed of ["priv.feed", "surf.feed"]) {
+      const pollHidden = await (await t.call(`/v1/feeds/${hiddenFeed}?include_restricted=true`, { headers: callerHdrs })).json();
+      assert.deepEqual(pollHidden.entries, []);
+      assert.equal(pollHidden.next_cursor, 0);
+    }
+
+    // Polling mixed.feed returns ONLY the public_commons entry with owner_key_id: null
+    const pollMixed = await (await t.call("/v1/feeds/mixed.feed?include_restricted=true", { headers: callerHdrs })).json();
+    assert.equal(pollMixed.entries.length, 1);
+    assert.equal(pollMixed.entries[0].summary, "Mixed public entry");
+    assert.equal(pollMixed.entries[0].owner_key_id, null);
+
+    // /v1/reflexes/match returns ONLY the public_commons verified reflex
+    const rxRes = await (await t.call("/v1/reflexes/match?q=compile+commons+kit&include_restricted=true", { headers: callerHdrs })).json();
+    assert.deepEqual(rxRes.hits.map((h) => h.reflex_id), ["rx-pub"]);
+    assert.equal(rxRes.hits[0].owner_key_id, null);
   }
 });

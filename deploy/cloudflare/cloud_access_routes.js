@@ -28,7 +28,7 @@ export function accessDescription(url, enabled, requesterEnabled, libraryOn = fa
     abuse_rate_limits: openWindow ? "none_through_2026_12_31" : "enforced", free_until: FREE_OPEN_UNTIL_ISO,
     mcp_url: `${url}/mcp`, transport: "streamable-http", streaming: "long-poll",
     anonymous: { enabled, endpoint: `${url}/v1/session/anonymous`, method: "POST", token_prefix: "tan_", quotas: DEMO_QUOTAS, labels: ANON_LABELS,
-      namespace: "Server assigned demo.<principal_id>; bearer routes automatically", persistence: "Session-private example records, removed after 24 hours", supported_clients: ["coding harness", "personal assistant", "HTTP client", "MCP client"], open_verbs: openVerbsDescription() },
+      namespace: "Server assigned demo.<principal_id>; bearer routes automatically", persistence: "Session-private example records, removed after 24 hours", supported_clients: ["coding harness", "personal assistant", "HTTP client", "MCP client"], open_verbs: openVerbsDescription(openWindow) },
     requester: { ...requesterDescription(requesterEnabled), endpoint: `${url}/v1/session/requester`, method: "POST", quotas: REQUESTER_QUOTAS },
     keyed: { endpoint: `${url}/v1/keys`, method: "POST", authorization: "Existing operator admin key required to issue an account-bound key; paste an issued key to connect", token_prefix: "tsk_", signup_mode: "admin_assisted", secret_shown_once: true },
     library: libraryDescription(url, libraryOn, libraryAnonymousOn, libraryBudgetValues),
@@ -37,6 +37,23 @@ export function accessDescription(url, enabled, requesterEnabled, libraryOn = fa
     demo_flow: openWindow
       ? ["search_nouns(query=practice)", "claim(queue=demo.ping,worker=your-agent)", "heartbeat", "put_record(store_name=demo.artifacts,expected_version=0)", "submit", "my_audit", "optional: open_anonymous_session for isolated session token"]
       : ["open_anonymous_session", "search_nouns(query=practice)", "claim(queue=demo.ping,worker=your-agent)", "heartbeat", "put_record(store_name=demo.artifacts,expected_version=0)", "submit", "my_audit"],
+    http_examples: {
+      claim: { method: "POST", url: `${url}/v1/tasks/claim`, headers: { "Content-Type": "application/json", "X-Agent-Label": "my-agent" }, json: { queue: "demo.ping", worker: "my-agent" } },
+      heartbeat: { method: "POST", url: `${url}/v1/tasks/heartbeat`, headers: { "Content-Type": "application/json", "X-Agent-Label": "my-agent" }, json: { task_id: "<task_id>", fencing_token: 1 } },
+      put_record: { method: "POST", url: `${url}/v1/stores/demo.artifacts/records/out-1`, alternative_url: `${url}/v1/stores/demo.artifacts/records`, headers: { "Content-Type": "application/json", "X-Agent-Label": "my-agent" }, json: { value: { ok: true }, expected_version: 0 }, alternative_json: { key: "out-1", value: { ok: true }, expected_version: 0 } },
+      submit: { method: "POST", url: `${url}/v1/tasks/submit`, headers: { "Content-Type": "application/json", "X-Agent-Label": "my-agent", "Idempotency-Key": "<task_id>:1" }, json: { task_id: "<task_id>", fencing_token: 1, ok: true, output: { artifact: "demo.artifacts/out-1" } } },
+      human_links: { method: "POST", url: `${url}/v1/human-links`, headers: { "Content-Type": "application/json", "Idempotency-Key": "optional-caller-key" }, json: { kind: "confirm", text: "Approve draft?", ttl_seconds: 900 } },
+      reads: [
+        `GET ${url}/v1/verbs`,
+        `GET ${url}/v1/me`,
+        `GET ${url}/v1/me/audit`,
+        `GET ${url}/v1/feeds`,
+        `GET ${url}/v1/search?q=practice`,
+        `GET ${url}/openapi.json`,
+      ],
+      shim_claim: { method: "POST", url: "https://shim.teleionlabs.com/q/claim" },
+      post_only_endpoints: ["/v1/tasks", "/v1/handshake", "/v1/tasks/claim", "/v1/tasks/heartbeat", "/v1/tasks/submit", "/v1/human-links", "/v1/session/anonymous"],
+    },
     audit_retention_seconds: 86400, example: { method: "POST", url: `${url}/v1/session/anonymous`, json: { agent_label: "my-assistant" } } };
 }
 
@@ -49,7 +66,7 @@ export function renderAccessHtml(url, openWindow = true) {
 
 // Storage-free access discovery; the Worker serves it before any Durable Object call.
 export function accessDiscoveryRoute(path, method, publicUrl, env, jsonResp, htmlResp) {
-  if (path === "/v1/openapi.json" && method === "GET") return jsonResp({ ...ACCESS_OPENAPI, paths: { ...ACCESS_OPENAPI.paths, ...HUMAN_LINK_OPENAPI_PATHS }, servers: [{ url: publicUrl }] });
+  if ((path === "/v1/openapi.json" || path === "/openapi.json") && method === "GET") return jsonResp({ ...ACCESS_OPENAPI, paths: { ...ACCESS_OPENAPI.paths, ...HUMAN_LINK_OPENAPI_PATHS }, servers: [{ url: publicUrl }] });
   if (path === "/connect.json" && method === "GET") return jsonResp(accessDescriptionFor(publicUrl, env));
   if ((path === "/connect" || path === "/") && method === "GET") return htmlResp(renderAccessHtml(publicUrl, isOpenFreeWindow(env)), 200, { "content-security-policy": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'" });
   return null;

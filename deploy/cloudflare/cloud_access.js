@@ -55,6 +55,7 @@ export const CLOSED_TO_ANONYMOUS = new Set(["eq03", "frontier.review", "frontier
 const OPEN_VERB_EFFECTS = new Set(["read", "write-internal"]);
 // Claim events would show other attempts on the verb, so they stay closed (same rule as Python).
 export const OPEN_VERB_ACTIONS = new Set(["claim", "heartbeat", "submit", "task", "results", "listVerbs", "me", "my_audit"]);
+export const OPEN_WINDOW_READ_ACTIONS = new Set(["feeds", "pollFeed", "matchReflex", "searchNouns"]);
 const OWN_WORK_ACTIONS = new Set(["task", "results"]);
 export function openToAnonymous(queue, tags, effectClass) {
   return Array.isArray(tags) && tags.includes(OPEN_VERB_TAG) && !CLOSED_TO_ANONYMOUS.has(queue) && OPEN_VERB_EFFECTS.has(effectClass);
@@ -63,9 +64,9 @@ export function usesOpenVerbs(grant, ns) {
   return grant?.principal_kind === "anonymous" && ns === OPEN_VERB_NAMESPACE && grant.namespace !== ns;
 }
 export function requesterDescription(enabled = false) {
-  return { enabled, namespace: "Server assigned org.<principal_id>; the key writes nouns only in its own org. stores there",
-    files: `${REQUEST_KIND} verbs in ${REQUEST_QUEUE} of the shared namespace (X-Namespace: main), readable by ${REQUEST_SURFACES.join(", ")}`,
-    reads: "its own nouns and the request verbs it filed, nothing else",
+  return { enabled, namespace: "Server assigned org.<principal_id>; the key writes Task Objects only in its own org. stores there",
+    files: `${REQUEST_KIND} Tasks in ${REQUEST_QUEUE} of the shared namespace (X-Namespace: main), readable by ${REQUEST_SURFACES.join(", ")}`,
+    reads: "its own Task Objects and the request Tasks it filed, nothing else",
     profile: "display_name, organization_type and causes only; no personal data",
     profile_rules: profileRules(),
     secret_shown_once: true };
@@ -81,12 +82,17 @@ export function profileRules() {
     length_unit: "Unicode code points, after normalization and removal",
     fields: PROFILE_FIELDS, max_causes: MAX_CAUSES };
 }
-export function openVerbsDescription() {
+export function openVerbsDescription(openWindow = false) {
+  const actions = openWindow
+    ? [...new Set([...OPEN_VERB_ACTIONS, ...OPEN_WINDOW_READ_ACTIONS])].sort()
+    : [...OPEN_VERB_ACTIONS].sort();
   return { namespace: OPEN_VERB_NAMESPACE, tag: OPEN_VERB_TAG,
-    how: "Send X-Namespace: main (or call /ns/main/v1/...) to list, claim, heartbeat and submit verbs whose producer tagged them open:anonymous.",
-    actions: [...OPEN_VERB_ACTIONS].sort(), closed_queues: [...CLOSED_TO_ANONYMOUS].sort(),
-    claimant_sees: "the verb's brief, its own submissions and the state of related tasks; never other outputs, attempts, nouns or principals",
-    review: "A submitted result stays quarantined with its verb. A different keyed worker or a person reviews it; anonymous sessions never approve or publish." };
+    how: openWindow
+      ? "Send X-Namespace: main (or call /ns/main/v1/...) to read public feeds, reflexes and Task Objects, and to list, claim, heartbeat and submit Tasks tagged open:anonymous."
+      : "Send X-Namespace: main (or call /ns/main/v1/...) to list, claim, heartbeat and submit Tasks whose producer tagged them open:anonymous.",
+    actions, closed_queues: [...CLOSED_TO_ANONYMOUS].sort(),
+    claimant_sees: "the Task's brief, its own submissions, public commons Task Objects and feeds (during the open window), and the state of related Tasks; never private/surface outputs, attempts or principals",
+    review: "A submitted result stays quarantined with its Task. A different keyed worker or a person reviews it; anonymous sessions never approve or publish." };
 }
 // Requester keys (same rule as src/tessera/_requesters.py): a self-serve sign-up mints a hashed
 // key that writes nouns only in its own org.<principal_id> namespace, files request verbs into the
@@ -407,9 +413,10 @@ export async function mintAnonymous(c, body, meta) {
   const namespace = `demo.${id}`;
   const labels = { ...ANON_LABELS, agent_label: safeLabel(body.agent_label), ...showOnMapLabel(body.show_on_map) };
   const scopes = ["store", "nouns:read", "verbs:claim", "verbs:submit", "cas:write", `namespace:${namespace}`];
-  const grant = { key_id: id, principal_id: id, session_id: id, principal_kind: "anonymous", account_id: null,
-    namespace, labels, scopes, expires_at: now + DEMO_QUOTAS.session_seconds };
   const enforceLimits = !isOpenFreeWindow(c.env, now * 1000, c);
+  const sessionDuration = enforceLimits ? DEMO_QUOTAS.session_seconds : DEMO_QUOTAS.retention_seconds;
+  const grant = { key_id: id, principal_id: id, session_id: id, principal_kind: "anonymous", account_id: null,
+    namespace, labels, scopes, expires_at: now + sessionDuration };
   c.ctx.storage.transactionSync(() => {
     const window = Math.floor(now / 3600);
     for (const [subject, ceiling, paced, hour] of [[`mint:${meta.ip_hash || "unknown"}`, DEMO_QUOTAS.sessions_per_ip_hour, false, meta.ip_window ?? window], ["mint:global", GLOBAL_SESSIONS_PER_HOUR, true, window]]) {
@@ -548,13 +555,16 @@ export function enforceAccess(c, grant, action, args) {
   for (const w of args.writes || []) checkGov(w);
   if (grant.principal_kind === "requester") return enforceRequester(c, grant, action, args, ns);
   if (grant.principal_kind !== "anonymous") return [args, null];
+  const openWindow = isOpenFreeWindow(c.env, Date.now(), c);
   if (openVerbs) {
-    if (!OPEN_VERB_ACTIONS.has(action)) throw error(403, "scope_denied", `outside its own namespace an anonymous session may only claim, heartbeat and submit open verbs (action '${action}' requires a contributor key; allowed open-verb actions: claim, heartbeat, listVerbs, me, my_audit, results, submit, task)`);
+    const allowedOpenAction = OPEN_VERB_ACTIONS.has(action) || (openWindow && OPEN_WINDOW_READ_ACTIONS.has(action));
+    if (!allowedOpenAction) throw error(403, "scope_denied", `outside its own namespace an anonymous session may only claim, heartbeat and submit open verbs (action '${action}' requires a contributor key; allowed open-verb actions: claim, heartbeat, listVerbs, me, my_audit, results, submit, task)`);
     if (args.queue && CLOSED_TO_ANONYMOUS.has(String(args.queue))) throw error(403, "scope_denied", "review, approval and publication verbs are closed to anonymous");
     if (OWN_WORK_ACTIONS.has(action) && !c._one("SELECT 1 AS own FROM leases WHERE namespace=? AND task_id=? AND key_id=? UNION ALL SELECT 1 AS own FROM results WHERE namespace=? AND task_id=? AND completed_by_key=? LIMIT 1", ns, String(args.task_id || ""), grant.key_id, ns, String(args.task_id || ""), grant.key_id))
       throw error(404, "not_found", "task does not exist");
   } else {
-    if (!ANON_ACTIONS.has(action)) throw error(403, "scope_denied", `anonymous sessions may only use isolated demo nouns and verbs (action '${action}' requires a contributor key; for shared open verbs send X-Namespace: main to /v1/verbs or /v1/tasks/claim)`);
+    const allowedAnonAction = ANON_ACTIONS.has(action) || (openWindow && OPEN_WINDOW_READ_ACTIONS.has(action));
+    if (!allowedAnonAction) throw error(403, "scope_denied", `anonymous sessions may only use isolated demo nouns and verbs (action '${action}' requires a contributor key; for shared open verbs send X-Namespace: main to /v1/verbs or /v1/tasks/claim)`);
     if (args.queue && !String(args.queue).startsWith("demo.")) throw error(403, "scope_denied", "anonymous sessions cannot access production verbs");
     if (args.store && !String(args.store).startsWith("demo.")) throw error(403, "scope_denied", "anonymous sessions cannot access production nouns");
   }

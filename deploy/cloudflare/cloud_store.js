@@ -1471,10 +1471,19 @@ export class TesseraCoordinator extends DurableObject {
   }
 
   _viewerCtx(grant, surfaceHeader) {
+    if (usesOpenVerbs(grant, this.namespace)) {
+      return {
+        surface: null,
+        key_id: null,
+        is_admin: false,
+        public_only: true,
+      };
+    }
     return {
       surface: this._effectiveSurface(grant, surfaceHeader),
       key_id: grant.key_id,
       is_admin: grant.is_admin,
+      public_only: false,
     };
   }
 
@@ -3835,7 +3844,7 @@ export class TesseraCoordinator extends DurableObject {
 
         case "feeds": {
           if (!grant.can_store) throw forbid("this needs a key with the store scope");
-          return { ok: true, status: 200, data: { feeds: listFeeds(this) } };
+          return { ok: true, status: 200, data: { feeds: listFeeds(this, viewerCtx) } };
         }
 
         case "publishFeed": {

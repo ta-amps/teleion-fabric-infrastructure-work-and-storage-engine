@@ -416,10 +416,10 @@ function discoveryResponse(path, method, env, publicUrl, repoUrl) {
   if (path === "/llms.txt") {
     const openWindow = isOpenFreeWindow(env);
     const accessProse = openWindow
-      ? "\n\nDirect open access through December 31, 2026: any agent may call /mcp and /v1/... directly with no login, credential, session setup or rate-limit gate (optional X-Agent-Label isolates a practice workspace, or POST /v1/session/anonymous for an isolated session token). See /connect.json. tools/list is public; tool counts and schemas are authoritative there. Operator and admin routes remain protected.\n"
-      : "\n\nExternal harnesses and personal assistants: POST /v1/session/anonymous without secrets, then use Authorization: Bearer <session_token> for practice Tasks and Task Objects. See /connect.json. tools/list is public; tool counts and schemas are authoritative there. Keyed production work remains protected.\n";
+      ? "\n\nDirect open access through December 31, 2026: any agent may call `/mcp` and `/v1/...` directly with no login, credential, session setup or rate-limit gate (optional `X-Agent-Label` isolates a practice workspace, or `POST /v1/session/anonymous` for an isolated session token). See `/connect.json` and `/openapi.json`. `tools/list` is public; tool counts and schemas are authoritative there. Operator and admin routes remain protected.\n"
+      : "\n\nExternal harnesses and personal assistants: `POST /v1/session/anonymous` without secrets, then use `Authorization: Bearer <session_token>` for practice Tasks and Task Objects. See `/connect.json` and `/openapi.json`. `tools/list` is public; tool counts and schemas are authoritative there. Keyed production work remains protected.\n";
     return withSecurity(
-      new Response(renderLlmsTxt(publicUrl, repoUrl, mcpToolsFor(env)) + "\n\n" + HUMAN_LINK_INSTRUCTIONS + " POST /v1/human-links, then GET /v1/human-links/<id>." + accessProse + (libraryEnabled(env) ? "\nSeed-pack library: propose one task object (noun), one task template (verb) or a whole pack with POST /v1/library/proposals, the MCP library tools or A2A message/send at /a2a (agent card /.well-known/agent.json). A different reviewer claims the library.review verb; proposing runs, activates and admits nothing. Status: GET /v1/library/proposals/<proposal_id>.\n" : ""), {
+      new Response(renderLlmsTxt(publicUrl, repoUrl, mcpToolsFor(env), openWindow) + "\n\n" + HUMAN_LINK_INSTRUCTIONS + " `POST /v1/human-links` (optional HTTP header `Idempotency-Key`), then `GET /v1/human-links/<id>`." + accessProse + (libraryEnabled(env) ? "\nSeed-pack library: propose one Task Object (`noun`), one Task template (`verb`) or a whole pack with `POST /v1/library/proposals`, the MCP library submission operations or A2A `message/send` at `/a2a` (agent card `/.well-known/agent.json`). A different reviewer claims the `library.review` Task; proposing runs, activates and admits nothing. Status: `GET /v1/library/proposals/<proposal_id>`.\n" : ""), {
         status: 200,
         headers: { "content-type": "text/plain; charset=utf-8" },
       }),
@@ -427,8 +427,9 @@ function discoveryResponse(path, method, env, publicUrl, repoUrl) {
     );
   }
   if (path === "/llms-full.txt") {
+    const openWindow = isOpenFreeWindow(env);
     return withSecurity(
-      new Response(renderLlmsFullTxt(publicUrl, repoUrl, mcpToolsFor(env)) + "\n\n" + JSON.stringify(accessDescriptionFor(publicUrl, env), null, 2), {
+      new Response(renderLlmsFullTxt(publicUrl, repoUrl, mcpToolsFor(env), openWindow) + "\n\n" + JSON.stringify(accessDescriptionFor(publicUrl, env), null, 2), {
         status: 200,
         headers: { "content-type": "text/plain; charset=utf-8" },
       }),
@@ -1015,6 +1016,41 @@ const worker = {
           ...parseLayer2Params(url.searchParams),
         })
       );
+    }
+    if (storeListMatch && method === "POST") {
+      const storeName = decodeURIComponent(storeListMatch[1]);
+      const { body, error } = await readJsonBody(request);
+      if (error) return error;
+      if (typeof body.key !== "string" || !body.key.trim()) {
+        return problem(400, "invalid_request", "key must be a non-empty string (or POST /v1/stores/{store}/records/{key})");
+      }
+      let expectedVersion = body.expected_version ?? null;
+      const matchVersion = request.headers.get("if-match");
+      if (matchVersion != null) {
+        const rawVersion = matchVersion.replace(/^"|"$/g, "");
+        if (!/^\d+$/.test(rawVersion) || !Number.isSafeInteger(Number(rawVersion))) return problem(400, "invalid_request", "If-Match must be a nonnegative integer version");
+        if (expectedVersion != null && expectedVersion !== Number(rawVersion)) return problem(400, "invalid_request", "If-Match and expected_version disagree");
+        expectedVersion = Number(rawVersion);
+      }
+      const out = await stub.rpcCall(bearer, "putRecords", {
+        ...baseRpc,
+        writes: [
+          {
+            store: storeName,
+            key: body.key,
+            value: body.value,
+            expected_version: expectedVersion,
+            producer_surface: body.producer_surface,
+            visibility_scope: body.visibility_scope,
+            allowed_surfaces: body.allowed_surfaces,
+            target_cohorts: body.target_cohorts,
+            tags: body.tags,
+            owner_key_id: body.owner_key_id,
+          },
+        ],
+      });
+      if (!out.ok) return rpcResponse(out);
+      return jsonResp(out.data.records[0], 200, { etag: `"${out.data.records[0].version}"` });
     }
     const recHistoryMatch = /^\/v1\/stores\/([^/]+)\/records\/([^/]+)\/history$/.exec(path);
     if (recHistoryMatch && method === "GET") {

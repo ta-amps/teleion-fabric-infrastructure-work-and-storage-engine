@@ -3,7 +3,7 @@
 // namespace. It adds no queue and no task authority. Only the token's SHA-256 is stored; the token travels in
 // a header, never a URL, so logs don't see it. Reading a link never changes it: previews and scanners open
 // links on their own. Only an answer changes it, once.
-import { MAX_IDEMPOTENCY_KEY, audit, chargeAccess, enforceAccess } from "./cloud_access.js";
+import { MAX_IDEMPOTENCY_KEY, audit, chargeAccess, enforceAccess, isOpenFreeWindow } from "./cloud_access.js";
 import { canonicalJson, sha256Hex } from "./cloud_buckets.js";
 
 export const LINK_BASE = "https://teleionlabs.com/l/";
@@ -142,7 +142,7 @@ function publicView(row, now) {
   };
 }
 
-function validated(grant, args, now) {
+function validated(c, grant, args, now) {
   const kind = args.kind;
   if (!Object.hasOwn(ANSWERS, String(kind))) throw bad("kind must be confirm or ask");
   const text = freeText(args.text, TEXT_MAX, "text");
@@ -156,13 +156,18 @@ function validated(grant, args, now) {
     if ([...trimmed].length > MAX_IDEMPOTENCY_KEY) throw bad(`idempotency_key is longer than ${MAX_IDEMPOTENCY_KEY} characters`);
     cleanIdem = trimmed || null;
   }
-  // A link can't outlive the session that would read its answer.
-  const expires = Math.min(now + ttl, Number(grant.expires_at) || Infinity);
+  // A link can't outlive the session that would read its answer; during the open free window
+  // anonymous sessions retain access through purge_at (24h), matching ttl_seconds max 86400.
+  const openWindow = isOpenFreeWindow(c.env, now * 1000, c);
+  const sessionCap = openWindow && grant.principal_kind === "anonymous"
+    ? (Number(grant.purge_at) || Number(grant.expires_at) || Infinity)
+    : (Number(grant.expires_at) || Infinity);
+  const expires = Math.min(now + ttl, sessionCap);
   return { kind, text, note, ttl, expires, cleanIdem };
 }
 
 async function issueLink(c, grant, args, meta, now) {
-  const { kind, text, note, ttl, expires, cleanIdem } = validated(grant, args, now);
+  const { kind, text, note, ttl, expires, cleanIdem } = validated(c, grant, args, now);
   const owner = ownerOf(grant);
   const idemScope = cleanIdem ? await idemScopeOf(grant, meta) : null;
   const reqHash = cleanIdem
@@ -378,7 +383,8 @@ export const HUMAN_LINK_TOOLS = [
 export function humanLinkDescription(url) {
   return {
     instructions: HUMAN_LINK_INSTRUCTIONS,
-    request: { method: "POST", url: `${url}/v1/human-links`, json: { kind: "confirm or ask", text: "what to confirm, or the question", agent_note: "optional", ttl_seconds: TTL_DEFAULT } },
+    request: { method: "POST", url: `${url}/v1/human-links`, headers: { "Idempotency-Key": "optional caller-chosen HTTP header for safe retries" }, json: { kind: "confirm or ask", text: "what to confirm, or the question", agent_note: "optional", ttl_seconds: TTL_DEFAULT } },
+    idempotency_header: "Idempotency-Key (optional HTTP header on POST /v1/human-links and POST /v1/human-links/public)",
     status: { method: "GET", url: `${url}/v1/human-links/{id}` },
     cancel: { method: "DELETE", url: `${url}/v1/human-links/{id}` },
     ttl_seconds: {
