@@ -135,6 +135,7 @@ function harness() {
   const env = {
     STORAGE_MODE: "cloud",
     ANONYMOUS_ACCESS_ENABLED: "true",
+    STRICT_AUTH_AND_QUOTAS: "true",
     BOOTSTRAP_SECRET: "example-bootstrap-only",
     PUBLIC_URL: "https://tessera.example",
     FABRIC_DB: d1("../deploy/cloudflare/d1-fabric.sql"),

@@ -127,14 +127,20 @@ export function canViewGoverned({
   visibility_scope = "public_commons",
   producer_surface = "surface:tessera",
   allowed_surfaces = [],
+  target_cohorts = ["all"],
   owner_key_id = null,
   tags = [],
   viewer_surface = null,
   viewer_key_id = null,
   is_admin = false,
+  public_only = false,
   direct_get = false,
   include_restricted = false,
 }) {
+  if (public_only) {
+    const cohorts = Array.isArray(target_cohorts) && target_cohorts.length ? target_cohorts : ["all"];
+    return !tags.includes("status:quarantined") && visibility_scope === "public_commons" && cohorts.includes("all");
+  }
   const normProd = normalizeSurface(producer_surface);
   const normViewer = viewer_surface ? normalizeSurface(viewer_surface) : null;
   if (tags.includes("status:quarantined")) {
@@ -639,6 +645,7 @@ export function searchNouns(coord, args, canonicalJson, badReq, viewerCtx = {}) 
           viewer_surface: viewerCtx.surface,
           viewer_key_id: viewerCtx.key_id,
           is_admin: viewerCtx.is_admin,
+          public_only: Boolean(viewerCtx.public_only),
           direct_get: false,
           include_restricted: includeRestricted,
         })
@@ -683,7 +690,7 @@ export function searchNouns(coord, args, canonicalJson, badReq, viewerCtx = {}) 
         visibility_scope: gov.visibility_scope,
         allowed_surfaces: gov.allowed_surfaces,
         target_cohorts: gov.target_cohorts,
-        owner_key_id: gov.owner_key_id,
+        owner_key_id: viewerCtx.public_only ? null : gov.owner_key_id,
       });
     }
   }
@@ -698,7 +705,30 @@ export function searchNouns(coord, args, canonicalJson, badReq, viewerCtx = {}) 
       "SELECT o.* FROM bucket_objects o " + where + " ORDER BY o.updated_at DESC,o.bucket,o.key LIMIT 1000",
       ...params
     );
+    const bucketGovCache = new Map();
     for (const row of objRows) {
+      let bucketAllowed = bucketGovCache.get(row.bucket);
+      if (bucketAllowed === undefined) {
+        const bRow = coord._one("SELECT * FROM buckets WHERE namespace = ? AND name = ?", ns, row.bucket);
+        if (!bRow) {
+          bucketAllowed = true;
+        } else {
+          const bGov = rowGovernance(bRow, []);
+          bucketAllowed =
+            !bGov.tags.includes("status:quarantined") &&
+            canViewGoverned({
+              ...bGov,
+              viewer_surface: viewerCtx.surface,
+              viewer_key_id: viewerCtx.key_id,
+              is_admin: viewerCtx.is_admin,
+              public_only: Boolean(viewerCtx.public_only),
+              direct_get: false,
+              include_restricted: includeRestricted,
+            });
+        }
+        bucketGovCache.set(row.bucket, bucketAllowed);
+      }
+      if (!bucketAllowed) continue;
       const meta = JSON.parse(row.metadata);
       const gov = rowGovernance(row, extractTags(meta));
       if (gov.tags.includes("status:quarantined")) continue;
@@ -708,6 +738,7 @@ export function searchNouns(coord, args, canonicalJson, badReq, viewerCtx = {}) 
           viewer_surface: viewerCtx.surface,
           viewer_key_id: viewerCtx.key_id,
           is_admin: viewerCtx.is_admin,
+          public_only: Boolean(viewerCtx.public_only),
           direct_get: false,
           include_restricted: includeRestricted,
         })
@@ -755,7 +786,7 @@ export function searchNouns(coord, args, canonicalJson, badReq, viewerCtx = {}) 
         visibility_scope: gov.visibility_scope,
         allowed_surfaces: gov.allowed_surfaces,
         target_cohorts: gov.target_cohorts,
-        owner_key_id: gov.owner_key_id,
+        owner_key_id: viewerCtx.public_only ? null : gov.owner_key_id,
       });
     }
   }
@@ -769,20 +800,58 @@ export function searchNouns(coord, args, canonicalJson, badReq, viewerCtx = {}) 
   return scents.slice(0, cap);
 }
 
-export function listFeeds(coord) {
+export function listFeeds(coord, viewerCtx = {}) {
   const ns = coord.namespace || "main";
-  return coord
-    ._all(
-      "SELECT feed, COUNT(*) AS entries, MAX(seq) AS latest_seq, MAX(created_at) AS updated_at FROM feed_entries WHERE namespace = ? GROUP BY feed ORDER BY feed",
-      ns
-    )
-    .map((r) => ({
-      namespace: ns,
-      feed: r.feed,
-      entries: Number(r.entries),
-      latest_seq: Number(r.latest_seq),
-      updated_at: Number(r.updated_at),
-    }));
+  if (viewerCtx.is_admin) {
+    return coord
+      ._all(
+        "SELECT feed, COUNT(*) AS entries, MAX(seq) AS latest_seq, MAX(created_at) AS updated_at FROM feed_entries WHERE namespace = ? GROUP BY feed ORDER BY feed",
+        ns
+      )
+      .map((r) => ({
+        namespace: ns,
+        feed: r.feed,
+        entries: Number(r.entries),
+        latest_seq: Number(r.latest_seq),
+        updated_at: Number(r.updated_at),
+      }));
+  }
+  const rows = coord._all(
+    "SELECT feed, seq, created_at, payload, producer_surface, visibility_scope, allowed_surfaces, target_cohorts, tags, owner_key_id FROM feed_entries WHERE namespace = ? ORDER BY feed, seq",
+    ns
+  );
+  const byFeed = new Map();
+  for (const r of rows) {
+    const payload = JSON.parse(r.payload);
+    const gov = rowGovernance(r, extractTags(payload));
+    if (
+      !canViewGoverned({
+        ...gov,
+        viewer_surface: viewerCtx.surface,
+        viewer_key_id: viewerCtx.key_id,
+        is_admin: false,
+        public_only: Boolean(viewerCtx.public_only),
+        direct_get: false,
+        include_restricted: false,
+      })
+    ) {
+      continue;
+    }
+    if (!cohortMatches(gov.target_cohorts, null, { is_admin: false, include_restricted: false })) {
+      continue;
+    }
+    const seq = Number(r.seq);
+    const createdAt = Number(r.created_at);
+    const cur = byFeed.get(r.feed);
+    if (!cur) {
+      byFeed.set(r.feed, { namespace: ns, feed: r.feed, entries: 1, latest_seq: seq, updated_at: createdAt });
+    } else {
+      cur.entries += 1;
+      if (seq > cur.latest_seq) cur.latest_seq = seq;
+      if (createdAt > cur.updated_at) cur.updated_at = createdAt;
+    }
+  }
+  return [...byFeed.values()].sort((a, b) => (a.feed < b.feed ? -1 : a.feed > b.feed ? 1 : 0));
 }
 
 export function publishFeed(coord, args, now, canonicalJson, badReq, gov) {
@@ -900,6 +969,7 @@ export function pollFeed(coord, args, badReq, viewerCtx = {}) {
         viewer_surface: viewerCtx.surface,
         viewer_key_id: viewerCtx.key_id,
         is_admin: viewerCtx.is_admin,
+        public_only: Boolean(viewerCtx.public_only),
         direct_get: false,
         include_restricted: includeRestricted,
       })
@@ -936,14 +1006,14 @@ export function pollFeed(coord, args, badReq, viewerCtx = {}) {
       allowed_surfaces: gov.allowed_surfaces,
       target_cohorts: gov.target_cohorts,
       tags: gov.tags,
-      owner_key_id: gov.owner_key_id,
+      owner_key_id: viewerCtx.public_only ? null : gov.owner_key_id,
     });
     if (entries.length >= cap) {
       scannedSeq = Number(r.seq);
       break;
     }
   }
-  const nextCursor = entries.length ? entries[entries.length - 1].seq : scannedSeq;
+  const nextCursor = entries.length ? entries[entries.length - 1].seq : (viewerCtx.public_only ? after : scannedSeq);
   return { namespace: ns, feed, entries, next_cursor: nextCursor };
 }
 
@@ -972,6 +1042,7 @@ export function matchReflex(coord, args, canonicalJson, badReq, viewerCtx = {}) 
         viewer_surface: viewerCtx.surface,
         viewer_key_id: viewerCtx.key_id,
         is_admin: viewerCtx.is_admin,
+        public_only: Boolean(viewerCtx.public_only),
         direct_get: false,
         include_restricted: includeRestricted,
       })
@@ -1024,7 +1095,7 @@ export function matchReflex(coord, args, canonicalJson, badReq, viewerCtx = {}) 
       visibility_scope: gov.visibility_scope,
       allowed_surfaces: gov.allowed_surfaces,
       target_cohorts: gov.target_cohorts,
-      owner_key_id: gov.owner_key_id,
+      owner_key_id: viewerCtx.public_only ? null : gov.owner_key_id,
     });
   }
 

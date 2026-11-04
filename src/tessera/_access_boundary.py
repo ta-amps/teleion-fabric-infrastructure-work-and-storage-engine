@@ -64,6 +64,7 @@ MCP_ACTIONS = {
     "list_execution_observations": "listExecutions",
 }
 PUBLIC_PATHS = {
+    "/openapi.json",
     "/v1/health",
     "/v1/openapi.json",
     "/v1/public/activity",

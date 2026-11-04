@@ -54,7 +54,7 @@ function storeFailure(id, out) {
   return failure(id, RPC.internal, out.detail || "the library door could not take this message", data);
 }
 
-export async function handleA2a(request, { bearer, propose, read, sessionUrl }) {
+export async function handleA2a(request, { bearer, propose, read, sessionUrl, openWindow = false }) {
   if (request.method !== "POST") return new Response(null, { status: 405, headers: { allow: "POST" } });
   const raw = await readCappedBody(request, LIBRARY_BODY_LIMIT);
   if (raw.status) return failure(null, raw.status === 413 ? RPC.invalid : RPC.parse, raw.detail, null, raw.status);
@@ -63,7 +63,7 @@ export async function handleA2a(request, { bearer, propose, read, sessionUrl }) 
   if (!isObj(msg) || msg.jsonrpc !== "2.0" || typeof msg.method !== "string") return failure(isObj(msg) ? msg.id : null, RPC.invalid, "one JSON-RPC 2.0 request object; batches are not accepted");
   const { id, method, params } = msg;
   if (method === "message/send" || method === "tasks/send") {
-    if (!bearer) return failure(id, RPC.invalid, "Authentication required", { http_status: 401, detail: "send Authorization: Bearer <contributor key or tracked session token>", anonymous_session: sessionUrl }, 401);
+    if (!bearer && !openWindow) return failure(id, RPC.invalid, "Authentication required", { http_status: 401, detail: "send Authorization: Bearer <contributor key or tracked session token>", anonymous_session: sessionUrl }, 401);
     const item = itemFrom(params?.message);
     if (item.error) return failure(id, item.code ?? RPC.params, item.error);
     const out = await propose(item.body);

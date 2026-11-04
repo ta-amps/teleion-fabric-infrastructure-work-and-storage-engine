@@ -1,6 +1,6 @@
 import { agentStartAsset, withAgentStart } from "./agent_start.js";
 import { storageQuotaFailure } from "./storage_quota.js";
-import { ipGroup, namespaceReachable, publicPrincipal } from "./cloud_access.js";
+import { ipGroup, isOpenFreeWindow, namespaceReachable, openGrantFor, publicPrincipal } from "./cloud_access.js";
 import { edgeFromCf, publicActivityRoute } from "./edge_activity.js";
 import { accessDiscoveryRoute, accessRoute, accessDescriptionFor } from "./cloud_access_routes.js";
 import { handleA2a } from "./cloud_a2a.js";
@@ -254,6 +254,19 @@ function parseBoolParam(val) {
   return ["1", "true", "yes"].includes(String(val || "").trim().toLowerCase());
 }
 
+function mergeIdempotencyHeader(request, body) {
+  const hdrIdem = (request.headers.get("idempotency-key") || "").trim();
+  if (body.idempotency_key !== undefined && body.idempotency_key !== null && typeof body.idempotency_key !== "string") {
+    return { error: problem(400, "invalid_request", "idempotency_key must be text") };
+  }
+  const bodyIdem = typeof body.idempotency_key === "string" ? body.idempotency_key.trim() : "";
+  if (hdrIdem && bodyIdem && hdrIdem !== bodyIdem) {
+    return { error: problem(400, "invalid_request", "Idempotency-Key header and body idempotency_key must match") };
+  }
+  const effective = bodyIdem || hdrIdem;
+  return { body: effective ? { ...body, idempotency_key: effective } : body };
+}
+
 function parseLayer2Params(searchParams) {
   return {
     q: searchParams.get("q") || "",
@@ -353,6 +366,7 @@ function resolveNamespace(url, request) {
 
   const hdrRaw = (
     request.headers.get("x-namespace") ||
+    request.headers.get("x-teleion-fabric-namespace") ||
     request.headers.get("x-tessera-namespace") ||
     ""
   ).trim();
@@ -400,8 +414,12 @@ function discoveryResponse(path, method, env, publicUrl, repoUrl) {
     );
   }
   if (path === "/llms.txt") {
+    const openWindow = isOpenFreeWindow(env);
+    const accessProse = openWindow
+      ? "\n\nDirect open access through December 31, 2026: any agent may call `/mcp` and `/v1/...` directly with no login, credential, session setup or rate-limit gate (optional `X-Agent-Label` isolates a practice workspace, or `POST /v1/session/anonymous` for an isolated session token). See `/connect.json` and `/openapi.json`. `tools/list` is public; tool counts and schemas are authoritative there. Operator and admin routes remain protected.\n"
+      : "\n\nExternal harnesses and personal assistants: `POST /v1/session/anonymous` without secrets, then use `Authorization: Bearer <session_token>` for practice Tasks and Task Objects. See `/connect.json` and `/openapi.json`. `tools/list` is public; tool counts and schemas are authoritative there. Keyed production work remains protected.\n";
     return withSecurity(
-      new Response(renderLlmsTxt(publicUrl, repoUrl, mcpToolsFor(env)) + "\n\n" + HUMAN_LINK_INSTRUCTIONS + " POST /v1/human-links, then GET /v1/human-links/<id>." + "\n\nExternal harnesses and personal assistants: POST /v1/session/anonymous without secrets, then use Authorization: Bearer <session_token> for demo nouns and verbs. See /connect.json. tools/list is public; tool counts and schemas are authoritative there. Keyed production work remains protected.\n" + (libraryEnabled(env) ? "\nSeed-pack library: propose one task object (noun), one task template (verb) or a whole pack with POST /v1/library/proposals, the MCP library tools or A2A message/send at /a2a (agent card /.well-known/agent.json). A different reviewer claims the library.review verb; proposing runs, activates and admits nothing. Status: GET /v1/library/proposals/<proposal_id>.\n" : ""), {
+      new Response(renderLlmsTxt(publicUrl, repoUrl, mcpToolsFor(env), openWindow) + "\n\n" + HUMAN_LINK_INSTRUCTIONS + " `POST /v1/human-links` (optional HTTP header `Idempotency-Key`), then `GET /v1/human-links/<id>`." + accessProse + (libraryEnabled(env) ? "\nSeed-pack library: propose one Task Object (`noun`), one Task template (`verb`) or a whole pack with `POST /v1/library/proposals`, the MCP library submission operations or A2A `message/send` at `/a2a` (agent card `/.well-known/agent.json`). A different reviewer claims the `library.review` Task; proposing runs, activates and admits nothing. Status: `GET /v1/library/proposals/<proposal_id>`.\n" : ""), {
         status: 200,
         headers: { "content-type": "text/plain; charset=utf-8" },
       }),
@@ -409,8 +427,9 @@ function discoveryResponse(path, method, env, publicUrl, repoUrl) {
     );
   }
   if (path === "/llms-full.txt") {
+    const openWindow = isOpenFreeWindow(env);
     return withSecurity(
-      new Response(renderLlmsFullTxt(publicUrl, repoUrl, mcpToolsFor(env)) + "\n\n" + JSON.stringify(accessDescriptionFor(publicUrl, env), null, 2), {
+      new Response(renderLlmsFullTxt(publicUrl, repoUrl, mcpToolsFor(env), openWindow) + "\n\n" + JSON.stringify(accessDescriptionFor(publicUrl, env), null, 2), {
         status: 200,
         headers: { "content-type": "text/plain; charset=utf-8" },
       }),
@@ -419,7 +438,7 @@ function discoveryResponse(path, method, env, publicUrl, repoUrl) {
   }
   if (path === "/.well-known/agent.json") return libraryEnabled(env) ? jsonResp(renderA2aCard(publicUrl, repoUrl, env)) : problem(404, "not_found", "the library door is not enabled on this fabric");
   if (path === "/.well-known/agent-card.json") {
-    return jsonResp({ ...renderAgentCard(publicUrl, repoUrl, mcpToolsFor(env)), authentication: { discovery: "none", demo: "tan_ bearer session", keyed: "tsk_ bearer key" }, capabilities: { streaming: "long-poll", tools: true }, access: accessDescriptionFor(publicUrl, env) });
+    return jsonResp({ ...renderAgentCard(publicUrl, repoUrl, mcpToolsFor(env)), authentication: { discovery: "none", demo: isOpenFreeWindow(env) ? "none required through 2026-12-31 (optional X-Agent-Label or tan_ bearer session)" : "tan_ bearer session", keyed: "tsk_ bearer key" }, capabilities: { streaming: "long-poll", tools: true }, access: accessDescriptionFor(publicUrl, env) });
   }
   if (path === "/robots.txt") {
     return withSecurity(
@@ -463,10 +482,10 @@ function libraryOut(out) {
   if (out.code === "rate_limited") extra.retry_after = out.extra?.retry_after ?? null;
   return problem(out.status || 400, out.code || "invalid_request", out.detail || "error", extra, headers);
 }
-async function libraryRoute(request, path, url, method, bearer, stub, publicUrl) {
+async function libraryRoute(request, path, url, method, bearer, stub, publicUrl, openWindow = false) {
   if (path === "/a2a") {
     if (method !== "POST") return problem(405, "method_not_allowed", "A2A JSON-RPC accepts POST /a2a", {}, { allow: "POST" });
-    return withSecurity(await handleA2a(request, { bearer, propose: body => stub.libraryPropose(bearer, body, "a2a"), read: (what, args) => stub.libraryRead(what, args, bearer), sessionUrl: `${publicUrl}/v1/session/anonymous` }), { isWrite: true });
+    return withSecurity(await handleA2a(request, { bearer, openWindow, propose: body => stub.libraryPropose(bearer, body, "a2a"), read: (what, args) => stub.libraryRead(what, args, bearer), sessionUrl: `${publicUrl}/v1/session/anonymous` }), { isWrite: true });
   }
   if (path !== "/v1/library" && !path.startsWith("/v1/library/")) return null;
   if (path === "/v1/library/proposals" && method === "POST") {
@@ -518,8 +537,9 @@ const worker = {
     }
     const coordBinding = env.COORDINATOR || env.TESSERA_COORDINATOR;
     const primary = coordBinding.get(coordBinding.idFromName("primary"));
+    const openWindow = isOpenFreeWindow(env);
     // The public activity map needs no principal: aggregated, cached and limited per address.
-    const activity = await publicActivityRoute(request, { path, method, namespace, env, primary, problem, withSecurity, address: ipGroup(request.headers.get("cf-connecting-ip")) });
+    const activity = await publicActivityRoute(request, { path, method, namespace, env, primary, problem, withSecurity, address: ipGroup(request.headers.get("cf-connecting-ip")), enforceRateLimit: !openWindow });
     if (activity) return activity;
     // A person answering a human link has no key: the token in the header is the whole credential.
     if (path === "/v1/human-links/public") {
@@ -529,8 +549,10 @@ const worker = {
       if (method === "POST") {
         const { body, error } = await readJsonBody(request);
         if (error) return error;
-        const out = await primary.humanLinkAnswer(token, body);
-        return jsonResp(out.data, out.status, noindex);
+        const merged = mergeIdempotencyHeader(request, body);
+        if (merged.error) return merged.error;
+        const out = await primary.humanLinkAnswer(token, merged.body);
+        return jsonResp(out.data, out.status, { ...noindex, ...(out.headers || {}) });
       }
       return problem(405, "method_not_allowed", "method not allowed");
     }
@@ -544,22 +566,24 @@ const worker = {
       }
       if (path === "/v1/public/activity" && method === "GET") return jsonResp(await primary.publicActivity());
     }
-    const principal = requestBearer ? await primary.resolveKeyGrant(requestBearer) : null;
-    const explicitNamespace = url.pathname.startsWith("/ns/") || request.headers.has("x-namespace") || request.headers.has("x-tessera-namespace");
+    const agentLabel = (request.headers.get("x-agent-label") || "").trim() || null;
+    const adminOrKeyPath = path === "/v1/keys" || path.startsWith("/v1/keys/") || path.startsWith("/v1/admin/");
+    const principal = requestBearer ? await primary.resolveKeyGrant(requestBearer) : (!adminOrKeyPath && openWindow ? openGrantFor(env, agentLabel) : null);
+    const explicitNamespace = url.pathname.startsWith("/ns/") || request.headers.has("x-namespace") || request.headers.has("x-teleion-fabric-namespace") || request.headers.has("x-tessera-namespace");
     if (["anonymous", "requester"].includes(principal?.principal_kind) && !explicitNamespace) namespace = principal.namespace;
     isPrimary = namespace === "main";
     const rawStub = coordBinding.get(coordBinding.idFromName(isPrimary ? "primary" : `ns:${namespace}`));
     const identity = await primary.requestIdentity(request.headers.get("cf-connecting-ip"), request.headers.get("user-agent"));
     // edge: where Cloudflare received this request (data center and continent), from request.cf
     // only. It is set after every client field, so no body, header or tool argument can name a place.
-    const meta = { ...identity, request_id: request.headers.get("x-request-id") || crypto.randomUUID(), route: path, bytes_in: Number(request.headers.get("content-length") || 0), edge: edgeFromCf(request.cf) };
+    const meta = { ...identity, agent_label: agentLabel, request_id: request.headers.get("x-request-id") || crypto.randomUUID(), route: path, bytes_in: Number(request.headers.get("content-length") || 0), edge: edgeFromCf(request.cf) };
     // Authentication and namespace authorization happen here, before any namespace object is
     // touched: a caller without a valid key, or without a grant for the namespace it named,
     // neither writes a row nor creates a coordinator object for that name. The coordinator
     // still re-checks the full grant on every call.
     const principals = new Map([[requestBearer, principal]]);
     const principalFor = async (secret) => {
-      if (!principals.has(secret)) principals.set(secret, secret ? await primary.resolveKeyGrant(secret) : null);
+      if (!principals.has(secret)) principals.set(secret, secret ? await primary.resolveKeyGrant(secret) : (!adminOrKeyPath && openWindow ? openGrantFor(env, agentLabel) : null));
       return principals.get(secret);
     };
     const stub = {
@@ -578,10 +602,10 @@ const worker = {
       bootstrapOrIssueKey: (secret, bootstrap, body) => primary.bootstrapOrIssueKey(secret, bootstrap, { ...body, access_meta: meta }),
       openAnonymousSession: body => primary.openAnonymousSession(body, meta),
       humanLink: (secret, op, args) => primary.humanLink(secret, op, args, meta),
-      auditForToken: (secret, args) => primary.auditForToken(secret, args),
+      auditForToken: (secret, args) => primary.auditForToken(secret, { ...args, agent_label: args?.agent_label || agentLabel }),
       // The library door always works in the shared namespace, under the caller's own principal;
       // its content checks run in the separate library-checks object, never in the primary one.
-      libraryPropose: (secret, body, door) => proposeThroughDoors({ primary, checker: coordBinding.get(coordBinding.idFromName(LIBRARY_CHECKER)), secret, body, meta: { ...meta, door } }),
+      libraryPropose: (secret, body, door) => proposeThroughDoors({ primary, checker: coordBinding.get(coordBinding.idFromName(LIBRARY_CHECKER)), secret, body, meta: { ...meta, door }, openWindow }),
       libraryRead: (what, args, secret = null) => primary.libraryRead(what, args, secret),
     };
     const bearer = requestBearer;
@@ -594,13 +618,15 @@ const worker = {
     const namespaceStub = ns => coordBinding.get(coordBinding.idFromName(ns === "main" ? "primary" : `ns:${ns}`));
     const accessResponse = await accessRoute(request, env, { path, url, bearer, primary, stub, baseRpc, meta, publicUrl, rpcResponse, jsonResp, htmlResp, readJsonBody, namespaceStub });
     if (accessResponse) return accessResponse;
-    const libraryResponse = await libraryRoute(request, path, url, method, bearer, stub, publicUrl);
+    const libraryResponse = await libraryRoute(request, path, url, method, bearer, stub, publicUrl, openWindow);
     if (libraryResponse) return libraryResponse;
     if (path === "/v1/human-links") {
       if (method !== "POST") return problem(405, "method_not_allowed", "method not allowed");
       const { body, error } = await readJsonBody(request);
       if (error) return error;
-      return rpcResponse(await stub.humanLink(bearer, "issue", body));
+      const merged = mergeIdempotencyHeader(request, body);
+      if (merged.error) return merged.error;
+      return rpcResponse(await stub.humanLink(bearer, "issue", merged.body));
     }
     if (path.startsWith("/v1/human-links/")) {
       const id = decodeURIComponent(path.slice("/v1/human-links/".length));
@@ -990,6 +1016,41 @@ const worker = {
           ...parseLayer2Params(url.searchParams),
         })
       );
+    }
+    if (storeListMatch && method === "POST") {
+      const storeName = decodeURIComponent(storeListMatch[1]);
+      const { body, error } = await readJsonBody(request);
+      if (error) return error;
+      if (typeof body.key !== "string" || !body.key.trim()) {
+        return problem(400, "invalid_request", "key must be a non-empty string (or POST /v1/stores/{store}/records/{key})");
+      }
+      let expectedVersion = body.expected_version ?? null;
+      const matchVersion = request.headers.get("if-match");
+      if (matchVersion != null) {
+        const rawVersion = matchVersion.replace(/^"|"$/g, "");
+        if (!/^\d+$/.test(rawVersion) || !Number.isSafeInteger(Number(rawVersion))) return problem(400, "invalid_request", "If-Match must be a nonnegative integer version");
+        if (expectedVersion != null && expectedVersion !== Number(rawVersion)) return problem(400, "invalid_request", "If-Match and expected_version disagree");
+        expectedVersion = Number(rawVersion);
+      }
+      const out = await stub.rpcCall(bearer, "putRecords", {
+        ...baseRpc,
+        writes: [
+          {
+            store: storeName,
+            key: body.key,
+            value: body.value,
+            expected_version: expectedVersion,
+            producer_surface: body.producer_surface,
+            visibility_scope: body.visibility_scope,
+            allowed_surfaces: body.allowed_surfaces,
+            target_cohorts: body.target_cohorts,
+            tags: body.tags,
+            owner_key_id: body.owner_key_id,
+          },
+        ],
+      });
+      if (!out.ok) return rpcResponse(out);
+      return jsonResp(out.data.records[0], 200, { etag: `"${out.data.records[0].version}"` });
     }
     const recHistoryMatch = /^\/v1\/stores\/([^/]+)\/records\/([^/]+)\/history$/.exec(path);
     if (recHistoryMatch && method === "GET") {
@@ -1634,7 +1695,7 @@ const onboardingApplication = {
   scheduled: worker.scheduled,
   async fetch(request, env, ctx) {
     const requestId = /^[a-zA-Z0-9._:-]{1,100}$/.test(request.headers.get("x-request-id") || "") ? request.headers.get("x-request-id") : crypto.randomUUID();
-    const headers = { "access-control-allow-origin": "*", "access-control-allow-methods": "GET, HEAD, POST, PUT, DELETE, OPTIONS", "access-control-allow-headers": "Authorization, Content-Type, If-Match, X-Request-Id, X-Agent-Label, Idempotency-Key, X-Namespace, X-Tessera-Namespace, X-Surface-Id, MCP-Protocol-Version, MCP-Session-Id", "access-control-expose-headers": "ETag, Retry-After, X-Request-Id, MCP-Session-Id, Age", "x-request-id": requestId, "cache-control": "no-store" };
+    const headers = { "access-control-allow-origin": "*", "access-control-allow-methods": "GET, HEAD, POST, PUT, DELETE, OPTIONS", "access-control-allow-headers": "Authorization, Content-Type, If-Match, X-Request-Id, X-Agent-Label, X-Human-Link-Token, Idempotency-Key, X-Namespace, X-Tessera-Namespace, X-Teleion-Fabric-Namespace, X-Surface-Id, MCP-Protocol-Version, MCP-Session-Id", "access-control-expose-headers": "ETag, Retry-After, X-Request-Id, MCP-Session-Id, Age", "x-request-id": requestId, "cache-control": "no-store" };
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers });
     try {
       // A broken percent escape (H-54) or a control character (H-65) anywhere in the path is

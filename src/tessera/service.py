@@ -718,6 +718,10 @@ def create_app(store: Store | None = None, settings: ServiceSettings | None = No
 
     pages.mount_work_forms(app, store, gate, limiter, settings)
 
+    @app.get("/openapi.json", include_in_schema=False)
+    def openapi_root_alias() -> dict[str, Any]:
+        return app.openapi()
+
     # The MCP door answers on /mcp; mounted last so every route above wins.
     # Keep JSON helper usage cleanly imported for strict linters.
     _ = json

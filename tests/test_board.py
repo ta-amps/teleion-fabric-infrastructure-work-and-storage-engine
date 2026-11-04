@@ -43,7 +43,7 @@ def test_board_matches_counts_on_empty_and_populated_fabric(tmp_path: Path) -> N
         assert empty_resp.status_code == 200
         empty_html = empty_resp.text
         assert "No queues yet." in empty_html
-        assert "Live Verb Queues" in empty_html
+        assert "Live Task Queues" in empty_html
         assert "Task Dependency &amp; Split Wave DAG" in empty_html
         assert "Parked Tiles" in empty_html
         assert "Monotonic Cursor Event Feed" in empty_html
@@ -222,7 +222,7 @@ const board = renderBoardHtml(
     feed_entries: [{ seq: 1, feed: "ops", kind: "delta", summary: "ok", created_at: 1793070002 }],
   }
 );
-for (const heading of ["Live Verb Queues", "Task Dependency &amp; Split Wave DAG", "Parked Tiles", "Monotonic Cursor Event Feed"]) {
+for (const heading of ["Live Task Queues", "Task Dependency &amp; Split Wave DAG", "Parked Tiles", "Monotonic Cursor Event Feed"]) {
   if (!board.includes(heading)) throw new Error("missing heading: " + heading);
 }
 if (board.toLowerCase().includes("<form")) throw new Error("board must not contain forms");

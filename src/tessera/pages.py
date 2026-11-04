@@ -393,7 +393,7 @@ def board_html(
         f"<p class='muted'>Read-only live console (namespace <code>{html.escape(ns)}</code>). "
         f"Every queue count comes directly from the counts record. "
         f"Reaper last ran: {reaper}. Event cursor: <code>{latest_event_seq}</code>. Refreshes every 15 s.</p>"
-        f"<section id='queues-section'><h2>Live Verb Queues</h2>{queues_table}</section>"
+        f"<section id='queues-section'><h2>Live Task Queues</h2>{queues_table}</section>"
         f"<section id='dag-section'><h2>Task Dependency &amp; Split Wave DAG</h2>{dag_table}</section>"
         f"<section id='parked-section'><h2>Parked Tiles</h2>{parked_table}</section>"
         f"<section id='feed-section'><h2>Monotonic Cursor Event Feed</h2>{feed_table}</section>"

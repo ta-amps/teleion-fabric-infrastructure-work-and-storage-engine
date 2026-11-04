@@ -51,8 +51,8 @@ const tooComplex = () => ({ ok: false, status: 422, code: "proposal_refused", de
 
 // One proposal through any door. The body was parsed by the door; nesting is checked again here
 // because an object call clones it, and cloning a very deep value would throw.
-export async function proposeThroughDoors({ primary, checker, secret, body, meta, timeoutMs = CHECK_TIMEOUT_MS }) {
-  if (!secret) return { ok: false, status: 401, code: "unauthorized", detail: "send Authorization: Bearer <contributor key or tracked session token>; POST /v1/session/anonymous opens a tracked session without secrets", extra: {} };
+export async function proposeThroughDoors({ primary, checker, secret, body, meta, timeoutMs = CHECK_TIMEOUT_MS, openWindow = false }) {
+  if (!secret && !openWindow) return { ok: false, status: 401, code: "unauthorized", detail: "send Authorization: Bearer <contributor key or tracked session token>; POST /v1/session/anonymous opens a tracked session without secrets", extra: {} };
   if (body === null || typeof body !== "object" || Array.isArray(body) || !withinDepth(body))
     return { ok: false, status: 400, code: "invalid_request", detail: `a proposal is a JSON object nesting at most ${LIBRARY_LIMITS.json_depth} levels deep`, extra: {} };
   const attempt = await primary.libraryAttempt(secret, meta);

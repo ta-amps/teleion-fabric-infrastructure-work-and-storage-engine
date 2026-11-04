@@ -1077,7 +1077,7 @@ def test_l26_receipt_vectors_python_and_cloudflare_edge_node_parity(tmp_path: Pa
             const boardRes = await req("/board");
             assert.equal(boardRes.status, 200);
             const boardHtml = await boardRes.text();
-            assert.ok(boardHtml.includes("Live Verb Queues"));
+            assert.ok(boardHtml.includes("Live Task Queues"));
             assert.ok(boardHtml.includes("Task Dependency"));
             assert.ok(boardHtml.includes("Parked Tiles"));
             assert.ok(boardHtml.includes("Monotonic Cursor Event Feed"));
