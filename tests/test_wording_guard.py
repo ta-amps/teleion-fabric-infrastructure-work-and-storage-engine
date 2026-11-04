@@ -33,7 +33,9 @@ def test_no_tracked_file_uses_a_retired_word() -> None:
     seen: dict[str, int] = {}
     offending = [f"{path} (path)" for path in files for word in WORDS.values() if word.search(path)]
     for path in files:
-        if path == "NOTICE-META-MODELS.txt":  # the one file that holds license wording (owner, Nov 4)
+        if (
+            path == "NOTICE-META-MODELS.txt"
+        ):  # the one file that holds license wording (owner, Nov 4)
             continue
         try:
             text = (REPO / path).read_text(encoding="utf-8")
