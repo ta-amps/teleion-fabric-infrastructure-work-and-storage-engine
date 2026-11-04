@@ -6,7 +6,7 @@ import { HUMAN_LINK_OPENAPI_PATHS, humanLinkDescription } from "./human_links.js
 import { libraryAnonymousEnabled, libraryBudgets, libraryDescription, libraryEnabled } from "./library_contract.js";
 
 export const ACCESS_TOOLS = [
-  { name: "list_verbs", description: "List ready verbs visible to this principal, with optional queue and status filters.", inputSchema: {type:"object",properties:{queue:{type:"string"},status:{type:"string",enum:["ready","leased","waiting","done","dead","cancelled"]},limit:{type:"integer",minimum:1,maximum:100}},additionalProperties:false}},
+  { name: "list_verbs", description: "List ready Tasks visible to this principal, with optional queue and status filters.", inputSchema: {type:"object",properties:{queue:{type:"string"},status:{type:"string",enum:["ready","leased","waiting","done","dead","cancelled"]},limit:{type:"integer",minimum:1,maximum:100}},additionalProperties:false}},
   { name: "open_anonymous_session", description: "Open a tracked, one-hour practice session without secrets. Use the returned session_token as Authorization: Bearer for subsequent calls. No production access.", inputSchema: { type: "object", properties: { agent_label: { type: "string", maxLength: 64 } }, additionalProperties: false } },
   { name: "explain_access_modes", description: "Public connection instructions, limits, labels and keyed upgrade path.", inputSchema: { type: "object", properties: {}, additionalProperties: false } },
   { name: "whoami", description: "Show this bearer principal's scopes and expiry without exposing its secret.", inputSchema: { type: "object", properties: {}, additionalProperties: false } },

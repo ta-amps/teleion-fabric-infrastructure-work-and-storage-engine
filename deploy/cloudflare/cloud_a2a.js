@@ -25,21 +25,21 @@ function itemFrom(message) {
     } catch { /* falls through to the guidance below */ }
   }
   if (message.parts.some(p => isObj(p) && (p.kind ?? p.type) === "file")) return { error: "file parts are not accepted; send the pack bundle as a data part", code: RPC.contentType };
-  return { error: "send the proposal as one data part (or a text part holding its JSON): {type: noun|verb|pack, ...}; see the agent card's skill examples" };
+  return { error: "send the proposal as one data part (or a text part holding its JSON): {type: Task Object|Task|pack, ...}; see the agent card's skill examples" };
 }
 
 const STATE = { admitted: "completed", rejected: "rejected", in_review: "working", review_failed: "failed", awaiting_review: "submitted" };
 function taskFrom(view, message = null) {
   const state = STATE[view.phase] || "submitted";
   const note = state === "completed" ? `Admitted to the library catalog by a different reviewer (${(view.decision?.catalog_keys || []).length} items).`
-    : state === "rejected" ? "Rejected by a different reviewer; the propose and review receipts stay on the record."
-      : state === "failed" ? "The review verb dead-lettered; the proposal stays on the record awaiting an operator."
-        : "Proposed. A different reviewer claims the library.review verb; nothing ran or activated.";
+    : state === "rejected" ? "Rejected by a different reviewer; the propose and review records stay on the record."
+      : state === "failed" ? "The review Task dead-lettered; the proposal stays on the record awaiting an operator."
+        : "Proposed. A different reviewer claims the library.review Task; nothing ran or activated.";
   return {
     kind: "task", id: view.proposal_id, contextId: (isObj(message) && typeof message.contextId === "string" && message.contextId.slice(0, 128)) || view.proposal_id,
     status: { state, timestamp: new Date(((view.decision?.decided_at ?? view.created_at) || Date.now() / 1000) * 1000).toISOString(),
       message: { kind: "message", role: "agent", messageId: crypto.randomUUID(), parts: [{ kind: "text", text: note }] } },
-    artifacts: [{ artifactId: `${view.proposal_id}-receipts`, name: "proposal receipts", parts: [{ kind: "data", data: {
+    artifacts: [{ artifactId: `${view.proposal_id}-receipts`, name: "proposal records", parts: [{ kind: "data", data: {
       proposal_id: view.proposal_id, status: view.status, phase: view.phase, item_sha256: view.item_sha256, propose: view.propose, review: view.review, decision: view.decision, status_url: view.status_url } }] }],
     ...(isObj(message) ? { history: [message] } : {}),
     metadata: { proposal_url: view.status_url },

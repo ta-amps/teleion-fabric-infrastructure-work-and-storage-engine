@@ -51,7 +51,7 @@ export const TOOLS = [
   },
   {
     name: "enqueue",
-    description: "Enqueue a new atomic verb (task) in a queue this key may use.",
+    description: "Enqueue a new atomic Task (task) in a queue this key may use.",
     inputSchema: {
       type: "object",
       required: ["queue", "brief"],
@@ -193,12 +193,12 @@ export const TOOLS = [
   },
   {
     name: "list_stores",
-    description: "List every atomic noun store with its key count and last update time.",
+    description: "List every atomic Task Object store with its key count and last update time.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
   },
   {
     name: "list_records",
-    description: "Query current head records in a noun store, optionally filtered by key prefix or governance/tag filters.",
+    description: "Query current head records in a Task Object store, optionally filtered by key prefix or governance/tag filters.",
     inputSchema: {
       type: "object",
       required: ["store_name"],
@@ -212,7 +212,7 @@ export const TOOLS = [
   },
   {
     name: "put_record",
-    description: "Write one versioned noun (record) using compare-and-set.",
+    description: "Write one versioned Task Object (record) using compare-and-set.",
     inputSchema: {
       type: "object",
       required: ["store_name", "key", "value"],
@@ -227,7 +227,7 @@ export const TOOLS = [
   },
   {
     name: "put_records",
-    description: "Atomically write a batch of versioned nouns (records) using compare-and-set.",
+    description: "Atomically write a batch of versioned Task Objects (records) using compare-and-set.",
     inputSchema: {
       type: "object",
       required: ["writes"],
@@ -236,7 +236,7 @@ export const TOOLS = [
   },
   {
     name: "get_record",
-    description: "Read the latest (or a specific) version of an atomic noun (record).",
+    description: "Read the latest (or a specific) version of an atomic Task Object (record).",
     inputSchema: {
       type: "object",
       required: ["store_name", "key"],
@@ -249,7 +249,7 @@ export const TOOLS = [
   },
   {
     name: "record_history",
-    description: "List every saved version of an atomic noun (record) in order.",
+    description: "List every saved version of an atomic Task Object (record) in order.",
     inputSchema: {
       type: "object",
       required: ["store_name", "key"],
@@ -295,7 +295,7 @@ export const TOOLS = [
   {
     name: "get_object",
     description:
-      "Read a versioned file (or L2 byte slice via offset/max_bytes) from a named cloud bucket, verifying its SHA-256.",
+      "Read a versioned file (or L2 byte slice via offset/max_bytes) from a named cloud bucket, checking its digest.",
     inputSchema: {
       type: "object",
       required: ["bucket", "key"],
@@ -335,7 +335,7 @@ export const TOOLS = [
   {
     name: "search_nouns",
     description:
-      "0-call progressive L0 scent search across head CAS records and versioned bucket files. Returns compact <=150-token summaries so agents discover reusable nouns before loading full payloads.",
+      "0-call progressive L0 scent search across head CAS records and versioned bucket files. Returns compact <=150-token summaries so agents discover reusable Task Objects before loading full payloads.",
     inputSchema: {
       type: "object",
       properties: {

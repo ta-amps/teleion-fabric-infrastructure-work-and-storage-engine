@@ -515,7 +515,7 @@ export function seedDemo(c, grant, purgeAt) {
         c._insertTask(taskId, name, null, "demo", "write-internal", 50,
           { title: name, example_only: true, instruction: "Read demo.instructions, create a small example artifact in demo.artifacts, then submit its record key and version.", labels: grant.labels }, 0, now, [], taskId, gov);
     }
-    const value = canonicalJson({ title: "Agent practice", example_only: true, goal: "Complete a fenced noun/verb loop without real personal data.", labels: grant.labels });
+    const value = canonicalJson({ title: "Agent practice", example_only: true, goal: "Complete a fenced Task Object/Task loop without real personal data.", labels: grant.labels });
     c.ctx.storage.sql.exec("INSERT OR IGNORE INTO record_heads(namespace,store,key,version,producer_surface,visibility_scope,allowed_surfaces,target_cohorts,tags,owner_key_id) VALUES (?,'demo.instructions','welcome',1,'surface:tessera','private','[]','[\"all\"]',?,?)", grant.namespace, JSON.stringify(tags), grant.key_id);
     c.ctx.storage.sql.exec("INSERT OR IGNORE INTO records(namespace,store,key,version,value,created_at,producer_surface,visibility_scope,allowed_surfaces,target_cohorts,tags,owner_key_id) VALUES (?,'demo.instructions','welcome',1,?,?,'surface:tessera','private','[]','[\"all\"]',?,?)", grant.namespace, value, now, JSON.stringify(tags), grant.key_id);
     c._syncNounTags("record", "demo.instructions", "welcome", tags);
@@ -558,15 +558,15 @@ export function enforceAccess(c, grant, action, args) {
   const openWindow = isOpenFreeWindow(c.env, Date.now(), c);
   if (openVerbs) {
     const allowedOpenAction = OPEN_VERB_ACTIONS.has(action) || (openWindow && OPEN_WINDOW_READ_ACTIONS.has(action));
-    if (!allowedOpenAction) throw error(403, "scope_denied", `outside its own namespace an anonymous session may only claim, heartbeat and submit open verbs (action '${action}' requires a contributor key; allowed open-verb actions: claim, heartbeat, listVerbs, me, my_audit, results, submit, task)`);
-    if (args.queue && CLOSED_TO_ANONYMOUS.has(String(args.queue))) throw error(403, "scope_denied", "review, approval and publication verbs are closed to anonymous");
+    if (!allowedOpenAction) throw error(403, "scope_denied", `outside its own namespace an anonymous session may only claim, heartbeat and submit open Tasks (action '${action}' requires a contributor key; allowed open-Task actions: claim, heartbeat, listVerbs, me, my_audit, results, submit, task)`);
+    if (args.queue && CLOSED_TO_ANONYMOUS.has(String(args.queue))) throw error(403, "scope_denied", "review, approval and publication Tasks are closed to anonymous");
     if (OWN_WORK_ACTIONS.has(action) && !c._one("SELECT 1 AS own FROM leases WHERE namespace=? AND task_id=? AND key_id=? UNION ALL SELECT 1 AS own FROM results WHERE namespace=? AND task_id=? AND completed_by_key=? LIMIT 1", ns, String(args.task_id || ""), grant.key_id, ns, String(args.task_id || ""), grant.key_id))
       throw error(404, "not_found", "task does not exist");
   } else {
     const allowedAnonAction = ANON_ACTIONS.has(action) || (openWindow && OPEN_WINDOW_READ_ACTIONS.has(action));
-    if (!allowedAnonAction) throw error(403, "scope_denied", `anonymous sessions may only use isolated demo nouns and verbs (action '${action}' requires a contributor key; for shared open verbs send X-Namespace: main to /v1/verbs or /v1/tasks/claim)`);
-    if (args.queue && !String(args.queue).startsWith("demo.")) throw error(403, "scope_denied", "anonymous sessions cannot access production verbs");
-    if (args.store && !String(args.store).startsWith("demo.")) throw error(403, "scope_denied", "anonymous sessions cannot access production nouns");
+    if (!allowedAnonAction) throw error(403, "scope_denied", `anonymous sessions may only use isolated demo Task Objects and Tasks (action '${action}' requires a contributor key; for shared open Tasks send X-Namespace: main to /v1/Tasks or /v1/tasks/claim)`);
+    if (args.queue && !String(args.queue).startsWith("demo.")) throw error(403, "scope_denied", "anonymous sessions cannot access production Tasks");
+    if (args.store && !String(args.store).startsWith("demo.")) throw error(403, "scope_denied", "anonymous sessions cannot access production Task Objects");
   }
   const governed = value => ({ ...value, namespace: ns, producer_surface: "surface:tessera", owner_key_id: grant.key_id,
     visibility_scope: "private", allowed_surfaces: [], target_cohorts: ["all"],
@@ -616,8 +616,8 @@ export function chargeAccess(c, who, charge, now = Date.now() / 1000) {
 // hash was computed). They count granted leases only; an empty poll costs a request, never a claim.
 export function claimCaps(who, ns, ipHash, ipWindow = null) {
   const caps = [[who.key_id, DEMO_QUOTAS.claims_per_hour, "demo quota exceeded", null]];
-  if (usesOpenVerbs(who, ns)) caps.push([`open:${who.key_id}`, DEMO_QUOTAS.open_claims_per_hour, "open verb claim quota exceeded", null],
-    [`open-ip:${ipHash || "unknown"}`, DEMO_QUOTAS.open_claims_per_ip_hour, "open verb claim quota exceeded", ipWindow]);
+  if (usesOpenVerbs(who, ns)) caps.push([`open:${who.key_id}`, DEMO_QUOTAS.open_claims_per_hour, "open Task claim quota exceeded", null],
+    [`open-ip:${ipHash || "unknown"}`, DEMO_QUOTAS.open_claims_per_ip_hour, "open Task claim quota exceeded", ipWindow]);
   return caps;
 }
 export function checkClaimCaps(c, caps, now = Date.now() / 1000) {
@@ -633,11 +633,11 @@ export function chargeClaimCaps(c, caps, now = Date.now() / 1000) {
 // Deny by default: own-namespace nouns, and filing and following request verbs in the shared one.
 function enforceRequester(c, grant, action, args, ns) {
   const shared = filesRequests(grant, ns);
-  if (!(shared ? REQUESTER_SHARED_ACTIONS : REQUESTER_OWN_ACTIONS).has(action)) throw error(403, "scope_denied", "a requester key writes nouns in its own namespace and files request verbs");
+  if (!(shared ? REQUESTER_SHARED_ACTIONS : REQUESTER_OWN_ACTIONS).has(action)) throw error(403, "scope_denied", "a requester key writes Task Objects in its own namespace and files request Tasks");
   args = { ...args };
   if (shared && action === "enqueue") {
-    if (args.queue !== REQUEST_QUEUE || (args.kind ?? "task") !== REQUEST_KIND) throw error(403, "scope_denied", `requesters may only file ${REQUEST_KIND} verbs in ${REQUEST_QUEUE}`);
-    if (Array.isArray(args.depends_on) && args.depends_on.length) throw error(403, "scope_denied", "a request verb cannot depend on other verbs");
+    if (args.queue !== REQUEST_QUEUE || (args.kind ?? "task") !== REQUEST_KIND) throw error(403, "scope_denied", `requesters may only file ${REQUEST_KIND} Tasks in ${REQUEST_QUEUE}`);
+    if (Array.isArray(args.depends_on) && args.depends_on.length) throw error(403, "scope_denied", "a request Task cannot depend on other Tasks");
     // Its own ids start with rq-<principal_id>-, so organizations neither collide nor learn which
     // other ids exist (same rule as _tasks._check_requester_ids).
     const prefix = `rq-${grant.principal_id}-`;
@@ -650,14 +650,14 @@ function enforceRequester(c, grant, action, args, ns) {
     if (!c._one("SELECT 1 AS own FROM tasks WHERE namespace=? AND id=? AND owner_key_id=? AND parent_id IS NULL", ns, String(args.task_id || ""), grant.key_id)) throw error(404, "not_found", "task does not exist");
   } else if (!shared) {
     const names = [args.store, args.store_name, ...(args.writes || []).map(w => w?.store)];
-    if (names.some(n => n && !String(n).startsWith(REQUESTER_STORE_PREFIX))) throw error(403, "scope_denied", "requester nouns live in org. stores of their own namespace");
+    if (names.some(n => n && !String(n).startsWith(REQUESTER_STORE_PREFIX))) throw error(403, "scope_denied", "requester Task Objects live in org. stores of their own namespace");
     if (action === "putRecords") args.writes = (args.writes || []).map(w => ({ ...w, namespace: ns, producer_surface: "surface:tessera", owner_key_id: grant.key_id, visibility_scope: "private", allowed_surfaces: [], target_cohorts: ["all"],
       tags: [...(w.tags || []).filter(t => !/^(status|origin|untrusted|demo|open):/.test(t)).slice(0, 8), "origin:requester", "untrusted:true"] }));
   }
   const linkIssue = action === "humanLinkIssue";
   const writing = linkIssue || action === "putRecords" || action === "enqueue";
   const payload = linkIssue ? "" : storedPayload(action, args);
-  if (!linkIssue && writing && hasPersonalData(payload)) throw error(400, "example_only", "requests and nouns must not contain personal or payment data");
+  if (!linkIssue && writing && hasPersonalData(payload)) throw error(400, "example_only", "requests and Task Objects must not contain personal or payment data");
   const bytes = linkIssue ? utf8Bytes(args.text) + utf8Bytes(args.agent_note || "") : utf8Bytes(payload);
   if (bytes > REQUESTER_QUOTAS.request_bytes) throw error(413, "payload_too_large", "requester request exceeds byte limit");
   return [args, { kind: "requester", action, namespace: ns, bytes: writing ? bytes : 0, writing }];
@@ -674,7 +674,7 @@ export function ownAudit(c, grant, args = {}) {
     : c._all("SELECT * FROM access_counters WHERE principal_id=? AND window>=? ORDER BY window DESC, last_ts DESC LIMIT ?", grant.principal_id || grant.key_id, sinceWindow, limit);
   return { events: rows.map(r => ({ ...r, labels: JSON.parse(r.labels), scopes_used: JSON.parse(r.scopes_used) })),
     counters: counters.map(r => ({ ...r, window_start: r.window * COUNTER_WINDOW_SECONDS, window_seconds: COUNTER_WINDOW_SECONDS })),
-    counters_note: "Denied, failed and no-op requests and internal pre-checks are counted per minute instead of one row each; counts not yet written may be lost if the object restarts." };
+    counters_note: "Denied, failed and no-op requests and internal pre-checks are counted per minute instead of one row each; unwritten counts may be lost if the object restarts." };
 }
 export function publicActivity(c) {
   const rows = c._all("SELECT ts,principal_kind,action,resource_type,status,labels FROM access_events WHERE action NOT IN ('verifyKey','verifyStoreScope') AND principal_kind IN ('anonymous','keyed','service_binding') AND ts>=? ORDER BY seq DESC LIMIT 30", Date.now() / 1000 - RETENTION_SECONDS);

@@ -15,9 +15,9 @@ export function publicationProof(c, store, value, deny) {
   if (!["eranos.catalog", "eranos.index"].includes(store)) return;
   if (!value || typeof value !== "object") throw deny("catalog publication requires review evidence");
   const result = c._one("SELECT r.* FROM results r JOIN tasks t ON t.namespace=r.namespace AND t.id=r.task_id WHERE r.namespace=? AND r.task_id=? AND r.receipt_hash=? AND t.queue='eq03' AND r.ok=1 AND r.state_after='done'", c.namespace, value.review_task_id || "", value.review_receipt || "");
-  if (!result) throw deny("a completed independent review receipt is required");
+  if (!result) throw deny("a completed independent review record is required");
   const proof = JSON.parse(result.output), actor = result.completed_by_key;
-  if (!actor || proof.approved !== true) throw deny("review receipt is not an authenticated approval");
+  if (!actor || proof.approved !== true) throw deny("review record is not an authenticated approval");
   reviewProof(c, result.task_id, actor, proof, deny);
   for (const key of ["draft_task_id", "draft_sha256", "drafter_key_id", "reviewer_key_id", "publication_sha256"]) if (value[key] !== proof[key]) throw deny("publication does not match the approved artifact");
   if (store === "eranos.catalog") {

@@ -225,7 +225,7 @@ export function canonicalCategoryTags(value, tags, badReq = null) {
 }
 
 export function nounFilterSql(nounKind, {tag = null, category = null} = {}) {
-  if (!["record", "object"].includes(nounKind)) throw new Error("unknown noun kind");
+  if (!["record", "object"].includes(nounKind)) throw new Error("unknown Task Object kind");
   const [alias, container, key, payload] = nounKind === "record"
     ? ["h", "h.store", "h.key", "r.value"] : ["o", "o.bucket", "o.key", "o.metadata"];
   const clauses = [], params = [], filters = [];

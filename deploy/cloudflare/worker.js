@@ -319,7 +319,7 @@ async function contentIdentityMismatch(claimed, bytes) {
     return problem(400, "invalid_request", "the claimed size does not match the uploaded bytes");
   }
   if (claimed.sha256 != null && (typeof claimed.sha256 !== "string" || claimed.sha256.toLowerCase() !== await sha256Hex(bytes))) {
-    return problem(400, "invalid_request", "the claimed sha256 does not match the uploaded bytes");
+    return problem(400, "invalid_request", "the claimed digest does not match the uploaded bytes");
   }
   return null;
 }

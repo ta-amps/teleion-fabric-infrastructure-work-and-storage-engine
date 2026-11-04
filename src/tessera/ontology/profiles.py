@@ -187,7 +187,7 @@ _PROFILE_ALIASES: dict[str, str] = {
 
 
 class AdaptedNounView(BaseModel):
-    """Profile-adapted projection of a canonical Noun record."""
+    """Profile-adapted projection of a canonical Task Object record."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -207,7 +207,7 @@ class AdaptedNounView(BaseModel):
 
 
 class AdaptedTaskGuidance(BaseModel):
-    """Profile-adapted execution contract and worker guidance for a Verb or Noun task."""
+    """Profile-adapted execution contract and worker guidance for a Task or Task Object task."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -272,7 +272,7 @@ def adapt_noun_view(
     record: Mapping[str, Any] | BaseModel,
     profile: CallerProfile | str,
 ) -> AdaptedNounView:
-    """Render the same underlying Noun record according to the caller's profile policy."""
+    """Render the same underlying Task Object record according to the caller's profile policy."""
     prof = get_caller_profile(profile)
     rec = record.model_dump() if isinstance(record, BaseModel) else dict(record)
 
@@ -358,7 +358,7 @@ def adapt_noun_view(
                 sections.append(f"Intake Steps: {steps_str}")
         elif prof.profile_id == "human_steward":
             sections.append(
-                f"STEWARD REVIEW PACKET: {title} [{category_id} / {noun_id}] (sha256={content_sha[:16]})"
+                f"STEWARD REVIEW PACKET: {title} [{category_id} / {noun_id}] (digest={content_sha[:16]})"
             )
             if summary:
                 sections.append(f"Overview: {summary}")
@@ -430,7 +430,7 @@ def adapt_task_guidance(
     category_spec: CategorySpec | str,
     profile: CallerProfile | str,
 ) -> AdaptedTaskGuidance:
-    """Adapt Verb/Noun worker guidance to the caller profile's tier, cost, and safety rules."""
+    """Adapt Task/Task Object worker guidance to the caller profile's tier, cost, and safety rules."""
     spec = (
         category_spec
         if isinstance(category_spec, CategorySpec)
@@ -482,7 +482,7 @@ def adapt_task_guidance(
             f"Execution Mode: {eff_tier} (budget cap ${eff_budget:.2f} USD).",
             "Before Calling Any Model: " + " ".join(wg.deterministic_checks_before_llm),
             "Context & Safeguards: " + " ".join(wg.preflight_context),
-            "Required Verification Receipt: " + " ".join(wg.post_condition_receipt_rules),
+            "Required Verification Record: " + " ".join(wg.post_condition_receipt_rules),
         ]
         if requires_human:
             lines.append(

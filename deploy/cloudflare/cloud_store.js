@@ -142,7 +142,7 @@ function isValidScope(scope) {
 function serverContentIdentity(args) {
   const sha256 = String(args.sha256 || "");
   const size = Number(args.size);
-  if (!SHA256_RE.test(sha256)) throw badReq("sha256 must be the server-computed lowercase SHA-256 digest");
+  if (!SHA256_RE.test(sha256)) throw badReq("digest must be the server-computed lowercase digest");
   if (!Number.isSafeInteger(size) || size < 0) throw badReq("size must be the server-computed byte count");
   return { sha256, size };
 }
@@ -458,12 +458,12 @@ const BLOB_UPLOADERS_DDL =
   "CREATE TABLE IF NOT EXISTS blob_uploaders (namespace TEXT NOT NULL, sha256 TEXT NOT NULL, key_id TEXT NOT NULL, created_at REAL NOT NULL, PRIMARY KEY (namespace, sha256, key_id))";
 
 const DEFAULT_BUCKETS = [
-  ["nouns", "Canonical and proposed atomic noun schemas, packs, and structured artifacts"],
-  ["verbs", "Atomic verb briefs, worker recipes, and multi-stage workflow templates"],
-  ["kits", "Eranos agent kits: nouns and verbs made for nonprofits' agents, with their checks"],
+  ["nouns", "Canonical and proposed atomic Task Object schemas, packs, and structured artifacts"],
+  ["verbs", "Atomic Task briefs, worker recipes, and multi-stage workflow templates"],
+  ["kits", "Eranos agent kits: Task Objects and Tasks made for nonprofits' agents, with their checks"],
   ["cases", "Example multi-document harm bundles and deterministic verdicts"],
   ["provisions", "Herma coding-harness rule packs, prompt fragments, and URI documents"],
-  ["traces", "Bilateral agent execution traces, audit logs, and SHA-256 receipts"],
+  ["traces", "Bilateral agent execution traces, audit logs, and digest records"],
 ];
 
 export class TesseraCoordinator extends DurableObject {
@@ -1504,7 +1504,7 @@ export class TesseraCoordinator extends DurableObject {
   // are read, and `next` resumes where it stopped (H-14; same rule as _access_routes.list_verbs).
   _listVerbs(grant, ns, args) {
     const status = args.status == null || args.status === "" ? "ready" : String(args.status);
-    if (!["ready", "leased", "waiting", "done", "dead", "cancelled", "all"].includes(status)) throw badReq("invalid verb status");
+    if (!["ready", "leased", "waiting", "done", "dead", "cancelled", "all"].includes(status)) throw badReq("invalid Task status");
     const requested = args.limit == null || args.limit === "" ? 100 : Number(args.limit);
     if (!Number.isInteger(requested)) throw badReq("limit must be an integer");
     const limit = Math.max(1, Math.min(requested, VERB_PAGE_MAX));
@@ -1512,7 +1512,7 @@ export class TesseraCoordinator extends DurableObject {
     if (args.after != null && args.after !== "") {
       const text = String(args.after), split = text.indexOf("|");
       const created = split > 0 ? Number(text.slice(0, split)) : NaN, id = split > 0 ? text.slice(split + 1) : "";
-      if (!Number.isFinite(created) || !id) throw badReq("invalid verb cursor");
+      if (!Number.isFinite(created) || !id) throw badReq("invalid Task cursor");
       cursor = [created, id];
     }
     const view = this._viewerCtx(grant, args.surfaceHeader);
@@ -2632,7 +2632,7 @@ export class TesseraCoordinator extends DurableObject {
           const outputVal = args.output === undefined ? null : args.output;
           const outputText = canonicalJson(outputVal);
           if (new TextEncoder().encode(outputText).byteLength > MAX_OUTPUT_BYTES) {
-            throw badReq("output is over 1 MiB: store it as a blob and submit its sha256");
+            throw badReq("output is over 1 MiB: store it as a blob and submit its digest");
           }
           this._requireHolder(grant, taskId);
 
@@ -2931,7 +2931,7 @@ export class TesseraCoordinator extends DurableObject {
           }
           const text = canonicalJson(input);
           if (new TextEncoder().encode(text).byteLength > MAX_OUTPUT_BYTES) {
-            throw badReq("input is over 1 MiB: store it as a blob and pass its sha256");
+            throw badReq("input is over 1 MiB: store it as a blob and pass its digest");
           }
           const tRow = this._taskRow(taskId);
           this._requireQueue(grant, tRow.queue);
