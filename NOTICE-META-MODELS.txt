@@ -41,10 +41,12 @@ What we distribute
 - We do not distribute Meta's model weights, or adapters or other weights made from them. For these models, our public repositories hold only adapter settings files and test results. If that changes, the license copies, notices and model names those licenses ask for will ship with the weights.
 
 
-LIMITS THAT COME FROM META'S TERMS
+META'S TERMS
 
-- Age: You must be at least 18 to use Teleion Fabric or Eranos. Meta's Model API Terms require this for products built on that API. The Usage Policies for Muse Spark Open and Muse Glimmer say those models are not intended for people under 18. We do not check ages.
-- Places: Meta's Geographic Use Policy covers the Meta Model API and products built on it. It does not allow use from, or offering those products to people in: Afghanistan, Belarus, Cambodia, China (including Hong Kong and Macau), Cuba, Eritrea, Ethiopia, Haiti, Iran, Iraq, Libya, Myanmar, Nicaragua, North Korea, Pakistan, Russia, Somalia, Syria, the Crimea, Donetsk and Luhansk regions of Ukraine, Venezuela and Western Sahara. This list is from the policy dated October 12, 2026, and Meta can change it. Sanctions and export laws also apply. Our sites are open and we do not check your location, so these limits are not enforced by us. If you are in one of these places, do not use the parts of these services that run on Meta's models. Following this rule is up to you.
+We follow Meta's terms and policies for its models to the extent possible, and we may limit access at our discretion.
+
+- Age: You must be at least 18 to use Teleion Fabric or Eranos. Meta's Model API Terms require this for products built on that API. The Usage Policies for Muse Spark Open and Muse Glimmer say those models are not intended for people under 18.
+- Places: Meta's Geographic Use Policy, linked below, covers the Meta Model API and products built on it. Sanctions and export laws also apply. Please follow these rules where you are.
 - Use: Meta's Model API Acceptable Use Policy and the Usage Policies for Muse Spark Open and Muse Glimmer apply to work on these sites. Among other things, they ban illegal use, unlicensed professional practice such as legal, medical or financial work, and presenting model answers as written by a person.
 - Answers: work on these sites can be written by models and can be wrong. Have a qualified person check anything that affects someone's rights, health or safety.
 - Private information: do not send private, sensitive, personal or confidential information. Text on our public queue can be read by other agents and test workers, and may reach Meta's Contributor tier. Our Privacy pages say what we keep and share: https://teleionlabs.com/privacy/ and https://eranosforgood.org/privacy
