@@ -1,4 +1,4 @@
-# Tessera: handoff
+# Teleion Fabric: handoff
 
 ## Integration checkpoint, October 29, 2026
 
@@ -13,7 +13,7 @@ Execution observations and bounded recall are protected nouns captured with acce
 Follow the [worker-first policy](WORKER-FIRST-EXECUTION.md): independently
 schedulable reasoning is a claimed verb; inputs, contracts, artifacts and evidence
 are scoped nouns. Workers reason and self-check. Authentication, leases, CAS,
-types and receipts stay deterministic. Server inference is an explicitly
+types and records stay deterministic. Server inference is an explicitly
 configured, scoped and bounded exception. Missing capacity or invalid input does
 not enable it automatically.
 
@@ -23,7 +23,7 @@ certification.
 
 ## Earlier handoff
 
-> Note, October 29, 2026: this dated section predates the current model, in which Tessera is infrastructure, Eranos and one overview site are the only public surfaces, and everything else, agent kits included, is nouns and verbs in seed packs; the exploitation and scam surface it describes is archived, and its nouns and verbs are now a pack in the [pack library](https://github.com/ta-amps/seed-packs-library-of-nouns-and-verbs).
+> Note, October 29, 2026: this dated section predates the current model, in which Teleion Fabric is infrastructure, Eranos and one overview site are the only public surfaces, and everything else, agent kits included, is nouns and verbs in seed packs; the exploitation and scam surface it describes is archived, and its nouns and verbs are now a pack in the [pack library](https://github.com/ta-amps/seed-packs-library-of-nouns-and-verbs).
 
 Where the work stands as of Oct 26, 2026, how to verify every guarantee from a fresh clone, what sits in
 `briefs/` for the next workers, and how Shamash and Eranos connect to the fabric.
@@ -32,7 +32,7 @@ Where the work stands as of Oct 26, 2026, how to verify every guarantee from a f
 
 - **Store and kernel (`src/tessera/`).** Single-node SQLite WAL store (`BEGIN IMMEDIATE` per operation) with
   named queues, leases with heartbeats and a hard cap, rising fencing tokens, idempotent submits with
-  SHA-256 receipts, jittered exponential backoff and dead letters, split and merge (including ordered sibling
+  SHA-256 records, jittered exponential backoff and dead letters, split and merge (including ordered sibling
   waves via `after`), task dependencies (`depends_on`), park and resume (numbered parks, timeouts, non-self
   resume), model-job tracking tied to the lease, compare-and-set versioned records, atomic record batches,
   content-addressed blobs, one `counts` table and an append-only event log. Nothing in `src/tessera/` names
@@ -82,27 +82,27 @@ What each check proves:
 `build` in `.tessera/tessera.db`. `uv run python tools/muse_worker.py --worker muse-01` claims one brief,
 validates `repo`, `task_id` and `branch` before touching git or the filesystem, creates a sibling worktree,
 runs Muse Code headless with its sandbox on and Contributor mode off, gates on `make check`, and submits a
-receipt.
+record.
 
 | Brief | Owner | Effect | Depends on | Summary |
 |---|---|---|---|---|
 | [briefs/L11.json](../briefs/L11.json) | `muse-code` | `write-repo` | -- | Nightly making-of export (`events.jsonl` and `counts.json`) |
-| [briefs/L13.json](../briefs/L13.json) | `muse-code` | `write-repo` | `L8`, `L9` (done) | Run the remaining `L*` briefs through Tessera's `build` queue |
+| [briefs/L13.json](../briefs/L13.json) | `muse-code` | `write-repo` | `L8`, `L9` (done) | Run the remaining `L*` briefs through Teleion Fabric's `build` queue |
 | [briefs/L16.json](../briefs/L16.json) | `muse-code` | `write-repo` | `L8` (done) | Model-job lane polling and cancel-on-lapse (`T12` over HTTP) |
-| [briefs/L18.json](../briefs/L18.json) | `muse-code` | `write-repo` | `L8` (done) | Receipts gate verified over HTTP (`T15`) |
+| [briefs/L18.json](../briefs/L18.json) | `muse-code` | `write-repo` | `L8` (done) | Records gate checked over HTTP (`T15`) |
 | [briefs/L19.json](../briefs/L19.json) | `muse-code` | `write-repo` | `L14` (done) | Read-only `/board` v2 checked against `GET /v1/counts` |
 | [briefs/L20.json](../briefs/L20.json) | `human` | `public` | `L9`, `L14`, `L17` (done) | Deploy `tessera-fabric` on Fly.io behind the Cloudflare Worker (Taylor only; never queued) |
 | [briefs/L21.json](../briefs/L21.json) | `muse-code` | `write-repo` | `L20` | Soak and restart runs (`T13`, `T14`) against the deployed service |
 | [briefs/L23.json](../briefs/L23.json) | `muse-code` | `write-repo` | `L21` | Move Shamash's run loop onto the deployed service |
 | [briefs/L25.json](../briefs/L25.json) | `muse-code` | `write-repo` | `L8`, `L17` (done) | Resume effect-class gate: require the task's effect class and `admin` for `write-repo`, plus conformance test `T22` |
-| [briefs/L26.json](../briefs/L26.json) | `muse-code` | `write-repo` | `L8` (done) | Versioned receipt hash test vectors JSON so JS/TS clients verify SHA-256 receipts byte-for-byte |
+| [briefs/L26.json](../briefs/L26.json) | `muse-code` | `write-repo` | `L8` (done) | Versioned record hash test vectors JSON so JS/TS clients verify SHA-256 records byte-for-byte |
 
 Once `L25` and `L26` land and Taylor approves [SPEC.md](../conformance-draft/SPEC.md) (`L1`), `make lock-suite`
 moves `conformance-draft/` to `conformance/` and writes `conformance.lock`.
 
-## How Shamash and Eranos connect to Tessera
+## How Shamash and Eranos connect to Teleion Fabric
 
-Two public-good surfaces share one Tessera instance (`tessera.<domain>` when hosted, or
+Two public-good surfaces share one Teleion Fabric instance (`tessera.<domain>` when hosted, or
 `http://127.0.0.1:7701` locally under `make dev`). `make seed` (`tools/seed.py`) defines the general agent
 queues (`research`, `draft`, `review`, `build`) together with both surfaces' pipeline queues:
 
@@ -118,7 +118,7 @@ queues (`research`, `draft`, `review`, `build`) together with both surfaces' pip
   nonprofits and public-good teams can use right away. Contributors' agents and Eranos's API connect over MCP
   (`/mcp`), HTTP (`/v1/*`) or `/work` forms using keys scoped to `eq01`, `eq02` and `eq03`, write versioned kit
   records with compare-and-set so concurrent contributors never overwrite one another, and verify SHA-256
-  receipts on every submitted draft and review.
+  records on every submitted draft and review.
 
 Under a single Cloudflare domain, the three Workers sit side by side (`tessera.<domain>`, `shamash.<domain>`,
 `eranos.<domain>`), each configured via `CUSTOM_DOMAIN` in `deploy/hosting.env` and a custom-domain route in

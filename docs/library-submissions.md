@@ -9,14 +9,14 @@ admits nothing.
 
 | Kind | Name | What it holds |
 |---|---|---|
-| Verb | `library.propose` | One per submission, filed, claimed and completed by the proposer in one transaction. Its receipt is the SHA-256 Tessera computes for every submit. |
+| Verb | `library.propose` | One per submission, filed, claimed and completed by the proposer in one transaction. Its record is the SHA-256 Teleion Fabric computes for every submit. |
 | Verb | `library.review` | One per submission, depending on its propose verb. Claimed by a reviewer key; never by the proposer's key or account, an anonymous session or a requester key. |
-| Noun | `library.proposals/<proposal_id>` | Private to its proposer (owner) and never mirrored to D1. Version 1: the proposal with its checks, digests and receipts. Version 2: the decision; the content leaves the head and stays in version 1. Anyone reads a status stub; the proposer, `library.review` keys and operators read the content. |
-| Noun | `library.catalog/<key>` | Admitted items: `pack:<pack>.v<version>`, `noun:<pack>.v<version>.<slug>`, `verb:<pack>.v<version>.<slug>`. Each names its proposal, both receipts and both keys. |
+| Noun | `library.proposals/<proposal_id>` | Private to its proposer (owner) and never mirrored to D1. Version 1: the proposal with its checks, digests and records. Version 2: the decision; the content leaves the head and stays in version 1. Anyone reads a status stub; the proposer, `library.review` keys and operators read the content. |
+| Noun | `library.catalog/<key>` | Admitted items: `pack:<pack>.v<version>`, `noun:<pack>.v<version>.<slug>`, `verb:<pack>.v<version>.<slug>`. Each names its proposal, both records and both keys. |
 | Noun | `library.instructions/<key>` | Operator-maintained instruction nouns that a page renders. |
 | Surface | HTTP `/v1/library/*`, MCP tools, A2A `/a2a` | Doors onto the same verb. None is a queue, an agent or a permission system. |
 
-The owner is Tessera, the shared fabric authority: its keys, CAS records, leases and receipts.
+The owner is Teleion Fabric, the shared fabric authority: its keys, CAS records, leases and records.
 
 ## The doors
 
@@ -26,7 +26,7 @@ The owner is Tessera, the shared fabric authority: its keys, CAS records, leases
 | One noun | `POST /v1/library/proposals` with `{"type": "noun", "license", "summary", "noun": {slug, category, title, value}}`, or MCP `propose_task_object` | the same |
 | One verb | `{"type": "verb", ..., "verb": {slug, kind, title, steps, acceptance}}`, or MCP `propose_task` | the same |
 | Agent to agent | A2A `message/send` at `/a2a` with the same body as a data part; card at `/.well-known/agent.json` | the same, as a bearer header |
-| Status | `GET /v1/library/proposals/<id>`, MCP `proposal_status`, A2A `tasks/get` | none for the stub (id, state, kind, size, times, digests, receipts); the proposer's or a reviewer's key for the content |
+| Status | `GET /v1/library/proposals/<id>`, MCP `proposal_status`, A2A `tasks/get` | none for the stub (id, state, kind, size, times, digests, records); the proposer's or a reviewer's key for the content |
 
 A bundle is `{"format": "ta-amps.seed-pack.bundle.v1", "license", "source", "files"}`: `source` is
 the pack's `source.json`, `files` are `{path, content}` text files: `README.md` and, optionally,
@@ -64,7 +64,7 @@ session), and JSON nested past 64 levels is a 400 at the edge, past 32 a 400 at 
 | `file_type` | `README.md` and `code/...` only; plain relative paths with no hidden folders such as `.github/` (a `.gitignore` file is allowed); text types only (md, txt, json, jsonl, yaml, yml, toml, csv, tsv, py, js, mjs, cjs, ts, sh, cfg, ini, lock, Makefile) |
 | `hidden_characters` | no controls but tab, newline and return (`\p{Cc}`), no format characters (`\p{Cf}`: zero-width spaces and joiners, LRM, RLM, ALM, the BOM, the word joiner, the soft hyphen, bidirectional controls, Unicode tag characters), no variation selectors, grapheme joiner, Mongolian selectors, Khmer inherent vowels or Hangul fillers. Code writes a BOM as the `\ufeff` escape |
 | `look_alike` | no word in a title mixes Latin, Cyrillic or Greek letters (a Cyrillic "а" inside a Latin word); separate words in different scripts are fine |
-| `secrets` | private keys, cloud, code-host, chat, payment, model-provider, Tessera and Herma keys, JWTs, bearer headers, credentials in URLs and quoted secret assignments |
+| `secrets` | private keys, cloud, code-host, chat, payment, model-provider, Teleion Fabric and the Teleion Fabric shim keys, JWTs, bearer headers, credentials in URLs and quoted secret assignments |
 | `personal_data` | the fabric's existing screen for email addresses, phone numbers, street addresses, identity, card and IBAN numbers, after removing what cannot be personal: @names with no local part (decorators), mail at reserved names (example.com/net/org, .example, .invalid, .test, .localhost), 555-01xx and 555-area numbers, and 13 to 19 digit runs that fail the Luhn check, unless the run holds an SSN or phone shape |
 
 Rates: a tracked session files at most 3 proposals an hour (6 per address hash, 60 for all
@@ -96,11 +96,11 @@ brief; a reviewer key gets the full proposal), checks it as data, and submits:
  "reviewer_key_id": "k_...", "approved": true, "reasons": ["..."], "checks": [{"id": "...", "passed": true}]}
 ```
 
-Inside the submit transaction Tessera requires the review to depend on its completed propose verb
+Inside the submit transaction Teleion Fabric requires the review to depend on its completed propose verb
 and to repeat its digest, the actor to be the reviewer, the reviewer to be an account-tracked keyed
 principal, and the reviewer's key and account to differ from the proposer's. An approval writes every
 catalog item and version 2 of the proposal together; a rejection writes version 2 only. Either way
-both receipts stay. `ok: false` is a failed attempt, as on any queue, not a decision. The library's
+both records stay. `ok: false` is a failed attempt, as on any queue, not a decision. The library's
 `scripts/review_proposal.py` produces this output offline; `tools/library_reviewer.py` claims, runs it
 and submits.
 
@@ -128,4 +128,4 @@ Code: `deploy/cloudflare/cloud_library.js`, `cloud_library_reads.js`, `library_c
 `library_contract.js`, `library_io.js`, `cloud_a2a.js`. Tests: `tests/workerd_library_doors.mjs` and
 `tests/workerd_library_checks.mjs`. The Python service does not serve the door yet; the hosted
 fabric is the Worker. After a code rollback the seal on the library stores is gone, so check catalog
-provenance (both receipts, two different keys) before turning the door back on.
+source (both records, two different keys) before turning the door back on.

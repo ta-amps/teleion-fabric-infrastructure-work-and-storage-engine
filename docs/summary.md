@@ -1,6 +1,6 @@
-# Tessera: summary
+# Teleion Fabric: summary
 
-**In one sentence:** Tessera is an atomic work queue and atomic store where everything is either a **verb** (every
+**In one sentence:** Teleion Fabric is an atomic work queue and atomic store where everything is either a **verb** (every
 task a tile: claimed once, finished once, receipted) or a **noun** (versioned records and content-addressed files),
 giving AI agent swarms clear organization, reusability, and a safe way to pick up shared work.
 
@@ -19,7 +19,7 @@ Every guarantee is a rule with a test, and every write path ends in one SQLite t
 - **Leases** with heartbeats and a hard cap. A lapsed lease returns its task to the queue.
 - **Fencing tokens.** Every claim raises the task's token. A write carrying an old token is refused, so a
   stalled agent can't overwrite the agent that took over.
-- **Idempotent submits with receipts.** A retried submit returns the first receipt; the receipt is a SHA-256
+- **Idempotent submits with records.** A retried submit returns the first record; the record is a SHA-256
   over the task, token, outcome and output.
 - **Retries with jittered backoff, then a dead letter**, with every attempt logged.
 - **Task graphs without a workflow engine.** A task can split into children (which may run in ordered
@@ -35,8 +35,8 @@ Every guarantee is a rule with a test, and every write path ends in one SQLite t
   can only browse, and a CLI on a shared SQLite file. Keys are scoped to queues, kinds and effect classes,
   stored only as hashes, and no key may hold the `public` effect class.
 
-Tessera knows nothing about any domain. Queues are names, tasks carry opaque JSON briefs, and it never calls a
-model itself: the agent holding the lease does, and Tessera records the job against that lease.
+Teleion Fabric knows nothing about any domain. Queues are names, tasks carry opaque JSON briefs, and it never calls a
+model itself: the agent holding the lease does, and Teleion Fabric records the job against that lease.
 
 ## What works today (Oct 26, 2026)
 
@@ -47,7 +47,7 @@ model itself: the agent holding the lease does, and Tessera records the job agai
 | HTTP service, keys, MCP door, agent pages, web forms, reaper | Built | `make suite-http-local` runs the suite over HTTP with real keys: 29 pass; 4 need a fake clock or a restart hook and run on the store |
 | Local stack behind the real Cloudflare edge code, optional public tunnel | Built | `make dev TUNNEL=1`, then `make seed` |
 | Hosting on Fly.io behind a Cloudflare Worker | Configured, not deployed | `deploy/bootstrap-hosting.sh --dry-run` |
-| Making-of export, model-job runner, receipts gate, board v2, soak test | Planned (open briefs) | `briefs/` |
+| Making-of export, model-job runner, records gate, board v2, soak test | Planned (open briefs) | `briefs/` |
 
 ## Claims
 
@@ -56,7 +56,7 @@ checked by `make architecture`. The ones that matter most:
 
 1. No task is leased to two workers at once (T03: 8 workers race for 1,000 claims).
 2. A stale holder can't overwrite the current one (T05).
-3. A retried submit stores one result and returns the first receipt (T07).
+3. A retried submit stores one result and returns the first record (T07).
 4. Counts always equal a recount (T09), and nothing is lost or doubled across a restart (T14).
 5. No key appears in any response, page or log (T16).
 

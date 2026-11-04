@@ -1,19 +1,19 @@
 # Route agent work through nouns and verbs
 
-Represent a bounded action as a Tessera verb and its inputs, contract, artifacts
+Represent a bounded action as a Teleion Fabric verb and its inputs, contract, artifacts
 and evidence as versioned nouns. An external worker can discover an eligible task,
 claim it, read only permitted context, work under a lease and submit references to
 its results. Repository work is one use of this protocol; research, retrieval,
 compilation, testing, clarification and human decisions can use the same fabric.
 
-Tessera is infrastructure: it remains the queue and noun store. Eranos and one
+Teleion Fabric is infrastructure: it remains the queue and noun store. Eranos and one
 overview site are the only public surfaces, and everything else is nouns and
 verbs in seed packs. A Frontier seed/contract pack can supply
 declarative gap briefs, templates and governed artifact references through the
 existing APIs. An importer creates noun and task records; authorized workers
-perform the verbs. The release catalog references governed Tessera artifacts, so
+perform the verbs. The release catalog references governed Teleion Fabric artifacts, so
 the seed repository needs no separate runtime, library database or scheduler.
-Calling the compiler from the seed pack for composing verified code, or
+Calling the compiler from the seed pack for composing checked code, or
 Eranos verification, from a worker is an integration pattern unless the particular
 adapter is implemented and tested. Their existence alone does not wire every task
 through them.
@@ -35,9 +35,9 @@ The requester stores a typed `noun.skill_pack` contract and an input noun, then
 enqueues `verb.solve_draft`. The worker reads pinned versions and checks hashes.
 Missing input causes a park; a different key supplies a new input noun reference
 and resumes the task. The worker splits two deterministic calculations, stores
-child artifacts, submits their receipts and reclaims the parent to combine them.
+child artifacts, submits their records and reclaims the parent to combine them.
 The final artifact and self-check evidence are `noun.eval_run` records. The script
-prints the measured result, checked boundaries and receipt hashes with a run
+prints the measured result, checked boundaries and record hashes with a run
 fingerprint. Its temporary database is removed when it exits.
 
 This example uses a typed worker contract. It does not install a global schema
@@ -155,7 +155,7 @@ attestation.
 | Retrieve, investigate or situate | `verb.probe_source`, `verb.fetch_feed`, `verb.situate` | An eligible external worker reads scoped input nouns |
 | Draft or repair | `verb.solve_draft`, `verb.recover_fault` | Worker self-checks and stores candidate/evidence nouns |
 | Break down large work | `verb.decompose_dag`, `split`, dependencies | Bound depth/attempts; retain parent permissions |
-| Compile or deterministic QA | `verb.compile_dag`, `verb.verify_gate` | Run an implemented deterministic adapter with explicit receipts |
+| Compile or deterministic QA | `verb.compile_dag`, `verb.verify_gate` | Run an implemented deterministic adapter with explicit records |
 | Ask for missing input | `park`, input noun, `resume` | Another authorized principal supplies a precise answer |
 | Additional independent judgment | A review queue with `verb.verify_gate` or an appropriate judgment category | A capable independent agent or human claims the review verb |
 | Explicit private server work or exceptional fallback | Separate operator-provisioned server queue and scoped server worker | Require explicit policy, budget reservation and eligible credentials before any model call |
@@ -166,7 +166,7 @@ An external worker cannot switch to a server queue merely by changing a tag,
 contract field or model name. Give the server worker only its own queue grants;
 the operator's dispatcher and provider budget gate must authorize the fallback.
 The example denies the external key access to its server queue and makes no model
-call. It does not add an automatic fallback dispatcher to Tessera.
+call. It does not add an automatic fallback dispatcher to Teleion Fabric.
 
 An optional shim can provide a compact, caller-scoped view of allowed contract and
 input nouns. Preserve their references and treat their text as data. A shim must
@@ -174,8 +174,8 @@ not broaden a grant, publish a candidate, or turn missing evidence into a pass.
 
 Generic dependencies become eligible when upstream tasks terminate, including
 failure or cancellation. A downstream worker must inspect `state`, `ok` and the
-receipt before using an upstream result. Public Frontier promotion separately
-requires successful stage receipts and distinct actors at storage. That gate is
+record before using an upstream result. Public Frontier promotion separately
+requires successful stage records and distinct actors at storage. That gate is
 not a model judge on every task or conversation turn.
 
 The current HTTP boundary requires admin for `write-repo` and `public` effects;

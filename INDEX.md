@@ -8,12 +8,12 @@ Every file in this repo with a one-line description taken from the file itself. 
 |---|---|
 | [.gitignore](.gitignore) | Secrets and private material never leave this machine |
 | [.python-version](.python-version) |  |
-| [AGENTS.md](AGENTS.md) | Tessera: instructions for every coding agent |
+| [AGENTS.md](AGENTS.md) | Teleion Fabric: instructions for every coding agent |
 | [CHANGELOG.md](CHANGELOG.md) | Changelog |
 | [CLAUDE.md](CLAUDE.md) | Worker execution direction |
 | [LICENSE](LICENSE) | MIT License |
 | [Makefile](Makefile) | Tessera: atomic work queue and atomic storage. |
-| [README.md](README.md) | Tessera – the durable task queue and storage engine |
+| [README.md](README.md) | Teleion Fabric: the durable task queue and storage engine |
 | [architecture.json](architecture.json) | tessera |
 | [keywords.txt](keywords.txt) | Terms for KEYWORDS.md, one per line: "term" or "term: alias, alias". |
 | [package.json](package.json) | tessera-worker-tests |
@@ -64,7 +64,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 
 | File | What it is |
 |---|---|
-| [conformance-draft/SPEC.md](conformance-draft/SPEC.md) | Tessera specification, v0.2 (draft) |
+| [conformance-draft/SPEC.md](conformance-draft/SPEC.md) | Teleion Fabric specification, v0.2 (draft) |
 | [conformance-draft/conftest.py](conformance-draft/conftest.py) | Fixtures for the Tessera conformance suite (SPEC.md §10). |
 | [conformance-draft/receipt_vectors.json](conformance-draft/receipt_vectors.json) | JSON object: schema_version, spec_section, version, vectors |
 | [conformance-draft/test_model_jobs.py](conformance-draft/test_model_jobs.py) | T12: model jobs (Meta Model API background responses) are tied to the lease that started them. |
@@ -79,7 +79,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 |---|---|
 | [deploy/README.md](deploy/README.md) | Deploy |
 | [deploy/bootstrap-hosting.sh](deploy/bootstrap-hosting.sh) | One-time hosting setup for one service on Fly.io behind a Cloudflare Worker: the Fly app and its |
-| [deploy/cloudflare/README.md](deploy/cloudflare/README.md) | Cloudflare: the Tessera cloud runtime and edge |
+| [deploy/cloudflare/README.md](deploy/cloudflare/README.md) | Cloudflare: Teleion Fabric cloud runtime and edge |
 | [deploy/cloudflare/access_openapi.json](deploy/cloudflare/access_openapi.json) | JSON object: components, info, openapi, paths |
 | [deploy/cloudflare/agent_start.js](deploy/cloudflare/agent_start.js) | Versioned onboarding instructions. |
 | [deploy/cloudflare/claim_admission.js](deploy/cloudflare/claim_admission.js) | Ephemeral scheduling hints, never lease or authorization authority. |
@@ -112,7 +112,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [deploy/cloudflare/worker.js](deploy/cloudflare/worker.js) |  |
 | [deploy/cloudflare/wrangler.jsonc](deploy/cloudflare/wrangler.jsonc) | Tessera Cloud Worker: 24/7 persistent atomic work queue, queryable CAS noun stores, |
 | [deploy/fly/Dockerfile](deploy/fly/Dockerfile) |  |
-| [deploy/fly/README.md](deploy/fly/README.md) | Fly.io: the Tessera service |
+| [deploy/fly/README.md](deploy/fly/README.md) | Fly.io: Teleion Fabric service |
 | [deploy/fly/fly.toml](deploy/fly/fly.toml) | Tessera service on one Fly.io machine with a volume (brief L20), reached through the Cloudflare edge |
 
 ## docs/ (31)
@@ -124,19 +124,19 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [docs/access-modes.md](docs/access-modes.md) | External agent access |
 | [docs/activity-map.md](docs/activity-map.md) | The public activity map |
 | [docs/agent-start.md](docs/agent-start.md) | Start an agent from a website |
-| [docs/architecture.md](docs/architecture.md) | Tessera: architecture |
+| [docs/architecture.md](docs/architecture.md) | Teleion Fabric: architecture |
 | [docs/claim-admission.md](docs/claim-admission.md) | Claim admission |
-| [docs/comparison.md](docs/comparison.md) | Tessera: comparison |
+| [docs/comparison.md](docs/comparison.md) | Teleion Fabric: comparison |
 | [docs/continuous-tuning.md](docs/continuous-tuning.md) | Continuous tuning, learning and evaluation |
-| [docs/decisions.md](docs/decisions.md) | Tessera: decisions |
+| [docs/decisions.md](docs/decisions.md) | Teleion Fabric: decisions |
 | [docs/execution-learning.md](docs/execution-learning.md) | Execution learning: observations, fingerprints and swappable learners |
 | [docs/execution-memory.md](docs/execution-memory.md) | Execution reports and permitted recall |
 | [docs/expansion.md](docs/expansion.md) | Seeding & expanding atomic nouns and verbs with Muse / Meta agents |
 | [docs/fine-tuning-workers.md](docs/fine-tuning-workers.md) | Optional fine-tuning workers |
-| [docs/frontier-publication.md](docs/frontier-publication.md) | Frontier publication receipts |
-| [docs/generalizing.md](docs/generalizing.md) | Tessera: generalizing it |
-| [docs/glossary.md](docs/glossary.md) | Tessera: glossary |
-| [docs/handoff.md](docs/handoff.md) | Tessera: handoff |
+| [docs/frontier-publication.md](docs/frontier-publication.md) | Frontier publication records |
+| [docs/generalizing.md](docs/generalizing.md) | Teleion Fabric: generalizing it |
+| [docs/glossary.md](docs/glossary.md) | Teleion Fabric: glossary |
+| [docs/handoff.md](docs/handoff.md) | Teleion Fabric: handoff |
 | [docs/library-submissions.md](docs/library-submissions.md) | Library submissions: one propose path, several doors |
 | [docs/making-of.md](docs/making-of.md) | The making-of |
 | [docs/opencode-bilateral.md](docs/opencode-bilateral.md) | Bilateral swarm testing with OpenCode and Meta's open-weight Muse model (muse-spark-open) |
@@ -144,10 +144,10 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [docs/opportunity-lab.md](docs/opportunity-lab.md) | Opportunity Lab |
 | [docs/raw-blob-governance.md](docs/raw-blob-governance.md) | Raw blob governance and the first uploader |
 | [docs/research-seeds.md](docs/research-seeds.md) | Research seeds and proposed recurring work |
-| [docs/review.md](docs/review.md) | Tessera: review guide |
-| [docs/setup.md](docs/setup.md) | Tessera: setup |
+| [docs/review.md](docs/review.md) | Teleion Fabric: review guide |
+| [docs/setup.md](docs/setup.md) | Teleion Fabric: setup |
 | [docs/storage-availability.md](docs/storage-availability.md) | Storage availability and activity timestamps |
-| [docs/summary.md](docs/summary.md) | Tessera: summary |
+| [docs/summary.md](docs/summary.md) | Teleion Fabric: summary |
 | [docs/work-design-and-evidence.md](docs/work-design-and-evidence.md) | Nouns, verbs and evidence |
 | [docs/work-routing.md](docs/work-routing.md) | Route agent work through nouns and verbs |
 

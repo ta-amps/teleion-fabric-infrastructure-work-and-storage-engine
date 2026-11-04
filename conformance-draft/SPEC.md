@@ -1,10 +1,10 @@
-# Tessera specification, v0.2 (draft)
+# Teleion Fabric specification, v0.2 (draft)
 
 Status: **draft for Taylor's approval (task L1)**. Once approved, `make lock-suite` moves this file and
 the tests beside it to `conformance/` and records their hashes in `conformance.lock`. After that, only
 Taylor changes them.
 
-Tessera is an atomic work queue and an atomic store for agent swarms. A backend is any implementation
+Teleion Fabric is an atomic work queue and an atomic store for agent swarms. A backend is any implementation
 that passes the tests in §10: the in-process store in `src/tessera/`, the HTTP service built from the
 briefs, or anything else.
 
@@ -17,7 +17,7 @@ briefs, or anything else.
 | Worker | Whoever claims a task: a Muse Code run, a Claude Code session, a person |
 | Lease | The right to work on one task until it lapses; at most one live lease per task |
 | Fencing token | A per-task integer that rises on every claim; writes carry it, stale tokens are refused |
-| Receipt | The proof of a submit: a SHA-256 over the task, token, outcome and output (§5.4) |
+| Record | The proof of a submit: a SHA-256 over the task, token, outcome and output (§5.4) |
 | Effect class | What a task may change: `read`, `write-internal`, `write-repo` or `public` |
 | Key | A bearer secret for the service, scoped to queues, kinds, effect classes and admin rights |
 | Dependency | A task another task waits for; the dependent becomes ready when every dependency is done, dead or cancelled |
@@ -28,7 +28,7 @@ briefs, or anything else.
 1. No task is ever leased to two workers at once.
 2. A lease ends by submit, split, cancel, lapse or a cancelled model job; never silently.
 3. A write from a stale lease is refused and changes nothing.
-4. A submit is stored at most once per idempotency key, and a replay returns the first receipt.
+4. A submit is stored at most once per idempotency key, and a replay returns the first record.
 5. Every state change, its counts update and its event commit in one transaction, or none of them do.
 6. Records change only by compare-and-set; every version stays readable.
 7. A task is never claimable while it waits: for its split children, for an unresolved dependency, or for
@@ -136,18 +136,18 @@ lease has just lapsed, the lapse is processed (§5.3) before answering.
   run time; the service runs it at least once a minute. Claims do both for their own queue first.
 - When a task becomes done, dead or cancelled, every task depending on it counts one dependency resolved.
 
-### 5.4 Idempotency and receipts
+### 5.4 Idempotency and records
 
 Idempotency keys are global. A submit whose key was already used for the same task returns the first
-receipt with `replayed = true` and writes nothing; for a different task it is refused
-(`idempotency_conflict`). Every submit, failed ones included, stores one result row. The receipt hash is
+record with `replayed = true` and writes nothing; for a different task it is refused
+(`idempotency_conflict`). Every submit, failed ones included, stores one result row. The record hash is
 
 ```
 sha256( canonical_json({"task_id", "fencing_token", "ok", "output", "error"}) )
 ```
 
 where `canonical_json` sorts keys, uses `,` and `:` without spaces, keeps UTF-8, rejects NaN, and writes a
-whole number without a fraction (`1.0` as `1`, below 2^53), so a receipt computed in another language, such
+whole number without a fraction (`1.0` as `1`, below 2^53), so a record computed in another language, such
 as JavaScript, matches.
 Outputs above 1 MiB are refused: store the bytes as a blob and submit its hash.
 
@@ -170,9 +170,9 @@ Outputs above 1 MiB are refused: store the bytes as a blob and submit its hash.
 - **Jobs**: `register_job(task, token, job_id, model)` needs a live lease; `update_job(job_id, status,
   usage, cost_usd)` records progress. Statuses follow the Meta Model API's background responses
   (`queued`, `in_progress`, `completed`, `failed`, `cancelled`, `incomplete`) plus `cancel_requested`,
-  which Tessera sets when a lease lapses or a task is cancelled. A job reported `cancelled` under the
+  which Teleion Fabric sets when a lease lapses or a task is cancelled. A job reported `cancelled` under the
   live lease returns its task as a failure (§5.3). Whoever runs the model lane polls Meta and reports
-  back; Tessera itself never calls a model.
+  back; Teleion Fabric itself never calls a model.
 - **Records**: `put_record(store, key, value, expected_version)` writes version `head + 1` only if the
   head is still `expected_version` (`None` means the key must not exist); otherwise `version_conflict`
   with the current version. Every version is kept (`record_history`); `get_record` reads the head or a
@@ -205,7 +205,7 @@ nothing. Bodies are JSON. Successful bodies are the models in `src/tessera/model
 | GET /v1/tasks/{id}, GET /v1/tasks/{id}/results | | 200 TaskView, `{results}` | key for the queue |
 | POST /v1/tasks/claim | `{queue, worker, kinds?, effect_classes?}` | 200 Lease, or 204 with Retry-After | key for the queue, kind and effect class |
 | POST /v1/tasks/heartbeat | `{task_id, fencing_token}` | 200 Lease | the key that claimed |
-| POST /v1/tasks/submit | `{task_id, fencing_token, output, ok, error}` + `Idempotency-Key` header | 200 Receipt | the key that claimed |
+| POST /v1/tasks/submit | `{task_id, fencing_token, output, ok, error}` + `Idempotency-Key` header | 200 Record | the key that claimed |
 | POST /v1/tasks/split | `{task_id, fencing_token, children}` | 200 `{children}` | the key that claimed, holding each child's effect class |
 | POST /v1/tasks/park | `{task_id, fencing_token, reason, resume_within?}` | 200 TaskView | the key that claimed |
 | POST /v1/tasks/resume | `{task_id, input, park?}` | 200 TaskView | key for the task's queue holding the task's effect class (`admin` for `write-repo` and `public`), other than the key that parked it |
@@ -288,7 +288,7 @@ task; parks up to 30 days; 4 levels of nesting; 10,000 events per page; task ids
 | T12 | Model jobs carry cost; a cancelled job returns its task; a lapse asks jobs to stop | every backend |
 | T13 | 4 workers move 50 tasks through 2 queues: none lost, none doubled, all receipted | every backend |
 | T14 | A restart mid-run loses and doubles nothing | every backend |
-| T15 | Every receipt matches its stored result under §5.4's formula | every backend |
+| T15 | Every record matches its stored result under §5.4's formula | every backend |
 | T16 | No key appears in responses, pages or logs | service |
 | T17 | A dependent waits for every dependency, then carries their results; dead or cancelled dependencies release it; unknown ones are refused | every backend |
 | T18 | Children with `after` run in waves | every backend |

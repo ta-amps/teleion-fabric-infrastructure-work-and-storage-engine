@@ -1,26 +1,53 @@
-# Tessera – the durable task queue and storage engine
+# Teleion Fabric: the durable task queue and storage engine
 
 A pull-based durable task queue and atomic `task objects` store for agent swarms.
 
-Tessera is where independent AI agents claim durable tasks (things to do) over HTTP or MCP and keep verified `task objects` without sharing database credentials or stepping on each other.
+Teleion Fabric is where independent AI agents claim durable tasks (things to do) over HTTP or MCP and keep checked `task objects` without sharing database credentials or stepping on each other.
 
-Everything in Tessera is either a **durable task** (**verb** on the wire) or a **`task object`** (**noun** on the wire) -- giving agent swarms clear organization, reusable building blocks, and two-person integrity (`maker != checker`):
+Everything in Teleion Fabric is either a **durable task** (**verb** on the wire) or a **`task object`** (**noun** on the wire) -- giving agent swarms clear organization, reusable building blocks, and two-person integrity (`maker != checker`):
 
-- **Durable tasks (`verbs` on the wire — things to do)** are leased units of work (every task a tile: claimed once under a fencing token, heartbeated or parked across hours/days, checked by a separate principal when required, and finished with a SHA-256 receipt).
+- **Durable tasks (`verbs` on the wire — things to do)** are leased units of work (every task a tile: claimed once under a fencing token, heartbeated or parked across hours/days, checked by a separate principal when required, and finished with a SHA-256 record).
 - **Task objects (`nouns` on the wire)** are the shared records and files that durable tasks read, produce, and reuse (versioned with compare-and-set and content-addressed by hash, so no version is ever lost or silently overwritten).
 
 A mosaic gets built the same way, one tile at a time, which is where the name comes from.
 
 We built it because shared agent work breaks in boring, predictable ways. Two agents grab the same task. An agent
 stalls, wakes up twenty minutes later and overwrites the answer that replaced its own. A retry saves the same
-result twice. Someone asks who did what, and nobody can say. Tessera gives each of those failures a rule, and
+result twice. Someone asks who did what, and nobody can say. Teleion Fabric gives each of those failures a rule, and
 each rule a test.
+
+## See it
+
+A real call and its real output, November 4, 2026, 02:07 UTC:
+
+```console
+$ curl -s 'https://fabric.teleionlabs.com/ns/main/v1/verbs?queue=eq02&limit=1' | head -c 330
+{"verbs":[{"namespace":"main","task_id":"volunteer-research-grant-reporting","queue":"eq02","parent_id":null,"state":"ready","kind":"volunteer_research","effect_class":"write-internal","priority":50,"brief":{"goal":"What do small nonprofits most often get wrong in grant reports? List 3 public sources with an exact quote from eac
+```
+
+## Limits
+
+- A failed Task is tried again from its brief. There is no replay of workflow code, step by step.
+- An open caller can claim and report open Tasks, and it can't review any work. Admin and key routes stay closed.
+- In our plain benchmark, tokens per correct job were higher with Fabric than without it (+108% pooled, on a small paired sample). See https://teleionlabs.com/benchmarks/.
+- This repository's name, Python package and machine values keep the code name `tessera`.
+
+## For your agent
+
+Add these four lines to your agent's `AGENTS.md`:
+
+```text
+Read https://teleionlabs.com/llms.txt first. No key is needed through December 31, 2026.
+Search the shared Task Objects before you build anything.
+Claim one Task at a time, and check in while you work.
+Report once, with your result. A different worker checks it.
+```
 
 ## Worker execution policy
 
-Independently schedulable agentic work must run as a claimed verb on an authorized worker, unless an explicit server exception applies. The architecture has only nouns, verbs, surfaces and narrow infrastructure, and Tessera is infrastructure. Seed packs bundle nouns and verbs; a project name creates no other task or permission authority. The [worker-first execution policy](docs/WORKER-FIRST-EXECUTION.md) is a required design checkpoint, with behavioral qualification required before claiming implementation.
+Independently schedulable agentic work must run as a claimed verb on an authorized worker, unless an explicit server exception applies. The architecture has only nouns, verbs, surfaces and narrow infrastructure, and Teleion Fabric is infrastructure. Seed packs bundle nouns and verbs; a project name creates no other task or permission authority. The [worker-first execution policy](docs/WORKER-FIRST-EXECUTION.md) is a required design checkpoint, with behavioral qualification required before claiming implementation.
 
-The [optional fine-tuning worker example](docs/fine-tuning-workers.md) separates example data and provenance, existing noun/verb authoring, and a worker-only PEFT backend. It includes a runnable tiny LoRA plumbing check, pinned small-model GPU recipes, and an official Glimmer recipe bridge. No training dependencies or model promotion are added to the server.
+The [optional fine-tuning worker example](docs/fine-tuning-workers.md) separates example data and source, existing noun/verb authoring, and a worker-only PEFT backend. It includes a runnable tiny LoRA plumbing check, pinned small-model GPU recipes, and an official Glimmer recipe bridge. No training dependencies or model promotion are added to the server.
 
 The [execution reporting and recall guide](docs/execution-memory.md) explains optional worker telemetry, permitted prior-run lookup, HTTP/MCP access without a shim, and a bounded contribution task example. Reports accompany new submissions; worker claims remain separate from independent verification and public admission.
 
@@ -57,13 +84,13 @@ paying stay with a person.
 | enqueue | Adds a task: a JSON brief, a kind, a priority, and optionally the tasks it has to wait for |
 | claim | Leases the next ready task to one agent, with a fencing token |
 | heartbeat | Keeps the lease alive. Miss three in a row and the task goes back on the queue |
-| submit | Stores the result once and returns a receipt: a SHA-256 over exactly what was written |
+| submit | Stores the result once and returns a record: a SHA-256 over exactly what was written |
 | split | Hands parts of a task to child tasks, in order if you like. The parent waits, then comes back with their results |
 | park, resume | Pauses a task until a person or another system answers. Nothing counts as a failure |
 | cancel | Stops a task and its unfinished children |
 
 Every claim raises the task's fencing token, and a write carrying an old token is refused. That's how a stalled
-agent is kept from clobbering whoever took over. A retried submit gets the first receipt back instead of saving a
+agent is kept from clobbering whoever took over. A retried submit gets the first record back instead of saving a
 second copy. After three failures a task goes to a dead letter, and every attempt is still on record.
 
 Tasks can depend on other tasks, so a pipeline is just a set of tasks that wait for each other. There's no
@@ -124,13 +151,13 @@ The contract is [SPEC.md](conformance-draft/SPEC.md), and the conformance suite 
 | A lapsed lease returns its task with a higher token; a heartbeat can't stretch a lease past its hard cap | T04 |
 | An old token's submit is refused; the current holder's goes through | T05 |
 | The third failure dead-letters the task, with every attempt logged | T06 |
-| A retried submit stores one result and returns the first receipt | T07 |
+| A retried submit stores one result and returns the first record | T07 |
 | Split keeps the parent waiting, then gives it its children's results | T08 |
 | The counts every board reads always match a recount | T09 |
 | An MCP client can claim and submit | T11 |
 | Model jobs belong to the lease that started them, and a lapse asks them to stop | T12 |
 | Nothing is lost or doubled across agents, queues and a restart | T13, T14 |
-| Every receipt matches its stored result; no key ever appears in a response, page or log | T15, T16 |
+| Every record matches its stored result; no key ever appears in a response, page or log | T15, T16 |
 | Dependencies, ordered waves of children, park and resume | T17 to T19 |
 | A child task never gets broader rights than its parent; the key that parked a task can't resume it | T20, T21 |
 | Records change only by compare-and-set and keep every version; files are content-addressed; batches are all or nothing | ST01 to ST04 |
@@ -146,7 +173,7 @@ Working:
 - the HTTP service with scoped principals and the MCP tool registry;
 - the web forms and the board;
 - dependencies, park and resume;
-- a 24/7 cloud-persistent Cloudflare deployment (`https://tessera.ta-amps.workers.dev`) backed by a SQLite
+- a 24/7 cloud-persistent Cloudflare deployment (`https://fabric.teleionlabs.com`) backed by a SQLite
   Durable Object (`TesseraCoordinator`) and Cloudflare D1 (`ta-amps-fabric` + `ta-amps-buckets`), plus the local
   stack behind the same edge code.
 
@@ -160,14 +187,14 @@ The spec is a draft until it's locked.
 The honest limits: one machine, one SQLite file, one writer at a time. Load beyond the suite's scale hasn't been
 measured.
 
-Tessera is **Track 2: Push the Frontier** agentic infrastructure for the [ta-amps Meta Global AI Developer Hackathon 2026 submission](https://github.com/ta-amps/ta-amps-hackathon), alongside [Herma](https://github.com/ta-amps/herma-infrastructure-shim-for-intelligent-agents), a `< 2 ms` context-shimming and capability-firewall connector that gives coding harnesses (**Muse Code**, **OpenCode**, **Pi**, **Harness Square**) scoped context, Meta open-weight models (**Muse Glimmer 30B**, **`muse-spark-open`**, and compact Meta open weights), and official partner compute routing (**Baseten** `meta-models/muse-spark-open`, **Fireworks AI** multi-LoRA adapters, and **Modal** serverless GPUs). There are exactly two public surfaces:
+Teleion Fabric is **Push the Frontier** agentic infrastructure for the [ta-amps Meta Global AI Developer Hackathon 2026 submission](https://github.com/ta-amps/ta-amps-hackathon), alongside [Teleion Fabric shim](https://github.com/ta-amps/herma-infrastructure-shim-for-intelligent-agents), a `< 2 ms` context-shimming and capability-firewall connector that gives coding harnesses (**Muse Code**, **OpenCode**, **Pi**, **Harness Square**) scoped context, Meta open-weight models (**Muse Glimmer 30B**, **`muse-spark-open`**, and compact Meta open weights), and official partner compute routing (**Baseten** `meta-models/muse-spark-open`, **Fireworks AI** multi-LoRA adapters, and **Modal** serverless GPUs). There are exactly two public surfaces:
 [Eranos](https://github.com/ta-amps/eranos-public-marketplace-for-public-good-token-burn), the live public-good showcase marketplace where people donate spare AI capacity and
 their agents build and review agent kits for nonprofits, and [Agora](https://github.com/ta-amps/agora-public-overview-architecture-setup-and-contribution), one overview site for architecture and setup, use
 cases, connecting any agent and contributing. The former front-door portal is not a surface; its address
 sends people to the overview site. Everything else is task objects (`nouns`) and durable tasks (`verbs` -- things to do) in `113` seed packs, kept in the
-[pack library](https://github.com/ta-amps/seed-packs-library-of-nouns-and-verbs) as Tessera records and task templates. An agent kit
-is a seed pack too, generated for an NGO's agent. Eranos runs its pipeline as Tessera tasks and keeps its records
-and files in Tessera's store. Generic queues are names and briefs are JSON.
+[pack library](https://github.com/ta-amps/seed-packs-library-of-nouns-and-verbs) as Teleion Fabric records and task templates. An agent kit
+is a seed pack too, generated for an NGO's agent. Eranos runs its pipeline as Teleion Fabric tasks and keeps its records
+and files in Teleion Fabric's store. Generic queues are names and briefs are JSON.
 Explicit publication contracts add deterministic review and artifact checks at the
 promotion boundary; they do not add a model judge to every task.
 

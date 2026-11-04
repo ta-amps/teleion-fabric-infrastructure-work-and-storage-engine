@@ -1,14 +1,14 @@
 # Continuous tuning, learning and evaluation
 
-This example makes self-tuning a set of ordinary Tessera **nouns** and **verbs**. A
+This example makes self-tuning a set of ordinary Teleion Fabric **nouns** and **verbs**. A
 small open model gets better at one narrow job from a little owned data, round after
 round, and every round is measured against the unchanged model on data it never saw.
-Nothing new is added to Tessera itself: no table, queue, scheduler, registry or
+Nothing new is added to Teleion Fabric itself: no table, queue, scheduler, registry or
 server-side model call. The code lives in `examples/continuous_tuning/`, outside the
 packaged service, and the GPU backend loads only in a prepared worker environment.
 
 The job is **typed tool calls for the noun/verb fabric**: given a work request and a
-few of Tessera's real MCP tool definitions, reply with one JSON tool call whose
+few of Teleion Fabric's real MCP tool definitions, reply with one JSON tool call whose
 arguments have the schema's types, or refuse with a fixed reason. Weaker models fail
 this in the field by writing objects and numbers as strings (`"fencing_token": "51"`,
 `"metadata": "{\"rows\": 3}"`), so strict servers reject the call.
@@ -49,7 +49,7 @@ improvement. The [measured results](#measured-results) have the details.
 | Verb | `mine_hard_examples` | `verb.problemize` | `verbs.py` |
 | Verb | `serve_check`: one base, several adapters by name | `verb.benchmark_harness` | `serve.py` |
 | Surface | CLI: `tick`, `serve-check`, `curve`, `pack`, `export-tools` | none | `cli.py` |
-| Infrastructure | Tessera's records, blobs, leases, receipts, execution capture | unchanged | `src/tessera/` |
+| Infrastructure | Teleion Fabric's records, blobs, leases, records, execution capture | unchanged | `src/tessera/` |
 
 Every noun is a private, create-only record keyed by role and content digest, so a
 replay writes nothing new and a changed input gets a new key. Bulky rows, per-row
@@ -77,7 +77,7 @@ side and are compared from outcomes.
 | evaluation vs baseline | the current champion, which starts as the unchanged base; dev selects, frozen test plus fresh holdout plus sanity decide |
 | consumers | workers that read the champion pointer before typed tool calls; the learner's next round; reviewers |
 
-Tessera's learner-spec contract `tessera.learner-spec.v1` is described in
+Teleion Fabric's learner-spec contract `tessera.learner-spec.v1` is described in
 [execution-learning.md](execution-learning.md). This spec maps onto it field by field,
 with two gaps still to settle:
 
@@ -105,7 +105,7 @@ execution report is training data; the Muse API terms restrict training competin
 models on their outputs, and execution reports are coordination evidence.
 
 `mcp_tools.json` is the frozen benchmark: exactly the hosted `tools/list`
-(`[...TOOLS, ...ACCESS_TOOLS]`) on October 29 before Tessera PRs #12 and #13, pinned
+(`[...TOOLS, ...ACCESS_TOOLS]`) on October 29 before Teleion Fabric PRs #12 and #13, pinned
 by digest, and the definitions every recorded round was prompted and scored with.
 `mcp_tools.served.json` is the current served list: a test rereads the live JavaScript
 through Node and fails on any drift, and another requires every benchmark tool to keep
@@ -158,7 +158,7 @@ curate_dataset(training sets) ─┬─ tune_hyperparameters (round 1: 3 lr tria
           → generate_examples(streamed rows) → curate_dataset(accept mined, control, stream)
 ```
 
-Tessera orders the work with `depends_on`; the worker only claims what is ready,
+Teleion Fabric orders the work with `depends_on`; the worker only claims what is ready,
 heartbeats during training and generation, and submits once. A failed verb is
 recorded and dead-lettered (`max_attempts` 1); its dependents fail fast with the
 reason, and the next tick plans a fresh attempt with new task ids, so evidence from
@@ -229,7 +229,7 @@ PYTHONPATH=src:. python -m examples.continuous_tuning.cli tick \
   --base-path /private/models/base-1b --backend hf
 ```
 
-Later, Tessera's flag-gated `scheduled()` handler (the Cloudflare cron that already
+Later, Teleion Fabric's flag-gated `scheduled()` handler (the Cloudflare cron that already
 gates maintenance planning on a flag) could enqueue one `tick` task per learner and
 window, with an idempotency key such as `tick:<learner>:<UTC date>`. That is the whole
 schedule: it enqueues a verb, and an authorized GPU worker claims it. It never trains,
@@ -316,7 +316,7 @@ PYTHONPATH=src:. python -m examples.continuous_tuning.cli serve-check --root <ro
   --base <base noun> --base-path <weights> --backend hf
 ```
 
-Without a GPU, `--backend fixture` runs every verb, receipt, report and decision on
+Without a GPU, `--backend fixture` runs every verb, record, report and decision on
 CPU with a deterministic stand-in model; its numbers describe plumbing only.
 `tests/test_continuous_tuning.py` runs in `make check` with no ML libraries: the served
 tool snapshot, held-out splits, contamination rejection, strict metrics, mining, the
@@ -429,7 +429,7 @@ Is there enough data, trace and evaluation to make training worth it? From these
 - **Checked rows.** Training families now hold 586 checked rows in the 1B run: lease 219,
   records 152, access 97, verb discovery 82 and unsupported-operation refusals 36. The
   held-out families hold none, by design. All are example template draws; there are
-  no real, verified tool-call traces for this task yet.
+  no real, checked tool-call traces for this task yet.
 - **What paid off.** About 16 rows per training family (2 to 3 per tool) taught the
   output contract and typed values: +0.31 for the 1B and +0.21 for the 3B, on families
   never trained on. More rows of the same kind did not help. Argument semantics for an
@@ -439,24 +439,24 @@ Is there enough data, trace and evaluation to make training worth it? From these
   discordance these runs show (about 18% of rows flip between two close adapters), the
   150-row test detects a true 5-point gain only about 31% of the time. 80% power needs
   about 560 rows (450 at 14% discordance), per family if the claim is per family.
-- **What Tessera records.** Task identity and category tags, the brief and input
-  snapshot, worker, timing, receipts, ok or error, the event log, and the worker-reported
+- **What Teleion Fabric records.** Task identity and category tags, the brief and input
+  snapshot, worker, timing, records, ok or error, the event log, and the worker-reported
   report and learning block: outcome, what went right and wrong, types, path, usage, and
   advice. Fingerprints and a permission-filtered observation view come with them.
 - **What a training set still needs.**
   - outcome labels from acceptance checks, because reported outcomes are not
-    independently verified;
+    independently checked;
   - step-level grades for multi-step runs;
   - stable task-family and template tags;
   - the trainable pair itself (offered tools, prompt and accepted reply, which reports
     omit by design);
-  - provenance and consent per run, since execution reports are excluded from training
+  - source and consent per run, since execution reports are excluded from training
     by default.
 - **Cheaper first.** A deterministic shim that decodes a stringified typed argument
   before strict validation, recorded as a repair rather than a silent coercion, lifts
   the unchanged 3B from 0.520 to 0.647 on the stored test replies (1B 0.120 to 0.140)
-  with no training. Tessera's memory (recall of verified calls), path-statistics and
-  routing-weight learners can use the same traces now. They need verified outcome labels
+  with no training. Teleion Fabric's memory (recall of checked calls), path-statistics and
+  routing-weight learners can use the same traces now. They need checked outcome labels
   too, but far fewer of them.
 
 ## Issues found while running
@@ -465,8 +465,8 @@ Is there enough data, trace and evaluation to make training worth it? From these
   batches, so the trigger before round 4 reported 135 rows not yet trained on when 72
   were. The decision to run was still right (72 is over 32). Fixed in `9390050`,
   which round 4's resumed decision already used.
-- Nouns from rounds 0 to 2 record only Python, platform and Tessera versions; library
-  versions, CUDA, the GPU and verified weights are recorded from round 3 on. The 3B's
+- Nouns from rounds 0 to 2 record only Python, platform and Teleion Fabric versions; library
+  versions, CUDA, the GPU and checked weights are recorded from round 3 on. The 3B's
   first search trial records `weights_verified: false` because the environment was
   read before that process's first load. The weights were checked at that load, which
   refuses a mismatch, and later nouns record `true`. Fixed for later ticks.

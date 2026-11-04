@@ -2,7 +2,7 @@
 
 `GET /v1/public/activity/map?window=15m|1h|6h|24h` (default `1h`; add `replay=1` for the last hour's claims)
 says, without a key, where workers connect and which kinds of Tasks they claim. Public pages, such as a
-network map and the Eranos home's Right now strip, read it, and Herma's `/q/network` merges it with its own
+network map and the Eranos home's Right now strip, read it, and the Teleion Fabric shim's `/q/network` merges it with its own
 claims. The Cloudflare Worker serves it (`deploy/cloudflare/edge_activity.js`); the Python service has no edge
 location, so it has no such route.
 
@@ -55,7 +55,7 @@ places, continents and claims by class, which include workers that left the map)
 - Every `recent` and `replay` row says how it was placed, in `placed`: `data_center` only when that claim
   met the rule above, and then `places` lists that data center with 2 or more `workers`; `continent` when it
   counts under its continent; `unknown` when Cloudflare gave no place. `level` (`colo`, `continent`,
-  `unknown`) always agrees. A reader that merges the view, such as Herma, should take a data-center row
+  `unknown`) always agrees. A reader that merges the view, such as the Teleion Fabric shim, should take a data-center row
   only with `placed: "data_center"` and a matching place of 2 or more workers, and count anything else
   under the continent.
 - **Who counts toward placement:** only established workers, the claimer included (`ESTABLISHED_SECONDS`, 24

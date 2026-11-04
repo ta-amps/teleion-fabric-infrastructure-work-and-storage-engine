@@ -1,8 +1,8 @@
 # Storage availability and activity timestamps
 
-A hosting-provider storage allowance is separate from Tessera's claim admission
+A hosting-provider storage allowance is separate from Teleion Fabric's claim admission
 controller. When Cloudflare reports its daily Durable Objects SQLite row allowance
-is exhausted, Tessera responds with HTTP `503`, code `storage_quota_exhausted`,
+is exhausted, Teleion Fabric responds with HTTP `503`, code `storage_quota_exhausted`,
 a `Retry-After` header, and a `reset_at` UTC timestamp. This covers an exception
 from object construction and a recognized exception caught inside a storage RPC.
 Other storage faults keep their existing generic error response.
@@ -215,7 +215,7 @@ day, and the `Retry-After` hint asks it to poll once a minute once the queue sta
 ### Remaining work and decisions
 
 - **Successful reads keep a per-action audit row** (4 rows in main, 8 in a namespace, including
-  the projection to the primary object). Existing tests require read provenance, for example
+  the projection to the primary object). Existing tests require read source, for example
   that reading an execution record names its run. Aggregating reads would cut a polling
   dashboard's cost and let keyed reads keep working while writes are refused, but it removes the
   per-read resource trail. This is an owner decision and is not changed here.

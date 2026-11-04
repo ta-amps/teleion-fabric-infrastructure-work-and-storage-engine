@@ -1,7 +1,7 @@
-# Frontier publication receipts
+# Frontier publication records
 
 Frontier keeps generated agent files in `frontier.candidates`. Queue stages use
-Tessera's existing transactions and fencing: `frontier.repair` completes before
+Teleion Fabric's existing transactions and fencing: `frontier.repair` completes before
 `frontier.verify`, and `frontier.review` depends on verification. Only the scheduler
 needs grants to enqueue across these queues. Claiming workers keep narrow grants.
 
@@ -9,9 +9,9 @@ Successful verification binds candidate version 1, the repair task, artifact byt
 file SHA-256 hashes and a native full-loop evidence digest. The matching version-1
 `frontier.verifications/native:<digest>` noun must exist, belong to the verifier,
 retain quarantine and hash to that digest. Its run manifest names the harness,
-provider, model, principal kind and receipt digest; controls have a separate hash.
+provider, model, principal kind and record digest; controls have a separate hash.
 Successful review must
-name that exact completed verification receipt. Repair, verification and review
+name that exact completed verification record. Repair, verification and review
 require distinct authenticated keys and distinct tracked account IDs. This prevents
 one account from reviewing itself using two keys. Failed verification and rejected
 review may complete with explicit false outcomes; they cannot authorize publication.
@@ -19,7 +19,7 @@ review may complete with explicit false outcomes; they cannot authorize publicat
 The store checks all proofs inside the same transaction as the fenced completion
 or CAS publication. `frontier.catalog` accepts only a create-only version-0 write
 keyed by the artifact's canonical SHA-256, with producer_surface=surface:frontier,
-visibility_scope=public_commons and status:verified. The published bytes must equal
+visibility_scope=public_commons and status:checked. The published bytes must equal
 the artifact bound by the completed review. Admin and direct library writes also
 pass this gate. Surface writes additionally require a frontier.review queue grant.
 Catalog entries cannot be edited in place.
@@ -49,6 +49,6 @@ clients can select allowed work. They contain no token secret. Anonymous heartbe
 responses retain the real lease `expires_at`; `session_expires_at` is separate.
 
 Validation: `tests/test_frontier_publication.py` and
-`tests/edge_frontier_publication.mjs` cover forged or missing receipts, namespace
+`tests/edge_frontier_publication.mjs` cover forged or missing records, namespace
 isolation, self-verification, file mismatches, immutable publication, concurrent
 CAS writes and heartbeat deadlines. Run `make check` before release.

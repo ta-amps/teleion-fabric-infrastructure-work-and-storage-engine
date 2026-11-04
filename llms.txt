@@ -1,4 +1,4 @@
-# Tessera – the durable task queue and storage engine
+# Teleion Fabric: the durable task queue and storage engine
 
 > A pull-based durable task queue and atomic task objects store for agent swarms.
 
@@ -12,25 +12,25 @@
 ## Documents
 - [CHANGELOG.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/CHANGELOG.md): Changelog
 - [CLAUDE.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/CLAUDE.md): Worker execution direction
-- [conformance-draft/SPEC.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/conformance-draft/SPEC.md): Tessera specification, v0.2 (draft)
+- [conformance-draft/SPEC.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/conformance-draft/SPEC.md): Teleion Fabric specification, v0.2 (draft)
 - [docs/WORKER-FIRST-EXECUTION.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/WORKER-FIRST-EXECUTION.md): Worker-first execution and private work
 - [docs/WORKER-VERB-EXAMPLES.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/WORKER-VERB-EXAMPLES.md): Work suitable for claimed verbs
 - [docs/access-modes.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/access-modes.md): External agent access
 - [docs/activity-map.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/activity-map.md): The public activity map
 - [docs/agent-start.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/agent-start.md): Start an agent from a website
-- [docs/architecture.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/architecture.md): Tessera: architecture
+- [docs/architecture.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/architecture.md): Teleion Fabric: architecture
 - [docs/claim-admission.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/claim-admission.md): Claim admission
-- [docs/comparison.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/comparison.md): Tessera: comparison
+- [docs/comparison.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/comparison.md): Teleion Fabric: comparison
 - [docs/continuous-tuning.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/continuous-tuning.md): Continuous tuning, learning and evaluation
-- [docs/decisions.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/decisions.md): Tessera: decisions
+- [docs/decisions.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/decisions.md): Teleion Fabric: decisions
 - [docs/execution-learning.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/execution-learning.md): Execution learning: observations, fingerprints and swappable learners
 - [docs/execution-memory.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/execution-memory.md): Execution reports and permitted recall
 - [docs/expansion.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/expansion.md): Seeding & expanding atomic nouns and verbs with Muse / Meta agents
 - [docs/fine-tuning-workers.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/fine-tuning-workers.md): Optional fine-tuning workers
-- [docs/frontier-publication.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/frontier-publication.md): Frontier publication receipts
-- [docs/generalizing.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/generalizing.md): Tessera: generalizing it
-- [docs/glossary.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/glossary.md): Tessera: glossary
-- [docs/handoff.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/handoff.md): Tessera: handoff
+- [docs/frontier-publication.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/frontier-publication.md): Frontier publication records
+- [docs/generalizing.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/generalizing.md): Teleion Fabric: generalizing it
+- [docs/glossary.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/glossary.md): Teleion Fabric: glossary
+- [docs/handoff.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/handoff.md): Teleion Fabric: handoff
 - [docs/library-submissions.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/library-submissions.md): Library submissions: one propose path, several doors
 - [docs/making-of.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/making-of.md): The making-of
 - [docs/opencode-bilateral.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/opencode-bilateral.md): Bilateral swarm testing with OpenCode and Meta's open-weight Muse model (muse-spark-open)
@@ -38,9 +38,9 @@
 - [docs/opportunity-lab.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/opportunity-lab.md): Opportunity Lab
 - [docs/raw-blob-governance.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/raw-blob-governance.md): Raw blob governance and the first uploader
 - [docs/research-seeds.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/research-seeds.md): Research seeds and proposed recurring work
-- [docs/review.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/review.md): Tessera: review guide
-- [docs/setup.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/setup.md): Tessera: setup
+- [docs/review.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/review.md): Teleion Fabric: review guide
+- [docs/setup.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/setup.md): Teleion Fabric: setup
 - [docs/storage-availability.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/storage-availability.md): Storage availability and activity timestamps
-- [docs/summary.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/summary.md): Tessera: summary
+- [docs/summary.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/summary.md): Teleion Fabric: summary
 - [docs/work-design-and-evidence.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/work-design-and-evidence.md): Nouns, verbs and evidence
 - [docs/work-routing.md](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/blob/main/docs/work-routing.md): Route agent work through nouns and verbs

@@ -1,4 +1,4 @@
-# Tessera: glossary
+# Teleion Fabric: glossary
 
 One term, one meaning. The spec ([SPEC.md §1](../conformance-draft/SPEC.md)) is the authority; this page adds
 the terms the code and docs use around it.
@@ -7,7 +7,7 @@ the terms the code and docs use around it.
 |---|---|---|
 | Queue | A named list of tasks with its own heartbeat, lease cap, attempts and backoff | `queues` table, `QueueConfig` |
 | Task | One unit of work: a JSON brief, a kind, an effect class, a priority, a state | `tasks` table, `TaskSpec`, `TaskView` |
-| Brief | The task's JSON payload. Tessera stores it and never reads it | `TaskSpec.brief` |
+| Brief | The task's JSON payload. Teleion Fabric stores it and never reads it | `TaskSpec.brief` |
 | Kind | A free-form label for the type of work; keys and claims can filter on it | `TaskSpec.kind` |
 | Effect class | What a task may change: `read`, `write-internal`, `write-repo` or `public` | `EffectClass` |
 | Worker | Whoever claims a task: an agent, a script, a person | `worker` field on claims |
@@ -29,8 +29,8 @@ the terms the code and docs use around it.
 | Resume | Giving a parked task its input; it becomes ready again | `resume`, `task_inputs`, `Lease.inputs` |
 | Wait reason | Why a task is waiting: `children`, `dependencies` or `input` | `TaskView.wait_reason` |
 | Submit | Ending a lease with an outcome and output | `submit` |
-| Idempotency key | A caller-chosen key per submit; a repeat returns the first receipt | `Idempotency-Key` header |
-| Receipt | Proof of a submit: SHA-256 over canonical JSON of task, token, outcome and output | `receipts.py`, `Receipt` |
+| Idempotency key | A caller-chosen key per submit; a repeat returns the first record | `Idempotency-Key` header |
+| Record | Proof of a submit: SHA-256 over canonical JSON of task, token, outcome and output | `receipts.py`, `Receipt` |
 | Counts record | Per-queue totals by state, updated in the same transaction as each change | `counts` table |
 | Recount | Recomputing the totals from `tasks`; must equal the counts record | `?recount=true` |
 | Event | One entry in the append-only log, with a rising `seq` | `events` table |

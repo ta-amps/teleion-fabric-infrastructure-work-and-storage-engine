@@ -2,7 +2,7 @@
 
 How a Muse Code agent, MCP client, or Meta Model API worker (`muse-spark-1.3`, `muse-wonder-1.0` in
 Standard mode) safely **adds new atomic nouns and verbs and processes them end to end** without unbounded
-fan-out or unreviewed store pollution. Tessera is infrastructure; Eranos and one overview site are the only
+fan-out or unreviewed store pollution. Teleion Fabric is infrastructure; Eranos and one overview site are the only
 public surfaces, and everything else, agent kits included, is nouns and verbs in seed packs.
 
 For source-discovery meta-seeds and proposed daily collection, use the newer
@@ -18,9 +18,9 @@ immediately:
 
 1. **Runaway fan-out:** an agent splits tasks that split tasks indefinitely, burning donated or budgeted
    tokens.
-2. **Canonical noun pollution:** a single model pass overwrites verified records without independent review.
+2. **Canonical noun pollution:** a single model pass overwrites checked records without independent review.
 
-Tessera keeps the kernel (`src/tessera/`) 100% domain-neutral while organizing swarm growth into **four
+Teleion Fabric keeps the kernel (`src/tessera/`) 100% domain-neutral while organizing swarm growth into **four
 bounded verb stages** paired with **three compare-and-set noun stores**:
 
 ```mermaid
@@ -54,7 +54,7 @@ Every door shares the same hashed `tsk_*` keys (`make seed` writes scoped keys t
    - Calls Meta's Model API Responses endpoint (`MODEL_API_BASE`, default `https://api.meta.ai/v1`) with
      `muse-spark-1.3` or `muse-wonder-1.0` in **Standard mode** (`*-contributor` model ids are refused in
      code before any request).
-   - Registers each background model call against the active Tessera lease (`POST /v1/jobs` /
+   - Registers each background model call against the active Teleion Fabric lease (`POST /v1/jobs` /
      `register_job`) and records token usage on completion (`update_job`).
 
 ## Run it end to end
@@ -63,7 +63,7 @@ Every door shares the same hashed `tsk_*` keys (`make seed` writes scoped keys t
 # 1. Offline deterministic verification (no API key needed):
 make expand-demo
 
-# 2. Seed a local Tessera instance and run against the live HTTP service:
+# 2. Seed a local Teleion Fabric instance and run against the live HTTP service:
 make seed
 TESSERA_URL=http://127.0.0.1:7700 TESSERA_KEY=<muse-web-01-key> \
   MODEL_API_KEY=<meta-standard-key> \

@@ -1,9 +1,9 @@
-# Cloudflare: the Tessera cloud runtime and edge
+# Cloudflare: Teleion Fabric cloud runtime and edge
 
 The `tessera` Worker (`deploy/cloudflare/wrangler.jsonc`) supports two modes controlled by `STORAGE_MODE`:
 
-1. **`STORAGE_MODE = "cloud"` (default in production at `https://tessera.ta-amps.workers.dev`)**:
-   - Executes Tessera natively 24/7 in Cloudflare's cloud with zero dependency on any external VM or tunnel.
+1. **`STORAGE_MODE = "cloud"` (default in production at `https://fabric.teleionlabs.com`)**:
+   - Executes Teleion Fabric natively 24/7 in Cloudflare's cloud with zero dependency on any external VM or tunnel.
    - **`TesseraCoordinator` (SQLite-backed Durable Object)** serializes single-writer ACID verb transitions
      (`enqueue`, `claim`, `heartbeat`, `submit`, `split`, `park`, `resume`, `cancel`), fencing tokens, `alarm()`
      lease reaping, compare-and-set noun records (`stores`, `list_records`, `put_record`, `put_records`,

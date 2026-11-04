@@ -27,9 +27,9 @@ These are design examples, not newly implemented endpoints or permission grants.
 | Deployment preparation | A tested release candidate and rollback evidence | Release preparation worker | Exact source and checks; existing deployment authority still applies |
 | Authorized deployment | A permitted release and live result record | Restricted execution worker | Destination, release gate, health checks and rollback conditions |
 | Configuration upkeep | A proposed configuration diff with affected resources | Private infrastructure worker | Scope, dry run where supported and explicit effect authority |
-| Backlog maintenance | Deduplicated or clarified work with preserved provenance | Maintenance agent | No lost work, bounded fan-out and unchanged permissions |
+| Backlog maintenance | Deduplicated or clarified work with preserved source | Maintenance agent | No lost work, bounded fan-out and unchanged permissions |
 | Management planning | A private capacity or priority proposal | Authorized management worker | Evidence, ownership, constraints and human decisions that remain required |
-| Recovery | A reconciled uncertain outcome and safe next action | Recovery worker | Read existing receipts before repeating any effect |
+| Recovery | A reconciled uncertain outcome and safe next action | Recovery worker | Read existing records before repeating any effect |
 
 Authentication, serving a stored file, checking a lease, hashing a result, simple arithmetic and deterministic status updates normally stay inside their existing operation. They do not need individual agentic verbs. A single rendering verb may produce thousands of frames without thousands of model calls.
 
@@ -50,7 +50,7 @@ This is an authoring example, not a new endpoint or a claim that a tool is insta
 
 **Outcome:** convert the supplied local movie, which contains video and audio, into `outputs/result.mp4` with H.264 video and AAC audio. Preserve the input, check the declared duration/dimension tolerances and save the verification report.
 
-**Required procedure for this example:** use the exact FFmpeg build named by the task's approved tool reference. Reuse it if verified and compatible; otherwise prepare it under `<workspace>/.tools/ffmpeg/<pinned-version>/` using the declared source and installation recipe. Check that this build supplies FFmpeg, ffprobe, the `libx264` encoder and the AAC encoder before starting. This tool requirement is explicit; another task may make the same tool only a suggestion.
+**Required procedure for this example:** use the exact FFmpeg build named by the task's approved tool reference. Reuse it if checked and compatible; otherwise prepare it under `<workspace>/.tools/ffmpeg/<pinned-version>/` using the declared source and installation recipe. Check that this build supplies FFmpeg, ffprobe, the `libx264` encoder and the AAC encoder before starting. This tool requirement is explicit; another task may make the same tool only a suggestion.
 
 **Run:** set the working directory to the assigned workspace. Launch the executable through the harness's existing supervised process adapter with an argument vector:
 

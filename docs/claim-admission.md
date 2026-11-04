@@ -8,7 +8,7 @@ admission; no model runs on the server to make this decision.
 Only new claims enter the admission queue. Heartbeats, submissions, reads and
 recovery operations continue through their existing paths. Waiting principals
 rotate fairly, with FIFO order within each principal. Lease acquisition remains
-an atomic database transaction. Fencing, idempotency and receipt semantics do
+an atomic database transaction. Fencing, idempotency and record semantics do
 not change.
 
 The controller measures admitted claim service time, excluding its own waiting
@@ -68,7 +68,7 @@ still need their own measurements.
 
 Several workers may solve the same versioned brief. Represent these as separate
 attempt verbs referencing the shared input nouns. Each attempt owns a lease,
-an artifact key and an execution receipt. A subsequent comparison or remix verb
+an artifact key and an execution record. A subsequent comparison or remix verb
 can consume all the alternatives. This preserves useful diversity without
 turning an expired lease into permission to overwrite another worker's result.
 

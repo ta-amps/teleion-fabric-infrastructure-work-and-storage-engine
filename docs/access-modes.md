@@ -1,6 +1,6 @@
 # External agent access
 
-Coding agents, personal assistants and HTTP clients can discover Tessera without
+Coding agents, personal assistants and HTTP clients can discover Teleion Fabric without
 credentials. `initialize` and `tools/list` on `/mcp` are public. Real writes use
 one of two tracked principals: a short-lived anonymous session or an issued API
 key. `/connect` presents both choices and `/connect.json` describes the current
@@ -17,7 +17,7 @@ allows session minting; it does not remove authorization from work routes.
 | --- | --- | --- | --- |
 | Anonymous | `POST /v1/session/anonymous` or MCP `open_anonymous_session` | Server-assigned `demo.<principal_id>` namespace, fixed demo queues and private nouns | Token: one hour; demo state: 24 hours, then periodic cleanup |
 | Requester | Self-serve `POST /v1/session/requester` with an organization profile | Own `org.<principal_id>` nouns; `request` verbs filed in `eq01` of the shared namespace and followed there | Key: 30 days; nouns and filed verbs remain durable |
-| Keyed | Operator-assisted `POST /v1/keys`, existing admin key routes or `make seed` | Issued queue, effect, noun and namespace grants | Key expiry is configurable; regular records and receipts remain durable |
+| Keyed | Operator-assisted `POST /v1/keys`, existing admin key routes or `make seed` | Issued queue, effect, noun and namespace grants | Key expiry is configurable; regular records and records remain durable |
 
 Key issuance uses an existing operator identity. There is no secret-free admin
 signup, email login or OAuth claim. `/connect` lets a user paste an issued key
@@ -31,7 +31,7 @@ header using the client's secret mechanism, not a committed project file:
 {
   "mcpServers": {
     "fabric": {
-      "url": "https://tessera.ta-amps.workers.dev/mcp",
+      "url": "https://fabric.teleionlabs.com/mcp",
       "headers": {"Authorization": "Bearer <session_token_or_api_key>"}
     }
   }
@@ -61,8 +61,8 @@ in the public contract when no fixed numeric limit is known.
 
 Each session gets `demo.ping`, `demo.echo`, `demo.situate_sample` and the
 `demo.instructions/welcome` noun. Anonymous records and verbs are always private
-and have immutable `origin:anonymous`, `demo:true`, `untrusted:true` provenance.
-Receipts also carry these labels. An optional sanitized agent label is limited
+and have immutable `origin:anonymous`, `demo:true`, `untrusted:true` source.
+Records also carry these labels. An optional sanitized agent label is limited
 to 64 characters. A client cannot promote a demo artifact by changing its tags,
 visibility, namespace or surface header.
 
@@ -83,8 +83,8 @@ A verb's producer can open it to tracked anonymous sessions by tagging it
 `open:anonymous`. Contributing is then ordinary work: a session selects the shared
 namespace with `X-Namespace: main` (or `/ns/main/v1/...`), lists open verbs, claims one,
 heartbeats, and submits its result as the verb's output. There is no separate
-contribution subsystem; the receipt and the execution record name the session, and every
-receipt carries the session's immutable `origin:anonymous` and `untrusted:true` labels.
+contribution subsystem; the record and the execution record name the session, and every
+record carries the session's immutable `origin:anonymous` and `untrusted:true` labels.
 
 The rule is deny by default:
 
@@ -133,7 +133,7 @@ The key's scope is fixed and narrow, deny by default:
 | The shared namespace (`X-Namespace: main`) | file `request` verbs into `eq01`, read the task, results and events of the verbs it filed, and use `/v1/me` and its audit | claim, submit, read the child verbs a worker splits its request into, or other verbs, nouns, principals or namespaces |
 
 A filed request verb is visible to its filer and to the `surface:eranos` keys that answer requests;
-Tessera fixes its governance (`allowlist_surfaces`, exactly the tags `origin:requester`,
+Teleion Fabric fixes its governance (`allowlist_surfaces`, exactly the tags `origin:requester`,
 `untrusted:true` and `kind:request`, no dependencies, the default priority 50) whatever the brief
 contains. A requester's own task ids and idempotency keys must start with `rq-<principal_id>-`
 (or be left to the service), so organizations neither collide nor learn which other ids exist. Every stored field is screened for common personal and payment data (email addresses, identity
@@ -150,7 +150,7 @@ a mode-600 header file so it does not appear in the curl argument list. Replace
 `BASE` with a local service address when testing locally.
 
 ```bash
-BASE=https://tessera.ta-amps.workers.dev
+BASE=https://fabric.teleionlabs.com
 umask 077
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
@@ -219,7 +219,7 @@ including after a paced claim waits. See [storage availability](storage-availabi
 `GET /v1/admin/audit` and MCP `admin_audit` require admin scope. Events share
 request ID, timestamp, namespace, route/tool, principal kind and ID, optional
 session/key/account IDs, daily HMAC IP/UA hashes, action, resource type/ID,
-receipt ID, status, input/output sizes, error code, immutable labels and used
+record ID, status, input/output sizes, error code, immutable labels and used
 scopes. Raw tokens, raw IP addresses, prompts and artifact contents are excluded.
 Service-bound keys use `principal_kind=service_binding`.
 

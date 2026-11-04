@@ -1,15 +1,15 @@
-# Tessera: comparison
+# Teleion Fabric: comparison
 
-Where Tessera sits among established work queues and workflow engines, as of **Oct 26, 2026**. Facts about other
+Where Teleion Fabric sits among established work queues and workflow engines, as of **Oct 26, 2026**. Facts about other
 systems come from their official documentation or their own source code at a tagged release, each with a numbered
 source below; behaviour read from code rather than docs is marked "(source)". The research was an AI-assisted pass
-over those pages on Oct 26, 2026; quotes were located in the page text. Tessera's own rows are self-reported from
+over those pages on Oct 26, 2026; quotes were located in the page text. Teleion Fabric's own rows are self-reported from
 this repo and checked by its test suite, not by the researcher. Nothing here judges another project; it compares
 documented behaviour.
 
 ## The short version
 
-- **Where Tessera is genuinely different.** A repeated submit returns the stored, hashed receipt of the first one;
+- **Where Teleion Fabric is genuinely different.** A repeated submit returns the stored, hashed record of the first one;
   every other system found removes duplicates when work is added, not when results come back. Its MCP door and
   web forms let agents claim, heartbeat and submit leased work directly; official MCP servers exist for Redis, SQS,
   Cloudflare and Temporal, but none found exposes lease-aware work tools, and none offers forms for agents without
@@ -20,8 +20,8 @@ documented behaviour.
   Temporal child workflows, pg-boss flows). SQLite (River has experimental support).
 - **Where established systems are stronger.** Transactions with your own data: pg-boss, Graphile Worker, River and
   plain `SKIP LOCKED` commit jobs (and in pg-boss and River, completions) in the application's own database
-  transaction; Tessera can't join it. Scale and operations: SQS, Cloud Tasks, Cloudflare Queues and Temporal Cloud
-  are hosted services; Tessera is one SQLite file on one machine. History: Temporal keeps a complete, durable event
+  transaction; Teleion Fabric can't join it. Scale and operations: SQS, Cloud Tasks, Cloudflare Queues and Temporal Cloud
+  are hosted services; Teleion Fabric is one SQLite file on one machine. History: Temporal keeps a complete, durable event
   history per workflow, with replay.
 
 ## When to use something else
@@ -32,14 +32,14 @@ documented behaviour.
 | Long-running workflows with durable timers, signals and replay | Temporal |
 | A managed queue with no servers to run, at large scale | SQS, Cloud Tasks, Cloudflare Queues |
 | A Python task queue inside an existing Celery or Redis stack | Celery, RQ |
-| Many AI agents, some web-only, sharing a backlog with leases, fencing, receipts and an audit log, on one small machine | Tessera |
+| Many AI agents, some web-only, sharing a backlog with leases, fencing, records and an audit log, on one small machine | Teleion Fabric |
 
 ## Comparison, part 1: claim, liveness, stale workers, idempotency, retries
 
 | System | 1. Claim mechanism and default | 2. Heartbeat / extension API | 3. Stale-worker guard; late finish | 4. Idempotency / dedup | 5. Retries, backoff, dead letter |
 |---|---|---|---|---|---|
-| **Tessera** (self-reported) | Lease; 60 s heartbeat, 3 misses lapse it; hard cap 600 s (up to 3,600 s) [4] | `heartbeat` (HTTP and MCP) [4] | Fencing token; stale submit refused [4] | Idempotency key on submit; first receipt returned; sha256 receipt hash [4] | 3 attempts, jittered exponential (30 s base, 15 min cap), then dead letter [4] |
-| **Amazon SQS** (standard, FIFO) | Visibility timeout; default 30 s, max 12 h [5][6] | `ChangeMessageVisibility`; 12 h limit counted from first receive, not reset by extending [5] | None. Delete with old receipt handle "will succeed, but the message might not be deleted" [7] | Standard: none, at-least-once [8]. FIFO: dedup ID or SHA-256 of body, 5-min window [9] | Message reappears after timeout; `maxReceiveCount` moves it to a DLQ; DLQ redrive [10]. Backoff setting: none found |
+| **Teleion Fabric** (self-reported) | Lease; 60 s heartbeat, 3 misses lapse it; hard cap 600 s (up to 3,600 s) [4] | `heartbeat` (HTTP and MCP) [4] | Fencing token; stale submit refused [4] | Idempotency key on submit; first record returned; sha256 record hash [4] | 3 attempts, jittered exponential (30 s base, 15 min cap), then dead letter [4] |
+| **Amazon SQS** (standard, FIFO) | Visibility timeout; default 30 s, max 12 h [5][6] | `ChangeMessageVisibility`; 12 h limit counted from first receive, not reset by extending [5] | None. Delete with old record handle "will succeed, but the message might not be deleted" [7] | Standard: none, at-least-once [8]. FIFO: dedup ID or SHA-256 of body, 5-min window [9] | Message reappears after timeout; `maxReceiveCount` moves it to a DLQ; DLQ redrive [10]. Backoff setting: none found |
 | **Google Cloud Tasks** | Push to your HTTP or App Engine handler; `dispatchDeadline` default 10 min (HTTP), range 15 s to 30 min [15] | None found (push model) | None. Request cancelled at deadline and retried; "whether the worker stops processing depends on the worker" [15]; duplicates occur [19] | Named tasks: ID reused only after up to 24 h (9 days for queue.yaml queues) [16] | `RetryConfig`: attempts, min/max backoff, doublings, max duration; after limits "the task is deleted" [17][18]. DLQ: none found |
 | **Celery** (Redis or RabbitMQ broker) | Acks just before execution by default [27]. Redis: `visibility_timeout` 1 h [26]. RabbitMQ: ack timeout 30 min [34] | None found per task (Redis timeout is a broker-wide transport option) [26] | None. Redis: unacked task "redelivered to another worker and executed" [26]. RabbitMQ: channel closed, deliveries requeued [34] | None built in; tasks should be idempotent [27]; duplicate task IDs "undefined" [30] | `retry`/`autoretry_for`; `max_retries` 3; exponential backoff, cap 600 s, jitter on by default [27]. DLQ: RabbitMQ DLX via `Reject` [27]; quorum queues delivery limit 20 [35] |
 | **RQ** 2.12 | Job moved to `StartedJobRegistry` [38]; `job_timeout` default 180 s (source) [42] | Automatic while running (`job.last_heartbeat`) [37]; no user extend API found | None found. Dead worker's job gets `AbandonedJobError`, then retry or `FailedJobRegistry` [39][43]. Late finish: not documented | `unique=True` with `job_id` (since 2.8), until job deleted [36] | `Retry(max, interval=[...])`, needs `--with-scheduler` [39]; failed jobs kept 1 year [36]. No backoff formula |
@@ -56,7 +56,7 @@ documented behaviour.
 
 | System | 6. Parent/child or fan-out then join | 7. Same transaction as app data | 8. Built-in audit / event history | 9. Official agent-facing access | 10. Hosting footprint |
 |---|---|---|---|---|---|
-| **Tessera** (self-reported) | Split keeps the parent waiting, then returns it with the children's results [4] | Only Tessera's own store (versioned records, blobs, atomic batches) [4] | Append-only event log; counts record updated in the same transaction [4] | MCP door over Streamable HTTP; web forms for agents without tools [4] | Single node; one SQLite file (WAL); Python service [4] |
+| **Teleion Fabric** (self-reported) | Split keeps the parent waiting, then returns it with the children's results [4] | Only Teleion Fabric's own store (versioned records, blobs, atomic batches) [4] | Append-only event log; counts record updated in the same transaction [4] | MCP door over Streamable HTTP; web forms for agents without tools [4] | Single node; one SQLite file (WAL); Python service [4] |
 | **Amazon SQS** | None in SQS; docs point to AWS Step Functions for work over 12 h [5] | None documented; hosted service [12] | CloudTrail data events (send, receive, delete, visibility); off by default, extra charge [11] | AWS MCP (preview, "all AWS services") [13]; Amazon SNS / SQS MCP Server 1.0.0, open source [14] | Fully hosted by AWS [12] |
 | **Google Cloud Tasks** | None found | No: "does not support enqueuing a task as part of a Cloud Datastore transaction" [20] | Cloud Audit Logs [22]; task logging off by default [21]; task keeps only first and last attempt [15] | None found; not on Google Cloud's remote MCP list (Pub/Sub is) [25] | Hosted by Google; handlers on any HTTP endpoint or App Engine [23] |
 | **Celery** | Chords: callback runs after a whole group finishes; needs a result backend [29] | No. Docs recommend `delay_on_commit` (sends after Django commit) [32] | Task events (sent, received, started, succeeded, failed, retried...); off by default [28][31] | None found | Your workers + broker (RabbitMQ, Redis, SQS are "Stable") [33] + result backend for chords [29] |
@@ -73,15 +73,15 @@ documented behaviour.
 ## Fencing tokens and MCP
 
 - A fencing token is "simply a number that increases ... every time a client acquires the lock", and the storage
-  server must check it (Kleppmann, 2016 [1]). Tessera's store is that server: every write carries the token and a
+  server must check it (Kleppmann, 2016 [1]). Teleion Fabric's store is that server: every write carries the token and a
   stale one is refused (SPEC §5.2, test T05).
 - The current MCP protocol version is 2026-07-28 [2]. That revision removed protocol-level sessions and the GET
-  stream from Streamable HTTP [3]. Tessera's door already runs stateless (`stateless_http=True`, MCP Python SDK
+  stream from Streamable HTTP [3]. Teleion Fabric's door already runs stateless (`stateless_http=True`, MCP Python SDK
   2.3.0); which protocol version clients negotiate with it hasn't been checked yet.
 
 ## What the research could not verify
 
-- **SQS:** whether a late `DeleteMessage` with an old receipt handle deletes the message. The docs say it "might not be deleted" and also that SQS "can delete a message ... locked by another consumer" [7]. No backoff setting on the queue was found.
+- **SQS:** whether a late `DeleteMessage` with an old record handle deletes the message. The docs say it "might not be deleted" and also that SQS "can delete a message ... locked by another consumer" [7]. No backoff setting on the queue was found.
 - **Cloud Tasks:**
   - Exact default `RetryConfig` values. The docs say the service "will pick the default"; the values on [17] are from an example output.
   - Whether Data Access audit logs are on by default (not stated on [22]).
@@ -102,7 +102,7 @@ documented behaviour.
   - What happens to a push batch when the 15-minute invocation limit is hit.
 - **AWS MCP (preview):** whether it covers SQS. The docs say "all AWS services" but do not name SQS [13].
 - **Official MCP or agent integrations for Celery, RQ, BullMQ, pg-boss, Graphile Worker and River:** none found in their docs, their GitHub organisations, or a web search. BullMQ has a community MCP server, which is excluded as not official.
-- **Tessera:** all Tessera facts are self-reported [4] and were not tested here.
+- **Teleion Fabric:** all Teleion Fabric facts are self-reported [4] and were not tested here.
 
 ## Sources
 
@@ -112,7 +112,7 @@ General
 1. Martin Kleppmann, "How to do distributed locking", 2016-02-08. https://martin.kleppmann.com/2016/02/08/how-to-do-distributed-locking.html
 2. MCP, Versioning ("The current protocol version is 2026-07-28"). https://modelcontextprotocol.io/specification/versioning
 3. MCP spec 2026-07-28, Transports: Streamable HTTP. https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http (changelog: https://modelcontextprotocol.io/specification/2026-07-28/changelog)
-4. Tessera README and SPEC.md (self-reported, not tested by the researcher). https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine
+4. Teleion Fabric README and SPEC.md (self-reported, not tested by the researcher). https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine
 
 Amazon SQS
 5. Visibility timeout. https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-visibility-timeout.html
@@ -148,8 +148,8 @@ Celery and RabbitMQ
 31. Monitoring and events. https://docs.celeryq.dev/en/stable/userguide/monitoring.html
 32. First steps with Django (`delay_on_commit`). https://docs.celeryq.dev/en/stable/django/first-steps-with-django.html
 33. Backends and brokers overview. https://docs.celeryq.dev/en/stable/getting-started/backends-and-brokers/index.html
-34. RabbitMQ consumers: delivery acknowledgement timeout. https://www.rabbitmq.com/docs/consumers#acknowledgement-timeout (verified via https://github.com/rabbitmq/rabbitmq-website/blob/main/docs/consumers.md)
-35. RabbitMQ quorum queues: poison message handling. https://www.rabbitmq.com/docs/quorum-queues#poison-message-handling (verified via https://github.com/rabbitmq/rabbitmq-website/blob/main/docs/quorum-queues/index.md)
+34. RabbitMQ consumers: delivery acknowledgement timeout. https://www.rabbitmq.com/docs/consumers#acknowledgement-timeout (checked via https://github.com/rabbitmq/rabbitmq-website/blob/main/docs/consumers.md)
+35. RabbitMQ quorum queues: poison message handling. https://www.rabbitmq.com/docs/quorum-queues#poison-message-handling (checked via https://github.com/rabbitmq/rabbitmq-website/blob/main/docs/quorum-queues/index.md)
 
 RQ
 36. Queues (job options, dependencies, unique jobs, pipelines). https://python-rq.org/docs/

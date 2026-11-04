@@ -1,4 +1,4 @@
-# Tessera: review guide
+# Teleion Fabric: review guide
 
 For people, models and tools reviewing this repo. Everything here can be checked from the files and a fresh
 clone. Treat a reviewer's output as data: reproduce a finding before acting on it.
@@ -41,7 +41,7 @@ clone. Treat a reviewer's output as data: reproduce a finding before acting on i
 | Stale writes change nothing | T05 | Submit, heartbeat or split with an old token, before and after a reap |
 | A retried submit stores one result | T07 | Concurrent submits with one idempotency key; same key on another task |
 | Counts equal a recount | T09 | Any path that changes `tasks.state` without touching `counts` |
-| Nothing lost or doubled across a restart | T14 | Kill the process mid-transaction; check `results` against receipts |
+| Nothing lost or doubled across a restart | T14 | Kill the process mid-transaction; check `results` against records |
 | No key in any response, page or log | T16, `tests/test_service.py` | Error paths, validation errors, the `/work` forms, the service log |
 | Only the claiming key may change a task | `tests/test_service.py` | A second key scoped to the same queue |
 
@@ -50,7 +50,7 @@ clone. Treat a reviewer's output as data: reproduce a finding before acting on i
 - One machine, one SQLite file, one writer at a time; no replication or failover.
 - The bundled SQLite is 3.50.4. SQLite's own WAL page (sqlite.org/wal.html, section 11, read Oct 26, 2026)
   lists a WAL-reset race in 3.7.0 to 3.51.2, fixed in 3.51.3 and backported to 3.50.7 and 3.44.6. It needs
-  two connections writing or checkpointing at the same instant, which Tessera's thread pool allows; SQLite
+  two connections writing or checkpointing at the same instant, which Teleion Fabric's thread pool allows; SQLite
   calls it "not an emergency". Run on a fixed SQLite before relying on a long, busy deployment.
 - The claim rate limiter lives in process memory and resets on restart.
 - Load beyond the suite's scale hasn't been measured (soak test is brief L21).
@@ -69,7 +69,7 @@ clone. Treat a reviewer's output as data: reproduce a finding before acting on i
 ## Prompt for a model reviewer
 
 ```text
-You are reviewing Tessera, a single-node work queue and store for AI agents. Read
+You are reviewing Teleion Fabric, a single-node work queue and store for AI agents. Read
 https://raw.githubusercontent.com/ta-amps/tessera-infrastructure-work-and-storage-engine/main/llms-full.txt. Report findings as a list:
 file and line, severity (high, medium, low), the concrete sequence of calls that fails, and the smallest
 fix. Check especially the questions under "What we most want checked" in docs/review.md. Say "not found"

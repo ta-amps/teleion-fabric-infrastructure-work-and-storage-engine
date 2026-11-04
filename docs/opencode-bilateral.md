@@ -1,14 +1,14 @@
 # Bilateral swarm testing with OpenCode and Meta's open-weight Muse model (`muse-spark-open`)
 
 Before switching to hosted Meta Model API keys (`https://api.meta.ai/v1`), you can exercise every
-Tessera and Eranos workflow, and the verbs in seed packs, locally and bilaterally using **OpenCode**
+Teleion Fabric and Eranos workflow, and the verbs in seed packs, locally and bilaterally using **OpenCode**
 (`opencode v2.x` over Streamable HTTP `/mcp`) and **Meta's open-weight `muse-spark-open`** on
-any OpenAI-compatible host that serves it, hosted or local. Tessera is infrastructure; Eranos and one
+any OpenAI-compatible host that serves it, hosted or local. Teleion Fabric is infrastructure; Eranos and one
 overview site are the only public surfaces, and everything else is nouns and verbs in seed packs.
 
-## 1. Connect OpenCode directly to Tessera `/mcp`
+## 1. Connect OpenCode directly to Teleion Fabric `/mcp`
 
-Start Tessera and seed worker keys:
+Start Teleion Fabric and seed worker keys:
 
 ```bash
 make serve          # 127.0.0.1:7700 (or `make dev` for 127.0.0.1:7701 behind the Cloudflare edge)
@@ -52,7 +52,7 @@ Create a project-scoped `opencode.json` that references secrets only via `{env:.
 }
 ```
 
-OpenCode immediately sees all 12 scoped Tessera MCP tools (`queues`, `enqueue`, `claim`,
+OpenCode immediately sees all 12 scoped Teleion Fabric MCP tools (`queues`, `enqueue`, `claim`,
 `heartbeat`, `submit`, `split`, `park`, `resume`, `put_record`, `put_records`, `get_record`,
 `record_history`).
 
@@ -64,7 +64,7 @@ each with its own `tsk_*` key) across two bilateral protocols:
 1. **`park` ↔ `resume` Q&A handshake (`T19` + `T21`):** Agent A claims an intake task over `/mcp`
    and parks it with a question; self-resume by Agent A is refused (`403`); Agent B answers via
    `resume`; Agent A re-claims the task with `lease.inputs`, writes a compare-and-set noun, and
-   submits with a SHA-256 receipt.
+   submits with a SHA-256 record.
 2. **Seed → Proposals (`v1..v3`) → Independent Review → Canonical (`v1`):** Agent A expands a seed
    noun and enriches two child tasks using `muse-spark-open`; Agent B (`reviewer != proposer`)
    verifies `EXAMPLE` marks and atomically promotes to `canonical/*`.

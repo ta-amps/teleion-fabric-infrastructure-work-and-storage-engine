@@ -15,4 +15,4 @@ Follow the [worker-first execution policy](docs/WORKER-FIRST-EXECUTION.md) when 
 - Subagent: `reviewer` reads the diff against AGENTS.md and the task's done-when before every commit.
 - One task per session; `/clear` between tasks.
 - Muse Code builds the networked service from `briefs/`. When a Muse task misses its day and you take it
-  over, say so in the receipt.
+  over, say so in the record.

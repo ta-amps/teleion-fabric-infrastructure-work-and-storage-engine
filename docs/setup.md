@@ -1,4 +1,4 @@
-# Tessera: setup
+# Teleion Fabric: setup
 
 Every command here runs on a fresh clone. Day-to-day running (keys, the reaper, backups, what to do when
 something looks wrong) is in [operations.md](operations.md).

@@ -1,6 +1,6 @@
-# Tessera: architecture
+# Teleion Fabric: architecture
 
-Tessera has one coordination authority per backend and several doors. Local Python
+Teleion Fabric has one coordination authority per backend and several doors. Local Python
 uses SQLite transactions; the native cloud backend uses a namespace-scoped SQLite
 Durable Object. The diagram below describes the local/origin path. Read
 [Nouns, verbs and evidence](work-design-and-evidence.md) for the current cloud/local
@@ -28,7 +28,7 @@ flowchart LR
     STORE["store.py and _*.py<br/>one IMMEDIATE transaction per operation"]
     DB[("SQLite WAL<br/>tasks, leases, results, keys, jobs,<br/>events, counts, records, blobs")]
   end
-  MODEL["Model provider<br/>(called by the lease holder, never by Tessera)"]
+  MODEL["Model provider<br/>(called by the lease holder, never by Teleion Fabric)"]
   MCPC --> EDGE
   HTTPC --> EDGE
   WEB --> EDGE
@@ -49,9 +49,9 @@ flowchart LR
 |---|---|---|---|
 | Models | `src/tessera/models.py` | Pydantic records that cross the boundary: what callers send, what every backend returns | pydantic |
 | Errors | `src/tessera/errors.py` | One exception class per problem code; each maps to one HTTP status (SPEC §8) | none |
-| Receipts | `src/tessera/receipts.py` | Canonical JSON and the receipt hash (SPEC §5.4) | none |
+| Records | `src/tessera/receipts.py` | Canonical JSON and the record hash (SPEC §5.4) | none |
 | Clock | `src/tessera/clock.py` | Time source; tests inject a fake clock so lapses need no sleeping | none |
-| Store | `src/tessera/store.py`, `_base.py`, `_tasks.py`, `_graph.py`, `_jobs.py`, `_keys.py`, `_observe.py`, `_storage.py`, `schema.sql` | The reference implementation: queues, the five verbs, park and resume, dependencies, retries, split, model jobs, keys, counts, events, health, records and blobs | models, errors, receipts, clock |
+| Store | `src/tessera/store.py`, `_base.py`, `_tasks.py`, `_graph.py`, `_jobs.py`, `_keys.py`, `_observe.py`, `_storage.py`, `schema.sql` | The reference implementation: queues, the five verbs, park and resume, dependencies, retries, split, model jobs, keys, counts, events, health, records and blobs | models, errors, records, clock |
 | Backend protocol | `src/tessera/backend.py` | The contract every backend meets (Store, Client, adapters) | models |
 | HTTP client | `src/tessera/client.py` | A Backend over HTTP, so callers can switch store and service with one setting | models, errors, httpx |
 | Service | `src/tessera/service.py`, `access.py` | FastAPI app: routes, POST-only writes, problem+json, edge lock, the reaper loop. `access.py` holds what every door shares: settings, the claim limiter, the bearer key, the Gate | store, MCP door, pages |
@@ -65,7 +65,7 @@ flowchart LR
 
 ## Layering
 
-Tessera is built in rings, innermost first. A ring may use the rings inside it and never the ones outside;
+Teleion Fabric is built in rings, innermost first. A ring may use the rings inside it and never the ones outside;
 `make architecture` checks every rule against the real imports (`import_rules` in architecture.json).
 
 | Ring | Modules | May use |
@@ -91,7 +91,7 @@ One SQLite database in WAL mode (`src/tessera/schema.sql`), `busy_timeout` 30 s,
 | `task_deps` | Which task waits for which; a task can only depend on tasks that already exist, so there are no cycles |
 | `task_inputs` | Inputs given to parked tasks, delivered with their next lease |
 | `leases` | The live lease per task: token, worker, key, expiry, hard expiry |
-| `results` | Every submit, failed ones included, with its receipt hash |
+| `results` | Every submit, failed ones included, with its record hash |
 | `keys` | Worker keys as SHA-256 hashes, with scopes, expiry and revocation |
 | `jobs` | Model jobs tied to a task and the fencing token that started them, with usage and cost |
 | `events` | The append-only log with a rising `seq` |
@@ -153,7 +153,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
   participant A as Agent A
-  participant T as Tessera
+  participant T as Teleion Fabric
   participant B as Agent B
   A->>T: claim, gets token 1
   Note over A: stops heartbeating
@@ -192,13 +192,13 @@ flowchart LR
   with `{"timed_out": true}`.
 
 This is deliberately less than a workflow engine: no durable timers beyond park timeouts, no signals and no
-replay. The graph lives in ordinary tasks, so every lease, fencing and receipt rule still applies at every node.
+replay. The graph lives in ordinary tasks, so every lease, fencing and record rule still applies at every node.
 
 ### Model jobs
 
-Tessera never calls a model. The agent holding the lease starts a background job with its provider, registers
+Teleion Fabric never calls a model. The agent holding the lease starts a background job with its provider, registers
 it (`POST /v1/jobs`, needs the live lease) and reports progress, usage and cost. When the lease lapses or the
-task is cancelled, Tessera marks the job `cancel_requested`; a job reported `cancelled` under the live lease
+task is cancelled, Teleion Fabric marks the job `cancel_requested`; a job reported `cancelled` under the live lease
 returns its task as a failure.
 
 ## Invariants
@@ -212,13 +212,13 @@ references.
 | I2 | A lease ends only by submit, split, cancel, lapse or a cancelled job; a lapsed task returns with a higher fencing token; heartbeats never extend past the hard cap | `test_T04_lapsed_leases_come_back`, `test_T04_heartbeats_keep_a_lease`, `test_T04_lease_has_a_hard_cap` |
 | I3 | A write from a stale lease is refused and changes nothing | `test_T05_fencing_refuses_the_old_holder` |
 | I4 | Failures retry with bounded jittered backoff, then dead-letter, every attempt logged | `test_T06_dead_letter_after_three_failures`, `test_T06_backoff_grows_within_bounds` |
-| I5 | One stored result per idempotency key; a replay returns the first receipt | `test_T07_submit_is_idempotent` |
+| I5 | One stored result per idempotency key; a replay returns the first record | `test_T07_submit_is_idempotent` |
 | I6 | A split parent waits, then returns with its children's results | `test_T08_split_keeps_the_parent` |
 | I7 | The counts record always equals a recount | `test_T09_one_counts_record` |
 | I8 | Health reports the database, the reaper's last run and queue depths honestly | `test_T10_health_is_honest`, `test_T10_health_over_http` |
 | I9 | Model jobs are tied to the lease that started them; a lapse asks them to stop; a cancelled job returns its task | `test_T12_a_job_is_polled_to_done_with_its_cost`, `test_T12_a_cancelled_job_returns_its_task`, `test_T12_a_lapsed_lease_asks_its_jobs_to_stop` |
 | I10 | Nothing is lost or doubled across workers, queues and restarts | `test_T13_it_holds_up`, `test_T14_it_survives_a_restart` |
-| I11 | Every receipt hash matches its stored result | `test_T15_receipts_match_results` |
+| I11 | Every record hash matches its stored result | `test_T15_receipts_match_results` |
 | I12 | No key appears in any response, page or log | `test_T16_no_secret_leaks`, `test_no_key_appears_in_any_response`, `test_web_forms_never_echo_the_key` |
 | I13 | Records change only by compare-and-set and keep every version; blobs are content-addressed; batches are atomic | `test_ST01_compare_and_set_has_one_winner`, `test_ST02_every_version_is_kept`, `test_ST03_blobs_are_content_addressed`, `test_ST04_a_batch_applies_completely_or_not_at_all` |
 | I14 | Writes are POST-only; a GET never changes state | `test_T02_writes_are_post_only`, `test_writes_are_post_only` |
@@ -228,7 +228,7 @@ references.
 | I18 | A split child is never broader than its parent (read < write-internal < write-repo < public) | `test_T20_a_child_is_never_broader_than_its_parent`, `test_split_children_need_an_effect_class_the_key_holds` |
 | I19 | The key that parked a task may not resume it, and every resume records the resuming key | `test_the_key_that_parked_a_task_may_not_resume_it` |
 | I20 | A resume may name the park it answers, and a late resume for an earlier park is refused | `test_T19_a_resume_can_name_the_park_it_answers` |
-| I21 | Receipt hashes write whole numbers without a fraction, so other languages compute the same hash | `test_whole_numbers_hash_the_same_in_every_language`, `test_l26_receipt_vectors_python_and_cloudflare_edge_node_parity`, `test_T15_receipts_match_results` |
+| I21 | Record hashes write whole numbers without a fraction, so other languages compute the same hash | `test_whole_numbers_hash_the_same_in_every_language`, `test_l26_receipt_vectors_python_and_cloudflare_edge_node_parity`, `test_T15_receipts_match_results` |
 | I22 | An older build refuses to open a database with a newer schema instead of downgrading it | `test_an_older_build_refuses_a_newer_database` |
 | I23 | Namespaces isolate tasks, records, blobs, buckets, feeds and L0 scent search; quarantined items never appear in search or reflex recall; resuming a parked task requires its effect class | `test_T22_resume_requires_the_tasks_effect_class`, `test_namespace_isolation_across_path_and_header`, `test_visibility_quarantine_and_layer2_combinable_filters` |
 
@@ -241,7 +241,7 @@ references.
 | Caller to service | Bearer key required; scoped to queues (globs), kinds, effect classes and `admin` or `store`; [adaptive claim admission](claim-admission.md); writes are POST-only | `service.py`, `_keys.py`, tests T01, T02 and the service tests |
 | Lease holder to task | Heartbeat, submit, split and park need the claiming key and the current fencing token; split never widens the effect class | `_tasks.py`, `service.py` |
 | Parker to resumer | The key that parked a task may not resume it; every resume records its key | `_tasks.py`, `service.py` |
-| Service to model provider | None: Tessera holds no model key and makes no model call | by construction; `MODEL_API_KEY` is only for workers |
+| Service to model provider | None: Teleion Fabric holds no model key and makes no model call | by construction; `MODEL_API_KEY` is only for workers |
 
 Keys are random 32-byte secrets, printed once when issued and stored only as SHA-256. They expire after 14 days
 and can be revoked at once. No key may hold the `public` effect class.
@@ -251,7 +251,7 @@ and can be revoked at once. No key may hold the `public` effect class.
 | What fails | What happens |
 |---|---|
 | An agent dies or stalls | Its lease lapses after missed heartbeats or the hard cap; the task retries with backoff; a late submit is refused |
-| The same submit arrives twice | The second returns the first receipt with `replayed = true` and writes nothing |
+| The same submit arrives twice | The second returns the first record with `replayed = true` and writes nothing |
 | A task keeps failing | It dead-letters at `max_attempts` (3 by default); every attempt is in `results` and `events` |
 | The process restarts | State is in SQLite; leases keep their expiry; the reaper returns lapsed ones (T14) |
 | Two writers at once | SQLite serializes them; `busy_timeout` waits up to 30 s instead of failing |
@@ -271,11 +271,11 @@ and can be revoked at once. No key may hold the `public` effect class.
 
 ## Two loops on one fabric
 
-Tessera is infrastructure; Eranos, the two-sided marketplace, is one of the two public surfaces that run on it,
-and everything else is nouns and verbs in seed packs. Tessera's first user was the work for spotting exploitation
+Teleion Fabric is infrastructure; Eranos, the two-sided marketplace, is one of the two public surfaces that run on it,
+and everything else is nouns and verbs in seed packs. Teleion Fabric's first user was the work for spotting exploitation
 and scams in practice cases, never accusing anyone, which is now a seed pack in the
-[pack library](https://github.com/ta-amps/seed-packs-library-of-nouns-and-verbs). It ran two loops on Tessera. In the
-**build loop**, briefs for Tessera and for that work sat on queues, and Muse Code workers claimed them in their
+[pack library](https://github.com/ta-amps/seed-packs-library-of-nouns-and-verbs). It ran two loops on Teleion Fabric. In the
+**build loop**, briefs for Teleion Fabric and for that work sat on queues, and Muse Code workers claimed them in their
 own git worktrees. In the **run loop**, practice cases moved through five queues. Both wrote the same event log,
-which became the making-of ([making-of.md](making-of.md)). Nothing in Tessera knows about either loop; see
+which became the making-of ([making-of.md](making-of.md)). Nothing in Teleion Fabric knows about either loop; see
 [generalizing.md](generalizing.md).

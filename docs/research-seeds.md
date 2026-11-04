@@ -1,7 +1,7 @@
 # Research seeds and proposed recurring work
 
-`tools/research_seed.py` prepares one private verb using existing Tessera task,
-noun, lease and receipt contracts. Its default is a network-free preview. Explicit
+`tools/research_seed.py` prepares one private verb using existing Teleion Fabric task,
+noun, lease and record contracts. Its default is a network-free preview. Explicit
 enqueue first reads every referenced noun version through the caller's credentials
 and checks its canonical value digest. It creates no queue, key or provider grant.
 
@@ -58,7 +58,7 @@ runtime, source and candidate counts. Existing harness permissions and model
 allowance still apply. There is no server model fallback. A blocked or no-change
 result is valid; a worker need not invent sources or code to complete a task.
 
-Source discovery records publisher identity, provenance, access method, cadence
+Source discovery records publisher identity, source, access method, cadence
 and relevance. Collector work prefers existing adapters and requires example
 positive and failure fixtures. A scan uses an already admitted collector and
 retains item identities, dates, hashes, cursor/replay evidence and incomplete
@@ -71,7 +71,7 @@ must not leak into a public source summary.
 
 ## Scheduling boundary
 
-Tessera supports a task's `not_before` timestamp. It is a one-time eligibility
+Teleion Fabric supports a task's `not_before` timestamp. It is a one-time eligibility
 boundary, not recurring cron. The existing fragility planner stores plans, and
 the separate Frontier cron handles its own discovery. Neither is a general
 research schedule installer.

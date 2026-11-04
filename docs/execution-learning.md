@@ -1,7 +1,7 @@
 # Execution learning: observations, fingerprints and swappable learners
 
 First increment, October 29, 2026. Workers are encouraged, never forced, to describe
-how a verb went. Core Tessera stores that report with the existing execution record,
+how a verb went. Core Teleion Fabric stores that report with the existing execution record,
 serves a bounded observation of each permitted run and ships pure fingerprint
 functions. Everything that decides what to learn is a separate, swappable learner
 that runs as an ordinary verb and writes ordinary versioned nouns.
@@ -69,10 +69,10 @@ Existing report fields carry the rest: `summaries.problem` and `summaries.soluti
 `model` may now be `null`, which declares that no model was used; an absent `model`
 still means unreported. The whole report keeps its existing 32 KiB canonical limit.
 
-**Server observations**, recorded by Tessera rather than claimed: task id, kind,
+**Server observations**, recorded by Teleion Fabric rather than claimed: task id, kind,
 queue, fence, authenticated key, claim and submit times, lease duration, accepted or
 failed result, the state after submission, the failure text the worker submitted
-with `ok=false`, the receipt hash, the input snapshot digest and whether the run
+with `ok=false`, the record hash, the input snapshot digest and whether the run
 was a retry (fence above 1). The observation view labels these separately from the
 report, and `trust.telemetry` stays `worker_reported`.
 
@@ -256,7 +256,7 @@ for the baseline arm and requires the stated evidence before weight moves. The
 current runner is observational; randomized assignment is the stronger proof.
 
 **3. Model weights (proposed).** A training-candidate export verb (`training_export`
-spec) turns opted-in, accepted, verified, rights-cleared runs with provenance into
+spec) turns opted-in, accepted, checked, rights-cleared runs with source into
 dataset-manifest nouns (`noun.benchmark_suite`). They follow the existing
 fine-tuning example contracts: family-separated splits, holdout separation, and
 dedup by fingerprint. Raw Muse API outputs are excluded by default because Meta's API

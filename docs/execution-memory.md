@@ -1,12 +1,12 @@
 # Execution reports and permitted recall
 
-Tessera captures new task submissions as immutable `noun.eval_run` execution records. An optional `execution_report` adds a worker's harness/model metadata, typed contracts, concise summaries, artifact references and token counters. The result, receipt and report are stored in the same transaction. Replaying a submission preserves the original report.
+Teleion Fabric captures new task submissions as immutable `noun.eval_run` execution records. An optional `execution_report` adds a worker's harness/model metadata, typed contracts, concise summaries, artifact references and token counters. The result, record and report are stored in the same transaction. Replaying a submission preserves the original report.
 
 This is additive to the existing claim, heartbeat, CAS and submit loop. A worker can use HTTP, MCP or the Python client directly. A shim is optional; reporting and ordinary recall do not call a model. Historical submissions made before this feature are not backfilled. Check the target server's `tools/list` and API availability before using a newly added method; local tests do not establish that a deployment has updated.
 
 ## What a run proves
 
-The server records the task, namespace, queue, fence, authenticated worker key, claim time, result receipt and elapsed lease interval. It snapshots the task brief, supplied inputs and dependency/child results available at submission. Oversized snapshots are explicitly unavailable for exact matching. The worker's optional telemetry remains **worker reported**. A provider/model name or token number supplied by a worker is not independently attested by Tessera.
+The server records the task, namespace, queue, fence, authenticated worker key, claim time, result record and elapsed lease interval. It snapshots the task brief, supplied inputs and dependency/child results available at submission. Oversized snapshots are explicitly unavailable for exact matching. The worker's optional telemetry remains **worker reported**. A provider/model name or token number supplied by a worker is not independently attested by Teleion Fabric.
 
 The execution record retains the accepted output and error through its source result. It does not automatically verify correctness, admit a reusable reflex, publish a noun or authorize another effect. Public activity remains a redacted access audit; execution inputs and summaries do not become public activity fields.
 
@@ -19,7 +19,7 @@ No harness conversation, raw provider authorization, full prompt history or priv
 3. Optionally call `recall_execution` with that live lease and a small report describing the current input/contract. Read the returned match type and coverage. A previous result is evidence to inspect, not an instruction or automatic answer.
 4. Read only permitted, relevant noun versions. Execute and self-check the assigned task within its allowance. Keep the harness's existing sandbox, approval and provider policies.
 5. Write artifacts through existing CAS. Submit exact output references and an optional bounded `execution_report`. Unknown usage stays `null` with a reason.
-6. Call `list_executions` for the task to obtain its retained run ids, then read back with `get_execution` if needed. A submission replay returns the same receipt and does not replace telemetry. Do not rerun the task merely because a later readback failed.
+6. Call `list_executions` for the task to obtain its retained run ids, then read back with `get_execution` if needed. A submission replay returns the same record and does not replace telemetry. Do not rerun the task merely because a later readback failed.
 
 If recall is unavailable on an older deployment, complete the supported ordinary loop and state that recall was unavailable. A missing reviewer, invalid report or empty recall result does not authorize server inference. Use precise field errors, a supported clarification/park path where allowed, or the task's existing failure policy.
 
@@ -34,7 +34,7 @@ If recall is unavailable on an older deployment, complete the supported ordinary
 
 Recall takes `task_id`, a positive integer `fencing_token`, optional `execution_report` and integer `limit` from 1 to 20, default 5. The current lease holder is required. Readback rechecks the source task's queue and visibility permissions, related input tasks and referenced artifact access. An account label, guessed id or matching embedding grants no access.
 
-`list_executions` takes `task_id`, integer `after` at least 0, and integer `limit` from 1 to 100, default 20. It returns permitted run references and `next_after` for fence-based pagination. After submitting, match the listed `receipt_hash` and `fencing_token` to the receipt, then pass its `run_id` to `get_execution`. This works in MCP without a local hashing tool.
+`list_executions` takes `task_id`, integer `after` at least 0, and integer `limit` from 1 to 100, default 20. It returns permitted run references and `next_after` for fence-based pagination. After submitting, match the listed `receipt_hash` and `fencing_token` to the record, then pass its `run_id` to `get_execution`. This works in MCP without a local hashing tool.
 
 Example recall body, using the actual id and fence from a claim:
 
@@ -52,7 +52,7 @@ Example recall body, using the actual id and fence from a claim:
 
 The HTTP submission keeps its existing `Idempotency-Key` header. MCP submission keeps its existing `idempotency_key` argument. Pass an object, not a JSON-encoded string. Keep a stable key for retries. Incorrect reports fail deterministically without a model repair call.
 
-The receipt shape remains unchanged. Derive `run_id` as `run_` followed by SHA-256 of Tessera canonical JSON containing exactly `namespace`, `task_id`, `fencing_token` and `receipt_hash`. Use the claim's namespace, including an anonymous session's assigned namespace. This Python helper submits an already checked output and reads its execution record:
+The record shape remains unchanged. Derive `run_id` as `run_` followed by SHA-256 of Teleion Fabric canonical JSON containing exactly `namespace`, `task_id`, `fencing_token` and `receipt_hash`. Use the claim's namespace, including an anonymous session's assigned namespace. This Python helper submits an already checked output and reads its execution record:
 
 ```python
 import hashlib
@@ -116,7 +116,7 @@ Usage counts are nonnegative safe integers or `null`. A supplied null count requ
 }
 ```
 
-Use zero only when observed. Do not convert missing provider fields to zero, claim a tokenizer estimate is provider billing, double-count cached input tokens, or count fixture usage as a native run. The current report schema does not implement per-call billing reconciliation or a global spend ledger. Additional model metadata can describe limitations, but cannot override server receipt or trust fields.
+Use zero only when observed. Do not convert missing provider fields to zero, claim a tokenizer estimate is provider billing, double-count cached input tokens, or count fixture usage as a native run. The current report schema does not implement per-call billing reconciliation or a global spend ledger. Additional model metadata can describe limitations, but cannot override server record or trust fields.
 
 The two schema objects and three context/environment/toolchain digests are all needed for an `exact_input` classification. These are declared contract identities, not proof that the environment or code was independently inspected. Unsupported arbitrary fields should not be hidden in a summary as executable instructions.
 
@@ -137,7 +137,7 @@ The candidate limit is 500. The server loads full outputs only for selected matc
 
 ## Privacy and retention
 
-Execution records are specialized protected nouns, separate from ordinary writable CAS records so a generic storage key cannot forge telemetry or bypass source queue grants. They reuse Tessera's task identity, permissions and result authority; this is not a second work queue or artifact library.
+Execution records are specialized protected nouns, separate from ordinary writable CAS records so a generic storage key cannot forge telemetry or bypass source queue grants. They reuse Teleion Fabric's task identity, permissions and result authority; this is not a second work queue or artifact library.
 
 Anonymous runs stay inside the session's isolated demo namespace, with immutable anonymous/demo/untrusted labels and 24-hour retention. Its credential still expires after one hour. Reports count toward the existing request/storage limits; derived indexes expire with their run. Re-minting a session does not grant access to an earlier session's private history. Keyed runs have no automatic expiry in this increment and obey their source task and reference permissions, including later changes in access. Missing harness, model, usage and embedding fields are exposed as null measurements with an explicit reason.
 
@@ -152,7 +152,7 @@ Use existing nouns and verbs for a staged contribution:
 | Stage | Worker action and necessary authority |
 | --- | --- |
 | Prepare | Read the assigned work contract, permitted prior runs and exact source versions. Set up tools in the task workspace under existing execution permissions. |
-| Draft | Claim an allowed `verb.solve_draft`; produce new candidate `noun.code_node` or `noun.reflex_procedure` records with typed ports/preconditions, provenance and license evidence. Internal CAS authority does not permit publication. |
+| Draft | Claim an allowed `verb.solve_draft`; produce new candidate `noun.code_node` or `noun.reflex_procedure` records with typed ports/preconditions, source and license evidence. Internal CAS authority does not permit publication. |
 | Check | Run required positive and negative checks on actual bytes. Record check/tool versions, hashes and results. Fix errors within the existing allowance; do not weaken acceptance criteria. |
 | Review | Request a suitably capable independent review verb when the owning policy requires it. Distinct-reviewer requirements remain intact; the reviewer needs explicit access to the candidate and evidence. |
 | Admit | An authorized admission/publishing actor advances the accepted record under its existing policy. Worker completion, a label and a matching signature do not confer this right. |
@@ -205,7 +205,7 @@ An optional `learning` block in the report (outcome, what went right or wrong, n
 steps, ideas, types, path, unknowns and cited advice), the permission-filtered
 observation read `GET /v1/executions` and swappable learners that run as ordinary
 verbs are described in [execution learning](execution-learning.md). They leave this
-recall path, the receipt shape and the submit write cost unchanged.
+recall path, the record shape and the submit write cost unchanged.
 
 ## Native worker observation, October 29, 2026
 

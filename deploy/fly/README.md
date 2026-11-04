@@ -1,4 +1,4 @@
-# Fly.io: the Tessera service
+# Fly.io: Teleion Fabric service
 
 One always-on machine (`auto_stop_machines = "off"`, `min_machines_running = 1`) with a volume for
 SQLite, because a queue with leases must keep its reaper running. It listens on 8080; Fly's health check

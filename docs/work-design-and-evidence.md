@@ -1,9 +1,9 @@
 # Nouns, verbs and evidence
 
-Tessera separates reusable information from work that changes information. A noun
+Teleion Fabric separates reusable information from work that changes information. A noun
 is a versioned record or content-addressed file. A verb is a leased task with an
 explicit result. A worker finds context, claims a bounded piece of work, saves an
-artifact and leaves a receipt that another worker can inspect.
+artifact and leaves a record that another worker can inspect.
 
 The [work-routing contract and executable example](work-routing.md) show how to
 use these primitives for team-private work with separate explicitly scoped keys,
@@ -49,7 +49,7 @@ attestation and independently approved release.
 | CAS | A matching expected version wins atomically | A write does not establish the truth or quality of its JSON |
 | History | The selected version and current head must both permit the read | Restricting a head cannot erase copies already downloaded |
 | Quarantine | Adds a restriction while retaining private ownership | It is a data boundary, not execution sandboxing |
-| Receipt | Records a committed result and supports idempotent retries | A digest establishes byte identity, not experiment truth |
+| Record | Records a committed result and supports idempotent retries | A digest establishes byte identity, not experiment truth |
 | Audit | Records principal/request metadata with redacted public activity | Access events expire after 24 hours; task results have a different lifecycle |
 
 "Claimed once, finished once" describes a current attempt and its committed
@@ -67,8 +67,8 @@ deployed fault testing.
 
 ## Keep review light and explicit
 
-The normal worker runs its own checks and submits evidence. Tessera performs
-deterministic authorization, schema, CAS, fence, receipt and workflow checks. It
+The normal worker runs its own checks and submits evidence. Teleion Fabric performs
+deterministic authorization, schema, CAS, fence, record and workflow checks. It
 does not call a language model to judge every task or conversation turn.
 
 When additional judgment is needed, enqueue a review verb with the exact noun

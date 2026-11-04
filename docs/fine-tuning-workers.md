@@ -3,13 +3,13 @@
 This research project example turns a permitted source observation and project
 profile into a proposed capability noun and follow-up verb. Data preparation and
 contract authoring use no ML framework. Training runs in an explicitly prepared
-worker process through an optional PEFT backend; Tessera still owns identity,
-leases, CAS records and receipts. Nothing adds torch to the server, a second
+worker process through an optional PEFT backend; Teleion Fabric still owns identity,
+leases, CAS records and records. Nothing adds torch to the server, a second
 scheduler or an automatic model promotion path.
 
 The [worker execution policy](WORKER-FIRST-EXECUTION.md) is a required architecture
 checkpoint for changes here. The architecture is nouns, verbs, surfaces and
-infrastructure: Tessera is infrastructure, Eranos and one overview site are the
+infrastructure: Teleion Fabric is infrastructure, Eranos and one overview site are the
 only public surfaces, and everything else is nouns and verbs in seed packs, using
 existing contracts. Independently schedulable training, evaluation and review are verbs;
 a deterministic tokenization helper stays a library function. Claiming private or
@@ -19,7 +19,7 @@ management status does not authorize server inference.
 
 | Module | Responsibility |
 | --- | --- |
-| `examples/finetuning/data.py` | Owned example observations, complete target JSON, provenance, immutable fingerprints, source and project family separation |
+| `examples/finetuning/data.py` | Owned example observations, complete target JSON, source, immutable fingerprints, source and project family separation |
 | `examples/finetuning/encoding.py` | Completion-only labels, exact template-prefix check and full-sequence fit rejection |
 | `examples/finetuning/peft_backend.py` | Optional CPU/CUDA LoRA or single-device NF4 QLoRA, loss measurements, save/reload proof and environment report |
 | `examples/finetuning/author.py` | Offline `RecordWrite` and `TaskSpec` previews; no client, enqueue or model import |
@@ -86,7 +86,7 @@ November 1 moved example test loss from 5.563146 to 5.395074 and reloaded with z
 probe-logit difference.
 
 Pretrained models have since been tuned on example tasks: typed tool calls for
-Tessera's own tools. Their training rows came from repository templates, and no
+Teleion Fabric's own tools. Their training rows came from repository templates, and no
 model wrote any of them. [Continuous tuning](continuous-tuning.md#measured-results)
 has the rounds on a 1B and a 3B open-weight instruct model. A Muse Glimmer 30B QLoRA adapter, trained on
 Kaggle's free GPUs, went from 93.3% to 99.3% exact match on a fresh example test of
@@ -106,7 +106,7 @@ sequence budget or rank is a new recorded recipe, not a server-wide cap.
 ## Preview nouns and verbs
 
 For a real local noun/verb round trip, run the tiny example in its optional ML
-environment with the Tessera source available:
+environment with Teleion Fabric source available:
 
 ```bash
 PYTHONPATH=src python -m examples.finetuning.local_worker \
@@ -119,13 +119,13 @@ It creates a task-owned SQLite fabric, keeps two scoped keys in memory, validate
 the curation verb, claims the dependent training verb, heartbeats during optimizer
 steps and artifact writes, and stores the actual base/adapter bytes as private
 blobs. Submission captures the run as an existing execution noun. Readback checks
-the receipt and artifacts; another principal must be denied record, blob and
+the record and artifacts; another principal must be denied record, blob and
 execution reads. This executes the tiny smoke only. It does not pretend to run
 the proposed quality evaluation or admission stages. Server-resident records and
 operations remain nouns and verbs with authorization; execution location does
 not exempt them from access checks.
 
-Use the normal Tessera development environment for contract authoring:
+Use the normal Teleion Fabric development environment for contract authoring:
 
 ```bash
 uv run python -m examples.finetuning.author \
@@ -144,7 +144,7 @@ An existing authorized harness can claim these verbs and invoke the documented
 worker command. It must maintain the lease, stop on lease/scope loss, verify input
 pins, and submit private artifact references and checks through the existing
 execution contract. This CLI does not implement a second claim loop or lease
-supervisor. A completed dependency may have failed; inspect its receipt and
+supervisor. A completed dependency may have failed; inspect its record and
 required artifacts before continuing. Store larger adapter bytes in the existing
 content-addressed blob/bucket contract, with their digest referenced by the noun.
 
@@ -193,7 +193,7 @@ It launches no notebook, spends no credits itself and carries no credentials.
 Meta documents a single-H100 QLoRA path for the 30B Glimmer model. That is a
 separate training environment and is not a claim that 30B training fits a T4 or
 3060. Follow the official pinned Axolotl/CUDA dependencies and reload guidance;
-keep them out of Tessera's service environment. [Meta post-training guide](https://dev.meta.ai/docs/muse-glimmer/post-training).
+keep them out of Teleion Fabric's service environment. [Meta post-training guide](https://dev.meta.ai/docs/muse-glimmer/post-training).
 
 The optional bridge expects an existing cookbook checkout at
 `b30ca2ce0c4abeb2a0aa52a4f2610a550d5d7447` and the already cached Glimmer tokenizer
