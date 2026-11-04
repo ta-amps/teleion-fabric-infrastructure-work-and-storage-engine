@@ -39,8 +39,25 @@ ANON_LABELS: dict[str, Any] = {"origin": "anonymous", "demo": True, "untrusted":
 # The patterns read ASCII only (re.ASCII, as in JavaScript); screen_text first folds full-width
 # letters and digits (NFKC) and writes every other decimal digit as its ASCII digit, so numbers in
 # Arabic-Indic, Devanagari or full-width digits are caught the same way in both implementations.
-_EMAIL = re.compile(r"@(?!example\.(?:com|org|net)\b)[a-z0-9.-]+\.[a-z]{2,}", re.I | re.ASCII)
-_IDENTITY = re.compile(r"\b\d{3}-\d{2}-\d{4}\b|\b(?:\d[ -]?){13,19}\b", re.ASCII)
+# An address has a name before the @: a Python decorator (@app.route) or a handle isn't one.
+_EMAIL = re.compile(
+    r"""[^\s@<>"(),:;=\[\]{}'`/\\]@(?!example\.(?:com|org|net)(?![\w-]|\.[a-z]))[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}""",
+    re.I | re.A,
+)
+_SOCIAL_NUMBER = re.compile(r"\b\d{3}-\d{2}-\d{4}\b", re.A)
+_DIGIT_RUN = re.compile(r"(?<![A-Za-z0-9])\d+(?:[ .-]\d+)*(?![A-Za-z0-9])", re.A)
+_JSON_UNICODE = re.compile(r"\\u([0-9a-fA-F]{4})")
+_JSON_ESCAPE = re.compile(r'\\[nrtbf"/\\]')
+# A long number named as an identity number. Without the word, a timestamp or a work id isn't one.
+_NAMED_IDENTITY = re.compile(
+    r"\b(?:national id|passport|identity (?:number|card)|id number|social security|aadhaar|driver'?s licen[cs]e|tax id)\b[^0-9]{0,30}\d[\d -]{5,19}\d",
+    re.I | re.A,
+)
+# The card networks' number shapes: first digits and length. A feed id or a work id mostly doesn't match.
+_CARD_NETWORK = re.compile(
+    r"(?:4\d{12}(?:\d{3}){0,2}|5\d{15}|2[2-7]\d{14}|3[47]\d{13}|3(?:0[0-5]|[68]\d)\d{11}|6\d{15}|62\d{14,17}|35\d{14}|(?:5018|5020|5038|5893|6304|6759|676[1-3])\d{8,15})",
+    re.A,
+)
 # An IBAN carries at least ten digits, so a bill name such as "AB12 RENT CAPS" is not one.
 _IBAN = re.compile(r"\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,4})?\b", re.ASCII)
 _CONTACT = re.compile(
@@ -55,7 +72,9 @@ _OTHER_DIGIT = re.compile(r"(?![0-9])\d")  # any Unicode decimal digit but 0-9
 
 def screen_text(text: str) -> str:
     """The text the screen reads: NFKC folded, every decimal digit written as 0-9."""
-    folded = unicodedata.normalize("NFKC", text)
+    # A value stored as JSON text has its line breaks as \\n: the letter must not hide the number beside it.
+    plain = _JSON_ESCAPE.sub(" ", _JSON_UNICODE.sub(lambda m: chr(int(m.group(1), 16)), text))
+    folded = unicodedata.normalize("NFKC", plain)
     return _OTHER_DIGIT.sub(lambda m: str(unicodedata.digit(m.group())), folded)
 
 
@@ -69,11 +88,46 @@ STORED_FIELDS: dict[str, tuple[str, ...]] = {
 }
 
 
+def _luhn_valid(digits: str) -> bool:
+    """A card number passes this check, so a 13-digit timestamp or a long id mostly doesn't read as one."""
+    total = 0
+    for index, ch in enumerate(reversed(digits)):
+        value = int(ch)
+        if index % 2 == 1:
+            value = value * 2 - 9 if value > 4 else value * 2
+        total += value
+    return total % 10 == 0
+
+
+def _has_card_number(text: str) -> bool:
+    """Every stretch of whole digit groups adding up to a card's length, as in cloud_access.js."""
+    for match in _DIGIT_RUN.finditer(text):
+        pieces = re.split(r"([ .-])", match.group(0))
+        for start in range(0, len(pieces), 2):
+            digits = ""
+            for end in range(start, len(pieces), 2):
+                if len(digits) >= 19:
+                    break
+                digits += pieces[end]
+                window = pieces[start : end + 1]
+                if (
+                    len(digits) >= 13
+                    and len(set(window[1::2])) <= 1
+                    and all(len(group) >= 3 for group in window[0::2])
+                    and _CARD_NETWORK.fullmatch(digits)
+                    and _luhn_valid(digits)
+                ):
+                    return True
+    return False
+
+
 def _identity_or_payment(text: str) -> bool:
     text = screen_text(text)
     return bool(
         _EMAIL.search(text)
-        or _IDENTITY.search(text)
+        or _SOCIAL_NUMBER.search(text)
+        or _NAMED_IDENTITY.search(text)
+        or _has_card_number(text)
         or any(sum(ch in "0123456789" for ch in m.group(0)) >= 10 for m in _IBAN.finditer(text))
     )
 

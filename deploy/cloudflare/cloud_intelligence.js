@@ -2,6 +2,9 @@
 // monotonic cursor-sequenced live delta feeds, dual-resolution reflex recall,
 // and Layer 1 / Layer 2 governance lenses for Tessera Cloud (`TesseraCoordinator` + Worker edge).
 
+import { containerIssue, keyIssue, publicValue, reviewLabels, textForSearch } from "./public_read.js";
+import { applyClientPrefs } from "./client_prefs.js";
+
 const NAME_RE = /^[a-z0-9][a-z0-9_.-]{0,63}$/;
 const TOKEN_RE = /[a-z0-9]{2,}/g;
 const RANGE_RE = /^bytes=(\d*)-(\d*)$/i;
@@ -657,6 +660,7 @@ export function shownSummary(key, l0) {
 }
 
 export function searchNouns(coord, args, canonicalJson, badReq, viewerCtx = {}) {
+  const publicIssue = (container, key) => Boolean(viewerCtx.public_only) && Boolean(containerIssue(container) || keyIssue(key));
   const ns = coord.namespace || "main";
   const qClean = String(args.query || "").trim();
   const store = args.store ? String(args.store) : null;
@@ -666,7 +670,7 @@ export function searchNouns(coord, args, canonicalJson, badReq, viewerCtx = {}) 
   const cohortFilter = args.cohort ? String(args.cohort).trim() : null;
   const surfaceFilter = args.surface ? String(args.surface).trim() : null;
   const includeRestricted = Boolean(args.include_restricted);
-  const cap = Math.max(1, Math.min(Number(args.limit || 20), 200));
+  const cap = Math.max(1, Math.min(Number(args.prefs?.max_results || args.limit || 20), 1000));
   if (store != null && !NAME_RE.test(store)) throw badReq(`invalid store name '${store}'`);
   if (bucket != null && !NAME_RE.test(bucket)) throw badReq(`invalid bucket name '${bucket}'`);
 
@@ -702,6 +706,7 @@ export function searchNouns(coord, args, canonicalJson, badReq, viewerCtx = {}) 
       ) {
         continue;
       }
+      if (publicIssue(row.store, row.key)) continue;
       const [title, l0] = extractTitleAndL0(row.key, parsed, canonicalJson);
       const hay = `${row.store} ${row.key} ${title} ${l0} ${rawVal.slice(0, 1200)}`;
       if (
@@ -721,7 +726,9 @@ export function searchNouns(coord, args, canonicalJson, badReq, viewerCtx = {}) 
       ) {
         continue;
       }
-      const score = similarity(qClean, `${row.store} ${row.key} ${title}`, `${l0} ${rawVal.slice(0, 1200)}`, gov.tags);
+      // A no-key search scores what a no-key read would show, so it can't tell whether an address is stored.
+      const scoreText = viewerCtx.public_only ? textForSearch(`${l0} ${rawVal.slice(0, 1200)}`) : `${l0} ${rawVal.slice(0, 1200)}`;
+      const score = similarity(qClean, viewerCtx.public_only ? textForSearch(`${row.store} ${row.key} ${title}`) : `${row.store} ${row.key} ${title}`, scoreText, gov.tags);
       if (qClean && score <= 0.05) continue;
       scents.push({
         kind: "record",
@@ -795,6 +802,7 @@ export function searchNouns(coord, args, canonicalJson, badReq, viewerCtx = {}) 
       ) {
         continue;
       }
+      if (publicIssue(row.bucket, row.key)) continue;
       let [title, l0] = extractTitleAndL0(row.key, meta, canonicalJson);
       if (l0.startsWith("fields=[]")) {
         l0 = `${row.content_type} (${Number(row.size)} B) in bucket '${row.bucket}'`;
@@ -817,7 +825,9 @@ export function searchNouns(coord, args, canonicalJson, badReq, viewerCtx = {}) 
       ) {
         continue;
       }
-      const score = similarity(qClean, `${row.bucket} ${row.key} ${title}`, `${l0} ${row.metadata}`, gov.tags);
+      const score = viewerCtx.public_only
+        ? similarity(qClean, textForSearch(`${row.bucket} ${row.key} ${title}`), textForSearch(`${l0} ${row.metadata}`), gov.tags)
+        : similarity(qClean, `${row.bucket} ${row.key} ${title}`, `${l0} ${row.metadata}`, gov.tags);
       if (qClean && score <= 0.05) continue;
       scents.push({
         kind: "object",
@@ -849,7 +859,24 @@ export function searchNouns(coord, args, canonicalJson, badReq, viewerCtx = {}) 
     if (a.container !== b.container) return a.container < b.container ? -1 : 1;
     return a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
   });
-  return scents.slice(0, cap);
+  // Every result says whether it was reviewed. The client chooses which it wants, before the count.
+  const labeled = scents.map((scent) => {
+    // A key holder's search keeps its exact old shape unless it sent a client choice.
+    if (!viewerCtx.public_only && !args.prefs?.asked) return scent;
+    const view = { ...scent, ...reviewLabels(scent.tags) };
+    return viewerCtx.public_only ? { ...view, title: publicValue(view.title), l0_summary: publicValue(view.l0_summary), tags: publicValue(view.tags) } : view;
+  });
+  const offset = Math.max(0, Number(args.offset) || 0);
+  const chosen = applyClientPrefs(labeled.slice(offset), args.prefs, {
+    stateOf: (scent) => reviewLabels(scent.tags).review_state,
+    timeOf: (scent) => scent.updated_at,
+    kindsOf: (scent) => [scent.kind, scent.container, ...scent.tags, ...(scent.container === "kits" ? ["kit"] : [])],
+    defaultMax: cap,
+  });
+  const out = chosen.items.slice(0, cap);
+  const leftOut = chosen.report.left_out_by_max_results + chosen.report.left_out_by_max_bytes;
+  Object.defineProperty(out, "preferences", { value: { ...chosen.report, next_offset: leftOut && out.length ? offset + out.length : null }, enumerable: false });
+  return out;
 }
 
 export function listFeeds(coord, viewerCtx = {}) {
@@ -876,6 +903,7 @@ export function listFeeds(coord, viewerCtx = {}) {
   for (const r of rows) {
     const payload = JSON.parse(r.payload);
     const gov = rowGovernance(r, extractTags(payload));
+    if (viewerCtx.public_only && containerIssue(r.feed)) continue;
     if (
       !canViewGoverned({
         ...gov,
@@ -1015,6 +1043,7 @@ export function pollFeed(coord, args, badReq, viewerCtx = {}) {
     scannedSeq = Number(r.seq);
     const payload = JSON.parse(r.payload);
     const gov = rowGovernance(r, extractTags(payload));
+    if (viewerCtx.public_only && containerIssue(feed)) continue;
     if (
       !canViewGoverned({
         ...gov,
@@ -1066,7 +1095,7 @@ export function pollFeed(coord, args, badReq, viewerCtx = {}) {
     }
   }
   const nextCursor = entries.length ? entries[entries.length - 1].seq : (viewerCtx.public_only ? after : scannedSeq);
-  return { namespace: ns, feed, entries, next_cursor: nextCursor };
+  return { namespace: ns, feed, entries: viewerCtx.public_only ? entries.map(publicValue) : entries, next_cursor: nextCursor };
 }
 
 export function matchReflex(coord, args, canonicalJson, badReq, viewerCtx = {}) {
@@ -1158,7 +1187,7 @@ export function matchReflex(coord, args, canonicalJson, badReq, viewerCtx = {}) 
     return a.reflex_id < b.reflex_id ? -1 : a.reflex_id > b.reflex_id ? 1 : 0;
   });
 
-  const topHits = hits.slice(0, cap);
+  const topHits = viewerCtx.public_only ? hits.slice(0, cap).map(publicValue) : hits.slice(0, cap);
   const deadEnds = qClean
     ? searchNouns(coord, { query: qClean, store: DEAD_END_STORE, limit: 5 }, canonicalJson, badReq, viewerCtx)
     : [];

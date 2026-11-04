@@ -123,7 +123,7 @@ function strings(value, path, out) {
 // fiction (555-0100 to 555-0199) or in the unassigned 555 area code, and 13 to 19 digit runs that
 // fail the Luhn check, unless the run itself holds an SSN or phone shape. Everything else goes
 // through hasPersonalData unchanged.
-const LOCAL_CHAR = /[A-Za-z0-9._%+-]/;
+const LOCAL_CHAR = /[A-Za-z0-9._%+-]|[^\x00-\x7f]/;
 const DOMAIN_CHAR = /[A-Za-z0-9.-]/;
 const RESERVED_TLDS = new Set(["example", "invalid", "test", "localhost"]);
 const RESERVED_BASES = ["example.com", "example.net", "example.org"];
@@ -164,7 +164,6 @@ export function libraryPersonalData(t) {
     .replace(DIGIT_RUN, run => (luhn(run.replace(/[ -]/g, "")) || SSN_OR_PHONE_SHAPE.test(run) ? run : " "));
   return hasPersonalData(cleaned);
 }
-
 function lineOf(textValue, index) {
   let line = 1;
   for (let i = 0; i < index; i++) if (textValue.charCodeAt(i) === 10) line++;

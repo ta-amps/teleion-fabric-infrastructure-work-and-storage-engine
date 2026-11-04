@@ -59,7 +59,7 @@ export const CLOSED_TO_ANONYMOUS = new Set(["eq03", "frontier.review", "frontier
 const OPEN_VERB_EFFECTS = new Set(["read", "write-internal"]);
 // Claim events would show other attempts on the verb, so they stay closed (same rule as Python).
 export const OPEN_VERB_ACTIONS = new Set(["claim", "heartbeat", "submit", "task", "results", "listVerbs", "me", "my_audit"]);
-export const OPEN_WINDOW_READ_ACTIONS = new Set(["feeds", "pollFeed", "matchReflex", "searchNouns", "getRecord", "listRecords"]);
+export const OPEN_WINDOW_READ_ACTIONS = new Set(["feeds", "pollFeed", "matchReflex", "searchNouns", "getRecord", "listRecords", "recordHistory", "stores", "buckets", "listObjects", "getObjectMeta", "objectHistory", "authorizeBlobRead"]);
 const OWN_WORK_ACTIONS = new Set(["task", "results"]);
 // While access is free, one request from a no-key caller may be as large as a Task's whole output.
 const OPEN_WINDOW_REQUEST_BYTES = 1_048_576;
@@ -140,7 +140,7 @@ export function openVerbsDescription(openWindow = false) {
       ? "Send X-Namespace: main (or call /ns/main/v1/...) to read public feeds, reflexes and Task Objects, and to list, claim, heartbeat and submit Tasks tagged open:anonymous."
       : "Send X-Namespace: main (or call /ns/main/v1/...) to list, claim, heartbeat and submit Tasks whose producer tagged them open:anonymous.",
     actions, closed_queues: [...CLOSED_TO_ANONYMOUS].sort(),
-    claimant_sees: "the Task's brief, its own submissions, public Task Objects and feeds, and the state of related Tasks; never private outputs or other workers' attempts",
+    claimant_sees: "the Task's brief, its own submissions, public Task Objects and feeds, and the state of related Tasks; never private outputs or other workers' failed attempts; a finished open Task's output reads with finished=true, labeled",
     review: "A submitted result stays quarantined with its Task. A different keyed worker or a person reviews it; anonymous sessions never approve or publish." };
 }
 // Requester keys (same rule as src/tessera/_requesters.py): a self-serve sign-up mints a hashed
@@ -169,8 +169,12 @@ export function filesRequests(grant, ns) {
 // A limited deterministic screen for common personal and payment data (same rules as
 // src/tessera/_principals.py): email addresses outside the example domains, identity and payment
 // card numbers, IBANs, phone numbers and street addresses. Not a claim that all of it is caught.
-const PERSONAL_EMAIL = /@(?!example\.(?:com|org|net)\b)[a-z0-9.-]+\.[a-z]{2,}/i;
-const PERSONAL_IDENTITY = /\b\d{3}-\d{2}-\d{4}\b|\b(?:\d[ -]?){13,19}\b/;
+// An address has a name before the @: a Python decorator (@app.route), a package (@types/node.d) or a handle isn't one.
+const PERSONAL_EMAIL = /[^\s@<>\x22(),:;=\[\]{}\x27\x60/\\]@(?!example\.(?:com|org|net)(?![\w-]|\.[a-z]))[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}/i;
+const ROLE_EMAIL = /(?<![a-z0-9._%+-])(?:info|contact|hello|help|support|office|admin|press|media|team|grants?|programs?|outreach|intake|hotline|legal|security|privacy|noreply|no-reply)@[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}/gi;
+const SOCIAL_NUMBER = /\b\d{3}-\d{2}-\d{4}\b/;
+// A long number named as an identity number. Without the word, a timestamp or a work id isn't one.
+const NAMED_IDENTITY = /\b(?:national id|passport|identity (?:number|card)|id number|social security|aadhaar|driver'?s licen[cs]e|tax id)\b[^0-9]{0,30}\d[\d -]{5,19}\d/i;
 // An IBAN carries at least ten digits, so a bill name such as "AB12 RENT CAPS" is not one.
 const PERSONAL_IBAN = /\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,4})?\b/g;
 const PERSONAL_CONTACT = new RegExp([
@@ -184,7 +188,8 @@ const MIN_CITED_QUOTE = 20; // characters: a quote at least this long counts as 
 // Arabic-Indic, Devanagari or full-width digits are caught the same way in both implementations.
 // Unicode encodes each digit set as a run of ten from zero, so a digit's value is its place in its run.
 export function screenText(text) {
-  text = String(text);
+  // A value stored as JSON text has its line breaks as \n: the letter must not hide the number or the address beside it.
+  text = String(text).replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16))).replace(/\\[nrtbf"/\\]/g, " ");
   // ASCII is already NFKC and its only decimal digits are 0-9, so it screens as written.
   if (!/[^\x00-\x7f]/.test(text)) return text;
   return text.normalize("NFKC").replace(/\p{Nd}/gu, ch => {
@@ -195,11 +200,44 @@ export function screenText(text) {
     return String(k % 10);
   });
 }
-function identityOrPayment(text) {
-  text = screenText(text);
-  return PERSONAL_EMAIL.test(text) || PERSONAL_IDENTITY.test(text) || [...text.matchAll(PERSONAL_IBAN)].some(m => (m[0].match(/[0-9]/g) || []).length >= 10);
+// A card number passes the Luhn check, so a 13-digit timestamp or a long id mostly doesn't read as one.
+function luhnValid(digits) {
+  let sum = 0;
+  for (let i = 0; i < digits.length; i++) {
+    let d = Number(digits[digits.length - 1 - i]);
+    if (i % 2 === 1) { d *= 2; if (d > 9) d -= 9; }
+    sum += d;
+  }
+  return sum % 10 === 0;
 }
-export function hasPersonalData(text) { return identityOrPayment(text) || PERSONAL_CONTACT.test(screenText(text)); }
+// The card networks' number shapes: first digits and length. A feed id or a work id mostly doesn't match.
+const CARD_NETWORK = /^(?:4\d{12}(?:\d{3}){0,2}|5\d{15}|2[2-7]\d{14}|3[47]\d{13}|3(?:0[0-5]|[68]\d)\d{11}|6\d{15}|62\d{14,17}|35\d{14}|(?:5018|5020|5038|5893|6304|6759|676[1-3])\d{8,15})$/;
+// Every stretch of whole digit groups adding up to a card's length, so a card followed by its expiry or after a date still reads as one.
+const DIGIT_RUN = /(?<![A-Za-z0-9])\d+(?:[ .-]\d+)*(?![A-Za-z0-9])/g;
+function hasCardNumber(text) {
+  for (const m of text.matchAll(DIGIT_RUN)) {
+    const pieces = m[0].split(/([ .-])/);
+    for (let start = 0; start < pieces.length; start += 2) {
+      let digits = "";
+      for (let end = start; end < pieces.length && digits.length < 19; end += 2) {
+        digits += pieces[end];
+        // One separator, and groups of 3 or more digits: a row of decimals or phone numbers isn't a card.
+        const windowPieces = pieces.slice(start, end + 1);
+        if (digits.length >= 13 && new Set(windowPieces.filter((_, i) => i % 2 === 1)).size <= 1 && windowPieces.filter((_, i) => i % 2 === 0).every(group => group.length >= 3) && CARD_NETWORK.test(digits) && luhnValid(digits)) return true;
+      }
+    }
+  }
+  return false;
+}
+function identityOrPayment(text, { allowRoleEmail = false } = {}) {
+  text = screenText(text);
+  const emailText = allowRoleEmail ? text.replace(ROLE_EMAIL, " ") : text;
+  return PERSONAL_EMAIL.test(emailText) || SOCIAL_NUMBER.test(text) || NAMED_IDENTITY.test(text) || hasCardNumber(text) || [...text.matchAll(PERSONAL_IBAN)].some(m => (m[0].match(/[0-9]/g) || []).length >= 10);
+}
+// allowPublicContact: a reviewed Task Object may name an organization's phone, street address or role address (public_read.js).
+export function hasPersonalData(text, { allowPublicContact = false } = {}) {
+  return identityOrPayment(text, { allowRoleEmail: allowPublicContact }) || (!allowPublicContact && PERSONAL_CONTACT.test(screenText(text)));
+}
 function citedQuotes(value) {
   if (Array.isArray(value)) return value.flatMap(citedQuotes);
   if (!value || typeof value !== "object") return [];
@@ -597,7 +635,7 @@ export function enforceAccess(c, grant, action, args) {
     if (!value || typeof value !== "object") return;
     if (!grant.is_admin && value.producer_surface && value.producer_surface !== (grant.bound_surface ? `surface:${grant.bound_surface}` : "surface:tessera"))
       throw error(403, "scope_denied", "producer_surface must match authenticated identity");
-    if (!grant.is_admin && !grant.bound_surface && [...(Array.isArray(value.tags) ? value.tags : []), ...extractTags(value.value || value.payload || value.metadata || {})].includes("status:verified"))
+    if (!grant.is_admin && !grant.bound_surface && [...(Array.isArray(value.tags) ? value.tags : []), ...extractTags(value.value || value.payload || value.metadata || {})].some(tag => String(tag).trim().toLowerCase() === "status:verified"))
       throw error(403, "scope_denied", "verification labels require an authorized publisher");
   };
   checkGov(args);
@@ -610,7 +648,7 @@ export function enforceAccess(c, grant, action, args) {
     if (!allowedOpenAction) throw error(403, "scope_denied", `outside its own namespace an anonymous session may only claim, heartbeat and submit open Tasks (action '${action}' requires a contributor key; allowed open-Task actions: claim, heartbeat, listVerbs, me, my_audit, results, submit, task)`);
     if (args.queue && CLOSED_TO_ANONYMOUS.has(String(args.queue))) throw error(403, "scope_denied", "review, approval and publication Tasks are closed to anonymous");
     // While access is free, a Task opened to no-key work can be read before claiming it, as the Task list already shows it.
-    const openTaskRead = openWindow && action === "task";
+    const openTaskRead = openWindow && (action === "task" || action === "results");
     if (OWN_WORK_ACTIONS.has(action) && !openTaskRead && !c._one("SELECT 1 AS own FROM leases WHERE namespace=? AND task_id=? AND key_id=? UNION ALL SELECT 1 AS own FROM results WHERE namespace=? AND task_id=? AND completed_by_key=? LIMIT 1", ns, String(args.task_id || ""), grant.key_id, ns, String(args.task_id || ""), grant.key_id))
       throw error(404, "not_found", "task does not exist");
   } else {

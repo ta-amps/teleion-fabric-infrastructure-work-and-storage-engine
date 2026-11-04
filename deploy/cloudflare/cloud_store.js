@@ -2,6 +2,8 @@ import { humanLinkAction, humanLinkPublicAnswer, humanLinkPublicRead } from "./h
 import { initExecutions, checkedReport, prepareExecution, validatePrepared, captureExecution, recallExecution, getExecution, listExecutions } from "./cloud_executions.js";
 import { NO_EDGE, activityMap, catalogModels, cleanEdge, clearActivity, edgeStatus, edgeWorker, flushEdge, recordClaim, recordModel, recordPresence, showOnMapLabel } from "./edge_activity.js";
 import { displayTest } from "./display_mask.js";
+import { containerIssue, keyIssue, publicValue, publicView, reviewStateOf, reviewLabels } from "./public_read.js";
+import { applyClientPrefs, reviewAllowed } from "./client_prefs.js";
 import { initAccess, principalMetadata, requestIdentity, mintAnonymous, mintRequester, seedDemo, ensureDemoSeeded, ensureRequesterSeeded, enforceAccess, forgivingTaskArgs, readOkFlag, hasPersonalData, isNoKeyId, OPEN_TASK_MAX_FAILURES, chargeAccess, claimCaps, checkClaimCaps, chargeClaimCaps, audit, auditMode, countAccess, ownAudit, publicActivity, publicPrincipal, requesterVerbGovernance, CLOSED_TO_ANONYMOUS, MAX_IDEMPOTENCY_KEY, filesRequests, isOpenFreeWindow, openGrantFor, openToAnonymous, usesOpenVerbs } from "./cloud_access.js";
 // TesseraCoordinator: single-writer SQLite Durable Object (`new_sqlite_classes`) implementing
 // 100% of Tessera Spec v0.2 (queues, 5 verbs, dependencies, waves, park/resume, model jobs,
@@ -1538,7 +1540,10 @@ export class TesseraCoordinator extends DurableObject {
 
   // An anonymous viewer never sees which keys own, parked or deduplicated a verb.
   _viewerTaskView(grant, view) {
-    return grant.principal_kind === "anonymous" ? { ...view, owner_key_id: null, parked_by: null, idempotency_key: null, fencing_token: null } : view;
+    if (grant.principal_kind !== "anonymous") return view;
+    const shown = { ...view, owner_key_id: null, parked_by: null, idempotency_key: null, fencing_token: null };
+    // Outside its own practice space, a no-key reader gets a brief through the same display step as a Task Object.
+    return usesOpenVerbs(grant, this.namespace) ? { ...shown, brief: publicValue(view.brief) } : shown;
   }
 
   // An open verb carries its whole input in its brief; its anonymous claimant sees the state of
@@ -1600,7 +1605,38 @@ export class TesseraCoordinator extends DurableObject {
       target_cohorts: parseJsonSafe(entry.target_cohorts, ["all"]),
       viewer_surface: viewerCtx.surface, viewer_key_id: viewerCtx.key_id,
       is_admin: viewerCtx.is_admin, direct_get: true, public_only: Boolean(viewerCtx.public_only),
-    })) && !(viewerCtx.public_only && hasPersonalData(String(row.value ?? "")));
+    })) && !(viewerCtx.public_only && this._publicIssue(row));
+  }
+
+  // public_read.js says what stays closed.
+  _publicIssue(row) {
+    return containerIssue(row.store ?? row.bucket) || keyIssue(row.key);
+  }
+  // The same bytes may have reached a public object after a private upload: that object opens them.
+  _publicObjectWithBytes(sha256, viewerCtx) {
+    return this._all("SELECT * FROM bucket_objects WHERE namespace = ? AND sha256 = ? LIMIT 20", this.namespace, sha256)
+      .find((row) => this._canReadVersion(row, row, viewerCtx) && this._bucketPublic(row.bucket, viewerCtx)) || null;
+  }
+  // A container that isn't itself public closes what's in it, as search does.
+  _bucketPublic(bucket, viewerCtx) {
+    const row = this._one("SELECT * FROM buckets WHERE namespace = ? AND name = ?", this.namespace, bucket);
+    return !row || this._canReadBucketRow(row, viewerCtx);
+  }
+  _canReadBucketRow(row, viewerCtx) {
+    return canViewGoverned({ ...row, allowed_surfaces: parseJsonSafe(row.allowed_surfaces, []), tags: parseJsonSafe(row.tags, []), target_cohorts: parseJsonSafe(row.target_cohorts, ["all"]), viewer_surface: viewerCtx.surface, viewer_key_id: viewerCtx.key_id, is_admin: viewerCtx.is_admin, direct_get: true, public_only: Boolean(viewerCtx.public_only) });
+  }
+  // A key holder's replies keep their exact old shape unless it sent a client choice: strict clients refuse fields they don't know.
+  _readerView(view, viewerCtx, payloadField, args = {}) {
+    if (viewerCtx.public_only) return publicView(view, payloadField);
+    return args.prefs?.asked ? { ...view, ...reviewLabels(view.tags) } : view;
+  }
+  // The client asked for reviewed work only, and this isn't: say so plainly and how to read it.
+  _requireReviewChoice(tags, args, what) {
+    if (args.prefs && !reviewAllowed(reviewStateOf(tags), args.prefs)) {
+      const e = notFound(`${what} is ${reviewStateOf(tags)}; drop include_unreviewed=false or widen review_state to read it`);
+      e.code = "not_in_chosen_review_state";
+      throw e;
+    }
   }
 
   _taskVisible(row, grant, viewerCtx) {
@@ -1748,7 +1784,7 @@ export class TesseraCoordinator extends DurableObject {
     return row.visibility_scope === "public_commons" && !parseJsonSafe(row.tags, []).includes("status:quarantined") && parseJsonSafe(row.target_cohorts, ["all"]).includes("all");
   }
   _visibleNoun(row, viewerCtx = {}) {
-    return canViewGoverned({ ...row, allowed_surfaces: parseJsonSafe(row.allowed_surfaces, []), tags: parseJsonSafe(row.tags, []), viewer_surface: viewerCtx.surface, viewer_key_id: viewerCtx.key_id, is_admin: viewerCtx.is_admin, direct_get: true }) && (viewerCtx.is_admin || row.owner_key_id === viewerCtx.key_id || parseJsonSafe(row.target_cohorts, ["all"]).includes("all"));
+    return canViewGoverned({ ...row, allowed_surfaces: parseJsonSafe(row.allowed_surfaces, []), tags: parseJsonSafe(row.tags, []), viewer_surface: viewerCtx.surface, viewer_key_id: viewerCtx.key_id, is_admin: viewerCtx.is_admin, direct_get: true, public_only: Boolean(viewerCtx.public_only) }) && (viewerCtx.is_admin || row.owner_key_id === viewerCtx.key_id || parseJsonSafe(row.target_cohorts, ["all"]).includes("all")) && !(viewerCtx.public_only && containerIssue(row.store ?? row.bucket ?? row.name));
   }
   _boardSnapshot(ns) {
     const dagTasks = this._all(
@@ -1892,7 +1928,7 @@ export class TesseraCoordinator extends DurableObject {
     const ns=this.namespace;
     return this._all("SELECT * FROM buckets WHERE namespace=? ORDER BY name",ns).filter(b=>this._visibleNoun(b,viewerCtx)).map(b=>{
       const objects=this._all("SELECT * FROM bucket_objects WHERE namespace=? AND bucket=?",ns,b.name).filter(o=>this._visibleNoun(o,viewerCtx));
-      return { namespace:ns, name:b.name, description:b.description, objects:objects.length, bytes:objects.reduce((n,o)=>n+Number(o.size),0), created_at:Number(b.created_at),updated_at:Number(b.updated_at),producer_surface:b.producer_surface,visibility_scope:b.visibility_scope,allowed_surfaces:parseJsonSafe(b.allowed_surfaces,[]),target_cohorts:parseJsonSafe(b.target_cohorts,["all"]),tags:parseJsonSafe(b.tags,[]),owner_key_id:b.owner_key_id??null };
+      return { namespace:ns, name:b.name, description:viewerCtx.public_only?publicValue(b.description):b.description, objects:objects.length, bytes:objects.reduce((n,o)=>n+Number(o.size),0), created_at:Number(b.created_at),updated_at:Number(b.updated_at),producer_surface:b.producer_surface,visibility_scope:b.visibility_scope,allowed_surfaces:parseJsonSafe(b.allowed_surfaces,[]),target_cohorts:parseJsonSafe(b.target_cohorts,["all"]),tags:viewerCtx.public_only?publicValue(parseJsonSafe(b.tags,[])):parseJsonSafe(b.tags,[]),owner_key_id:viewerCtx.public_only?null:b.owner_key_id??null };
     });
   }
 
@@ -2470,14 +2506,29 @@ export class TesseraCoordinator extends DurableObject {
           const view = this._taskView(String(args.task_id));
           this._requireQueue(grant, view.queue);
           if (!this._taskVisible(this._taskRow(String(args.task_id)), grant, viewerCtx)) throw notFound("task does not exist");
-          // An anonymous session in the shared namespace sees only its own submissions.
-          const ownOnly = usesOpenVerbs(grant, this.namespace);
+          // An anonymous session in the shared namespace sees its own submissions. Asking for finished=true adds the finished
+          // work of an open Task: the output only, screened, labeled unreviewed, with nothing about who did it or how to resend it.
+          const noKey = usesOpenVerbs(grant, this.namespace);
+          const addFinished = noKey && args.finished === true;
           const results = this._all(
-            `SELECT * FROM results WHERE namespace = ? AND task_id = ?${ownOnly ? " AND completed_by_key = ?" : ""} ORDER BY created_at`,
+            "SELECT * FROM results WHERE namespace = ? AND task_id = ? ORDER BY created_at",
             this.namespace,
-            view.task_id,
-            ...(ownOnly ? [grant.key_id] : [])
-          ).map((r) => ({
+            view.task_id
+          ).filter((r) => !noKey || r.completed_by_key === grant.key_id || (addFinished && this._publicRow(this._taskRow(String(args.task_id))) && !containerIssue(view.queue) && Boolean(r.ok) && r.state_after === "done"))
+          .map((r) => noKey && r.completed_by_key !== grant.key_id ? ({
+            task_id: r.task_id,
+            fencing_token: null,
+            idempotency_key: null,
+            ok: true,
+            output: publicValue(JSON.parse(r.output)),
+            error: null,
+            receipt_hash: null,
+            state_after: r.state_after,
+            completed_by_key: null,
+            labels: {},
+            created_at: Number(r.created_at),
+            ...reviewLabels(view.tags),
+          }) : ({
             task_id: r.task_id,
             fencing_token: Number(r.fencing_token),
             idempotency_key: r.idempotency_key,
@@ -2584,7 +2635,7 @@ export class TesseraCoordinator extends DurableObject {
                 attempt,
                 kind: row.kind,
                 effect_class: row.effect_class,
-                brief: JSON.parse(row.brief),
+                brief: usesOpenVerbs(grant, this.namespace) ? publicValue(JSON.parse(row.brief)) : JSON.parse(row.brief),
                 claimed_at: now,
                 expires_at: expires,
                 hard_expires_at: hard,
@@ -3346,7 +3397,8 @@ export class TesseraCoordinator extends DurableObject {
           );
           if (!r) throw notFound(`record ${store}/${key} has no version ${version}`);
           if (!this._canReadVersion(r, head, viewerCtx)) throw notFound(`record ${store}/${key} does not exist`);
-          return { ok: true, status: 200, data: this._recordView(r) };
+          this._requireReviewChoice(canonicalCategoryTags(JSON.parse(r.value), [...parseJsonSafe(r.tags, []), ...extractTags(JSON.parse(r.value))]), args, `record ${store}/${key}`);
+          return { ok: true, status: 200, data: this._readerView(this._recordView(r), viewerCtx, "value", args) };
         }
 
         case "recordHistory": {
@@ -3371,7 +3423,7 @@ export class TesseraCoordinator extends DurableObject {
           return {
             ok: true,
             status: 200,
-            data: { versions: rows.map((r) => this._recordView(r)) },
+            data: { versions: rows.map((r) => this._readerView(this._recordView(r), viewerCtx, "value", args)) },
           };
         }
 
@@ -3385,19 +3437,22 @@ export class TesseraCoordinator extends DurableObject {
           const store = String(args.store || "");
           if (!NAME_RE.test(store)) throw badReq("invalid store name");
           const prefix = String(args.prefix || "");
-          const cap = Math.max(1, Math.min(Number(args.limit || 100), 1000));
+          if (viewerCtx.public_only && containerIssue(store)) return { ok: true, status: 200, data: { records: [], next: null } };
+          const cap = Math.floor(Math.max(1, Math.min(Number(args.prefs?.max_results || args.limit || 100) || 100, 1000)));
           const includeRestricted = Boolean(args.include_restricted);
-          const scanLimit = Math.min(cap * 4, 2000);
+          const scanLimit = Math.floor(Math.max(Math.min(cap * 4, 2000), 200));
           const filters = nounFilterSql("record", args);
           let where = "WHERE h.namespace = ? AND h.store = ?";
           const params = [this.namespace, store];
           if (prefix) { where += " AND h.key >= ? AND h.key < ?"; params.push(prefix, prefixUpper(prefix)); }
+          if (args.after) { where += " AND h.key > ?"; params.push(String(args.after)); }
           where += filters.where; params.push(...filters.params, scanLimit);
           const rows = this._all(
             "SELECT r.* FROM record_heads h JOIN records r ON r.namespace = h.namespace AND r.store = h.store AND r.key = h.key AND r.version = h.version " + where + " ORDER BY h.key LIMIT ?",
             ...params
           );
           const out = [];
+          let full = false;
           for (const r of rows) {
             const view = this._recordView(r);
             const mergedTags = canonicalCategoryTags(view.value, [...view.tags, ...extractTags(view.value)]);
@@ -3416,7 +3471,7 @@ export class TesseraCoordinator extends DurableObject {
                 include_restricted: includeRestricted,
                 target_cohorts: view.target_cohorts,
                 public_only: Boolean(viewerCtx.public_only),
-              }) || (viewerCtx.public_only && hasPersonalData(String(r.value ?? "")))
+              }) || (viewerCtx.public_only && this._publicIssue(r))
             ) {
               continue;
             }
@@ -3437,10 +3492,19 @@ export class TesseraCoordinator extends DurableObject {
             ) {
               continue;
             }
-            out.push(view);
-            if (out.length >= cap) break;
+            const shown = this._readerView(view, viewerCtx, "value", args);
+            // The client's choices run here, so a page counts what it asked for.
+            if (!applyClientPrefs([shown], { ...args.prefs, max_results: null, max_bytes: null, warnings: [] }, { stateOf: (v) => reviewStateOf(v.tags), timeOf: (v) => v.updated_at ?? v.created_at, kindsOf: (v) => [v.store, ...v.tags] }).items.length) continue;
+            out.push(shown);
+            if (out.length >= cap) { full = true; break; }
           }
-          return { ok: true, status: 200, data: { records: out } };
+          // The scan stops somewhere, so a list says where to go on: pass next back as after.
+          const chosen = applyClientPrefs(out, { max_bytes: args.prefs?.max_bytes ?? null, warnings: args.prefs?.warnings || [] }, { stateOf: () => "reviewed", timeOf: () => 0, kindsOf: () => [] });
+          const scanRanOut = rows.length >= scanLimit;
+          const lastReturned = chosen.items.at(-1)?.key ?? null;
+          // Nothing fit: go on past the first item, which is one read away on its own.
+          const next = chosen.report.left_out_by_max_bytes ? lastReturned ?? out[0].key : full || scanRanOut ? (full ? out.at(-1).key : rows.at(-1).key) : null;
+          return { ok: true, status: 200, data: viewerCtx.public_only || args.prefs?.asked || args.after ? { records: chosen.items, next, preferences: chosen.report } : { records: chosen.items } };
         }
 
         case "authorizeBlobWrite":
@@ -3508,6 +3572,12 @@ export class TesseraCoordinator extends DurableObject {
             sha256
           );
           if (!bns) throw notFound(`blob ${sha256} does not exist`);
+          // A no-key reader is admitted only by a public object holding these bytes: the rule for that object's own route.
+          if (viewerCtx.public_only) {
+            const publicOwner = this._publicObjectWithBytes(sha256, viewerCtx);
+            if (!publicOwner) throw notFound(`blob ${sha256} does not exist`);
+            return { ok: true, status: 200, public_only: true, data: { sha256, tags: parseJsonSafe(publicOwner.tags, []) } };
+          }
           // The first uploader's row admits the caller, or this key uploaded these bytes itself.
           if (
             !canViewGoverned({
@@ -3788,9 +3858,13 @@ export class TesseraCoordinator extends DurableObject {
           );
           if (!head) throw notFound(`object ${bucket}/${key} does not exist`);
           if (!this._canReadVersion(head, head, viewerCtx)) throw notFound(`object ${bucket}/${key} does not exist`);
+          if (viewerCtx.public_only && !this._bucketPublic(bucket, viewerCtx)) throw notFound(`object ${bucket}/${key} does not exist`);
           const version = args.version == null ? null : Number(args.version);
+          // public_only tells the edge to read the bytes through public_read.js before it serves them.
+          const publicOnly = Boolean(viewerCtx.public_only);
           if (version == null) {
-            return { ok: true, status: 200, data: this._objectView(head) };
+            this._requireReviewChoice(parseJsonSafe(head.tags, []), args, `object ${bucket}/${key}`);
+            return { ok: true, status: 200, public_only: publicOnly, data: this._readerView(this._objectView(head), viewerCtx, "metadata", args) };
           }
           const vr = this._one(
             "SELECT * FROM bucket_object_versions WHERE namespace = ? AND bucket = ? AND key = ? AND version = ?",
@@ -3801,7 +3875,8 @@ export class TesseraCoordinator extends DurableObject {
           );
           if (!vr) throw notFound(`object ${bucket}/${key} has no version ${version}`);
           if (!this._canReadVersion(vr, head, viewerCtx)) throw notFound(`object ${bucket}/${key} does not exist`);
-          return { ok: true, status: 200, data: this._objectView(vr, vr.created_at) };
+          this._requireReviewChoice(parseJsonSafe(vr.tags, []), args, `object ${bucket}/${key}`);
+          return { ok: true, status: 200, public_only: publicOnly, data: this._readerView(this._objectView(vr, vr.created_at), viewerCtx, "metadata", args) };
         }
 
         case "listObjects": {
@@ -3817,19 +3892,23 @@ export class TesseraCoordinator extends DurableObject {
           ) {
             throw notFound(`bucket '${bucket}' does not exist`);
           }
+          if (viewerCtx.public_only && !this._bucketPublic(bucket, viewerCtx)) throw notFound(`bucket '${bucket}' does not exist`);
+          if (viewerCtx.public_only && containerIssue(bucket)) throw notFound(`bucket '${bucket}' does not exist`);
           const prefix = String(args.prefix || "");
-          const cap = Math.max(1, Math.min(Number(args.limit || 100), 1000));
+          const cap = Math.floor(Math.max(1, Math.min(Number(args.prefs?.max_results || args.limit || 100) || 100, 1000)));
           const includeRestricted = Boolean(args.include_restricted);
-          const scanLimit = Math.min(cap * 4, 2000);
+          const scanLimit = Math.floor(Math.max(Math.min(cap * 4, 2000), 200));
           const filters = nounFilterSql("object", args);
           let where = "WHERE o.namespace = ? AND o.bucket = ?";
           const params = [this.namespace, bucket];
           if (prefix) { where += " AND o.key >= ? AND o.key < ?"; params.push(prefix, prefixUpper(prefix)); }
+          if (args.after) { where += " AND o.key > ?"; params.push(String(args.after)); }
           where += filters.where; params.push(...filters.params, scanLimit);
           const rows = this._all(
             "SELECT o.* FROM bucket_objects o " + where + " ORDER BY o.key LIMIT ?", ...params
           );
           const out = [];
+          let full = false;
           for (const r of rows) {
             const view = this._objectView(r);
             const mergedTags = canonicalCategoryTags(view.metadata, [...view.tags, ...extractTags(view.metadata)]);
@@ -3846,7 +3925,9 @@ export class TesseraCoordinator extends DurableObject {
                 is_admin: viewerCtx.is_admin,
                 direct_get: false,
                 include_restricted: includeRestricted,
-              })
+                target_cohorts: view.target_cohorts,
+                public_only: Boolean(viewerCtx.public_only),
+              }) || (viewerCtx.public_only && this._publicIssue(r))
             ) {
               continue;
             }
@@ -3867,10 +3948,19 @@ export class TesseraCoordinator extends DurableObject {
             ) {
               continue;
             }
-            out.push(view);
-            if (out.length >= cap) break;
+            const shown = this._readerView(view, viewerCtx, "metadata", args);
+            // The client's choices run here, so a page counts what it asked for.
+            if (!applyClientPrefs([shown], { ...args.prefs, max_results: null, max_bytes: null, warnings: [] }, { stateOf: (v) => reviewStateOf(v.tags), timeOf: (v) => v.updated_at ?? v.created_at, kindsOf: (v) => [v.bucket, ...v.tags] }).items.length) continue;
+            out.push(shown);
+            if (out.length >= cap) { full = true; break; }
           }
-          return { ok: true, status: 200, data: { objects: out } };
+          // The scan stops somewhere, so a list says where to go on: pass next back as after.
+          const chosen = applyClientPrefs(out, { max_bytes: args.prefs?.max_bytes ?? null, warnings: args.prefs?.warnings || [] }, { stateOf: () => "reviewed", timeOf: () => 0, kindsOf: () => [] });
+          const scanRanOut = rows.length >= scanLimit;
+          const lastReturned = chosen.items.at(-1)?.key ?? null;
+          // Nothing fit: go on past the first item, which is one read away on its own.
+          const next = chosen.report.left_out_by_max_bytes ? lastReturned ?? out[0].key : full || scanRanOut ? (full ? out.at(-1).key : rows.at(-1).key) : null;
+          return { ok: true, status: 200, data: viewerCtx.public_only || args.prefs?.asked || args.after ? { objects: chosen.items, next, preferences: chosen.report } : { objects: chosen.items } };
         }
 
         case "objectHistory": {
@@ -3887,6 +3977,7 @@ export class TesseraCoordinator extends DurableObject {
           );
           if (!head) throw notFound(`object ${bucket}/${key} does not exist`);
           if (!this._canReadVersion(head, head, viewerCtx)) throw notFound(`object ${bucket}/${key} does not exist`);
+          if (viewerCtx.public_only && !this._bucketPublic(bucket, viewerCtx)) throw notFound(`object ${bucket}/${key} does not exist`);
           const rows = this._all(
             "SELECT * FROM bucket_object_versions WHERE namespace = ? AND bucket = ? AND key = ? ORDER BY version",
             this.namespace,
@@ -3897,14 +3988,14 @@ export class TesseraCoordinator extends DurableObject {
           return {
             ok: true,
             status: 200,
-            data: { versions: rows.map((vr) => this._objectView(vr, vr.created_at)) },
+            data: { versions: rows.map((vr) => this._readerView(this._objectView(vr, vr.created_at), viewerCtx, "metadata", args)) },
           };
         }
 
         case "searchNouns": {
           if (!grant.can_store) throw forbid("this needs a key with the store scope");
           const scents = searchNouns(this, args, canonicalJson, badReq, viewerCtx);
-          return { ok: true, status: 200, data: { scents, ...searchVerdict(args.query, scents) } };
+          return { ok: true, status: 200, data: { scents, ...searchVerdict(args.query, scents), ...(viewerCtx.public_only || args.prefs?.asked ? { next_offset: scents.preferences?.next_offset ?? null, preferences: scents.preferences } : {}) } };
         }
 
         case "feeds": {

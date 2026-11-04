@@ -8,6 +8,8 @@ import { LIBRARY_TOOLS, LIBRARY_TOOL_NAMES, libraryEnabled, libraryToolBody } fr
 // behind `Authorization: Bearer tsk_...` with `structuredContent` matching Python MCPServer.
 
 import { TESSERA_VERSION } from "./cloud_pages.js";
+import { publicBytes } from "./public_read.js";
+import { readClientPrefs } from "./client_prefs.js";
 import { loadCloudBlob, mirrorBucketObjectToD1, storeCloudBlob } from "./cloud_buckets.js";
 
 const INSTRUCTIONS =
@@ -424,7 +426,9 @@ export const TOOLS = [
 
 // The one served tool registry. `tools/list` returns exactly this array, and every agent page
 // (llms.txt, llms-full.txt, the agent card and the connect page) renders its tool list from it.
-export const MCP_TOOLS = Object.freeze([...TOOLS, ...HUMAN_LINK_TOOLS, ...ACCESS_TOOLS, ...LIBRARY_TOOLS]);
+// A headless harness runs a tool with no approval step only when it is marked read-only (Codex exec refused these without the mark).
+const READ_ONLY_TOOLS = new Set(["queues", "recall_execution", "get_execution", "list_executions", "list_stores", "list_records", "get_record", "record_history", "buckets", "get_object", "list_objects", "object_history", "search_nouns", "list_feeds", "poll_feed", "match_reflex", "get_human_link", "list_verbs", "explain_access_modes", "whoami", "my_audit", "claim_events", "proposal_status"]);
+export const MCP_TOOLS = Object.freeze([...TOOLS, ...HUMAN_LINK_TOOLS, ...ACCESS_TOOLS, ...LIBRARY_TOOLS].map(tool => (READ_ONLY_TOOLS.has(tool.name) ? { ...tool, annotations: { readOnlyHint: true } } : tool)));
 const WITHOUT_LIBRARY = Object.freeze(MCP_TOOLS.filter(tool => !LIBRARY_TOOL_NAMES.has(tool.name)));
 // What tools/list and every page that names tools serve: the library tools only while the door is on.
 export const mcpToolsFor = env => (libraryEnabled(env) ? MCP_TOOLS : WITHOUT_LIBRARY);
@@ -462,6 +466,8 @@ export function govFields(args) {
 
 function filterFields(args) {
   return {
+    prefs: readClientPrefs(args),
+    after: args.after ?? null,
     q: args.q ?? "",
     tag: args.tag ?? null,
     category: args.category ?? null,
@@ -500,7 +506,7 @@ async function callTool(stub, env, ctx, secret, name, args, routeCtx) {
         request_warnings: forgiven.warnings,
         queue: args.queue,
         worker: forgiven.args.worker,
-        kinds: args.kinds ?? null,
+        kinds: args.kinds ?? (typeof args.source_kinds === "string" ? args.source_kinds.split(",").map((k) => k.trim()).filter(Boolean) : args.source_kinds) ?? null,
         effect_classes: args.effect_classes ?? null,
       });
       return {
@@ -633,6 +639,7 @@ async function callTool(stub, env, ctx, secret, name, args, routeCtx) {
         store: args.store_name,
         key: args.key,
         version: args.version ?? null,
+        prefs: readClientPrefs(args),
       });
       return {
         ok: r.ok,
@@ -709,10 +716,17 @@ async function callTool(stub, env, ctx, secret, name, args, routeCtx) {
         bucket: args.bucket,
         key: args.key,
         version: args.version ?? null,
+        prefs: { ...readClientPrefs(args), max_bytes: null },
       });
       if (!r.ok) return r;
       const blob = await loadCloudBlob(env, r.data.sha256);
       if (blob.error) return { ok: false, code: blob.error, detail: blob.detail };
+      // The same display step as HTTP (public_read.js).
+      if (r.public_only) {
+        const shown = publicBytes(blob.bytes);
+        if (shown.tooLarge) return { ok: false, status: 413, code: "too_large_for_public_read", detail: "This file is too large to serve in public form." };
+        blob.bytes = shown.bytes;
+      }
       const totalBytes = blob.bytes.byteLength;
       const start = Math.max(0, Number(args.offset ?? 0));
       const sliceBytes =
@@ -770,6 +784,7 @@ async function callTool(stub, env, ctx, secret, name, args, routeCtx) {
         store: args.store_name ?? null,
         bucket: args.bucket ?? null,
         limit: args.limit ?? 20,
+        prefs: readClientPrefs(args),
         tag: args.tag ?? null,
         category: args.category ?? null,
         cohort: args.cohort ?? null,
@@ -847,7 +862,7 @@ export async function handleMcpRequest(
         title: "Method Not Allowed",
         status: 405,
         code: "method_not_allowed",
-        detail: "MCP Streamable HTTP accepts JSON-RPC 2.0 via POST /mcp (stateless JSON response; server-sent GET streams are not used; REST equivalents live under /v1/...)",
+        detail: "MCP Streamable HTTP accepts JSON-RPC 2.0 via POST /mcp (stateless JSON response; server-sent GET streams are not used; REST equivalents live under /v1/...; if your tool can only open URLs, see https://fabric.teleionlabs.com/llms.txt)",
       }),
       { status: 405, headers: { "content-type": "application/problem+json", allow: "POST" } }
     );

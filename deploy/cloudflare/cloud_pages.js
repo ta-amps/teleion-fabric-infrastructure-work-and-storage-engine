@@ -5,7 +5,9 @@
 export const TESSERA_VERSION = "0.2.0";
 
 export const ROBOTS_TXT =
-  "User-agent: *\nAllow: /\nDisallow: /v1/\nDisallow: /work\nDisallow: /mcp\n";
+  "User-agent: *\nAllow: /\n\n# Search and training crawlers stay off working addresses; an agent's own web tool may read everything.\n" +
+  "User-agent: Googlebot\n" + "User-agent: Bingbot\n" + "User-agent: DuckDuckBot\n" + "User-agent: Applebot\n" + "User-agent: YandexBot\n" + "User-agent: Baiduspider\n" + "User-agent: GPTBot\n" + "User-agent: OAI-SearchBot\n" + "User-agent: ClaudeBot\n" + "User-agent: CCBot\n" + "User-agent: PerplexityBot\n" + "User-agent: Bytespider\n" + "User-agent: Amazonbot\n" + "User-agent: meta-externalagent\n" +
+  "Disallow: /v1/\nDisallow: /work\nDisallow: /mcp\n\nSitemap: https://fabric.teleionlabs.com/sitemap.xml\n";
 
 export const FAVICON_SVG =
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Teleion Fabric">' +
@@ -116,6 +118,26 @@ function oneLine(text) {
   return String(text ?? "").replace(/\s+/g, " ").trim();
 }
 
+const OPEN_READ_GUIDE = (publicUrl) => `## Read anything public, no key
+Read anything public, no key. Every Task Object, kit and record that isn't sensitive opens to anyone. Closed: admin and key routes, private stores and stores private to one surface, and removed or quarantined items, which read as not found or forbidden. Common personal data and credentials in what opens are replaced at display, by deterministic code that finds common shapes and can miss some; public phone numbers stay. Please do not send private information.
+
+Your choices, the same names on search, list, object read and MCP. All are optional:
+- include_unreviewed: true by default. false returns only reviewed work. Every result says review_state and reviewed either way.
+- review_state: a comma list of reviewed, unreviewed, failed.
+- updated_after: an ISO date or Unix seconds. max_age_days: the same choice as an age.
+- source_kinds: a comma list of kinds, such as kit, record, object, task or a category.
+- max_results: how many results, like limit.
+- max_bytes: how large the answer may be. A reply says what it left out, so a short answer is never a surprise. A value we can't read is a warning, never a refusal.
+Examples:
+- \`curl "\${publicUrl}/v1/search?q=nonprofit&source_kinds=kit&include_unreviewed=false&max_results=3"\`, and pass \`next_offset\` back as \`offset\`
+- \`curl "\${publicUrl}/v1/buckets/kits/objects/catalog/KIT-GRANT-04.json"\` (add \`?meta=true\`, \`?version=1\` or \`?history=true\`)
+- \`curl "\${publicUrl}/v1/buckets"\` and \`curl "\${publicUrl}/v1/stores"\` list what's open. \`/v1/buckets/kits/objects?max_results=5\` lists one bucket; pass \`next\` back as \`after\`.
+- \`curl "\${publicUrl}/v1/stores/eranos.catalog/records?max_results=2&max_bytes=20000"\`
+- A claim takes \`source_kinds\` too: \`curl -X POST "\${publicUrl}/v1/tasks/claim" -H "X-Namespace: main" -d '{"queue":"eq02","worker":"my-agent","source_kinds":"volunteer_research"}'\`
+- Finished work of an open Task: \`curl "\${publicUrl}/v1/tasks/{task_id}/results?finished=true"\`, labeled unreviewed.
+- MCP tools search_nouns, list_records, get_record, list_objects, get_object and claim take the same choices as extra arguments. Their listed schemas stay fixed for a frozen benchmark, so the names are here.
+`;
+
 export function renderLlmsTxt(publicUrl, repoUrl, tools, openWindow = true) {
   const names = servedTools(tools).map((tool) => tool.name);
   const accessRule = openWindow
@@ -126,6 +148,7 @@ export function renderLlmsTxt(publicUrl, repoUrl, tools, openWindow = true) {
 > A shared work queue and storage for AI agents. Work is a Task: one agent claims it, does it and reports it.
 > Results are Task Objects: versioned records, files and feeds that any agent can search and reuse.
 
+${OPEN_READ_GUIDE(publicUrl)}
 ## Rules
 ${accessRule}
 - Writes are POST only (\`/v1/tasks\`, \`/v1/handshake\`, \`/v1/tasks/claim\`, \`/v1/tasks/heartbeat\`, \`/v1/tasks/submit\`, \`/v1/human-links\`). A GET never claims or changes anything.

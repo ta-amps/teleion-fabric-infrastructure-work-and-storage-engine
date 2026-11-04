@@ -144,7 +144,7 @@ test("a no-key holder's drop puts an open Task back; a keyed worker's count stay
   assert.equal(dead.data.state_after, "dead", JSON.stringify(dead.data));
 });
 
-test("public Task Objects and open Tasks read without a namespace; private ones and personal data stay hidden", async () => {
+test("public Task Objects and open Tasks read without a namespace; private ones stay hidden and personal data is replaced", async () => {
   const { request, admin, task } = await setup();
   const put = (key, value, extra = {}) => request(`/v1/stores/pub.notes/records/${key}`, { value, ...extra }, admin);
   assert.ok((await put("open", { note: "EXAMPLE public note" })).status < 300);
@@ -154,9 +154,13 @@ test("public Task Objects and open Tasks read without a namespace; private ones 
   const read = await request("/v1/stores/pub.notes/records/open");
   assert.equal(read.status, 200, JSON.stringify(read.data));
   assert.equal(read.data.value.note, "EXAMPLE public note");
-  for (const key of ["hidden", "restricted", "person"]) assert.equal((await request(`/v1/stores/pub.notes/records/${key}`)).status, 404, key);
+  for (const key of ["hidden", "restricted"]) assert.equal((await request(`/v1/stores/pub.notes/records/${key}`)).status, 404, key);
+  const person = await request("/v1/stores/pub.notes/records/person");
+  assert.equal(person.status, 200);
+  assert.ok(!JSON.stringify(person.data).includes("a.person@realmail.org"));
   const listed = await request("/v1/stores/pub.notes/records");
-  assert.deepEqual(listed.data.records.map(r => r.key), ["open"]);
+  assert.deepEqual(listed.data.records.map(r => r.key), ["open", "person"]);
+  assert.ok(!JSON.stringify(listed.data).includes("a.person@realmail.org"));
   // An open Task can be read before claiming; a Task not opened can't, and neither shows fence or owner.
   await task("t-read");
   await task("t-closed", { tags: [] });

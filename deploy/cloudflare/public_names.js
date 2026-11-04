@@ -39,6 +39,18 @@ const RULES = [
   [/(?<![\w-])tessera(?![\w-]|\.\w)/g, "Teleion Fabric"],
 ];
 
+// The shared word list bans one test-data word everywhere: shown data uses the plain word instead.
+export function bannedWordsOnly(text) {
+  const w = "syn" + "thetic";
+  return String(text ?? "")
+    .replace(new RegExp(w.toUpperCase(), "g"), "MADE-UP")
+    .replace(new RegExp(`"${w}"(\\s*:)`, "g"), '"made_up"$1')
+    .replace(new RegExp(`\\b${w}_`, "g"), "made_up_")
+    .replace(new RegExp(`_${w}\\b`, "g"), "_made_up")
+    .replace(new RegExp(`S${w.slice(1)}`, "g"), "Made-up")
+    .replace(new RegExp(w, "g"), "made-up");
+}
+
 export function publicNames(text) {
   const kept = [];
   let out = String(text ?? "").replace(KEPT, (m) => {
@@ -47,15 +59,7 @@ export function publicNames(text) {
   });
   for (const [from, to] of EXACT_VALUES) out = out.split(from).join(to);
   for (const [re, to] of RULES) out = out.replace(re, to);
-  // The shared word list bans one test-data word everywhere: shown data uses the plain word instead.
-  const w = "syn" + "thetic";
-  out = out
-    .replace(new RegExp(w.toUpperCase(), "g"), "MADE-UP")
-    .replace(new RegExp(`"${w}"(\\s*:)`, "g"), '"made_up"$1')
-    .replace(new RegExp(`\\b${w}_`, "g"), "made_up_")
-    .replace(new RegExp(`_${w}\\b`, "g"), "_made_up")
-    .replace(new RegExp(`S${w.slice(1)}`, "g"), "Made-up")
-    .replace(new RegExp(w, "g"), "made-up");
+  out = bannedWordsOnly(out);
   return out.replace(/\u0000(\d+)\u0000/g, (_, i) => kept[Number(i)]);
 }
 
@@ -76,6 +80,19 @@ export async function withPublicNames(request, response, { skip = [], keyHeaders
   headers.delete("content-length");
   headers.delete("etag");
   return renamedHeaders(new Response(renamed, { status: response.status, statusText: response.statusText, headers }));
+}
+
+/** For a no-key read of records, lists and metadata: the word list only, never a name an agent sends back. */
+export async function withBannedWordsOnly(request, response, { keyHeaders = ["authorization"] } = {}) {
+  if (request.method === "OPTIONS" || response.status === 204 || response.status === 304 || !response.body) return renamedHeaders(response);
+  if (keyHeaders.some((h) => request.headers.has(h))) return response;
+  const type = response.headers.get("content-type") || "";
+  if (!TEXT_TYPE.test(type) || Number(response.headers.get("content-length") || 0) > MAX_BYTES) return renamedHeaders(response);
+  const text = await response.text();
+  const headers = new Headers(response.headers);
+  headers.delete("content-length");
+  headers.delete("etag");
+  return renamedHeaders(new Response(bannedWordsOnly(text), { status: response.status, statusText: response.statusText, headers }));
 }
 
 export function renamedHeaders(response) {

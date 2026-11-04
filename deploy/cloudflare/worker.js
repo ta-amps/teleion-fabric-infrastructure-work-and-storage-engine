@@ -1,6 +1,9 @@
 import { agentStartAsset, withAgentStart } from "./agent_start.js";
-import { withPublicNames } from "./public_names.js";
+import { discoveryFile, SITEMAP_XML, wantsPlainText } from "./agent_connect.js";
+import { withBannedWordsOnly, withPublicNames } from "./public_names.js";
 import { storageQuotaFailure } from "./storage_quota.js";
+import { PUBLIC_COPY_NOTE, publicBytes } from "./public_read.js";
+import { readClientPrefs } from "./client_prefs.js";
 import { ipGroup, isOpenFreeWindow, namespaceReachable, openGrantFor, publicPrincipal } from "./cloud_access.js";
 import { edgeFromCf, publicActivityRoute } from "./edge_activity.js";
 import { accessDiscoveryRoute, accessRoute, accessDescriptionFor } from "./cloud_access_routes.js";
@@ -280,6 +283,8 @@ function mergeIdempotencyHeader(request, body) {
 
 function parseLayer2Params(searchParams) {
   return {
+    prefs: readClientPrefs(searchParams),
+    after: searchParams.get("after") || null,
     q: searchParams.get("q") || "",
     tag: searchParams.get("tag") || null,
     category: searchParams.get("category") || null,
@@ -363,8 +368,9 @@ async function proxyToOrigin(request, env) {
 const SHARED_FALLBACK_ACTIONS = new Set(["heartbeat", "submit", "task", "results"]);
 function namesSharedThing(action, args) {
   if (action === "claim") return Boolean(args.queue) && !String(args.queue).startsWith("demo.");
-  if (action === "getRecord" || action === "listRecords") return Boolean(args.store) && !String(args.store).startsWith("demo.");
-  return false;
+  if (["getRecord", "listRecords", "recordHistory"].includes(action)) return Boolean(args.store) && !String(args.store).startsWith("demo.");
+  // A no-key caller has no buckets of its own, so these always read the shared space.
+  return ["buckets", "listObjects", "getObjectMeta", "objectHistory", "authorizeBlobRead"].includes(action);
 }
 
 function resolveNamespace(url, request) {
@@ -416,6 +422,17 @@ function discoveryResponse(path, method, env, publicUrl, repoUrl) {
   if (method !== "GET" && method !== "HEAD") return null;
   const access = accessDiscoveryRoute(path, method, publicUrl, env, jsonResp, htmlResp);
   if (access) return access;
+  const discoveryJson = discoveryFile(path);
+  if (discoveryJson) return jsonResp(discoveryJson);
+  if (path === "/.well-known/openapi.json") return Response.redirect(`${publicUrl}/openapi.json`, 307);
+  if (path === "/docs" || path === "/docs/" || path === "/docs.txt") return Response.redirect(`https://teleionlabs.com${path}`, 307);
+  if (path === "/index.txt") return discoveryResponse("/llms.txt", method, env, publicUrl, repoUrl);
+  if (path === "/sitemap.xml") {
+    return withSecurity(new Response(SITEMAP_XML, { status: 200, headers: { "content-type": "application/xml; charset=utf-8" } }), { noStore: false });
+  }
+  if (path === "/.well-known/security.txt") {
+    return withSecurity(new Response("Contact: https://teleionlabs.com/security/\nExpires: 2027-10-31T23:59:59.000Z\nPolicy: https://teleionlabs.com/security/\n", { status: 200, headers: { "content-type": "text/plain; charset=utf-8" } }), { noStore: false });
+  }
   if (path === "/" || path === "/connect") {
     return htmlResp(renderConnectHtml(publicUrl, repoUrl, mcpToolsFor(env)));
   }
@@ -548,7 +565,7 @@ const worker = {
     if (path === "/" && method === "GET" && (request.headers.get("accept") || "").includes("text/html")) {
       return Response.redirect("https://teleionlabs.com/fabric/", 302);
     }
-    const discovery = discoveryResponse(path, method, env, publicUrl, repoUrl);
+    const discovery = discoveryResponse(path === "/" && wantsPlainText(request) ? "/llms.txt" : path, method, env, publicUrl, repoUrl);
     if (discovery) return discovery;
     if (path === "/mcp" && method === "POST" && (await mcpNeedsNoStorage(request))) {
       return withSecurity(await handleMcpRequest(request, env, ctx, STORAGELESS_STUB, "", true, namespace), { isWrite: true });
@@ -686,7 +703,7 @@ const worker = {
       return problem(
         405,
         "method_not_allowed",
-        "writes are POST only; this path changes nothing on GET",
+        "writes are POST only; this path changes nothing on GET. If your tool can only open URLs, do the same work with GET at https://shim.teleionlabs.com/q/tasks?state=ready and https://shim.teleionlabs.com/q/claim/<your-name> . Instructions: https://teleionlabs.com/llms.txt",
         {},
         { allow: "POST" }
       );
@@ -922,7 +939,8 @@ const worker = {
     if (path === "/v1/tasks/claim" && method === "POST") {
       const { body, error } = await readJsonBody(request);
       if (error) return error;
-      const out = await stub.rpcCall(bearer, "claim", { ...body, ...baseRpc });
+      // source_kinds is the shared name for the kinds a client wants; kinds keeps working.
+      const out = await stub.rpcCall(bearer, "claim", { ...body, kinds: body.kinds ?? (typeof body.source_kinds === "string" ? body.source_kinds.split(",").map((k) => k.trim()).filter(Boolean) : body.source_kinds) ?? null, ...baseRpc });
       if (!out.ok) return rpcResponse(out);
       if (!out.data.lease) {
         return withSecurity(
@@ -976,6 +994,7 @@ const worker = {
     if (taskResultsMatch && method === "GET") {
       return rpcResponse(
         await stub.rpcCall(bearer, "results", {
+          finished: parseBoolParam(url.searchParams.get("finished")),
           ...baseRpc,
           task_id: decodeURIComponent(taskResultsMatch[1]),
         })
@@ -1021,7 +1040,13 @@ const worker = {
 
     // 8. Queryable CAS Noun Stores (`/v1/stores/*`)
     if (path === "/v1/stores" && method === "GET") {
-      return rpcResponse(await stub.rpcCall(bearer, "stores", { ...baseRpc }));
+      const own = await stub.rpcCall(bearer, "stores", { ...baseRpc });
+      // A no-key caller who names no space sees its practice stores and the public ones.
+      if (own.ok && !requestBearer && !explicitNamespace && namespace !== "main" && openWindow) {
+        const shared = await stub.rpcCall(bearer, "stores", { ...baseRpc, namespace: "main", isPrimary: true });
+        if (shared.ok) own.data = { ...own.data, stores: [...own.data.stores, ...shared.data.stores] };
+      }
+      return rpcResponse(own);
     }
     if (path === "/v1/stores/batch" && method === "POST") {
       const { body, error } = await readJsonBody(request);
@@ -1102,6 +1127,7 @@ const worker = {
             store: storeName,
             key: recKey,
             version,
+            prefs: readClientPrefs(url.searchParams),
           })
         );
       }
@@ -1177,6 +1203,8 @@ const worker = {
       if (!authz.ok) return rpcResponse(authz);
       const loaded = await loadCloudBlob(env, sha256);
       if (loaded.error) return problem(loaded.status || 404, loaded.error, loaded.detail);
+      // A no-key reader asked for bytes by their digest: a copy with something removed wouldn't be those bytes, so it reads as absent.
+      if (authz.public_only && (publicBytes(loaded.bytes).changed || publicBytes(loaded.bytes).tooLarge)) return problem(404, "not_found", `blob ${sha256} does not exist`);
       return withSecurity(
         sliceBytesResponse(loaded.bytes, request.headers.get("range"), "application/octet-stream", {
           etag: `"${sha256}"`,
@@ -1280,25 +1308,34 @@ const worker = {
             })
           );
         }
+        const objectPrefs = readClientPrefs(url.searchParams);
         const metaOut = await stub.rpcCall(bearer, "getObjectMeta", {
           ...baseRpc,
           bucket: bucketName,
           key: objKey,
           version,
+          prefs: objectPrefs,
         });
-        if (!metaOut.ok || wantMeta) return rpcResponse(metaOut);
-        const loaded = await loadCloudBlob(env, metaOut.data.sha256);
-        if (loaded.error) return problem(loaded.status || 404, loaded.error, loaded.detail);
+        if (!metaOut.ok) return rpcResponse(metaOut);
+        const loaded = wantMeta ? null : await loadCloudBlob(env, metaOut.data.sha256);
+        if (loaded?.error) return problem(loaded.status || 404, loaded.error, loaded.detail);
+        // public_read.js: a no-key reader gets the exact bytes unless the display step changed something; the same for HTTP, MCP and every version.
+        if (wantMeta) return rpcResponse(metaOut);
+        const shown = metaOut.public_only ? publicBytes(loaded.bytes) : { bytes: loaded.bytes, changed: false };
+        if (shown.tooLarge) return problem(413, "too_large_for_public_read", "This file is too large to serve in public form.");
+        const cutTo = objectPrefs.max_bytes != null && !request.headers.get("range") && shown.bytes.byteLength > objectPrefs.max_bytes ? objectPrefs.max_bytes : null;
         return withSecurity(
           sliceBytesResponse(
-            loaded.bytes,
+            cutTo == null ? shown.bytes : shown.bytes.subarray(0, cutTo),
             request.headers.get("range"),
             metaOut.data.content_type || "application/octet-stream",
             {
-              etag: `"${metaOut.data.sha256}"`,
+              ...(shown.changed ? { "x-personal-data-note": PUBLIC_COPY_NOTE } : { etag: `"${metaOut.data.sha256}"` }),
               "x-tessera-version": String(metaOut.data.version),
               "x-tessera-sha256": metaOut.data.sha256,
               "x-tessera-object-meta": JSON.stringify(metaOut.data),
+              ...(metaOut.data.review_state ? { "x-review-state": metaOut.data.review_state } : {}),
+              ...(cutTo == null ? {} : { "x-truncated-to-bytes": String(cutTo), "x-total-bytes": String(shown.bytes.byteLength) }),
             }
           ),
           { noStore: true }
@@ -1324,6 +1361,7 @@ const worker = {
           store,
           bucket,
           limit,
+          offset: url.searchParams.get("offset"),
           ...parseLayer2Params(url.searchParams),
         })
       );
@@ -1691,7 +1729,7 @@ const worker = {
     }
 
     // Echo at most 200 characters of an unknown path (H-55).
-    return problem(404, "not_found", `no route matches ${method} ${path.length > 200 ? `${path.slice(0, 200)}...` : path}`);
+    return problem(404, "not_found", `no route matches ${method} ${path.length > 200 ? `${path.slice(0, 200)}...` : path}. Start at ${publicUrl}/llms.txt`);
   },
 
   async scheduled(event, env, ctx) {
@@ -1772,6 +1810,11 @@ const onboardingApplication = {
 async function serve(request, env, ctx) {
   const answer = agentStartAsset(request) || withAgentStart(request, await onboardingApplication.fetch(request, env, ctx));
   if (env.PUBLIC_NAMES_FILTER !== "on") return answer;
+  // Stored bytes and ids stay exact for everyone. A no-key reader of records, lists and metadata gets the shared word list applied to
+  // words only: names stay, or an id it reads back would no longer resolve.
+  const requestUrl = new URL(request.url);
+  const noKeyContainerRead = /^(?:\/ns\/[^/]+)?\/v1\/(?:buckets|stores)(?:\/|$)/.test(requestUrl.pathname) && ["GET", "HEAD"].includes(request.method) && (!/\/objects\/.+/.test(requestUrl.pathname) || requestUrl.searchParams.has("meta") || requestUrl.searchParams.has("history"));
+  if (noKeyContainerRead) return withBannedWordsOnly(request, await answer);
   return withPublicNames(request, await answer, { skip: ["/v1/blobs", "/v1/buckets", "/v1/stores/", "/v1/tasks/", "/ns/"] });
 }
 
