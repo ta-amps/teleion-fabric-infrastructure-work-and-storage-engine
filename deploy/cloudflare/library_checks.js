@@ -191,19 +191,19 @@ export function screenStrings(value, rootPath, findings, budget = { chars: 0, st
 }
 
 function checkNoun(n, where, findings) {
-  if (!isObj(n)) return finding(findings, "schema", where, "a noun is a JSON object");
+  if (!isObj(n)) return finding(findings, "schema", where, "a Task Object is a JSON object");
   if (!(typeof n.slug === "string" && SLUG_RE.test(n.slug) && n.slug.length <= 80)) finding(findings, "schema", `${where}.slug`, "lowercase words joined by hyphens or dots, at most 80 characters");
-  if (!(typeof n.category === "string" && Object.hasOwn(NOUN_CATEGORIES, n.category))) finding(findings, "schema", `${where}.category`, "a registered Teleion Fabric noun category (GET /v1/categories)");
+  if (!(typeof n.category === "string" && Object.hasOwn(NOUN_CATEGORIES, n.category))) finding(findings, "schema", `${where}.category`, "a registered Teleion Fabric Task Object category (GET /v1/categories)");
   if (!text(n.title, 400)) finding(findings, "schema", `${where}.title`, "a title of 1 to 400 characters");
   if (lookAlikeTitle(n.title)) finding(findings, "look_alike", `${where}.title`, "a word in the title mixes Latin, Cyrillic or Greek letters; write each word in one script");
   if (n.role !== undefined && !text(n.role, 64)) finding(findings, "schema", `${where}.role`, "a role of 1 to 64 characters");
-  if (!isObj(n.value)) finding(findings, "schema", `${where}.value`, "the noun's value is a JSON object");
+  if (!isObj(n.value)) finding(findings, "schema", `${where}.value`, "the Task Object's value is a JSON object");
 }
 
 function checkVerb(v, where, findings) {
-  if (!isObj(v)) return finding(findings, "schema", where, "a verb template is a JSON object");
+  if (!isObj(v)) return finding(findings, "schema", where, "a Task template is a JSON object");
   if (!(typeof v.slug === "string" && SLUG_RE.test(v.slug) && v.slug.length <= 80)) finding(findings, "schema", `${where}.slug`, "lowercase words joined by hyphens or dots, at most 80 characters");
-  if (!(typeof v.kind === "string" && Object.hasOwn(VERB_CATEGORIES, v.kind))) finding(findings, "schema", `${where}.kind`, "a registered Teleion Fabric verb category (GET /v1/categories)");
+  if (!(typeof v.kind === "string" && Object.hasOwn(VERB_CATEGORIES, v.kind))) finding(findings, "schema", `${where}.kind`, "a registered Teleion Fabric Task category (GET /v1/categories)");
   if (!text(v.title, 400)) finding(findings, "schema", `${where}.title`, "a title of 1 to 400 characters");
   if (lookAlikeTitle(v.title)) finding(findings, "look_alike", `${where}.title`, "a word in the title mixes Latin, Cyrillic or Greek letters; write each word in one script");
   for (const field of ["summary", "outcome"]) if (v[field] !== undefined && !text(v[field], 2000)) finding(findings, "schema", `${where}.${field}`, "1 to 2,000 characters");
@@ -266,7 +266,7 @@ export function inspectProposal(body, { anonymous = false } = {}) {
   if (!isObj(body)) return { findings: [{ rule: "schema", where: "body", detail: "a proposal is a JSON object" }], depthRefusal: true };
   if (!withinDepth(body)) return { findings: [{ rule: "schema", where: "body", detail: `JSON nests at most ${LIBRARY_LIMITS.json_depth} levels deep` }], depthRefusal: true };
   const type = body.type;
-  if (!["noun", "verb", "pack"].includes(type)) return { findings: [{ rule: "schema", where: "type", detail: "type is noun (a task object), verb (a task template) or pack" }] };
+  if (!["noun", "verb", "pack"].includes(type)) return { findings: [{ rule: "schema", where: "type", detail: "type is one of the three listed values: a task object, a task template or a pack" }] };
   const bytes = bytesOf(body);
   const ceiling = type === "pack" ? LIBRARY_LIMITS.pack_bytes : LIBRARY_LIMITS.item_bytes;
   if (bytes > ceiling + 4096) return { findings: [{ rule: "size", where: "body", detail: `a ${type} proposal holds at most ${ceiling} bytes` }], bytes, sizeRefusal: true };

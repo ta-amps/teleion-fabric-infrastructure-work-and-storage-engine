@@ -75,7 +75,7 @@ export function normalize_report(value) {
     const contract = object(report.contract, "report.contract", new Set(CONTRACT_FIELDS));
     for (const [name, item] of Object.entries(contract)) {
       if (name.endsWith("_schema")) object(item, `report.contract.${name}`);
-      else if (typeof item !== "string" || !/^[0-9a-f]{64}$/.test(item)) fail(`report.contract.${name}`, "must be a lowercase SHA-256 digest");
+      else if (typeof item !== "string" || !/^[0-9a-f]{64}$/.test(item)) fail(`report.contract.${name}`, "must be a lowercase digest");
     }
     report.contract = contract;
   }

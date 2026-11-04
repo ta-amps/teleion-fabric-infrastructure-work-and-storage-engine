@@ -71,6 +71,68 @@ def test_banned_words_come_from_the_shared_list(tmp_path: Path) -> None:
     assert guard.banned_findings("x", 'const d = "try zzappname today";', banned)["apps"]
 
 
+def test_sql_is_code_not_prose_but_prose_that_starts_like_sql_is_read(tmp_path: Path) -> None:
+    banned = made_up_list(tmp_path)
+    for sql in (
+        'const q = "SELECT zzproseword FROM blobs WHERE a = ?";',
+        "const t = `CREATE TABLE IF NOT EXISTS blobs (zzproseword TEXT NOT NULL, size INTEGER)`;",
+        'const i = "INSERT OR IGNORE INTO blobs (zzproseword, size) VALUES (?, ?)";',
+        'const u = "UPDATE blobs SET zzproseword = ? WHERE id = ?";',
+        'const d = "DELETE FROM blobs WHERE zzproseword < ?";',
+    ):
+        assert guard.banned_findings("x", sql, banned)["visible"] == [], sql
+    for prose in (
+        'const p = "Create a zzproseword for the queue";',
+        'const p = "Select the zzproseword you need";',
+        'const p = "Update the zzproseword when it changes";',
+    ):
+        assert guard.banned_findings("x", prose, banned)["visible"] == ["x: 1 in served prose"], (
+            prose
+        )
+
+
+def test_the_access_contract_is_read_for_its_descriptions_not_its_titles(tmp_path: Path) -> None:
+    banned = made_up_list(tmp_path)
+    contract = json.dumps(
+        {
+            "components": {
+                "schemas": {
+                    "Claim": {
+                        "title": "Zzproseword Id",
+                        "properties": {
+                            "zzproseword_id": {
+                                "title": "Zzproseword Id",
+                                "type": "string",
+                                "description": "the zzproseword of this claim",
+                            }
+                        },
+                    }
+                }
+            },
+            "paths": {
+                "/v1/x": {
+                    "get": {
+                        "summary": "Read one zzproseword list",
+                        "operationId": "zzproseword_get",
+                    }
+                }
+            },
+        }
+    )
+    prose = guard.openapi_prose(contract)
+    assert guard.banned_findings("access_openapi.json", contract, banned, prose)["visible"] == [
+        "access_openapi.json: 2 in served prose"
+    ]  # the description and the summary, not the titles or ids
+    assert guard.banned_findings(
+        "access_openapi.json",
+        contract.replace("zzproseword of", "record of").replace(
+            "Read one zzproseword list", "Read one list"
+        ),
+        banned,
+        None,
+    )["visible"], "the whole file would count the titles"
+
+
 def test_ancestry_fails_closed() -> None:
     head = subprocess.check_output(["git", "-C", str(ROOT), "rev-parse", "HEAD"], text=True).strip()
     root = subprocess.check_output(

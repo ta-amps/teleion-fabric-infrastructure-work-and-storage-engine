@@ -184,6 +184,8 @@ def test_the_agent_door(service: tuple[TestClient, Store, Keys]) -> None:
     assert client.get("/.well-known/agent-card.json").json()["name"] == "Tessera"
     assert "Disallow: /v1/" in client.get("/robots.txt").text
     assert "Read-only live console" in client.get("/board").text
+    oa_root = client.get("/openapi.json")
+    assert oa_root.status_code == 200 and oa_root.json() == client.get("/v1/openapi.json").json()
 
 
 def test_web_forms_never_echo_the_key(service: tuple[TestClient, Store, Keys]) -> None:

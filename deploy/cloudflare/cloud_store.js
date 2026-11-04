@@ -2,7 +2,7 @@ import { humanLinkAction, humanLinkPublicAnswer, humanLinkPublicRead } from "./h
 import { initExecutions, checkedReport, prepareExecution, validatePrepared, captureExecution, recallExecution, getExecution, listExecutions } from "./cloud_executions.js";
 import { NO_EDGE, activityMap, catalogModels, cleanEdge, clearActivity, edgeStatus, edgeWorker, flushEdge, recordClaim, recordModel, recordPresence, showOnMapLabel } from "./edge_activity.js";
 import { displayTest } from "./display_mask.js";
-import { initAccess, principalMetadata, requestIdentity, mintAnonymous, mintRequester, seedDemo, ensureDemoSeeded, ensureRequesterSeeded, enforceAccess, chargeAccess, claimCaps, checkClaimCaps, chargeClaimCaps, audit, auditMode, countAccess, ownAudit, publicActivity, publicPrincipal, requesterVerbGovernance, CLOSED_TO_ANONYMOUS, filesRequests, openToAnonymous, usesOpenVerbs } from "./cloud_access.js";
+import { initAccess, principalMetadata, requestIdentity, mintAnonymous, mintRequester, seedDemo, ensureDemoSeeded, ensureRequesterSeeded, enforceAccess, chargeAccess, claimCaps, checkClaimCaps, chargeClaimCaps, audit, auditMode, countAccess, ownAudit, publicActivity, publicPrincipal, requesterVerbGovernance, CLOSED_TO_ANONYMOUS, MAX_IDEMPOTENCY_KEY, filesRequests, isOpenFreeWindow, openGrantFor, openToAnonymous, usesOpenVerbs } from "./cloud_access.js";
 // TesseraCoordinator: single-writer SQLite Durable Object (`new_sqlite_classes`) implementing
 // 100% of Tessera Spec v0.2 (queues, 5 verbs, dependencies, waves, park/resume, model jobs,
 // counts, events, scoped keys, queryable CAS records, persistent named file buckets,
@@ -43,7 +43,6 @@ import {
 export { canonicalJson, receiptHash };
 
 const NAME_RE = /^[a-z0-9][a-z0-9_.-]{0,63}$/;
-const MAX_IDEMPOTENCY_KEY = 256; // characters, as models.MAX_IDEMPOTENCY_KEY
 const VERB_PAGE_MAX = 200; // as _access_routes.VERB_PAGE_MAX
 const VERB_SCAN_BUDGET = 10000; // rows one verb listing reads at most, as in Python
 const INHERITED_GOVERNANCE = ["producer_surface", "visibility_scope", "allowed_surfaces", "target_cohorts", "owner_key_id"];
@@ -143,7 +142,7 @@ function isValidScope(scope) {
 function serverContentIdentity(args) {
   const sha256 = String(args.sha256 || "");
   const size = Number(args.size);
-  if (!SHA256_RE.test(sha256)) throw badReq("sha256 must be the server-computed lowercase SHA-256 digest");
+  if (!SHA256_RE.test(sha256)) throw badReq("digest must be the server-computed lowercase digest");
   if (!Number.isSafeInteger(size) || size < 0) throw badReq("size must be the server-computed byte count");
   return { sha256, size };
 }
@@ -459,12 +458,12 @@ const BLOB_UPLOADERS_DDL =
   "CREATE TABLE IF NOT EXISTS blob_uploaders (namespace TEXT NOT NULL, sha256 TEXT NOT NULL, key_id TEXT NOT NULL, created_at REAL NOT NULL, PRIMARY KEY (namespace, sha256, key_id))";
 
 const DEFAULT_BUCKETS = [
-  ["nouns", "Canonical and proposed atomic noun schemas, packs, and structured artifacts"],
-  ["verbs", "Atomic verb briefs, worker recipes, and multi-stage workflow templates"],
-  ["kits", "Eranos agent kits: nouns and verbs made for nonprofits' agents, with their checks"],
+  ["nouns", "Canonical and proposed atomic Task Object schemas, packs, and structured artifacts"],
+  ["verbs", "Atomic Task briefs, worker recipes, and multi-stage workflow templates"],
+  ["kits", "Eranos agent kits: Task Objects and Tasks made for nonprofits' agents, with their checks"],
   ["cases", "Example multi-document harm bundles and deterministic verdicts"],
   ["provisions", "Herma coding-harness rule packs, prompt fragments, and URI documents"],
-  ["traces", "Bilateral agent execution traces, audit logs, and SHA-256 receipts"],
+  ["traces", "Bilateral agent execution traces, audit logs, and digest records"],
 ];
 
 export class TesseraCoordinator extends DurableObject {
@@ -1426,8 +1425,22 @@ export class TesseraCoordinator extends DurableObject {
     };
   }
 
-  async _grantFromSecret(secret) {
-    if (!secret) throw unauth("a bearer key is required");
+  async _grantFromSecret(secret, { allowOpen = false, agentLabel = null, openHash = "" } = {}) {
+    if (!secret) {
+      if (allowOpen && isOpenFreeWindow(this.env, Date.now(), this)) {
+        const now = Date.now() / 1000;
+        const openGrant = openGrantFor(this.env, agentLabel, now, openHash);
+        const existing = this._one("SELECT last_used_at FROM access_principals WHERE key_id=?", openGrant.key_id);
+        if (!existing || existing.last_used_at == null || Number(existing.last_used_at) <= now - LAST_USED_WRITE_INTERVAL_SECONDS) {
+          this._observe(() => this.ctx.storage.sql.exec(
+            "INSERT INTO access_principals(key_id,principal_kind,principal_id,account_id,namespace,key_prefix,labels,quota_tier,last_used_at,purge_at) VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(key_id) DO UPDATE SET last_used_at=excluded.last_used_at WHERE access_principals.last_used_at IS NULL OR access_principals.last_used_at<=excluded.last_used_at-?",
+            openGrant.key_id, openGrant.principal_kind, openGrant.principal_id, openGrant.account_id, openGrant.namespace, openGrant.key_prefix, JSON.stringify(openGrant.labels), openGrant.quota_tier, now, openGrant.purge_at, LAST_USED_WRITE_INTERVAL_SECONDS
+          ));
+        }
+        return this._hydrateGrant(openGrant);
+      }
+      throw unauth("a bearer key is required");
+    }
     const local = await this.resolveKeyGrant(secret);
     if (local) return this._hydrateGrant(local);
     if (!this.isPrimary && this.env && this.env.COORDINATOR) {
@@ -1458,10 +1471,19 @@ export class TesseraCoordinator extends DurableObject {
   }
 
   _viewerCtx(grant, surfaceHeader) {
+    if (usesOpenVerbs(grant, this.namespace)) {
+      return {
+        surface: null,
+        key_id: null,
+        is_admin: false,
+        public_only: true,
+      };
+    }
     return {
       surface: this._effectiveSurface(grant, surfaceHeader),
       key_id: grant.key_id,
       is_admin: grant.is_admin,
+      public_only: false,
     };
   }
 
@@ -1482,7 +1504,7 @@ export class TesseraCoordinator extends DurableObject {
   // are read, and `next` resumes where it stopped (H-14; same rule as _access_routes.list_verbs).
   _listVerbs(grant, ns, args) {
     const status = args.status == null || args.status === "" ? "ready" : String(args.status);
-    if (!["ready", "leased", "waiting", "done", "dead", "cancelled", "all"].includes(status)) throw badReq("invalid verb status");
+    if (!["ready", "leased", "waiting", "done", "dead", "cancelled", "all"].includes(status)) throw badReq("invalid Task status");
     const requested = args.limit == null || args.limit === "" ? 100 : Number(args.limit);
     if (!Number.isInteger(requested)) throw badReq("limit must be an integer");
     const limit = Math.max(1, Math.min(requested, VERB_PAGE_MAX));
@@ -1490,7 +1512,7 @@ export class TesseraCoordinator extends DurableObject {
     if (args.after != null && args.after !== "") {
       const text = String(args.after), split = text.indexOf("|");
       const created = split > 0 ? Number(text.slice(0, split)) : NaN, id = split > 0 ? text.slice(split + 1) : "";
-      if (!Number.isFinite(created) || !id) throw badReq("invalid verb cursor");
+      if (!Number.isFinite(created) || !id) throw badReq("invalid Task cursor");
       cursor = [created, id];
     }
     const view = this._viewerCtx(grant, args.surfaceHeader);
@@ -1513,7 +1535,7 @@ export class TesseraCoordinator extends DurableObject {
 
   // An anonymous viewer never sees which keys own, parked or deduplicated a verb.
   _viewerTaskView(grant, view) {
-    return grant.principal_kind === "anonymous" ? { ...view, owner_key_id: null, parked_by: null, idempotency_key: null } : view;
+    return grant.principal_kind === "anonymous" ? { ...view, owner_key_id: null, parked_by: null, idempotency_key: null, fencing_token: null } : view;
   }
 
   // An open verb carries its whole input in its brief; its anonymous claimant sees the state of
@@ -1982,7 +2004,7 @@ export class TesseraCoordinator extends DurableObject {
   countAccessEvent(grant, action, args, out, meta) { countAccess(this, grant, action, args, out, meta); }
   async auditForToken(secret, args = {}) {
     try {
-      const grant = await this._grantFromSecret(secret);
+      const grant = await this._grantFromSecret(secret, { allowOpen: !args.admin, agentLabel: args.agent_label || null, openHash: args.open_hash || "" });
       if (args.admin && !grant.is_admin) throw forbid("admin scope required");
       // An admin's read also says how many of the activity map's writes failed here (edge_activity.js).
       return { ok: true, status: 200, data: args.admin ? { ...ownAudit(this, grant, args), activity_map: edgeStatus(this) } : ownAudit(this, grant, args) };
@@ -1996,7 +2018,7 @@ export class TesseraCoordinator extends DurableObject {
     this.namespace = ns;
     this.isPrimary = ns === "main";
     try {
-      grant = await this._grantFromSecret(secret);
+      grant = await this._grantFromSecret(secret, { allowOpen: true, agentLabel: args?.access_meta?.agent_label || null, openHash: args?.access_meta?.open_hash || "" });
       const [checked, charge] = enforceAccess(this, grant, action, { ...args, namespace: ns });
       args = checked;
       libraryGuard(this, grant, action, args);
@@ -2058,7 +2080,7 @@ export class TesseraCoordinator extends DurableObject {
     try {
       this.namespace = normalizeNamespace(args?.namespace || "main");
       this.isPrimary = Boolean(args?.isPrimary ?? (this.namespace === "main"));
-      const grant = await this._grantFromSecret(secret);
+      const grant = await this._grantFromSecret(secret, { allowOpen: true, agentLabel: args?.access_meta?.agent_label || null, openHash: args?.access_meta?.open_hash || "" });
       const now = Date.now() / 1000;
       if (!this.namespace.startsWith("demo.") && !this.namespace.startsWith("org.")) this._ensureNamespaceSeeded(this.namespace, now);
       const surfaceHeader = args?.surfaceHeader || args?.header_surface_id || "";
@@ -2438,7 +2460,7 @@ export class TesseraCoordinator extends DurableObject {
               const now = Date.now() / 1000;
               const config = this._queueConfig(queue);
               this._reap(now, queue);
-              if (anonymous && this._one("SELECT COUNT(*) n FROM leases WHERE namespace=? AND key_id=? AND expires_at>? AND hard_expires_at>?", this.namespace, grant.key_id, now, now).n >= 1) throw rateLim("one concurrent demo claim allowed", 30);
+              if (anonymous && !isOpenFreeWindow(this.env, now * 1000, this) && this._one("SELECT COUNT(*) n FROM leases WHERE namespace=? AND key_id=? AND expires_at>? AND hard_expires_at>?", this.namespace, grant.key_id, now, now).n >= 1) throw rateLim("one concurrent demo claim allowed", 30);
               if (caps) checkClaimCaps(this, caps, now);
               let sql =
                 "SELECT * FROM tasks WHERE namespace = ? AND queue = ? AND state = 'ready' AND not_before <= ?";
@@ -2451,7 +2473,10 @@ export class TesseraCoordinator extends DurableObject {
                 sql += ` AND effect_class IN (${effects.map(() => "?").join(", ")})`;
                 params.push(...effects);
               }
+              // A caller with no key looks at a bounded number of open rows, so a claim's cost doesn't grow with a backlog.
+              if (usesOpenVerbs(grant, this.namespace)) sql += " AND tags LIKE '%open:anonymous%'";
               sql += " ORDER BY priority DESC, created_at, id";
+              if (anonymous) sql += " LIMIT 500";
               const row = this._all(sql, ...params).find((r) => this._taskVisible(r, grant, viewerCtx));
               if (!row) return;
               const token = Number(row.fencing_token) + 1;
@@ -2610,7 +2635,7 @@ export class TesseraCoordinator extends DurableObject {
           const outputVal = args.output === undefined ? null : args.output;
           const outputText = canonicalJson(outputVal);
           if (new TextEncoder().encode(outputText).byteLength > MAX_OUTPUT_BYTES) {
-            throw badReq("output is over 1 MiB: store it as a blob and submit its sha256");
+            throw badReq("output is over 1 MiB: store it as a blob and submit its digest");
           }
           this._requireHolder(grant, taskId);
 
@@ -2909,7 +2934,7 @@ export class TesseraCoordinator extends DurableObject {
           }
           const text = canonicalJson(input);
           if (new TextEncoder().encode(text).byteLength > MAX_OUTPUT_BYTES) {
-            throw badReq("input is over 1 MiB: store it as a blob and pass its sha256");
+            throw badReq("input is over 1 MiB: store it as a blob and pass its digest");
           }
           const tRow = this._taskRow(taskId);
           this._requireQueue(grant, tRow.queue);
@@ -3822,7 +3847,7 @@ export class TesseraCoordinator extends DurableObject {
 
         case "feeds": {
           if (!grant.can_store) throw forbid("this needs a key with the store scope");
-          return { ok: true, status: 200, data: { feeds: listFeeds(this) } };
+          return { ok: true, status: 200, data: { feeds: listFeeds(this, viewerCtx) } };
         }
 
         case "publishFeed": {

@@ -1456,7 +1456,7 @@ export function adaptNounView(record, profile) {
         sections.push(`Intake Steps: ${checklist.map((s, i) => `${i + 1}) ${s}`).join("; ")}`);
       }
     } else if (prof.profile_id === "human_steward") {
-      sections.push(`STEWARD REVIEW PACKET: ${title} [${categoryId} / ${nounId}] (sha256=${contentSha.slice(0, 16)})`);
+      sections.push(`STEWARD REVIEW PACKET: ${title} [${categoryId} / ${nounId}] (digest=${contentSha.slice(0, 16)})`);
       if (summary) sections.push(`Overview: ${summary}`);
     } else {
       sections.push(`Research Summary - ${title} (${jurisdiction}): ${summary || signature}`);

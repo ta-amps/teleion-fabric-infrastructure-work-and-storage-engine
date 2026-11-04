@@ -2,10 +2,10 @@
  "format": "tessera.continuous-tuning.mcp-tools.v1",
  "served_by": "tools/list = [...TOOLS, ...ACCESS_TOOLS]",
  "source_files_sha256": {
-  "deploy/cloudflare/cloud_mcp.js": "2b467bab11fd5732ca04f99354dea0083b456bc35839e7dceda6f8f620368e5a",
-  "deploy/cloudflare/cloud_access_routes.js": "70f5a1a7938d99b2c57b9580f6a635709b952040e3a9abda491f0a7c8094e74a"
+  "deploy/cloudflare/cloud_mcp.js": "9480ca2ee3f64e49b8e76951367a02e962464d0fb6df13b7e551fe2cdea3d00c",
+  "deploy/cloudflare/cloud_access_routes.js": "631748a91505c05de82124588fb4acdc1e5444032d78c4b6f14be2c3ea0ab8fb"
  },
- "tools_sha256": "e3dca3f5af3d51ce5ab3d676021f98da0b39f8b9af85bfd71c8ec73b7afd305f",
+ "tools_sha256": "29a4e14fedd954bd5e39c49324fa22e7488cbecf7af389d1f780e211eaa223d8",
  "tools": [
   {
    "name": "queues",
@@ -18,7 +18,7 @@
   },
   {
    "name": "enqueue",
-   "description": "Enqueue a new atomic verb (task) in a queue this key may use.",
+   "description": "Enqueue a new atomic Task (task) in a queue this key may use.",
    "inputSchema": {
     "type": "object",
     "required": [
@@ -380,7 +380,7 @@
   },
   {
    "name": "list_stores",
-   "description": "List every atomic noun store with its key count and last update time.",
+   "description": "List every atomic Task Object store with its key count and last update time.",
    "inputSchema": {
     "type": "object",
     "properties": {},
@@ -389,7 +389,7 @@
   },
   {
    "name": "list_records",
-   "description": "Query current head records in a noun store, optionally filtered by key prefix or governance/tag filters.",
+   "description": "Query current head records in a Task Object store, optionally filtered by key prefix or governance/tag filters.",
    "inputSchema": {
     "type": "object",
     "required": [
@@ -448,7 +448,7 @@
   },
   {
    "name": "put_record",
-   "description": "Write one versioned noun (record) using compare-and-set.",
+   "description": "Write one versioned Task Object (record) using compare-and-set.",
    "inputSchema": {
     "type": "object",
     "required": [
@@ -528,7 +528,7 @@
   },
   {
    "name": "put_records",
-   "description": "Atomically write a batch of versioned nouns (records) using compare-and-set.",
+   "description": "Atomically write a batch of versioned Task Objects (records) using compare-and-set.",
    "inputSchema": {
     "type": "object",
     "required": [
@@ -546,7 +546,7 @@
   },
   {
    "name": "get_record",
-   "description": "Read the latest (or a specific) version of an atomic noun (record).",
+   "description": "Read the latest (or a specific) version of an atomic Task Object (record).",
    "inputSchema": {
     "type": "object",
     "required": [
@@ -571,7 +571,7 @@
   },
   {
    "name": "record_history",
-   "description": "List every saved version of an atomic noun (record) in order.",
+   "description": "List every saved version of an atomic Task Object (record) in order.",
    "inputSchema": {
     "type": "object",
     "required": [
@@ -770,7 +770,7 @@
   },
   {
    "name": "get_object",
-   "description": "Read a versioned file (or L2 byte slice via offset/max_bytes) from a named cloud bucket, verifying its SHA-256.",
+   "description": "Read a versioned file (or L2 byte slice via offset/max_bytes) from a named cloud bucket, checking its digest.",
    "inputSchema": {
     "type": "object",
     "required": [
@@ -893,7 +893,7 @@
   },
   {
    "name": "search_nouns",
-   "description": "0-call progressive L0 scent search across head CAS records and versioned bucket files. Returns compact <=150-token summaries so agents discover reusable nouns before loading full payloads.",
+   "description": "0-call progressive L0 scent search across head CAS records and versioned bucket files. Returns compact <=150-token summaries so agents discover reusable Task Objects before loading full payloads.",
    "inputSchema": {
     "type": "object",
     "properties": {
@@ -1193,7 +1193,7 @@
   },
   {
    "name": "list_verbs",
-   "description": "List ready verbs visible to this principal, with optional queue and status filters.",
+   "description": "List ready Tasks visible to this principal, with optional queue and status filters.",
    "inputSchema": {
     "type": "object",
     "properties": {

@@ -8,7 +8,7 @@
 // Only an approving review by a different, account-tracked principal admits items to the public
 // library.catalog. The public sees a status stub of each proposal; the proposer and reviewers see
 // its content. Deterministic checks and receipts only: no judgment, execution or activation.
-import { audit, countAccess, DEMO_QUOTAS } from "./cloud_access.js";
+import { audit, countAccess, DEMO_QUOTAS, isOpenFreeWindow } from "./cloud_access.js";
 import { canonicalJson, receiptHash, sha256Hex } from "./cloud_buckets.js";
 import { catalogPlan, inspectProposal, LIBRARY_LIMITS, withinDepth } from "./library_checks.js";
 import { LIBRARY, LIBRARY_CHECKER, LIBRARY_RATES, REVIEW_SCHEMA, libraryAnonymousEnabled, libraryBudgets, libraryEnabled } from "./library_contract.js";
@@ -33,16 +33,16 @@ export const head = (c, store, key) => {
 // publication proof): proposals come only through the door, admissions only through a review.
 export function libraryGuard(c, grant, action, args) {
   const deny = detail => err(403, "scope_denied", detail);
-  if (action === "enqueue" && LIBRARY_QUEUES.has(String(args.queue || ""))) throw deny("library verbs are filed only by the library door (POST /v1/library/proposals)");
+  if (action === "enqueue" && LIBRARY_QUEUES.has(String(args.queue || ""))) throw deny("library Tasks are filed only by the library door (POST /v1/library/proposals)");
   if (action === "split") {
     const parent = c._one("SELECT queue FROM tasks WHERE namespace=? AND id=?", c.namespace, String(args.task_id || ""));
-    if (parent && LIBRARY_QUEUES.has(parent.queue)) throw deny("library verbs are not split");
-    if ((Array.isArray(args.children) ? args.children : []).some(ch => LIBRARY_QUEUES.has(String(ch?.queue || "")))) throw deny("library verbs are filed only by the library door");
+    if (parent && LIBRARY_QUEUES.has(parent.queue)) throw deny("library Tasks are not split");
+    if ((Array.isArray(args.children) ? args.children : []).some(ch => LIBRARY_QUEUES.has(String(ch?.queue || "")))) throw deny("library Tasks are filed only by the library door");
   }
   if (action === "putRecords") for (const w of Array.isArray(args.writes) ? args.writes : []) {
     const store = String(w?.store || "");
     if (SEALED.has(store)) throw deny("library proposals and catalog entries are written only by the library door and an approving review");
-    if (store === LIBRARY.instructions && !grant.is_admin) throw deny("library instructions are operator-maintained nouns");
+    if (store === LIBRARY.instructions && !grant.is_admin) throw deny("library instructions are operator-maintained Task Objects");
   }
 }
 
@@ -70,11 +70,11 @@ function catalogItem(payload, entry) {
   return { source, license: payload.bundle.license, files: payload.bundle.files, nouns: (nouns || []).length, verbs: (verbs || []).length };
 }
 
-async function grantFor(c, secret) {
+async function grantFor(c, secret, meta = {}) {
   c.namespace = NS;
   c.isPrimary = true;
   c._ensureSchema();
-  const grant = await c._grantFromSecret(secret);
+  const grant = await c._grantFromSecret(secret, { allowOpen: true, agentLabel: meta?.agent_label || null, openHash: meta?.open_hash || "" });
   if (!libraryEnabled(c.env)) throw err(503, "library_disabled", "library proposals are not enabled on this fabric");
   const anonymous = grant.principal_kind === "anonymous";
   if (anonymous && !libraryAnonymousEnabled(c.env)) throw err(503, "anonymous_proposals_disabled", "tracked sessions cannot propose on this fabric yet; use a contributor key");
@@ -97,15 +97,20 @@ function finish(c, grant, out, meta, key = null) {
 export async function libraryAttempt(c, secret, meta = {}) {
   let grant = null;
   try {
-    const who = await grantFor(c, secret);
+    const who = await grantFor(c, secret, meta);
     grant = who.grant;
     const now = Date.now() / 1000, hour = Math.floor(now / 3600);
+    const enforceLimits = !isOpenFreeWindow(c.env, now * 1000, c);
     const caps = who.anonymous
       ? [[`library:${grant.key_id}`, LIBRARY_RATES.anonymous_per_session_hour, hour], [`library-ip:${meta.ip_hash || "unknown"}`, LIBRARY_RATES.anonymous_per_ip_hour, meta.ip_window ?? hour], ["library:anonymous", LIBRARY_RATES.anonymous_per_hour, hour]]
       : [[`library:${grant.key_id}`, LIBRARY_RATES.keyed_per_key_hour, hour]];
     c.ctx.storage.transactionSync(() => {
-      for (const [subject, ceiling, window] of caps)
-        if ((c._one("SELECT claims FROM access_limits WHERE subject=? AND window=?", subject, window)?.claims || 0) >= ceiling) throw err(429, "rate_limited", "library proposal limit reached for this hour", { retry_after: Math.ceil(3600 - now % 3600) });
+      // The global hourly caps protect the operator's storage, so they hold in the open window too;
+      // only the per-session and per-address ones are lifted.
+      for (const [subject, ceiling, window] of caps) {
+        if (!enforceLimits && !(subject === "library:anonymous" || subject === "library:all")) continue;
+          if ((c._one("SELECT claims FROM access_limits WHERE subject=? AND window=?", subject, window)?.claims || 0) >= ceiling) throw err(429, "rate_limited", "library proposal limit reached for this hour", { retry_after: Math.ceil(3600 - now % 3600) });
+      }
       for (const [subject, , window] of caps) c.ctx.storage.sql.exec("INSERT INTO access_limits(subject,window,claims) VALUES (?,?,1) ON CONFLICT(subject,window) DO UPDATE SET claims=claims+1", subject, window);
     });
     return { ok: true, status: 200, data: { anonymous: who.anonymous } };
@@ -132,7 +137,7 @@ export async function inspectForLibrary(c, body, { anonymous = false } = {}) {
 // A refusal from the checker (or its timeout) is counted against the caller like any other.
 export async function libraryRefusal(c, secret, out, meta = {}) {
   let grant = null;
-  try { grant = await c._grantFromSecret(secret); } catch { /* an unknown caller was already refused */ }
+  try { grant = await c._grantFromSecret(secret, { allowOpen: true, agentLabel: meta?.agent_label || null, openHash: meta?.open_hash || "" }); } catch { /* an unknown caller was already refused */ }
   return finish(c, grant, out, meta);
 }
 
@@ -167,23 +172,28 @@ function ensureQueues(c, now) {
 // is the hour that starts the UTC day, so access-limit retention keeps it for the whole day.
 function chargeBudgets(c, grant, anonymous, bytes, now) {
   const day = Math.floor(now / 86400) * 24, retry_after = Math.ceil(86400 - now % 86400);
+  const enforceLimits = !isOpenFreeWindow(c.env, now * 1000, c);
   const account = grant.account_id ? `account:${grant.account_id}` : `key:${grant.key_id}`, limits = libraryBudgets(c.env);
   // The caller's own budget first, so a refusal names the budget that is really spent.
   const budgets = [anonymous ? ["library-bytes:anonymous", limits.anonymous_daily_bytes, "anonymous_daily_bytes"] : [`library-bytes:${account}`, limits.account_daily_bytes, "account_daily_bytes"],
     ["library-bytes:all", limits.daily_bytes, "daily_bytes"]];
   const sql = c.ctx.storage.sql;
-  for (const [subject, ceiling, name] of budgets) {
-    const used = c._one("SELECT bytes FROM access_limits WHERE subject=? AND window=?", subject, day)?.bytes || 0;
-    if (used + bytes > ceiling) {
-      // Recorded outside the refused write: the refusal count per budget and day survives the rollback.
-      c.libraryRefusals = [...(c.libraryRefusals || []), [`library-refused:${name}`, day]];
-      throw err(429, "rate_limited", `the library's ${name.replaceAll("_", " ")} budget is spent; try again after midnight UTC`, { retry_after, budget: name });
+  // Two daily budgets are global (every proposal, every keyless proposal): they hold in the open window.
+  {
+    for (const [subject, ceiling, name] of budgets) {
+      if (!enforceLimits && !["library-bytes:anonymous", "library-bytes:all"].includes(subject)) continue;
+      const used = c._one("SELECT bytes FROM access_limits WHERE subject=? AND window=?", subject, day)?.bytes || 0;
+      if (used + bytes > ceiling) {
+        // Recorded outside the refused write: the refusal count per budget and day survives the rollback.
+        c.libraryRefusals = [...(c.libraryRefusals || []), [`library-refused:${name}`, day]];
+        throw err(429, "rate_limited", `the library's ${name.replaceAll("_", " ")} budget is spent; try again after midnight UTC`, { retry_after, budget: name });
+      }
     }
   }
   for (const [subject] of budgets) sql.exec("INSERT INTO access_limits(subject,window,bytes) VALUES (?,?,?) ON CONFLICT(subject,window) DO UPDATE SET bytes=bytes+excluded.bytes", subject, day, bytes);
   if (anonymous) {
     const used = c._one("SELECT COALESCE(SUM(bytes),0) n FROM access_limits WHERE subject=?", grant.key_id).n;
-    if (used + bytes > DEMO_QUOTAS.storage_bytes) throw err(429, "rate_limited", "demo quota exceeded", { retry_after: Math.ceil(3600 - now % 3600) });
+    if (enforceLimits && used + bytes > DEMO_QUOTAS.storage_bytes) throw err(429, "rate_limited", "demo quota exceeded", { retry_after: Math.ceil(3600 - now % 3600) });
     sql.exec("INSERT INTO access_limits(subject,window,bytes) VALUES (?,?,?) ON CONFLICT(subject,window) DO UPDATE SET bytes=bytes+excluded.bytes", grant.key_id, Math.floor(now / 3600), bytes);
   }
 }
@@ -192,7 +202,7 @@ function chargeBudgets(c, grant, anonymous, bytes, now) {
 export async function writeProposal(c, secret, inspected, meta = {}) {
   let grant = null, out;
   try {
-    const who = await grantFor(c, secret);
+    const who = await grantFor(c, secret, meta);
     grant = who.grant;
     const anonymous = who.anonymous;
     const { payload, catalog, item_sha256 } = await verifyInspected(inspected, anonymous);
@@ -266,13 +276,13 @@ export function libraryReviewOutcome(c, task, grant, output, receipt, now, d1) {
   if (!Array.isArray(reasons) || reasons.length < 1 || reasons.length > 20 || reasons.some(r => typeof r !== "string" || !r.trim() || r.length > 500)) throw err(400, "invalid_request", "reasons: 1 to 20 strings of at most 500 characters");
   if (!Array.isArray(checks) || checks.length > 50 || checks.some(k => !isObj(k) || typeof k.id !== "string" || k.id.length > 64 || typeof k.passed !== "boolean" || (k.detail !== undefined && (typeof k.detail !== "string" || k.detail.length > 500)))) throw err(400, "invalid_request", "checks: at most 50 {id, passed, detail}");
   const brief = JSON.parse(task.brief);
-  if (output.proposal_id !== brief.proposal_id || output.item_sha256 !== brief.item_sha256) throw deny("review does not name this verb's proposal and digest");
+  if (output.proposal_id !== brief.proposal_id || output.item_sha256 !== brief.item_sha256) throw deny("review does not name this Task's proposal and digest");
   if (output.reviewer_key_id !== grant.key_id) throw deny("review actor does not match its authenticated principal");
   const reviewer = c._one("SELECT principal_kind, account_id FROM access_principals WHERE key_id=?", grant.key_id);
   if (!reviewer?.account_id || ["anonymous", "requester"].includes(reviewer.principal_kind)) throw deny("an account-tracked keyed reviewer is required; anonymous sessions and requester keys never review");
-  if (!c._one("SELECT 1 AS dep FROM task_deps WHERE namespace=? AND task_id=? AND depends_on=?", NS, task.id, brief.propose_task_id)) throw deny("review must depend on its propose verb");
+  if (!c._one("SELECT 1 AS dep FROM task_deps WHERE namespace=? AND task_id=? AND depends_on=?", NS, task.id, brief.propose_task_id)) throw deny("review must depend on its propose Task");
   const proposed = c._one("SELECT r.completed_by_key, r.receipt_hash FROM results r JOIN tasks t ON t.namespace=r.namespace AND t.id=r.task_id WHERE r.namespace=? AND r.task_id=? AND t.queue=? AND t.state='done' AND r.ok=1", NS, brief.propose_task_id, LIBRARY.propose_queue);
-  if (!proposed || proposed.receipt_hash !== brief.propose_receipt) throw deny("the completed propose verb and its receipt are required");
+  if (!proposed || proposed.receipt_hash !== brief.propose_receipt) throw deny("the completed propose Task and its record are required");
   if (proposed.completed_by_key === grant.key_id) throw deny("the proposer cannot review its own proposal");
   const proposer = c._one("SELECT account_id FROM access_principals WHERE key_id=?", proposed.completed_by_key);
   if (proposer?.account_id && proposer.account_id === reviewer.account_id) throw deny("the reviewer must belong to a different account than the proposer");

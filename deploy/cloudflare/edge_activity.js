@@ -519,7 +519,7 @@ async function cachedView(windowName, replay, primary, nowMs = Date.now()) {
   return read;
 }
 
-export async function publicActivityRoute(request, { path, method, namespace, env, primary, problem, withSecurity, address }) {
+export async function publicActivityRoute(request, { path, method, namespace, env, primary, problem, withSecurity, address, enforceRateLimit = true }) {
   if (path !== "/v1/public/activity/map") return null;
   // Pages on other sites read it (the Worker answers every OPTIONS preflight before this route).
   const cors = { "access-control-allow-origin": "*" };
@@ -527,7 +527,7 @@ export async function publicActivityRoute(request, { path, method, namespace, en
   if (namespace !== "main") return problem(404, "not_found", "the activity map covers the shared namespace only", {}, cors);
   const limit = Math.max(1, Number(env.PUBLIC_ACTIVITY_PER_MINUTE) || 60);
   const wait = publicLimitExceeded(address, limit);
-  if (wait) return problem(429, "rate_limited", "too many activity map reads from this address; try again shortly", { retry_after: wait }, { "retry-after": String(wait), ...cors });
+  if (enforceRateLimit && wait) return problem(429, "rate_limited", "too many activity map reads from this address; try again shortly", { retry_after: wait }, { "retry-after": String(wait), ...cors });
   const params = new URL(request.url).searchParams;
   const windowName = params.get("window") || DEFAULT_WINDOW;
   if (!Object.hasOwn(WINDOWS, windowName)) return problem(400, "invalid_request", `window must be one of ${Object.keys(WINDOWS).join(", ")}`, {}, cors);

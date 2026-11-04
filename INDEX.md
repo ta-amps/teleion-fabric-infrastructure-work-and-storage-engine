@@ -309,12 +309,13 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [src/tessera/store.py](src/tessera/store.py) | The in-process Tessera store: the reference implementation of SPEC.md. |
 | [src/tessera/testing.py](src/tessera/testing.py) | Factories the conformance suite loads by name (TESSERABACKENDFACTORY="module:function"). |
 
-## tests/ (82)
+## tests/ (83)
 
 | File | What it is |
 |---|---|
 | [tests/agent_start.test.mjs](tests/agent_start.test.mjs) |  |
 | [tests/claim_admission.test.mjs](tests/claim_admission.test.mjs) |  |
+| [tests/cors_header_tokens.test.mjs](tests/cors_header_tokens.test.mjs) | A browser refuses every preflight, so every POST, if one Access-Control-Allow-Headers name is not a valid tok… |
 | [tests/display_mask.test.mjs](tests/display_mask.test.mjs) | The board hides banned words in stored data at display time; stored records stay as they are. |
 | [tests/edge_access_harness.mjs](tests/edge_access_harness.mjs) | No remote HTTP, credentials, or persistent production data: real Worker handlers, example SQLite. |
 | [tests/edge_access_loader.mjs](tests/edge_access_loader.mjs) | Minimal Cloudflare DurableObject class for deterministic Node SQLite tests. |

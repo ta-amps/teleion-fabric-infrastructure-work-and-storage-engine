@@ -10,7 +10,7 @@ const object = value => value && typeof value === "object" && !Array.isArray(val
 
 function completed(c, id, queue, deny, receipt = null) {
   const row = c._one("SELECT r.*,t.brief FROM results r JOIN tasks t ON t.namespace=r.namespace AND t.id=r.task_id WHERE r.namespace=? AND r.task_id=? AND t.queue=? AND t.state='done' AND r.ok=1 AND r.state_after='done' ORDER BY r.created_at DESC LIMIT 1", c.namespace, typeof id === "string" ? id : "", queue);
-  if (!row || !row.completed_by_key || (receipt !== null && row.receipt_hash !== receipt)) throw deny("completed actor-bound stage receipt required");
+  if (!row || !row.completed_by_key || (receipt !== null && row.receipt_hash !== receipt)) throw deny("completed actor-bound stage record required");
   const output = JSON.parse(row.output);
   if (!object(output)) throw deny("completed stage must contain structured evidence");
   return { row, output, brief: JSON.parse(row.brief) };
@@ -46,7 +46,7 @@ function candidateArtifact(c, proof, deny) {
 
 function evidence(c, actor, proof, deny) {
   const row = c._one("SELECT * FROM records WHERE namespace=? AND store='frontier.verifications' AND key=? AND version=1", c.namespace, "native:" + proof.evidence_sha256);
-  if (!row || row.owner_key_id !== actor || row.producer_surface !== "surface:frontier" || !["private", "surface_only"].includes(row.visibility_scope) || !JSON.parse(row.tags).includes("status:quarantined")) throw deny("versioned verifier-owned evidence noun required");
+  if (!row || row.owner_key_id !== actor || row.producer_surface !== "surface:frontier" || !["private", "surface_only"].includes(row.visibility_scope) || !JSON.parse(row.tags).includes("status:quarantined")) throw deny("versioned verifier-owned evidence Task Object required");
   const value = JSON.parse(row.value);
   if (!object(value) || !same(Object.keys(value).sort(), ["schema_version", "verification_scope", "candidate_key", "candidate_hash", "artifact_sha256", "runs", "controls_sha256"].sort()) || value.schema_version !== 1 ||
       ["verification_scope", "candidate_key", "candidate_hash", "artifact_sha256"].some(k => value[k] !== proof[k]) || sha256Hex(canonicalJson(value)) !== proof.evidence_sha256 ||
@@ -76,7 +76,7 @@ export function frontierVerificationProof(c, taskId, actor, proof, deny) {
 export function frontierReviewProof(c, taskId, actor, proof, deny) {
   if (!object(proof) || typeof proof.approved !== "boolean") throw deny("review must declare a boolean approved outcome");
   if (!proof.approved) return;
-  if (typeof proof.verification_receipt !== "string" || !HASH.test(proof.verification_receipt)) throw deny("exact verification receipt required");
+  if (typeof proof.verification_receipt !== "string" || !HASH.test(proof.verification_receipt)) throw deny("exact verification record required");
   if (proof.review_task_id !== taskId || proof.reviewer_key_id !== actor) throw deny("review actor does not match its authenticated principal");
   const verified = completed(c, proof.verification_task_id, "frontier.verify", deny, proof.verification_receipt);
   dependency(c, taskId, proof.verification_task_id, deny);

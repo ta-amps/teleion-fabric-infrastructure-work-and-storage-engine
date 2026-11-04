@@ -26,7 +26,7 @@ async function setup(bindings = {}) {
     durableObjects: { COORDINATOR: { className: "FixtureCoordinator", useSQLite: true } },
     d1Databases: ["FABRIC_DB", "BUCKETS_DB"],
     bindings: { STORAGE_MODE: "cloud", ANONYMOUS_ACCESS_ENABLED: "true", REQUESTER_SIGNUP_ENABLED: "true", LIBRARY_PROPOSALS_ENABLED: "true", LIBRARY_ANON_PROPOSALS_ENABLED: "true",
-      FRAGILITY_PLANNER_ENABLED: "false", BOOTSTRAP_SECRET: "example-library-bootstrap", ...bindings },
+      STRICT_AUTH_AND_QUOTAS: "true", FRAGILITY_PLANNER_ENABLED: "false", BOOTSTRAP_SECRET: "example-library-bootstrap", ...bindings },
     outboundService: () => { throw new Error("External requests are prohibited in this fixture"); },
   }] }));
   runtimes.push(runtime);
