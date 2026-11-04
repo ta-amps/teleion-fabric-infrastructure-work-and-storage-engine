@@ -186,10 +186,11 @@ def readme_summary(root: Path) -> tuple[str, str]:
 
 
 def repository_name(root: Path) -> str:
-    """Use the declared identity so isolated checkout names do not change indexes."""
+    """Use the declared public title, then the declared identity, so checkout names do not change indexes."""
     manifest = root / "architecture.json"
     if manifest.exists():
-        name = json.loads(manifest.read_text(encoding="utf-8")).get("name")
+        declared = json.loads(manifest.read_text(encoding="utf-8"))
+        name = declared.get("display_title") or declared.get("name")
         if isinstance(name, str) and name:
             return name
     return root.name
