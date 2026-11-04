@@ -25,7 +25,7 @@ function itemFrom(message) {
     } catch { /* falls through to the guidance below */ }
   }
   if (message.parts.some(p => isObj(p) && (p.kind ?? p.type) === "file")) return { error: "file parts are not accepted; send the pack bundle as a data part", code: RPC.contentType };
-  return { error: "send the proposal as one data part (or a text part holding its JSON): with its type field; see the agent card's skill examples" };
+  return { error: "send the proposal as one data part, or a text part holding its JSON, with its type field; see the agent card's skill examples" };
 }
 
 const STATE = { admitted: "completed", rejected: "rejected", in_review: "working", review_failed: "failed", awaiting_review: "submitted" };
