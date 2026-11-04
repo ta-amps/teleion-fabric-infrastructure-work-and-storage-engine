@@ -486,14 +486,15 @@ test("open free window through 2026-12-31 allows zero-auth agent work & human li
   assert.equal(preflight.status, 204);
   const connectRes = await t.call("/connect.json");
   const getHeaders = connectRes.headers.get("access-control-allow-headers") || "";
-  assert.equal(preflight.headers["access-control-allow-headers"], getHeaders);
+  assert.equal(preflight.headers["access-control-allow-headers"], `${getHeaders}, X-Tessera-Namespace`);
+  assert.ok(!getHeaders.includes("X-Tessera-Namespace"));
   const connectContract = await connectRes.json();
   assert.equal(connectContract.demo_flow[0], "search_nouns(query=practice)");
   assert.equal(connectContract.library.anonymous_enabled, true);
   assert.match(await (await t.call("/llms.txt")).text(), /December 31, 2026/);
   assert.match(await (await t.call("/connect")).text(), /December 31, 2026/);
   const allowHeaders = preflight.headers["access-control-allow-headers"].split(",").map((h) => h.trim()).filter(Boolean);
-  assert.ok(allowHeaders.includes("X-Tessera-Namespace"));
+  assert.ok(allowHeaders.includes("X-Tessera-Namespace"), "a client asking with the old header keeps working");
   assert.ok(allowHeaders.includes("X-Teleion-Fabric-Namespace"));
   assert.ok(allowHeaders.includes("X-Namespace"));
   assert.ok(allowHeaders.includes("X-Agent-Label"));

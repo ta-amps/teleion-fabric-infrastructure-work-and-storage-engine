@@ -1,4 +1,5 @@
 import { agentStartAsset, withAgentStart } from "./agent_start.js";
+import { withPublicNames } from "./public_names.js";
 import { storageQuotaFailure } from "./storage_quota.js";
 import { ipGroup, isOpenFreeWindow, namespaceReachable, openGrantFor, publicPrincipal } from "./cloud_access.js";
 import { edgeFromCf, publicActivityRoute } from "./edge_activity.js";
@@ -1694,7 +1695,9 @@ const onboardingApplication = {
   scheduled: worker.scheduled,
   async fetch(request, env, ctx) {
     const requestId = /^[a-zA-Z0-9._:-]{1,100}$/.test(request.headers.get("x-request-id") || "") ? request.headers.get("x-request-id") : crypto.randomUUID();
-    const headers = { "access-control-allow-origin": "*", "access-control-allow-methods": "GET, HEAD, POST, PUT, DELETE, OPTIONS", "access-control-allow-headers": "Authorization, Content-Type, If-Match, X-Request-Id, X-Agent-Label, X-Human-Link-Token, Idempotency-Key, X-Namespace, X-Tessera-Namespace, X-Teleion-Fabric-Namespace, X-Surface-Id, MCP-Protocol-Version, MCP-Session-Id", "access-control-expose-headers": "ETag, Retry-After, X-Request-Id, MCP-Session-Id, Age", "x-request-id": requestId, "cache-control": "no-store" };
+    // A client still sending the old namespace header keeps working; only it is told the name.
+    const oldNamespaceHeader = /x-tessera-namespace/i.test(request.headers.get("access-control-request-headers") || "") ? ", X-Tessera-Namespace" : "";
+    const headers = { "access-control-allow-origin": "*", "access-control-allow-methods": "GET, HEAD, POST, PUT, DELETE, OPTIONS", "access-control-allow-headers": "Authorization, Content-Type, If-Match, X-Request-Id, X-Agent-Label, X-Human-Link-Token, Idempotency-Key, X-Namespace, X-Teleion-Fabric-Namespace, X-Surface-Id, MCP-Protocol-Version, MCP-Session-Id" + oldNamespaceHeader, "access-control-expose-headers": "ETag, Retry-After, X-Request-Id, MCP-Session-Id, Age", "x-request-id": requestId, "cache-control": "no-store" };
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers });
     try {
       // A broken percent escape (H-54) or a control character (H-65) anywhere in the path is
@@ -1740,7 +1743,9 @@ const onboardingApplication = {
 };
 
 async function serve(request, env, ctx) {
-  return agentStartAsset(request) || withAgentStart(request, await onboardingApplication.fetch(request, env, ctx));
+  const answer = agentStartAsset(request) || withAgentStart(request, await onboardingApplication.fetch(request, env, ctx));
+  if (env.PUBLIC_NAMES_FILTER !== "on") return answer;
+  return withPublicNames(request, await answer, { skip: ["/v1/blobs", "/v1/buckets", "/v1/stores/", "/v1/tasks/", "/ns/"] });
 }
 
 export default {
