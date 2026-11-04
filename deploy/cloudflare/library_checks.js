@@ -266,7 +266,7 @@ export function inspectProposal(body, { anonymous = false } = {}) {
   if (!isObj(body)) return { findings: [{ rule: "schema", where: "body", detail: "a proposal is a JSON object" }], depthRefusal: true };
   if (!withinDepth(body)) return { findings: [{ rule: "schema", where: "body", detail: `JSON nests at most ${LIBRARY_LIMITS.json_depth} levels deep` }], depthRefusal: true };
   const type = body.type;
-  if (!["noun", "verb", "pack"].includes(type)) return { findings: [{ rule: "schema", where: "type", detail: "type is Task Object (a task object), Task (a task template) or pack" }] };
+  if (!["noun", "verb", "pack"].includes(type)) return { findings: [{ rule: "schema", where: "type", detail: "type is one of the three listed values: a task object, a task template or a pack" }] };
   const bytes = bytesOf(body);
   const ceiling = type === "pack" ? LIBRARY_LIMITS.pack_bytes : LIBRARY_LIMITS.item_bytes;
   if (bytes > ceiling + 4096) return { findings: [{ rule: "size", where: "body", detail: `a ${type} proposal holds at most ${ceiling} bytes` }], bytes, sizeRefusal: true };

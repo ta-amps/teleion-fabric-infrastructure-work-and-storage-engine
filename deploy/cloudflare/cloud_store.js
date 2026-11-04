@@ -1425,11 +1425,11 @@ export class TesseraCoordinator extends DurableObject {
     };
   }
 
-  async _grantFromSecret(secret, { allowOpen = false, agentLabel = null } = {}) {
+  async _grantFromSecret(secret, { allowOpen = false, agentLabel = null, openHash = "" } = {}) {
     if (!secret) {
       if (allowOpen && isOpenFreeWindow(this.env, Date.now(), this)) {
         const now = Date.now() / 1000;
-        const openGrant = openGrantFor(this.env, agentLabel, now);
+        const openGrant = openGrantFor(this.env, agentLabel, now, openHash);
         const existing = this._one("SELECT last_used_at FROM access_principals WHERE key_id=?", openGrant.key_id);
         if (!existing || existing.last_used_at == null || Number(existing.last_used_at) <= now - LAST_USED_WRITE_INTERVAL_SECONDS) {
           this._observe(() => this.ctx.storage.sql.exec(
@@ -1535,7 +1535,7 @@ export class TesseraCoordinator extends DurableObject {
 
   // An anonymous viewer never sees which keys own, parked or deduplicated a verb.
   _viewerTaskView(grant, view) {
-    return grant.principal_kind === "anonymous" ? { ...view, owner_key_id: null, parked_by: null, idempotency_key: null } : view;
+    return grant.principal_kind === "anonymous" ? { ...view, owner_key_id: null, parked_by: null, idempotency_key: null, fencing_token: null } : view;
   }
 
   // An open verb carries its whole input in its brief; its anonymous claimant sees the state of
@@ -2004,7 +2004,7 @@ export class TesseraCoordinator extends DurableObject {
   countAccessEvent(grant, action, args, out, meta) { countAccess(this, grant, action, args, out, meta); }
   async auditForToken(secret, args = {}) {
     try {
-      const grant = await this._grantFromSecret(secret, { allowOpen: !args.admin, agentLabel: args.agent_label || null });
+      const grant = await this._grantFromSecret(secret, { allowOpen: !args.admin, agentLabel: args.agent_label || null, openHash: args.open_hash || "" });
       if (args.admin && !grant.is_admin) throw forbid("admin scope required");
       // An admin's read also says how many of the activity map's writes failed here (edge_activity.js).
       return { ok: true, status: 200, data: args.admin ? { ...ownAudit(this, grant, args), activity_map: edgeStatus(this) } : ownAudit(this, grant, args) };
@@ -2018,7 +2018,7 @@ export class TesseraCoordinator extends DurableObject {
     this.namespace = ns;
     this.isPrimary = ns === "main";
     try {
-      grant = await this._grantFromSecret(secret, { allowOpen: true, agentLabel: args?.access_meta?.agent_label || null });
+      grant = await this._grantFromSecret(secret, { allowOpen: true, agentLabel: args?.access_meta?.agent_label || null, openHash: args?.access_meta?.open_hash || "" });
       const [checked, charge] = enforceAccess(this, grant, action, { ...args, namespace: ns });
       args = checked;
       libraryGuard(this, grant, action, args);
@@ -2080,7 +2080,7 @@ export class TesseraCoordinator extends DurableObject {
     try {
       this.namespace = normalizeNamespace(args?.namespace || "main");
       this.isPrimary = Boolean(args?.isPrimary ?? (this.namespace === "main"));
-      const grant = await this._grantFromSecret(secret, { allowOpen: true, agentLabel: args?.access_meta?.agent_label || null });
+      const grant = await this._grantFromSecret(secret, { allowOpen: true, agentLabel: args?.access_meta?.agent_label || null, openHash: args?.access_meta?.open_hash || "" });
       const now = Date.now() / 1000;
       if (!this.namespace.startsWith("demo.") && !this.namespace.startsWith("org.")) this._ensureNamespaceSeeded(this.namespace, now);
       const surfaceHeader = args?.surfaceHeader || args?.header_surface_id || "";
@@ -2474,6 +2474,8 @@ export class TesseraCoordinator extends DurableObject {
                 params.push(...effects);
               }
               sql += " ORDER BY priority DESC, created_at, id";
+              // A caller with no key looks at a bounded number of rows, so one claim's cost doesn't grow with a backlog.
+              if (anonymous) sql += " LIMIT 500";
               const row = this._all(sql, ...params).find((r) => this._taskVisible(r, grant, viewerCtx));
               if (!row) return;
               const token = Number(row.fencing_token) + 1;

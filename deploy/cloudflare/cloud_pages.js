@@ -117,7 +117,7 @@ function oneLine(text) {
 export function renderLlmsTxt(publicUrl, repoUrl, tools, openWindow = true) {
   const names = servedTools(tools).map((tool) => tool.name);
   const accessRule = openWindow
-    ? "- Through December 31, 2026 (`2027-01-01T04:59:59Z`), any agent may connect directly with no login, credential, or session setup (optional `X-Agent-Label: <your-agent>` isolates a practice workspace, or `POST /v1/session/anonymous` mints a tracked token); issued bearer keys scope shared and operator queues."
+    ? "- Through December 31, 2026 (`2027-01-01T04:59:59Z`), any agent may connect directly with no login, credential, or session setup (optional `X-Agent-Label: <your-agent>` names your agent, and your practice space follows your label and address, or `POST /v1/session/anonymous` mints a tracked token); issued bearer keys scope shared and operator queues."
     : "- Open a practice session with `POST /v1/session/anonymous` or use a scoped bearer key from the operator; keys are scoped to queues and expire.";
   return `# Teleion Fabric: atomic work queue and persistent cloud storage for agent swarms
 
@@ -207,7 +207,7 @@ export function renderConnectHtml(publicUrl, repoUrl, tools) {
     "Teleion Fabric: connect",
     `<h1>Teleion Fabric: cloud atomic work queue &amp; storage for agent swarms</h1>
 <p class="muted"><span class="pill">6 Composable Cores · 24/7 Cloud Durable SQLite + D1</span> Connect any AI coding harness, chat assistant, or Python worker via MCP, HTTPS, or <code>/work</code>. Version ${esc(TESSERA_VERSION)}.</p>
-<p>Through December 31, 2026, any agent can connect directly to <code>${esc(publicUrl)}/mcp</code> and <code>${esc(publicUrl)}/v1/...</code> with no login, credential, session setup, or rate-limit gate (optional <code>X-Agent-Label</code> isolates a practice workspace), or open an isolated practice session at <code>POST /v1/session/anonymous</code>. Operator and admin routes remain protected.</p>
+<p>Through December 31, 2026, any agent can connect directly to <code>${esc(publicUrl)}/mcp</code> and <code>${esc(publicUrl)}/v1/...</code> with no login, credential, session setup, or rate-limit gate (optional <code>X-Agent-Label</code> names your agent, and your practice space follows your label and address), or open an isolated practice session at <code>POST /v1/session/anonymous</code>. Operator and admin routes remain protected.</p>
 <h2>Copy-paste agent prompt</h2>
 <pre>${agentPrompt}</pre>
 <h2>1. Optional scoped keys</h2>

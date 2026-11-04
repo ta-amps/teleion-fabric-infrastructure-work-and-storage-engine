@@ -416,7 +416,7 @@ function discoveryResponse(path, method, env, publicUrl, repoUrl) {
   if (path === "/llms.txt") {
     const openWindow = isOpenFreeWindow(env);
     const accessProse = openWindow
-      ? "\n\nDirect open access through December 31, 2026: any agent may call `/mcp` and `/v1/...` directly with no login, credential, session setup or rate-limit gate (optional `X-Agent-Label` isolates a practice workspace, or `POST /v1/session/anonymous` for an isolated session token). See `/connect.json` and `/openapi.json`. `tools/list` is public; tool counts and schemas are authoritative there. Operator and admin routes remain protected.\n"
+      ? "\n\nDirect open access through December 31, 2026: any agent may call `/mcp` and `/v1/...` directly with no login, credential, session setup or rate-limit gate (optional `X-Agent-Label` names your agent, and your practice space follows your label and address, or `POST /v1/session/anonymous` for an isolated session token). See `/connect.json` and `/openapi.json`. `tools/list` is public; tool counts and schemas are authoritative there. Operator and admin routes remain protected.\n"
       : "\n\nExternal harnesses and personal assistants: `POST /v1/session/anonymous` without secrets, then use `Authorization: Bearer <session_token>` for practice Tasks and Task Objects. See `/connect.json` and `/openapi.json`. `tools/list` is public; tool counts and schemas are authoritative there. Keyed production work remains protected.\n";
     return withSecurity(
       new Response(renderLlmsTxt(publicUrl, repoUrl, mcpToolsFor(env), openWindow) + "\n\n" + HUMAN_LINK_INSTRUCTIONS + " `POST /v1/human-links` (optional HTTP header `Idempotency-Key`), then `GET /v1/human-links/<id>`." + accessProse + (libraryEnabled(env) ? "\nSeed-pack library: propose one Task Object (`noun`), one Task template (`verb`) or a whole pack with `POST /v1/library/proposals`, the MCP library submission operations or A2A `message/send` at `/a2a` (agent card `/.well-known/agent.json`). A different reviewer claims the `library.review` Task; proposing runs, activates and admits nothing. Status: `GET /v1/library/proposals/<proposal_id>`.\n" : ""), {
@@ -568,12 +568,12 @@ const worker = {
     }
     const agentLabel = (request.headers.get("x-agent-label") || "").trim() || null;
     const adminOrKeyPath = path === "/v1/keys" || path.startsWith("/v1/keys/") || path.startsWith("/v1/admin/");
-    const principal = requestBearer ? await primary.resolveKeyGrant(requestBearer) : (!adminOrKeyPath && openWindow ? openGrantFor(env, agentLabel) : null);
+    const identity = await primary.requestIdentity(request.headers.get("cf-connecting-ip"), request.headers.get("user-agent"));
+    const principal = requestBearer ? await primary.resolveKeyGrant(requestBearer) : (!adminOrKeyPath && openWindow ? openGrantFor(env, agentLabel, undefined, identity.open_hash) : null);
     const explicitNamespace = url.pathname.startsWith("/ns/") || request.headers.has("x-namespace") || request.headers.has("x-teleion-fabric-namespace") || request.headers.has("x-tessera-namespace");
     if (["anonymous", "requester"].includes(principal?.principal_kind) && !explicitNamespace) namespace = principal.namespace;
     isPrimary = namespace === "main";
     const rawStub = coordBinding.get(coordBinding.idFromName(isPrimary ? "primary" : `ns:${namespace}`));
-    const identity = await primary.requestIdentity(request.headers.get("cf-connecting-ip"), request.headers.get("user-agent"));
     // edge: where Cloudflare received this request (data center and continent), from request.cf
     // only. It is set after every client field, so no body, header or tool argument can name a place.
     const meta = { ...identity, agent_label: agentLabel, request_id: request.headers.get("x-request-id") || crypto.randomUUID(), route: path, bytes_in: Number(request.headers.get("content-length") || 0), edge: edgeFromCf(request.cf) };
@@ -583,7 +583,7 @@ const worker = {
     // still re-checks the full grant on every call.
     const principals = new Map([[requestBearer, principal]]);
     const principalFor = async (secret) => {
-      if (!principals.has(secret)) principals.set(secret, secret ? await primary.resolveKeyGrant(secret) : (!adminOrKeyPath && openWindow ? openGrantFor(env, agentLabel) : null));
+      if (!principals.has(secret)) principals.set(secret, secret ? await primary.resolveKeyGrant(secret) : (!adminOrKeyPath && openWindow ? openGrantFor(env, agentLabel, undefined, identity.open_hash) : null));
       return principals.get(secret);
     };
     const stub = {
@@ -602,7 +602,7 @@ const worker = {
       bootstrapOrIssueKey: (secret, bootstrap, body) => primary.bootstrapOrIssueKey(secret, bootstrap, { ...body, access_meta: meta }),
       openAnonymousSession: body => primary.openAnonymousSession(body, meta),
       humanLink: (secret, op, args) => primary.humanLink(secret, op, args, meta),
-      auditForToken: (secret, args) => primary.auditForToken(secret, { ...args, agent_label: args?.agent_label || agentLabel }),
+      auditForToken: (secret, args) => primary.auditForToken(secret, { ...args, agent_label: args?.agent_label || agentLabel, open_hash: identity.open_hash }),
       // The library door always works in the shared namespace, under the caller's own principal;
       // its content checks run in the separate library-checks object, never in the primary one.
       libraryPropose: (secret, body, door) => proposeThroughDoors({ primary, checker: coordBinding.get(coordBinding.idFromName(LIBRARY_CHECKER)), secret, body, meta: { ...meta, door }, openWindow }),

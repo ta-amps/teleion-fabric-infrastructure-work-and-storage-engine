@@ -508,8 +508,8 @@ test("open free window through 2026-12-31 allows zero-auth agent work & human li
   const me = await t.call("/v1/me");
   assert.equal(me.status, 200);
   const meData = await me.json();
-  assert.equal(meData.principal_id, "o_open");
-  assert.equal(meData.namespace, "demo.open");
+  assert.match(meData.principal_id, /^o_open_[0-9a-f]{20}$/);
+  assert.match(meData.namespace, /^demo\.open-[0-9a-f]{20}$/);
 
   const verbs = await t.call("/v1/verbs");
   assert.equal(verbs.status, 200);
@@ -543,7 +543,8 @@ test("open free window through 2026-12-31 allows zero-auth agent work & human li
   assert.notEqual(otherCallerLink.id, sharedLink.id, "distinct keyless caller cannot replay another caller's live link");
   assert.notEqual(otherCallerLink.url, sharedLink.url);
 
-  const keylessAudit = await (await t.call("/v1/me/audit")).json();
+  assert.equal((await t.call(`/v1/human-links/${sharedLink.id}`, { headers: { "cf-connecting-ip": "198.51.100.99" } })).status, 404, "one caller can't read another caller's link");
+  const keylessAudit = await (await t.call("/v1/me/audit", { headers: { "cf-connecting-ip": "198.51.100.10" } })).json();
   const auditText = JSON.stringify(keylessAudit);
   assert.ok(!auditText.includes(sharedLink.id) && !auditText.includes(otherCallerLink.id), "keyless /v1/me/audit never exposes raw hl_<uuid> capability IDs");
   assert.doesNotMatch(auditText, /\bhl_[0-9a-f]{32}\b/);
@@ -562,15 +563,15 @@ test("open free window through 2026-12-31 allows zero-auth agent work & human li
     jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "whoami", arguments: {} },
   })).json();
   assert.equal(mcpKeyless.result.isError, false);
-  assert.equal(mcpKeyless.result.structuredContent.principal_id, "o_open");
+  assert.equal(mcpKeyless.result.structuredContent.principal_id, meData.principal_id);
 
   // 3. Zero 429 barriers past 300 requests and 1 MiB, while usage accounting still records accurately.
-  await t.primary.testSetUsage("o_open", 500, 1048576);
+  await t.primary.testSetUsage(meData.principal_id, 500, 1048576);
   const unthrottledIssue = await t.json("POST", "/v1/human-links", { kind: "ask", text: "Still allowed" });
   assert.equal(unthrottledIssue.status, 201);
   const unthrottledData = await unthrottledIssue.json();
   assert.equal((await t.answer(tokenOf(unthrottledData.url), { answer: "send", value: "answer-bytes" })).status, 200);
-  const usageAfter = await t.primary.testUsage("o_open");
+  const usageAfter = await t.primary.testUsage(meData.principal_id);
   assert.equal(usageAfter.requests, 501);
   assert.equal(usageAfter.bytes, 1048576 + "Still allowed".length + "answer-bytes".length);
 

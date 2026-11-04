@@ -338,7 +338,7 @@ export const NOUN_CATALOG = {
       ],
       "preflight_context": [
         "Run mandatory PII/PHI scrubbing rules and check consent/redaction flags.",
-        "Load corroborating feed sources and applicable Task Object.statute_card citations."
+        "Load corroborating feed sources and applicable statute_card Task Object citations."
       ],
       "required_mcp_tools": [
         "safety.pii_redactor",
@@ -490,7 +490,7 @@ export const NOUN_CATALOG = {
     "recovery_playbook": [
       "Parse syntax/type errors deterministically and check negative.knowledge tombstones for symbol.",
       "Isolate failing test case, apply minimal AST patch, and re-run Task.verify_gate.",
-      "Emit Task Object.negative_tombstone if candidate regresses existing callers."
+      "Emit negative_tombstone Task Object if candidate regresses existing callers."
     ],
     "suggested_verbs": [
       "verb.situate",
@@ -861,7 +861,7 @@ export const NOUN_CATALOG = {
         "Attach per-arm sample counts, Wilson intervals, cost_usd totals, and run record Digest."
       ],
       "preflight_context": [
-        "Load linked Task Object.benchmark_suite manifest hash, arm configurations, and git/environment fingerprint."
+        "Load linked benchmark_suite Task Object manifest hash, arm configurations, and git/environment fingerprint."
       ],
       "required_mcp_tools": [
         "benchmark.read_summary",
@@ -1180,7 +1180,7 @@ export const NOUN_CATALOG = {
     "priority_formula": "0.35 * wilson_lower_bound + 0.35 * safety_compliance + 0.30 * freshness_confidence",
     "recovery_playbook": [
       "Run tools/list introspection probe and diff tool schemas against cached Digest.",
-      "Generate Task Object.shim_provision if parameter names drifted across server versions."
+      "Generate shim_provision Task Object if parameter names drifted across server versions."
     ],
     "suggested_verbs": [
       "verb.probe_source",
@@ -1692,7 +1692,7 @@ export const NOUN_CATALOG = {
     "priority_formula": "0.45 * evidence_grounding + 0.35 * determinism + 0.20 * safety_compliance",
     "recovery_playbook": [
       "Attach missing reproduction trace or rejected candidate Digest.",
-      "Link tombstone to a verified Task Object.recovery_playbook for automated containment."
+      "Link tombstone to a verified recovery_playbook Task Object for automated containment."
     ],
     "suggested_verbs": [
       "verb.situate",
@@ -1863,7 +1863,7 @@ export const NOUN_CATALOG = {
     "priority_formula": "0.40 * safety_compliance + 0.35 * evidence_grounding + 0.25 * reusability",
     "recovery_playbook": [
       "Run deterministic PII redactor over all template fields and strip ungrounded steps.",
-      "Re-link steps to current Task Object.statute_card versions and route to human_steward."
+      "Re-link steps to current statute_card Task Object versions and route to human_steward."
     ],
     "suggested_verbs": [
       "verb.situate",
@@ -1887,7 +1887,7 @@ export const NOUN_CATALOG = {
         "Emit checklist Digest, plain-language reading grade metric, and human escalation instructions."
       ],
       "preflight_context": [
-        "Load linked Task Object.statute_card records and regional language/literacy constraints.",
+        "Load linked statute_card Task Object records and regional language/literacy constraints.",
         "Check brief rules and AI-generated media disclosure requirements."
       ],
       "required_mcp_tools": [
@@ -2403,7 +2403,7 @@ export const NOUN_CATALOG = {
         "Emit recovery_receipt_sha256, patched brief diff, and post-replay verification gate status."
       ],
       "preflight_context": [
-        "Load dead-letter failure_class, queue state, and linked Task Object.negative_tombstone records."
+        "Load dead-letter failure_class, queue state, and linked negative_tombstone Task Object records."
       ],
       "required_mcp_tools": [
         "tombstone.lookup",
@@ -2746,7 +2746,7 @@ export const NOUN_CATALOG = {
         "Record deterministic seed, scene graph Digest, and generated-media watermark metadata if rendered."
       ],
       "preflight_context": [
-        "Inspect coordinate-system convention, bounding boxes, and linked Task Object.motion_profile assets."
+        "Inspect coordinate-system convention, bounding boxes, and linked motion_profile Task Object assets."
       ],
       "required_mcp_tools": [
         "scene.validate_bounds",
@@ -3240,7 +3240,7 @@ export const NOUN_CATALOG = {
     "kind": "noun",
     "priority_formula": "0.35 * reusability + 0.35 * wilson_lower_bound + 0.30 * token_efficiency",
     "recovery_playbook": [
-      "Introspect live MCP tool schemas and bind Task Object.shim_provision for renamed arguments.",
+      "Introspect live MCP tool schemas and bind shim_provision Task Object for renamed arguments.",
       "Re-run skill smoke test via Task.verify_gate before republishing."
     ],
     "suggested_verbs": [
@@ -3771,7 +3771,7 @@ export const VERB_CATALOG = {
     "summary": "Execute reproducible multi-arm harness evaluation with locked seeds, Wilson bounds, and Digest record.",
     "title": "Execute Multi-Arm Benchmark Harness",
     "value_rubric": {
-      "high": "Seed-locked multi-arm evaluation emitting null-honest Task Object.eval_run scorecard and Digest record.",
+      "high": "Seed-locked multi-arm evaluation emitting null-honest eval_run Task Object scorecard and Digest record.",
       "low": "Contaminated fixtures, missing control arm, or unrecorded model costs.",
       "medium": "Reproducible baseline vs treatment run with complete token and latency telemetry."
     },
@@ -3780,10 +3780,10 @@ export const VERB_CATALOG = {
         "Verify fixture Digest lock and deterministic scoring harness before executing model arms."
       ],
       "post_condition_receipt_rules": [
-        "Emit Task Object.eval_run scorecard with null-honest unrun cells, Wilson bounds, and record Digest."
+        "Emit eval_run Task Object scorecard with null-honest unrun cells, Wilson bounds, and record Digest."
       ],
       "preflight_context": [
-        "Load Task Object.benchmark_suite golden fixtures, arm matrix, and cost budget."
+        "Load benchmark_suite Task Object golden fixtures, arm matrix, and cost budget."
       ],
       "required_mcp_tools": [
         "test.run_pytest",
@@ -4273,7 +4273,7 @@ export const VERB_CATALOG = {
       "verb.verify_gate",
       "verb.audit_profile_parity"
     ],
-    "summary": "Compress repeated high-confidence execution traces into a 0-call Task Object.reflex_procedure.",
+    "summary": "Compress repeated high-confidence execution traces into a 0-call reflex_procedure Task Object.",
     "title": "Distill Verified Trace into Reflex",
     "value_rubric": {
       "high": "0-call reflex distilled from >= 3 traces with 100% replay pass rate and >= 80% token savings.",
@@ -4285,7 +4285,7 @@ export const VERB_CATALOG = {
         "Replay candidate reflex procedure deterministically across historical trace inputs."
       ],
       "post_condition_receipt_rules": [
-        "Emit Task Object.reflex_procedure digest, replay pass rate = 1.0, and token savings ratio."
+        "Emit reflex_procedure Task Object digest, replay pass rate = 1.0, and token savings ratio."
       ],
       "preflight_context": [
         "Load >= 3 corroborated execution traces and check absence of contradictory tombstones."
@@ -4456,7 +4456,7 @@ export const VERB_CATALOG = {
         "Emit acyclic dependency list, estimated token/USD budget, and verification gate bindings."
       ],
       "preflight_context": [
-        "Load target Task Object.seed_hypothesis, budget ceiling, and available reusable Task Objects."
+        "Load target seed_hypothesis Task Object, budget ceiling, and available reusable Task Objects."
       ],
       "required_mcp_tools": [
         "graph.search_neighbors",
@@ -4624,7 +4624,7 @@ export const VERB_CATALOG = {
         "Record HTTP status, ETag, body Digest, and drift classification."
       ],
       "preflight_context": [
-        "Load target Task Object.feed_source URI, rate-limit window, and prior ETag/Digest."
+        "Load target feed_source Task Object URI, rate-limit window, and prior ETag/Digest."
       ],
       "required_mcp_tools": [
         "http.conditional_fetch",
@@ -4771,7 +4771,7 @@ export const VERB_CATALOG = {
     "priority_formula": "eb_pass_rate + 0.35 * ucb_exploration_bonus",
     "recovery_playbook": [
       "Run L0 scent search to merge near-duplicate seeds rather than minting redundant records.",
-      "Attach primary observation URI and re-validate against Task Object.seed_hypothesis schema."
+      "Attach primary observation URI and re-validate against seed_hypothesis Task Object schema."
     ],
     "suggested_verbs": [
       "verb.situate",
@@ -4790,7 +4790,7 @@ export const VERB_CATALOG = {
         "Deduplicate against existing seed hashes and filter tombstoned signatures in 0-call code."
       ],
       "post_condition_receipt_rules": [
-        "Emit validated Task Object.seed_hypothesis record key, provenance citations, and seed Digest."
+        "Emit validated seed_hypothesis Task Object record key, provenance citations, and seed Digest."
       ],
       "preflight_context": [
         "Load raw feed delta entries, L0 Task Object scents, and negative.knowledge tombstones."
@@ -6120,7 +6120,7 @@ export const VERB_CATALOG = {
     "kind": "verb",
     "priority_formula": "0.35 * wilson_lower_bound + 0.35 * evidence_grounding + 0.30 * safety_compliance",
     "recovery_playbook": [
-      "Inspect verify_gate failure trace and load matching Task Object.recovery_playbook.",
+      "Inspect verify_gate failure trace and load matching recovery_playbook Task Object.",
       "Patch violating fields deterministically and re-submit to Task.verify_gate."
     ],
     "suggested_verbs": [
@@ -6290,7 +6290,7 @@ export const VERB_CATALOG = {
     "kind": "verb",
     "priority_formula": "0.50 * determinism + 0.30 * evidence_grounding + 0.20 * safety_compliance",
     "recovery_playbook": [
-      "Record deterministic failure signature as Task Object.negative_tombstone.",
+      "Record deterministic failure signature as negative_tombstone Task Object.",
       "Route failing candidate to Task.recover_fault with exact assertion diff."
     ],
     "suggested_verbs": [
@@ -6310,7 +6310,7 @@ export const VERB_CATALOG = {
         "Execute 100% of test, schema, and leak checks deterministically without LLM calls."
       ],
       "post_condition_receipt_rules": [
-        "Emit pass/fail counts, stdout/stderr digest, and Task Object.negative_tombstone on deterministic failure."
+        "Emit pass/fail counts, stdout/stderr digest, and negative_tombstone Task Object on deterministic failure."
       ],
       "preflight_context": [
         "Load candidate artifact bytes, target CategorySpec, and benchmark suite."
@@ -6479,7 +6479,7 @@ export const VERB_CATALOG = {
         "Enforce self-vote block, duplicate-key block, and quorum/margin math strictly in deterministic code."
       ],
       "post_condition_receipt_rules": [
-        "Emit Digest ReconciliationReceipt and Task Object.negative_tombstone for rejected buggy loser."
+        "Emit Digest ReconciliationReceipt and negative_tombstone Task Object for rejected buggy loser."
       ],
       "preflight_context": [
         "Load ConflictRecord, proposer_key_ids, voter calibration history, and human_only flag."

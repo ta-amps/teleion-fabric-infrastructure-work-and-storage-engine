@@ -62,7 +62,7 @@ export async function readLibrary(c, what, args = {}, secret = null) {
     }
     if (what === "catalog") {
       const filters = [];
-      if (args.kind) { if (!["noun", "verb_template", "pack"].includes(String(args.kind))) throw err(400, "invalid_request", "kind is Task Object, verb_template or pack"); filters.push(`item:${args.kind}`); }
+      if (args.kind) { if (!["noun", "verb_template", "pack"].includes(String(args.kind))) throw err(400, "invalid_request", "kind is one of the three listed values"); filters.push(`item:${args.kind}`); }
       if (args.pack) { if (!SLUG.test(String(args.pack))) throw err(400, "invalid_request", "pack is a pack id"); filters.push(`pack:${args.pack}`); }
       const out = page(c, LIBRARY.catalog, filters, after, limit,
         "json_extract(r.value,'$.item_kind') AS item_kind, json_extract(r.value,'$.pack') AS pack, json_extract(r.value,'$.version') AS item_version, coalesce(json_extract(r.value,'$.item.title'), json_extract(r.value,'$.item.source.title')) AS title, json_extract(r.value,'$.license') AS license, json_extract(r.value,'$.item_sha256') AS item_sha256, json_extract(r.value,'$.proposal_id') AS proposal_id, json_extract(r.value,'$.review_receipt') AS review_receipt, json_extract(r.value,'$.reviewer_key_id') AS reviewer_key_id");

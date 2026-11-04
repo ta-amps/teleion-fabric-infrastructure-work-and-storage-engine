@@ -74,7 +74,7 @@ async function grantFor(c, secret, meta = {}) {
   c.namespace = NS;
   c.isPrimary = true;
   c._ensureSchema();
-  const grant = await c._grantFromSecret(secret, { allowOpen: true, agentLabel: meta?.agent_label || null });
+  const grant = await c._grantFromSecret(secret, { allowOpen: true, agentLabel: meta?.agent_label || null, openHash: meta?.open_hash || "" });
   if (!libraryEnabled(c.env)) throw err(503, "library_disabled", "library proposals are not enabled on this fabric");
   const anonymous = grant.principal_kind === "anonymous";
   if (anonymous && !libraryAnonymousEnabled(c.env)) throw err(503, "anonymous_proposals_disabled", "tracked sessions cannot propose on this fabric yet; use a contributor key");
@@ -105,8 +105,10 @@ export async function libraryAttempt(c, secret, meta = {}) {
       ? [[`library:${grant.key_id}`, LIBRARY_RATES.anonymous_per_session_hour, hour], [`library-ip:${meta.ip_hash || "unknown"}`, LIBRARY_RATES.anonymous_per_ip_hour, meta.ip_window ?? hour], ["library:anonymous", LIBRARY_RATES.anonymous_per_hour, hour]]
       : [[`library:${grant.key_id}`, LIBRARY_RATES.keyed_per_key_hour, hour]];
     c.ctx.storage.transactionSync(() => {
-      if (enforceLimits) {
-        for (const [subject, ceiling, window] of caps)
+      // The global hourly caps protect the operator's storage, so they hold in the open window too;
+      // only the per-session and per-address ones are lifted.
+      for (const [subject, ceiling, window] of caps) {
+        if (!enforceLimits && !(subject === "library:anonymous" || subject === "library:all")) continue;
           if ((c._one("SELECT claims FROM access_limits WHERE subject=? AND window=?", subject, window)?.claims || 0) >= ceiling) throw err(429, "rate_limited", "library proposal limit reached for this hour", { retry_after: Math.ceil(3600 - now % 3600) });
       }
       for (const [subject, , window] of caps) c.ctx.storage.sql.exec("INSERT INTO access_limits(subject,window,claims) VALUES (?,?,1) ON CONFLICT(subject,window) DO UPDATE SET claims=claims+1", subject, window);
@@ -135,7 +137,7 @@ export async function inspectForLibrary(c, body, { anonymous = false } = {}) {
 // A refusal from the checker (or its timeout) is counted against the caller like any other.
 export async function libraryRefusal(c, secret, out, meta = {}) {
   let grant = null;
-  try { grant = await c._grantFromSecret(secret, { allowOpen: true, agentLabel: meta?.agent_label || null }); } catch { /* an unknown caller was already refused */ }
+  try { grant = await c._grantFromSecret(secret, { allowOpen: true, agentLabel: meta?.agent_label || null, openHash: meta?.open_hash || "" }); } catch { /* an unknown caller was already refused */ }
   return finish(c, grant, out, meta);
 }
 
@@ -176,8 +178,10 @@ function chargeBudgets(c, grant, anonymous, bytes, now) {
   const budgets = [anonymous ? ["library-bytes:anonymous", limits.anonymous_daily_bytes, "anonymous_daily_bytes"] : [`library-bytes:${account}`, limits.account_daily_bytes, "account_daily_bytes"],
     ["library-bytes:all", limits.daily_bytes, "daily_bytes"]];
   const sql = c.ctx.storage.sql;
-  if (enforceLimits) {
+  // Two daily budgets are global (every proposal, every keyless proposal): they hold in the open window.
+  {
     for (const [subject, ceiling, name] of budgets) {
+      if (!enforceLimits && !["library-bytes:anonymous", "library-bytes:all"].includes(subject)) continue;
       const used = c._one("SELECT bytes FROM access_limits WHERE subject=? AND window=?", subject, day)?.bytes || 0;
       if (used + bytes > ceiling) {
         // Recorded outside the refused write: the refusal count per budget and day survives the rollback.

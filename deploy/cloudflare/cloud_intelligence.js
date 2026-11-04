@@ -817,7 +817,7 @@ export function listFeeds(coord, viewerCtx = {}) {
       }));
   }
   const rows = coord._all(
-    "SELECT feed, seq, created_at, payload, producer_surface, visibility_scope, allowed_surfaces, target_cohorts, tags, owner_key_id FROM feed_entries WHERE namespace = ? ORDER BY feed, seq",
+    "SELECT feed, seq, created_at, payload, producer_surface, visibility_scope, allowed_surfaces, target_cohorts, tags, owner_key_id FROM feed_entries WHERE namespace = ? ORDER BY created_at DESC LIMIT 5000",
     ns
   );
   const byFeed = new Map();

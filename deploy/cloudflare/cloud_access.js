@@ -36,10 +36,14 @@ export function openSlug(rawLabel) {
   const clean = String(rawLabel || "").trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, OPEN_SLUG_MAX);
   return clean || "open";
 }
-export function openGrantFor(env = {}, rawLabel = null, nowSeconds = Date.now() / 1000) {
-  const slug = openSlug(rawLabel);
-  const id = `o_${slug}`;
-  const namespace = `demo.${slug}`;
+// A caller with no key is told apart by its label plus an HMAC of its address group and browser string
+// (no day in it, so a lease survives midnight). Two agents never share leases, results or human links
+// unless they share all three. The practice namespace follows the same identity.
+export function openGrantFor(env = {}, rawLabel = null, nowSeconds = Date.now() / 1000, openHash = "") {
+  const slug = openSlug(rawLabel).slice(0, 24);
+  const who = String(openHash || "").replace(/[^0-9a-f]/g, "").slice(0, 20) || "unattributed";
+  const id = `o_${slug}_${who}`;
+  const namespace = `demo.${slug}-${who}`;
   const label = rawLabel && String(rawLabel).trim() ? safeLabel(rawLabel) : "open-agent";
   const labels = { ...ANON_LABELS, agent_label: label };
   const scopes = ["store", "nouns:read", "verbs:claim", "verbs:submit", "cas:write", `namespace:${namespace}`];
@@ -91,7 +95,7 @@ export function openVerbsDescription(openWindow = false) {
       ? "Send X-Namespace: main (or call /ns/main/v1/...) to read public feeds, reflexes and Task Objects, and to list, claim, heartbeat and submit Tasks tagged open:anonymous."
       : "Send X-Namespace: main (or call /ns/main/v1/...) to list, claim, heartbeat and submit Tasks whose producer tagged them open:anonymous.",
     actions, closed_queues: [...CLOSED_TO_ANONYMOUS].sort(),
-    claimant_sees: "the Task's brief, its own submissions, public commons Task Objects and feeds (during the open window), and the state of related Tasks; never private/surface outputs, attempts or principals",
+    claimant_sees: "the Task's brief, its own submissions, public Task Objects and feeds, and the state of related Tasks; never private outputs or other workers' attempts",
     review: "A submitted result stays quarantined with its Task. A different keyed worker or a person reviews it; anonymous sessions never approve or publish." };
 }
 // Requester keys (same rule as src/tessera/_requesters.py): a self-serve sign-up mints a hashed
@@ -295,7 +299,7 @@ export async function requestIdentity(c, ip, ua) {
   const hash = async value => Array.from(new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(value))), b => b.toString(16).padStart(2, "0")).join("");
   const now = Date.now() / 1000;
   const day = Math.floor(now / 86400);
-  return { ip_hash: await hash(`${day}:ip:${ipGroup(ip).slice(0, 128)}`), ua_hash: await hash(`${day}:ua:${String(ua || "").slice(0, 512)}`), ip_window: Math.floor(now / 3600) };
+  return { ip_hash: await hash(`${day}:ip:${ipGroup(ip).slice(0, 128)}`), ua_hash: await hash(`${day}:ua:${String(ua || "").slice(0, 512)}`), open_hash: await hash(`open:${ipGroup(ip).slice(0, 128)}:${String(ua || "").slice(0, 512)}`), ip_window: Math.floor(now / 3600) };
 }
 
 // Every successful action keeps its own redacted audit row, reads included. Denied, failed
@@ -564,7 +568,7 @@ export function enforceAccess(c, grant, action, args) {
       throw error(404, "not_found", "task does not exist");
   } else {
     const allowedAnonAction = ANON_ACTIONS.has(action) || (openWindow && OPEN_WINDOW_READ_ACTIONS.has(action));
-    if (!allowedAnonAction) throw error(403, "scope_denied", `anonymous sessions may only use isolated demo Task Objects and Tasks (action '${action}' requires a contributor key; for shared open Tasks send X-Namespace: main to /v1/Tasks or /v1/tasks/claim)`);
+    if (!allowedAnonAction) throw error(403, "scope_denied", `anonymous sessions may only use isolated demo Task Objects and Tasks (action '${action}' requires a contributor key; for shared open Tasks send X-Namespace: main to /v1/verbs or /v1/tasks/claim)`);
     if (args.queue && !String(args.queue).startsWith("demo.")) throw error(403, "scope_denied", "anonymous sessions cannot access production Tasks");
     if (args.store && !String(args.store).startsWith("demo.")) throw error(403, "scope_denied", "anonymous sessions cannot access production Task Objects");
   }

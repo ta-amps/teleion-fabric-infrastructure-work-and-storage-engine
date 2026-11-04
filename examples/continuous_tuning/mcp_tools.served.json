@@ -3,7 +3,7 @@
  "served_by": "tools/list = [...TOOLS, ...ACCESS_TOOLS]",
  "source_files_sha256": {
   "deploy/cloudflare/cloud_mcp.js": "9480ca2ee3f64e49b8e76951367a02e962464d0fb6df13b7e551fe2cdea3d00c",
-  "deploy/cloudflare/cloud_access_routes.js": "9a17006412340541f4647b09966a59869da72d385f5b71ecae690de27549c7c0"
+  "deploy/cloudflare/cloud_access_routes.js": "631748a91505c05de82124588fb4acdc1e5444032d78c4b6f14be2c3ea0ab8fb"
  },
  "tools_sha256": "29a4e14fedd954bd5e39c49324fa22e7488cbecf7af389d1f780e211eaa223d8",
  "tools": [

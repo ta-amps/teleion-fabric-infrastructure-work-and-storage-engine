@@ -262,7 +262,7 @@ function cancelLink(c, grant, id, now) {
 // The issuer's side: request, status and cancel. Called on the primary object.
 export async function humanLinkAction(c, secret, op, args = {}, meta = {}) {
   c._ensureSchema();
-  const grant = await c._grantFromSecret(secret, { allowOpen: true, agentLabel: meta?.agent_label || null });
+  const grant = await c._grantFromSecret(secret, { allowOpen: true, agentLabel: meta?.agent_label || null, openHash: meta?.open_hash || "" });
   const now = Date.now() / 1000;
   let out;
   if (op === "issue") {
