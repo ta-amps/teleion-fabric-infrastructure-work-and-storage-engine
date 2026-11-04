@@ -33,8 +33,8 @@ const RULES = [
   [/\bHerma\b/g, "Teleion Fabric's model shim"],
   [/\bTessera's\b/g, "Teleion Fabric's"],
   [/\bTessera\b/g, "Teleion Fabric"],
-  [/(?<![\w-])herma(?![\w-])/g, "the model shim"],
-  [/(?<![\w-])tessera(?![\w-])/g, "Teleion Fabric"],
+  [/(?<![\w-])herma(?![\w-]|\.\w)/g, "the model shim"],
+  [/(?<![\w-])tessera(?![\w-]|\.\w)/g, "Teleion Fabric"],
 ];
 
 export function publicNames(text) {
