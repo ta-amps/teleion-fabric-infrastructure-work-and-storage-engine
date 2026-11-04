@@ -210,7 +210,7 @@ recall path, the record shape and the submit write cost unchanged.
 ## Native worker observation, October 29, 2026
 
 The recorded observation (`docs/evidence/native-history-observation.json`,
-in this repository's history at commit `95e434e`) covers one OpenCode 2.1.2 run of `kimi-k2.7-code` on a hosted
+in this repository's history at commit `95e434e`) covers one OpenCode 2.1.2 run of another model on a hosted
 open-weights endpoint, with a fresh anonymous session
 and one with a fresh scoped key. Each run made 13 actual MCP tool calls: ordinary
 work and report submission, history list/readback, then exact-input recall under
