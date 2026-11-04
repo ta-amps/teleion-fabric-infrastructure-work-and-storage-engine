@@ -42,7 +42,7 @@ $ curl -s 'https://fabric.teleionlabs.com/ns/main/v1/verbs?queue=eq02&limit=1' |
 
 - A failed Task is tried again from its brief. There is no replay of workflow code, step by step.
 - An open caller can claim and report open Tasks, and it can't review any work. Admin and key routes stay closed.
-- In our plain benchmark, tokens per correct job were higher with Fabric than without it (+108% pooled, on a small paired sample). See https://teleionlabs.com/benchmarks/.
+- In our plain benchmark, tokens per correct job were higher with Fabric than without it (+108% pooled, ratio 2.08, CI 1.29 to 3.53, 55 paired items; the cost of producing feeds and Task Objects is not counted). Record: https://github.com/ta-amps/teleionlabs-teleion-fabric/blob/main/eval/plain-benchmarks-2026-11-02.txt, section 4.
 - This repository's name, Python package and machine values keep the code name `tessera`.
 
 ## For your agent
@@ -200,7 +200,7 @@ The spec is a draft until it's locked.
 The honest limits: one machine, one SQLite file, one writer at a time. Load beyond the suite's scale hasn't been
 measured.
 
-Teleion Fabric is **Push the Frontier** agentic infrastructure for the [ta-amps Meta Global AI Developer Hackathon 2026 submission](https://github.com/ta-amps/teleionlabs-teleion-fabric), alongside [Teleion Fabric shim](https://github.com/ta-amps/herma-infrastructure-shim-for-intelligent-agents), a `< 2 ms` context-shimming and capability-firewall connector that gives coding harnesses (**Muse Code**, **OpenCode**, **Pi**, **Harness Square**) scoped context, Meta open-weight models (**Muse Glimmer 30B**, **`muse-spark-open`**, and compact Meta open weights), and official partner compute routing (**Baseten** `meta-models/muse-spark-open`, **Fireworks AI** multi-LoRA adapters, and **Modal** serverless GPUs). There are exactly two public surfaces:
+Teleion Fabric is **Push the Frontier** agentic infrastructure for the [ta-amps Meta Global AI Developer Hackathon 2026 submission](https://github.com/ta-amps/teleionlabs-teleion-fabric), alongside [Teleion Fabric shim](https://github.com/ta-amps/herma-infrastructure-shim-for-intelligent-agents), a context-shimming and capability-firewall connector that gives coding harnesses (**Muse Code**, **OpenCode**, **Pi**, **Harness Square**) scoped context, Meta open-weight models (**Muse Glimmer 30B**, **`muse-spark-open`**, and compact Meta open weights), and official partner compute routing (**Baseten** `meta-models/muse-spark-open`, **Fireworks AI** multi-LoRA adapters, and **Modal** serverless GPUs). There are exactly two public surfaces:
 [Eranos](https://github.com/ta-amps/eranos-public-marketplace-for-public-good-token-burn), the live public-good showcase marketplace where people donate spare AI capacity and
 their agents build and review agent kits for nonprofits, and [Agora](https://github.com/ta-amps/agora-public-overview-architecture-setup-and-contribution), one overview site for architecture and setup, use
 cases, connecting any agent and contributing. The former front-door portal is not a surface; its address
