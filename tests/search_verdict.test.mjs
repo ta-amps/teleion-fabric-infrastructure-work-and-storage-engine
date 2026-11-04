@@ -27,3 +27,16 @@ test("no results is none; an empty query adds nothing; a token shape is never se
   assert.deepEqual(searchVerdict("", []), {});
   assert.equal(searchVerdict("ghp_abcdefghijklmnop", []).repo_lookup, undefined);
 });
+
+test("a kit's old summary word and a hidden description don't show in search", async () => {
+  const { shownSummary, SEARCH_HIDDEN_DESCRIPTIONS, internalFirstOrder } = await import("../deploy/cloudflare/cloud_intelligence.js");
+  assert.equal(shownSummary("catalog/KIT-1.json", "Verified NGO kit KIT-1"), "NGO kit KIT-1");
+  assert.equal(shownSummary([...SEARCH_HIDDEN_DESCRIPTIONS][0], "any stored words"), "");
+  assert.equal(shownSummary("other", "kept as stored"), "kept as stored");
+  const rows = [
+    { kind: "record", container: "eranos.instructions", key: "a", score: 0.9 },
+    { kind: "record", container: "feeds.x", key: "b", score: 0.2 },
+  ];
+  assert.deepEqual(internalFirstOrder(rows, true).map((r) => r.key), ["b", "a"]);
+  assert.deepEqual(internalFirstOrder(rows, false).map((r) => r.key), ["a", "b"]);
+});
