@@ -37,6 +37,7 @@ import {
   publishFeed,
   recordDeadEndTombstone,
   searchNouns,
+  searchVerdict,
   surfaceSlug,
 } from "./cloud_intelligence.js";
 
@@ -3903,7 +3904,7 @@ export class TesseraCoordinator extends DurableObject {
         case "searchNouns": {
           if (!grant.can_store) throw forbid("this needs a key with the store scope");
           const scents = searchNouns(this, args, canonicalJson, badReq, viewerCtx);
-          return { ok: true, status: 200, data: { scents } };
+          return { ok: true, status: 200, data: { scents, ...searchVerdict(args.query, scents) } };
         }
 
         case "feeds": {

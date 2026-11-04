@@ -606,6 +606,40 @@ export function recordDeadEndTombstone(coord, task, failures, reason, now, canon
   }
 }
 
+const REPO_FULL_NAME = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/[A-Za-z0-9._-]{1,100}$/;
+const REPO_BARE_NAME = /^[A-Za-z0-9._-]{2,100}$/;
+const TOKEN_LIKE = /^(?:sk|ghp|gho|ghs|github_pat|hk|hmk|tsk|tan|wt)[-_][A-Za-z0-9_-]{8,}$/;
+const REPO_SHIM = "https://shim.teleionlabs.com/q/repos";
+
+/** Whether a result really answers a query: a query shaped like a name needs every part of the name in the key or title. */
+export function searchVerdict(query, scents) {
+  const text = String(query || "").trim();
+  if (!text) return {};
+  const nameShaped = !/\s/.test(text) && /[-_/.]/.test(text);
+  const low = text.toLowerCase();
+  const parts = low.split(/[-_/.]+/).filter(Boolean);
+  const exact = (s) => String(s.key || "").toLowerCase() === low;
+  const strong = (s) => {
+    if (!nameShaped) return true;
+    const hay = `${s.key || ""} ${s.title || ""}`.toLowerCase();
+    return parts.every((p) => hay.includes(p));
+  };
+  const repo =
+    nameShaped && !TOKEN_LIKE.test(text)
+      ? REPO_FULL_NAME.test(text)
+        ? `${REPO_SHIM}?repo=${encodeURIComponent(text).replace("%2F", "/")}`
+        : REPO_BARE_NAME.test(text)
+          ? `${REPO_SHIM}?name=${encodeURIComponent(text)}`
+          : null
+      : null;
+  const match = scents.some(exact) ? "exact_id" : scents.length && scents.some(strong) ? (nameShaped ? "name" : "words") : "none";
+  return {
+    match,
+    ...(match === "none" ? { note: "No match. Anything listed is only nearby and may not be what you asked for." } : {}),
+    ...(repo ? { repo_lookup: repo } : {}),
+  };
+}
+
 export function searchNouns(coord, args, canonicalJson, badReq, viewerCtx = {}) {
   const ns = coord.namespace || "main";
   const qClean = String(args.query || "").trim();
