@@ -3,7 +3,7 @@
 ## Integration checkpoint, October 29, 2026
 
 The reviewed release is merged into `main`. The tested implementation revision is
-`b1b470475c3ff03db0963bbcf6b271911d79f73e`; [its GitHub checks](https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine/actions/runs/40872587755) passed.
+`b1b470475c3ff03db0963bbcf6b271911d79f73e`; [its GitHub checks](https://github.com/ta-amps/teleion-fabric-infrastructure-work-and-storage-engine/actions/runs/40872587755) passed.
 Fresh builds matched the deployed Worker executable exactly.
 
 262 Python checks passed, with six existing skips; five actual workerd cases, local HTTP conformance (32 passed, four skipped), and the empty-backend negative control passed. The deployed anonymous/keyed history smoke passed 112 checks.

@@ -121,7 +121,7 @@ You need [uv](https://docs.astral.sh/uv/). For the local edge you also need Node
 address, `cloudflared`.
 
 ```bash
-git clone https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine.git && cd tessera-infrastructure-work-and-storage-engine
+git clone https://github.com/ta-amps/teleion-fabric-infrastructure-work-and-storage-engine.git && cd teleion-fabric-infrastructure-work-and-storage-engine
 make setup                 # Python 3.12 and the dependencies
 make check                 # lint, strict types, tests, leak scan, architecture check
 npm ci && make test-worker  # pinned local workerd/SQLite regressions; Node 22 or newer
