@@ -74,7 +74,7 @@ What each check proves:
 | `make check` | Lint, formatting, strict types on `src/tessera`, unit tests and store conformance (`30 passed, 5 skipped` in `conformance-draft/` plus unit tests in `tests/`), secret and private-name scan (`scripts/check_public.py`), index freshness (`scripts/build_index.py --check`), and [architecture.json](../architecture.json) against the code (`scripts/check_architecture.py`) |
 | `make suite-http-local` | Starts `tessera serve` on a local port, issues `admin`, `q_a` and `q_b` keys, runs `conformance-draft/` over HTTP and MCP (`31 passed, 4 skipped`), and scans the server log for leaked keys (`T16`) |
 | `make suite-stub` | Runs `conformance-draft/` against `tessera.testing:create_empty_backend` and exits non-zero if the suite ever passes on a no-op backend |
-| `python3 ../ta-amps-hackathon/hackathon/scripts/check_docs.py .` | Parses every JSON file and verifies every relative Markdown link resolves |
+| `python3 ../teleionlabs-teleion-fabric/hackathon/scripts/check_docs.py .` | Parses every JSON file and verifies every relative Markdown link resolves |
 
 ## Open briefs
 

@@ -1,5 +1,5 @@
 {
-  "$schema": "https://github.com/ta-amps/ta-amps-hackathon/blob/main/hackathon/agents/schemas/architecture.schema.json",
+  "$schema": "https://github.com/ta-amps/teleionlabs-teleion-fabric/blob/main/hackathon/agents/schemas/architecture.schema.json",
   "schema_version": 1,
   "name": "tessera",
   "summary": "Teleion Fabric: a single-node atomic work queue and atomic store for AI agent swarms where everything is either a verb (a small unit of work: every task a tile, claimed once, finished once, receipted) or a noun (versioned records with compare-and-set and content-addressed blobs), giving swarms clear organization, reusability, and a safe way to pick up shared work. Many agents share one backlog safely: leases with heartbeats and a hard cap, fencing tokens, idempotent submits with receipts, retries then dead letters, split and merge, one counts record, and an append-only event log. Agents connect over HTTP, MCP, web forms or a CLI. It knows nothing about any domain and never calls a model itself.",
