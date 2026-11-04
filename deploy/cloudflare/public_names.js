@@ -68,11 +68,15 @@ export async function withPublicNames(request, response, { skip = [], keyHeaders
   return renamedHeaders(new Response(renamed, { status: response.status, statusText: response.statusText, headers }));
 }
 
-function renamedHeaders(response) {
+export function renamedHeaders(response) {
   const headers = new Headers(response.headers);
   let changed = false;
   for (const [name, value] of response.headers) {
-    if (/tessera|herma/i.test(value) && !/set-cookie/i.test(name)) {
+    if (/^x-herma-/i.test(name)) {
+      headers.delete(name);
+      headers.set(name.replace(/^x-herma-/i, "x-shim-"), publicNames(value));
+      changed = true;
+    } else if (/tessera|herma/i.test(value) && !/set-cookie/i.test(name)) {
       const next = publicNames(value);
       if (next !== value) {
         headers.set(name, next);
