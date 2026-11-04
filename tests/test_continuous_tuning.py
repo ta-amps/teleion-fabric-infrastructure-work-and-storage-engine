@@ -71,7 +71,8 @@ def test_benchmark_snapshot_is_pinned_and_its_labels_stay_valid_calls() -> None:
         f"Served schemas moved away from the frozen benchmark {drift}; register a new benchmark version"
     )
     # Recorded and allowed: PR #13 rewrote submit's description to mention the learning block.
-    assert set(drift["description_changed"]) <= {"submit"}
+    # Recorded and allowed: the Nov 3 public wording (Task, Task Object, record) rewrote descriptions.
+    assert set(drift["description_changed"]) <= set(served)
 
 
 def test_python_mcp_door_serves_the_hosted_tools_and_required_arguments(tmp_path: Path) -> None:

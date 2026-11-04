@@ -73,7 +73,7 @@ test("a claimed blob digest cannot bind another namespace's private bytes", asyn
   const spoof = await request("/ns/conformance-attacker/v1/blobs", dummy, attacker, governance({ sha256: sha(secret), visibility_scope: "private" }));
   assert.equal(spoof.status, 400);
   assert.equal(spoof.data.code, "invalid_request");
-  assert.match(spoof.data.detail, /sha256 does not match/);
+  assert.match(spoof.data.detail, /digest does not match/);
   const sized = await request("/ns/conformance-attacker/v1/blobs", dummy, attacker, governance({ size: dummy.byteLength + 1 }));
   assert.equal(sized.status, 400);
   assert.match(sized.data.detail, /size does not match/);
