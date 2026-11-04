@@ -310,7 +310,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [src/tessera/store.py](src/tessera/store.py) | The in-process Tessera store: the reference implementation of SPEC.md. |
 | [src/tessera/testing.py](src/tessera/testing.py) | Factories the conformance suite loads by name (TESSERABACKENDFACTORY="module:function"). |
 
-## tests/ (85)
+## tests/ (86)
 
 | File | What it is |
 |---|---|
@@ -333,6 +333,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [tests/fixtures/execution_learning_vectors.json](tests/fixtures/execution_learning_vectors.json) | JSON object: fingerprints, learning_invalid, learning_valid, observations, profile, reports |
 | [tests/fixtures/execution_matching_vectors.json](tests/fixtures/execution_matching_vectors.json) | JSON object: profile, valid, invalid |
 | [tests/public_names.test.mjs](tests/public_names.test.mjs) |  |
+| [tests/search_verdict.test.mjs](tests/search_verdict.test.mjs) |  |
 | [tests/test_access_modes.py](tests/test_access_modes.py) | Full anonymous/keyed agent loops, durable limits and adversarial isolation. |
 | [tests/test_access_parity.py](tests/test_access_parity.py) | The access cases in tests/fixtures/accessparity.json, run against the Python service. |
 | [tests/test_agent_tool_listings.py](tests/test_agent_tool_listings.py) | Every agent-facing tool listing on the Python service matches what MCP tools/list serves. |
