@@ -12,7 +12,7 @@ test("people and agents read the public names and addresses", () => {
 test("machine names change in keys and listed values only", () => {
   assert.equal(publicNames('{"tessera_access":{"mode":"d1_authoritative_with_tessera_summary_mirror"},"surface":"herma"}'), '{"fabric_access":{"mode":"d1_authoritative_with_fabric_summary_mirror"},"surface":"shim"}');
   assert.equal(publicNames('"herma.priority_work_gateway.grid.v6_8"'), '"shim.priority_work_gateway.grid.v6_8"');
-  assert.equal(publicNames("surface:tessera noun:tessera.lease_fence tessera://blobs/x"), "surface:fabric noun:fabric.lease_fence fabric://blobs/x");
+  assert.equal(publicNames("surface:tessera noun:tessera.lease_fence tessera://blobs/x"), "surface:fabric noun:tessera.lease_fence fabric://blobs/x");
 });
 
 test("ids an agent sends back, repo addresses and file paths are left alone", () => {
@@ -35,4 +35,12 @@ test("a caller with a key gets the stored names; digest routes are skipped; bodi
   const out = await withPublicNames(open, answer());
   assert.equal(await out.text(), '{"fabric_a":"Teleion Fabric"}');
   assert.ok(!/tessera/i.test(out.headers.get("www-authenticate")));
+});
+
+test("a preflight keeps the old header it was asked about; an event stream is not read", async () => {
+  const list = "Authorization, X-Namespace, X-Tessera-Namespace";
+  const pre = await withPublicNames(new Request("https://x/v1/tasks", { method: "OPTIONS" }), new Response(null, { status: 204, headers: { "access-control-allow-headers": list } }));
+  assert.equal(pre.headers.get("access-control-allow-headers"), list);
+  const stream = new Response("data: tessera\n\n", { headers: { "content-type": "text/event-stream" } });
+  assert.equal(await (await withPublicNames(new Request("https://x/v1/x"), stream)).text(), "data: tessera\n\n");
 });

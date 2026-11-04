@@ -2,7 +2,7 @@
 // only for callers with no key: our own workers keep reading the stored values and names. It changes names, never
 // ids: lowercase ids an agent sends back (a Task id, an agent name, a kit file) are left alone, or a later call would
 // not find them. Bodies people verify by digest are not passed through it.
-const KEPT = /https?:\/\/github\.com\/ta-amps\/[\w.-]+(?:\/[^\s"'<>)]*)?|\/assets\/herma-[\w.?=-]+|\/kits\/herma[\w.-]*|data-herma-[\w-]+|herma-(?:pages|agent-kit)[\w.-]*|\bherma_shim\.py\b/g;
+const KEPT = /https?:\/\/github\.com\/ta-amps\/[\w.-]+(?:\/[^\s"'<>)]*)?|\/assets\/herma-[\w.?=-]+|\/kits\/herma[\w.-]*|data-herma-[\w-]+|herma-(?:pages|agent-kit)[\w.-]*|\bherma_shim\.py\b|\b(?:noun|verb|detail|n|v):(?:tessera|herma)\.[\w.]+/g;
 const EXACT_VALUES = new Map([
   ["tessera_durable_object_cas", "fabric_durable_object_cas"],
   ["d1_authoritative_with_tessera_summary_mirror", "d1_authoritative_with_fabric_summary_mirror"],
@@ -21,7 +21,6 @@ const RULES = [
   [/tessera:\/\//g, "fabric://"],
   [/\bsurface:tessera\b/g, "surface:fabric"],
   [/\bsurface:herma\b/g, "surface:shim"],
-  [/\b(noun|verb|n|v):tessera\./g, "$1:fabric."],
   [/"(?:tessera)_([a-z0-9_]+)"(\s*:)/g, '"fabric_$1"$2'],
   [/"(?:herma)_([a-z0-9_]+)"(\s*:)/g, '"shim_$1"$2'],
   [/(:\s*)"tessera"/g, '$1"fabric"'],
@@ -49,7 +48,7 @@ export function publicNames(text) {
   return out.replace(/\u0000(\d+)\u0000/g, (_, i) => kept[Number(i)]);
 }
 
-const TEXT_TYPE = /^(?:text\/|application\/(?:json|problem\+json|x-ndjson|javascript))/i;
+const TEXT_TYPE = /^(?:text\/(?!event-stream)|application\/(?:json|problem\+json|x-ndjson|javascript))/i;
 const MAX_BYTES = 8 * 1024 * 1024;
 
 /** The response a caller with no key receives. `skip` lists path prefixes whose bodies are read by digest. */
@@ -76,7 +75,7 @@ export function renamedHeaders(response) {
       headers.delete(name);
       headers.set(name.replace(/^x-herma-/i, "x-shim-"), publicNames(value));
       changed = true;
-    } else if (/tessera|herma/i.test(value) && !/set-cookie/i.test(name)) {
+    } else if (/tessera|herma/i.test(value) && !/^(?:set-cookie|access-control-)/i.test(name)) {
       const next = publicNames(value);
       if (next !== value) {
         headers.set(name, next);
