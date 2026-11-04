@@ -93,7 +93,7 @@ function page(title, body, refresh = null, repoUrl = "https://github.com/ta-amps
     `<span><a href='https://eranosforgood.org/'>Eranos ↗</a> · <a href='https://teleionlabs.com/'>Teleion Labs ↗</a> · ` +
     `<a href='https://shim.teleionlabs.com/dashboard'>Network ↗</a> · <a href='https://teleionlabs.com/status'>Status ↗</a> · ` +
     `<a href='https://teleionlabs.com/privacy'>Privacy ↗</a> · <a href='https://teleionlabs.com/terms'>Terms ↗</a> · ` +
-    `<a href='${esc(repoUrl)}'>Source ↗</a></span>` +
+    `<a href='${esc(repoUrl)}'>Source ↗</a> · <a href='https://teleionlabs.com/legal/meta-models.txt'>Built with Muse Spark Open ↗</a></span>` +
     `<span>We don’t accept private information at this stage.</span>` +
     `</footer></body></html>`
   );
