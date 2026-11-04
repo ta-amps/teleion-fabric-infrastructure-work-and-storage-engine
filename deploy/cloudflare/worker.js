@@ -1,7 +1,7 @@
 import { agentStartAsset, withAgentStart } from "./agent_start.js";
 import { withPublicNames } from "./public_names.js";
 import { storageQuotaFailure } from "./storage_quota.js";
-import { hasPersonalData, ipGroup, isOpenFreeWindow, namespaceReachable, openGrantFor, publicPrincipal } from "./cloud_access.js";
+import { ipGroup, isOpenFreeWindow, namespaceReachable, openGrantFor, publicPrincipal } from "./cloud_access.js";
 import { edgeFromCf, publicActivityRoute } from "./edge_activity.js";
 import { accessDiscoveryRoute, accessRoute, accessDescriptionFor } from "./cloud_access_routes.js";
 import { handleA2a } from "./cloud_a2a.js";
@@ -591,7 +591,7 @@ const worker = {
     const explicitNamespace = url.pathname.startsWith("/ns/") || request.headers.has("x-namespace") || request.headers.has("x-teleion-fabric-namespace") || request.headers.has("x-tessera-namespace");
     // A no-key caller reads public Task Objects and feeds from the shared space without naming it; its writes and
     // practice Tasks stay in its own practice space.
-    const publicRead = !requestBearer && (method === "GET" || method === "HEAD") && (path === "/v1/search" || path === "/v1/feeds" || path.startsWith("/v1/feeds/") || path === "/v1/reflexes/match" || (/^\/v1\/buckets\/[^/]+\/objects\/.+/.test(path) && !url.searchParams.has("history")));
+    const publicRead = !requestBearer && (method === "GET" || method === "HEAD") && (path === "/v1/search" || path === "/v1/feeds" || path.startsWith("/v1/feeds/") || path === "/v1/reflexes/match");
     if (["anonymous", "requester"].includes(principal?.principal_kind) && !explicitNamespace && !publicRead) namespace = principal.namespace;
     isPrimary = namespace === "main";
     const rawStub = coordBinding.get(coordBinding.idFromName(isPrimary ? "primary" : `ns:${namespace}`));
@@ -1289,10 +1289,6 @@ const worker = {
         if (!metaOut.ok || wantMeta) return rpcResponse(metaOut);
         const loaded = await loadCloudBlob(env, metaOut.data.sha256);
         if (loaded.error) return problem(loaded.status || 404, loaded.error, loaded.detail);
-        // A no-key reader gets the same screen as a public record: an object holding personal data reads as absent.
-        if ((!requestBearer || principal?.principal_kind === "anonymous") && hasPersonalData(new TextDecoder("utf-8", { fatal: false }).decode(loaded.bytes))) {
-          return problem(404, "not_found", `object ${bucketName}/${objKey} does not exist`);
-        }
         return withSecurity(
           sliceBytesResponse(
             loaded.bytes,

@@ -722,8 +722,6 @@ test("openapi.json alias, quickstart HTTP examples, and strict public_commons is
   assert.equal((await t.call("/v1/buckets/pub.kits/objects/kit-priv.json?visibility_scope=private", { method: "POST", headers: { ...adminHdr, "content-type": "application/json" }, body: JSON.stringify({ title: "Private object kit secret-obj-marker" }) })).status, 201);
   assert.equal((await t.call("/v1/buckets/priv.kits/objects/kit-in-priv-bucket.json?visibility_scope=public_commons", { method: "POST", headers: { ...adminHdr, "content-type": "application/json" }, body: JSON.stringify({ title: "Object inside private bucket secret-bucket-marker" }) })).status, 201);
 
-  assert.equal((await t.call("/v1/buckets/pub.kits/objects/contact-note.json?visibility_scope=public_commons", { method: "POST", headers: { ...adminHdr, "content-type": "application/json" }, body: JSON.stringify({ note: "write to maria.lopez@realmail.org" }) })).status < 300, true);
-
   // Reflexes in main
   assert.equal((await t.json("POST", "/v1/stores/tessera.reflexes/records/rx-pub", { value: { reflex_id: "rx-pub", pattern: "compile commons kit", verified_hits: 3, steps: [{ op: "verify" }] }, expected_version: 0, visibility_scope: "public_commons", tags: ["status:verified"] }, adminHdr)).status, 200);
   assert.equal((await t.json("POST", "/v1/stores/tessera.reflexes/records/rx-priv", { value: { reflex_id: "rx-priv", pattern: "compile commons kit", verified_hits: 5, steps: [{ op: "secret-reflex-marker" }] }, expected_version: 0, visibility_scope: "private", tags: ["status:verified"] }, adminHdr)).status, 200);
@@ -746,16 +744,7 @@ test("openapi.json alias, quickstart HTTP examples, and strict public_commons is
     assert.equal(searchRes.status, 200);
     const searchText = await searchRes.text();
     const scents = JSON.parse(searchText).scents;
-    assert.deepEqual(scents.map((s) => `${s.container}/${s.key}`).sort(), ["pub.kits/contact-note.json", "pub.kits/kit-open.json", "shared.docs/pub-guide", "tessera.reflexes/rx-pub"]);
-    // A public kit in a public bucket reads as search says, and nothing else does.
-    const open = await t.call("/v1/buckets/pub.kits/objects/kit-open.json", { headers: callerHdrs });
-    assert.equal(open.status, 200);
-    const openMeta = await t.call("/v1/buckets/pub.kits/objects/kit-open.json?meta=true", { headers: callerHdrs });
-    assert.equal((await openMeta.json()).owner_key_id ?? null, null);
-    assert.ok(!(open.headers.get("x-tessera-object-meta") || "").includes("owner_key_id\":\"k"));
-    assert.equal((await t.call("/v1/buckets/pub.kits/objects/kit-priv.json", { headers: callerHdrs })).status, 404);
-    assert.equal((await t.call("/v1/buckets/priv.kits/objects/kit-in-priv-bucket.json", { headers: callerHdrs })).status, 404);
-    assert.equal((await t.call("/v1/buckets/pub.kits/objects/contact-note.json", { headers: callerHdrs })).status, 404, "personal data reads as absent");
+    assert.deepEqual(scents.map((s) => `${s.container}/${s.key}`).sort(), ["pub.kits/kit-open.json", "shared.docs/pub-guide", "tessera.reflexes/rx-pub"]);
     for (const s of scents) {
       assert.equal(s.visibility_scope, "public_commons");
       assert.equal(s.owner_key_id, null, "internal owner_key_id is never exposed to public_only callers");

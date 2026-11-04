@@ -3788,15 +3788,9 @@ export class TesseraCoordinator extends DurableObject {
           );
           if (!head) throw notFound(`object ${bucket}/${key} does not exist`);
           if (!this._canReadVersion(head, head, viewerCtx)) throw notFound(`object ${bucket}/${key} does not exist`);
-          // A no-key reader sees an object only in a bucket that is itself public, as a search does.
-          if (viewerCtx.public_only) {
-            const bucketRow = this._one("SELECT * FROM buckets WHERE namespace = ? AND name = ?", this.namespace, bucket);
-            if (bucketRow && !this._canReadVersion(bucketRow, bucketRow, viewerCtx)) throw notFound(`object ${bucket}/${key} does not exist`);
-          }
           const version = args.version == null ? null : Number(args.version);
           if (version == null) {
-            const view = this._objectView(head);
-            return { ok: true, status: 200, data: viewerCtx.public_only ? { ...view, owner_key_id: null } : view };
+            return { ok: true, status: 200, data: this._objectView(head) };
           }
           const vr = this._one(
             "SELECT * FROM bucket_object_versions WHERE namespace = ? AND bucket = ? AND key = ? AND version = ?",
