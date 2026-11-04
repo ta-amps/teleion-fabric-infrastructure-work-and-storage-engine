@@ -2473,8 +2473,9 @@ export class TesseraCoordinator extends DurableObject {
                 sql += ` AND effect_class IN (${effects.map(() => "?").join(", ")})`;
                 params.push(...effects);
               }
+              // A caller with no key looks at a bounded number of open rows, so a claim's cost doesn't grow with a backlog.
+              if (usesOpenVerbs(grant, this.namespace)) sql += " AND tags LIKE '%open:anonymous%'";
               sql += " ORDER BY priority DESC, created_at, id";
-              // A caller with no key looks at a bounded number of rows, so one claim's cost doesn't grow with a backlog.
               if (anonymous) sql += " LIMIT 500";
               const row = this._all(sql, ...params).find((r) => this._taskVisible(r, grant, viewerCtx));
               if (!row) return;
