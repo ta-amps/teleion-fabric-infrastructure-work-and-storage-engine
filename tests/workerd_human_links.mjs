@@ -757,8 +757,9 @@ test("openapi.json alias, quickstart HTTP examples, and strict public_commons is
     const cohortProbe = await (await t.call("/v1/search?q=kit&cohort=internal_only&include_restricted=true", { headers: callerHdrs })).json();
     assert.ok(!cohortProbe.scents.some((s) => s.key === "cohort-secret"));
 
-    // Direct record GET in main remains closed (403) to anonymous/open callers
-    assert.equal((await t.call("/v1/stores/shared.docs/records/priv-secret", { headers: callerHdrs })).status, 403);
+    // A direct record read in main shows a public record and hides a private one from anonymous/open callers
+    assert.equal((await t.call("/v1/stores/shared.docs/records/pub-guide", { headers: callerHdrs })).status, 200);
+    assert.equal((await t.call("/v1/stores/shared.docs/records/priv-secret", { headers: callerHdrs })).status, 404);
 
     // /v1/feeds lists ONLY feeds that have at least one public_commons entry, counting ONLY public_commons entries
     const feedsRes = await t.call("/v1/feeds", { headers: callerHdrs });

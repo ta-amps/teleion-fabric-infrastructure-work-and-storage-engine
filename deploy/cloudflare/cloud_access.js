@@ -59,8 +59,53 @@ export const CLOSED_TO_ANONYMOUS = new Set(["eq03", "frontier.review", "frontier
 const OPEN_VERB_EFFECTS = new Set(["read", "write-internal"]);
 // Claim events would show other attempts on the verb, so they stay closed (same rule as Python).
 export const OPEN_VERB_ACTIONS = new Set(["claim", "heartbeat", "submit", "task", "results", "listVerbs", "me", "my_audit"]);
-export const OPEN_WINDOW_READ_ACTIONS = new Set(["feeds", "pollFeed", "matchReflex", "searchNouns"]);
+export const OPEN_WINDOW_READ_ACTIONS = new Set(["feeds", "pollFeed", "matchReflex", "searchNouns", "getRecord", "listRecords"]);
 const OWN_WORK_ACTIONS = new Set(["task", "results"]);
+// While access is free, one request from a no-key caller may be as large as a Task's whole output.
+const OPEN_WINDOW_REQUEST_BYTES = 1_048_576;
+// A Task opened to no-key work goes back to the queue when a no-key holder drops or fails it, up to this many times.
+export const OPEN_TASK_MAX_FAILURES = 25;
+export function isNoKeyId(keyId) { return String(keyId || "").startsWith("o_"); }
+// Field names agents commonly send for the same meaning, on the three calls a worker makes. A reply says what was read.
+const TASK_ALIASES = Object.freeze({
+  task_id: ["taskId", "id", "task"],
+  fencing_token: ["fencingToken", "fence", "token", "lease_token", "lease_epoch", "fence_seq"],
+  worker: ["worker_id", "workerId", "worker_name", "agent", "agent_id", "name"],
+  output: ["result", "answer", "content", "response"],
+  ok: ["success"],
+  idempotency_key: ["idempotencyKey"],
+});
+const FORGIVING_FIELDS = Object.freeze({
+  claim: ["worker"],
+  heartbeat: ["task_id", "fencing_token", "worker"],
+  submit: ["task_id", "fencing_token", "worker", "output", "ok", "idempotency_key"],
+});
+const TRUE_WORDS = new Set(["true", "yes", "1", "ok", "success"]);
+const FALSE_WORDS = new Set(["false", "no", "0", "failed", "failure", "error"]);
+export function forgivingTaskArgs(action, rawArgs) {
+  const fields = FORGIVING_FIELDS[action];
+  if (!fields) return { args: rawArgs, warnings: [] };
+  const args = { ...rawArgs };
+  const warnings = Array.isArray(args.request_warnings) ? args.request_warnings.filter(w => typeof w === "string").slice(0, 8) : [];
+  delete args.request_warnings;
+  for (const field of fields) {
+    if (args[field] !== undefined && args[field] !== null) continue;
+    const alias = TASK_ALIASES[field].find(name => args[name] !== undefined && args[name] !== null);
+    if (!alias) continue;
+    args[field] = args[alias];
+    warnings.push(`read '${alias}' as '${field}'`);
+  }
+  return { args, warnings };
+}
+// A no-key worker's ok sent as a clear word or number is read; anything unclear is still refused at submit.
+export function readOkFlag(args, warnings) {
+  if (args.ok === undefined || typeof args.ok === "boolean" || args.ok === null || typeof args.ok === "object") return;
+  const word = String(args.ok).trim().toLowerCase();
+  if (TRUE_WORDS.has(word) || FALSE_WORDS.has(word)) {
+    args.ok = TRUE_WORDS.has(word);
+    warnings.push(`read ok as ${args.ok}; send a JSON boolean`);
+  }
+}
 export function openToAnonymous(queue, tags, effectClass) {
   return Array.isArray(tags) && tags.includes(OPEN_VERB_TAG) && !CLOSED_TO_ANONYMOUS.has(queue) && OPEN_VERB_EFFECTS.has(effectClass);
 }
@@ -564,7 +609,9 @@ export function enforceAccess(c, grant, action, args) {
     const allowedOpenAction = OPEN_VERB_ACTIONS.has(action) || (openWindow && OPEN_WINDOW_READ_ACTIONS.has(action));
     if (!allowedOpenAction) throw error(403, "scope_denied", `outside its own namespace an anonymous session may only claim, heartbeat and submit open Tasks (action '${action}' requires a contributor key; allowed open-Task actions: claim, heartbeat, listVerbs, me, my_audit, results, submit, task)`);
     if (args.queue && CLOSED_TO_ANONYMOUS.has(String(args.queue))) throw error(403, "scope_denied", "review, approval and publication Tasks are closed to anonymous");
-    if (OWN_WORK_ACTIONS.has(action) && !c._one("SELECT 1 AS own FROM leases WHERE namespace=? AND task_id=? AND key_id=? UNION ALL SELECT 1 AS own FROM results WHERE namespace=? AND task_id=? AND completed_by_key=? LIMIT 1", ns, String(args.task_id || ""), grant.key_id, ns, String(args.task_id || ""), grant.key_id))
+    // While access is free, a Task opened to no-key work can be read before claiming it, as the Task list already shows it.
+    const openTaskRead = openWindow && action === "task";
+    if (OWN_WORK_ACTIONS.has(action) && !openTaskRead && !c._one("SELECT 1 AS own FROM leases WHERE namespace=? AND task_id=? AND key_id=? UNION ALL SELECT 1 AS own FROM results WHERE namespace=? AND task_id=? AND completed_by_key=? LIMIT 1", ns, String(args.task_id || ""), grant.key_id, ns, String(args.task_id || ""), grant.key_id))
       throw error(404, "not_found", "task does not exist");
   } else {
     const allowedAnonAction = ANON_ACTIONS.has(action) || (openWindow && OPEN_WINDOW_READ_ACTIONS.has(action));
@@ -586,7 +633,7 @@ export function enforceAccess(c, grant, action, args) {
   if (WRITE_ACTIONS.has(action) && (action === "submit" ? submissionHasPersonalData(payload, args.output) : hasPersonalData(payload)))
     throw error(400, "example_only", "demo payloads must not contain personal or payment data; use example.com");
   const bytes = linkIssue ? utf8Bytes(args.text) + utf8Bytes(args.agent_note || "") : utf8Bytes(payload);
-  if (bytes > DEMO_QUOTAS.request_bytes) throw error(413, "payload_too_large", "demo request exceeds byte limit");
+  if (bytes > (openWindow ? OPEN_WINDOW_REQUEST_BYTES : DEMO_QUOTAS.request_bytes)) throw error(413, "payload_too_large", "demo request exceeds byte limit");
   const writing = linkIssue || WRITE_ACTIONS.has(action);
   return [args, { kind: "anonymous", action, namespace: ns, ip_hash: args.access_meta?.ip_hash || null, ip_window: args.access_meta?.ip_window ?? null, bytes: writing ? bytes : 0, writing }];
 }
