@@ -524,6 +524,13 @@ test("open free window through 2026-12-31 allows zero-auth agent work & human li
   assert.equal((await t.json("POST", "/v1/tasks/submit", { task_id: lease.task_id, fencing_token: lease.fencing_token, output: { artifact: "sample-1" } }, { "idempotency-key": `${lease.task_id}:${lease.fencing_token}` })).status, 200);
   assert.equal((await t.call("/v1/me/audit")).status, 200);
 
+  // A no-key read of public Task Objects and feeds goes to the shared space without naming it.
+  const plainSearch = await (await t.call("/v1/search?q=practice")).json();
+  assert.equal(plainSearch.namespace, "main");
+  assert.equal((await (await t.call("/v1/feeds")).json()).namespace, "main");
+  const practice = await (await t.call("/v1/verbs")).json();
+  assert.notEqual(practice.namespace, "main", "other no-key calls keep their practice space");
+
   // Explicit namespace headers (both X-Tessera-Namespace and X-Teleion-Fabric-Namespace) work identically.
   assert.equal((await t.call("/v1/verbs", { headers: { "x-tessera-namespace": "main" } })).status, 200);
   assert.equal((await t.call("/v1/verbs", { headers: { "x-teleion-fabric-namespace": "main" } })).status, 200);

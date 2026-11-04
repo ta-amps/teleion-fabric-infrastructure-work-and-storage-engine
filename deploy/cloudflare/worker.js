@@ -572,7 +572,10 @@ const worker = {
     const identity = await primary.requestIdentity(request.headers.get("cf-connecting-ip"), request.headers.get("user-agent"));
     const principal = requestBearer ? await primary.resolveKeyGrant(requestBearer) : (!adminOrKeyPath && openWindow ? openGrantFor(env, agentLabel, undefined, identity.open_hash) : null);
     const explicitNamespace = url.pathname.startsWith("/ns/") || request.headers.has("x-namespace") || request.headers.has("x-teleion-fabric-namespace") || request.headers.has("x-tessera-namespace");
-    if (["anonymous", "requester"].includes(principal?.principal_kind) && !explicitNamespace) namespace = principal.namespace;
+    // A no-key caller reads public Task Objects and feeds from the shared space without naming it; its writes and
+    // practice Tasks stay in its own practice space.
+    const publicRead = !requestBearer && (method === "GET" || method === "HEAD") && (path === "/v1/search" || path === "/v1/feeds" || path.startsWith("/v1/feeds/") || path === "/v1/reflexes/match");
+    if (["anonymous", "requester"].includes(principal?.principal_kind) && !explicitNamespace && !publicRead) namespace = principal.namespace;
     isPrimary = namespace === "main";
     const rawStub = coordBinding.get(coordBinding.idFromName(isPrimary ? "primary" : `ns:${namespace}`));
     // edge: where Cloudflare received this request (data center and continent), from request.cf
@@ -597,7 +600,9 @@ const worker = {
           ctx.waitUntil(primary.countAccessEvent(publicPrincipal(grant), action, { namespace: target }, denied, meta));
           return denied;
         }
-        return rawStub.rpcCall(secret, action, { ...args, access_meta: { ...meta, ...accessFlags } });
+        // A no-key public read over MCP names the shared space, whichever practice space this request routes to.
+        const coordinator = target === namespace ? rawStub : coordBinding.get(coordBinding.idFromName(target === "main" ? "primary" : `ns:${target}`));
+        return coordinator.rpcCall(secret, action, { ...args, access_meta: { ...meta, ...accessFlags } });
       },
       publicHealthAndBoard: (...args) => rawStub.publicHealthAndBoard(...args),
       bootstrapOrIssueKey: (secret, bootstrap, body) => primary.bootstrapOrIssueKey(secret, bootstrap, { ...body, access_meta: meta }),

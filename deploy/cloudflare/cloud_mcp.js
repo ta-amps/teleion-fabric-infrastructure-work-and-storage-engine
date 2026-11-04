@@ -756,7 +756,7 @@ async function callTool(stub, env, ctx, secret, name, args, routeCtx) {
       });
     case "search_nouns":
       return await stub.rpcCall(secret, "searchNouns", {
-        ...base,
+        ...(secret ? base : { ...base, namespace: "main", isPrimary: true }),
         query: args.query ?? "",
         store: args.store_name ?? null,
         bucket: args.bucket ?? null,
@@ -768,7 +768,7 @@ async function callTool(stub, env, ctx, secret, name, args, routeCtx) {
         include_restricted: Boolean(args.include_restricted),
       });
     case "list_feeds":
-      return await stub.rpcCall(secret, "feeds", { ...base });
+      return await stub.rpcCall(secret, "feeds", { ...(secret ? base : { ...base, namespace: "main", isPrimary: true }) });
     case "poll_feed":
       return await stub.rpcCall(secret, "pollFeed", {
         ...base,

@@ -2,7 +2,7 @@
  "format": "tessera.continuous-tuning.mcp-tools.v1",
  "served_by": "tools/list = [...TOOLS, ...ACCESS_TOOLS]",
  "source_files_sha256": {
-  "deploy/cloudflare/cloud_mcp.js": "a30051dc2323fbb8a54d4ea5628c192e84eb0ee1016049e271435687b2c0d61c",
+  "deploy/cloudflare/cloud_mcp.js": "132847b58c68b9a2ea278f5d7d49f7d0d08af14e15fa3849dbf31374f32c9eae",
   "deploy/cloudflare/cloud_access_routes.js": "a1ec56562146b29195c0846c0e22008a8ca12f489587bffdd61a79d57f7a3b67"
  },
  "tools_sha256": "00b853a1cf0ab072f9fb70ac7fbaf4ef56e1c697536d454a624f81cce53345cf",
