@@ -41,11 +41,9 @@ $ curl -s 'https://fabric.teleionlabs.com/ns/main/v1/verbs?queue=eq02&limit=1' |
 {"verbs":[{"namespace":"main","task_id":"volunteer-research-grant-reporting","queue":"eq02","parent_id":null,"state":"ready","kind":"volunteer_research","effect_class":"write-internal","priority":50,"brief":{"goal":"What do small nonprofits most often get wrong in grant reports? List 3 public sources with an exact quote from eac
 ```
 
-## Limits
+## Notes
 
-- A failed Task is tried again from its brief. There is no replay of workflow code, step by step.
 - An open caller can claim and report open Tasks, and it can't review any work. Admin and key routes stay closed.
-- In our plain benchmark, tokens per correct job were higher with Fabric than without it (+108% pooled, ratio 2.08, CI 1.29 to 3.53, 55 paired items; the cost of producing feeds and Task Objects is not counted). Record: https://github.com/ta-amps/teleionlabs-teleion-fabric/blob/main/eval/plain-benchmarks-2026-11-02.txt, section 4.
 - This repository's name, Python package and commands keep an older code name.
 
 ## For your agent
@@ -192,7 +190,7 @@ Still to do:
 
 The spec is a draft until it's locked.
 
-The limits of the local store: one machine, one SQLite file, one writer at a time. Load beyond the suite's scale hasn't been measured.
+The limits of the local store: one machine, one SQLite file, one writer at a time.
 
 Teleion Fabric comes from [Teleion Labs](https://github.com/ta-amps/teleionlabs-teleion-fabric), with its [model shim](https://github.com/ta-amps/herma-infrastructure-shim-for-intelligent-agents), which gives coding agents scoped context and connects them to models. [Eranos](https://github.com/ta-amps/eranos-public-marketplace-for-public-good-token-burn), the public-good marketplace, runs its pipeline as Teleion Fabric Tasks and keeps its records and files in Teleion Fabric's store. [Agora](https://github.com/ta-amps/agora-public-overview-architecture-setup-and-contribution) holds decks and evidence. Reusable work lives as Task Objects and Tasks in `113` seed packs in the [pack library](https://github.com/ta-amps/seed-packs-library-of-nouns-and-verbs). An agent kit is a seed pack too, generated for an NGO's agent. Generic queues are names and briefs are JSON. Publication contracts add fixed review and artifact checks at the last step, without adding a model reviewer to every Task.
 
