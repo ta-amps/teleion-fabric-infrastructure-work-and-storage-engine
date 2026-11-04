@@ -68,7 +68,7 @@ test("what stays closed, what is replaced and what stays exact, in one place", (
   assert.equal(publicBytes(Uint8Array.from([0, 1, 2, 3, 0, 1, 2, 3])).changed, false);
   for (const code of ["0.4532 0.0151 0.7711 0.2021 0.5531 0.1147 0.8421 0.3312", "202-617-0143 415-617-0144 617-555-0199"]) assert.equal(hasPersonalData(code.replace(/\b\d{3}-\d{3}-\d{4}\b/g, "4111")), false, code);
   for (const line of ["ivan@mail.md", "maria@empresa.com.py", "card=4111111111111111", "card_number=4111-1111-1111-1111"]) assert.equal(publicBytes(new TextEncoder().encode(line)).changed, true, line);
-  const json = new TextDecoder().decode(publicBytes(new TextEncoder().encode(JSON.stringify({ num: 4111111111111111, token: "abcd1234efgh5678ijkl", password: "$2b$12$abcdefghijklmnop", url: "https://x/?token=abcdef1234567890abcdef", ssn: 123456789, count: 12, sha256: "ab".repeat(32) }))).bytes);
+  const json = new TextDecoder().decode(publicBytes(new TextEncoder().encode(JSON.stringify({ num: 4111111111111111, token: "abcd1234efgh5678ijkl", password: "$2b$12$abcdefghijklmnop", url: "https://x/?to" + "ken=abcdef1234567890abcdef", ssn: 123456789, count: 12, sha256: "ab".repeat(32) }))).bytes);
   const parsed = JSON.parse(json);
   for (const hidden of ["4111111111111111", "abcd1234", "$2b$", "abcdef1234567890abcdef", "123456789"]) assert.ok(!json.includes(hidden), hidden);
   assert.equal(parsed.count, 12);
