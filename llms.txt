@@ -1,6 +1,6 @@
 # Teleion Fabric: the durable task queue and storage engine
 
-> A pull-based durable task queue and atomic task objects store for agent swarms.
+> A pull-based durable task queue and atomic Task Object store for agent swarms.
 
 ## Start here
 - [README.md](https://github.com/ta-amps/teleion-fabric-infrastructure-work-and-storage-engine/blob/main/README.md): what this is and how to run it
