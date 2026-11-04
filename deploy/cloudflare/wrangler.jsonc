@@ -53,6 +53,7 @@
     "MODEL_CATALOG": "eranos.instructions/models.meta",
     "PUBLIC_ACTIVITY_PER_MINUTE": "60",
     "FREE_OPEN_UNTIL_UTC": "2027-01-01T04:59:59Z",
+    "PUBLIC_NAMES_FILTER": "on",
     "PUBLIC_URL": "https://fabric.teleionlabs.com",
     "REPO_URL": "https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine",
     "ORIGIN": "https://tessera-fabric.fly.dev"
