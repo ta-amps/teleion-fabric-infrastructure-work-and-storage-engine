@@ -310,7 +310,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [src/tessera/store.py](src/tessera/store.py) | The in-process Tessera store: the reference implementation of SPEC.md. |
 | [src/tessera/testing.py](src/tessera/testing.py) | Factories the conformance suite loads by name (TESSERABACKENDFACTORY="module:function"). |
 
-## tests/ (84)
+## tests/ (85)
 
 | File | What it is |
 |---|---|
@@ -389,6 +389,7 @@ Every file in this repo with a one-line description taken from the file itself. 
 | [tests/workerd_client_addresses.mjs](tests/workerd_client_addresses.mjs) | Real Worker/SQLite: per-IP limits count in the hour their daily-rotated IP hash was computed, so a |
 | [tests/workerd_execution_history.mjs](tests/workerd_execution_history.mjs) | Actual Worker handlers and ephemeral SQLite Durable Objects; no provider or cloud access. |
 | [tests/workerd_execution_learning.mjs](tests/workerd_execution_learning.mjs) | Actual Worker and SQLite Durable Objects: learning reports, observations and row costs. |
+| [tests/workerd_forgiving_agents.mjs](tests/workerd_forgiving_agents.mjs) | Real Worker/SQLite with free access on: a no-key agent's call goes through when its meaning is clear, and the |
 | [tests/workerd_human_links.mjs](tests/workerd_human_links.mjs) | Real Worker/SQLite: human links. |
 | [tests/workerd_library_checks.mjs](tests/workerd_library_checks.mjs) | The library door's checks as pure functions: linear time on the independent review's crafted |
 | [tests/workerd_library_doors.mjs](tests/workerd_library_doors.mjs) | Real Worker/SQLite: the seed-pack library door. |

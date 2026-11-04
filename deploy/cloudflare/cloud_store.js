@@ -2,7 +2,7 @@ import { humanLinkAction, humanLinkPublicAnswer, humanLinkPublicRead } from "./h
 import { initExecutions, checkedReport, prepareExecution, validatePrepared, captureExecution, recallExecution, getExecution, listExecutions } from "./cloud_executions.js";
 import { NO_EDGE, activityMap, catalogModels, cleanEdge, clearActivity, edgeStatus, edgeWorker, flushEdge, recordClaim, recordModel, recordPresence, showOnMapLabel } from "./edge_activity.js";
 import { displayTest } from "./display_mask.js";
-import { initAccess, principalMetadata, requestIdentity, mintAnonymous, mintRequester, seedDemo, ensureDemoSeeded, ensureRequesterSeeded, enforceAccess, chargeAccess, claimCaps, checkClaimCaps, chargeClaimCaps, audit, auditMode, countAccess, ownAudit, publicActivity, publicPrincipal, requesterVerbGovernance, CLOSED_TO_ANONYMOUS, MAX_IDEMPOTENCY_KEY, filesRequests, isOpenFreeWindow, openGrantFor, openToAnonymous, usesOpenVerbs } from "./cloud_access.js";
+import { initAccess, principalMetadata, requestIdentity, mintAnonymous, mintRequester, seedDemo, ensureDemoSeeded, ensureRequesterSeeded, enforceAccess, forgivingTaskArgs, readOkFlag, hasPersonalData, isNoKeyId, OPEN_TASK_MAX_FAILURES, chargeAccess, claimCaps, checkClaimCaps, chargeClaimCaps, audit, auditMode, countAccess, ownAudit, publicActivity, publicPrincipal, requesterVerbGovernance, CLOSED_TO_ANONYMOUS, MAX_IDEMPOTENCY_KEY, filesRequests, isOpenFreeWindow, openGrantFor, openToAnonymous, usesOpenVerbs } from "./cloud_access.js";
 // TesseraCoordinator: single-writer SQLite Durable Object (`new_sqlite_classes`) implementing
 // 100% of Tessera Spec v0.2 (queues, 5 verbs, dependencies, waves, park/resume, model jobs,
 // counts, events, scoped keys, queryable CAS records, persistent named file buckets,
@@ -1053,9 +1053,11 @@ export class TesseraCoordinator extends DurableObject {
     }
   }
 
-  _fail(task, config, now, reason) {
+  _fail(task, config, now, reason, holderKey = null) {
     const failures = Number(task.failures) + 1;
-    if (failures >= config.max_attempts) {
+    // A no-key agent that drops or fails an open Task doesn't close it for the next one; a keyed worker's attempts count as configured.
+    const reopen = isNoKeyId(holderKey) && isOpenFreeWindow(this.env, now * 1000, this) && openToAnonymous(task.queue, parseJsonSafe(task.tags, []), task.effect_class);
+    if (failures >= (reopen ? Math.max(config.max_attempts, OPEN_TASK_MAX_FAILURES) : config.max_attempts)) {
       this.ctx.storage.sql.exec(
         "UPDATE tasks SET state = 'dead', failures = ?, updated_at = ? WHERE namespace = ? AND id = ? AND state = 'leased'",
         failures,
@@ -1126,7 +1128,7 @@ export class TesseraCoordinator extends DurableObject {
       worker: lease.worker,
       token: Number(lease.fencing_token),
     });
-    this._fail(task, config, now, "lease lapsed");
+    this._fail(task, config, now, "lease lapsed", lease.key_id);
   }
 
   _reap(now, queue = null) {
@@ -1594,9 +1596,10 @@ export class TesseraCoordinator extends DurableObject {
     const tags = [...parseJsonSafe(row.tags, []), ...parseJsonSafe(head.tags, [])];
     return [head, row].every(entry => canViewGoverned({
       ...entry, tags, allowed_surfaces: parseJsonSafe(entry.allowed_surfaces, []),
+      target_cohorts: parseJsonSafe(entry.target_cohorts, ["all"]),
       viewer_surface: viewerCtx.surface, viewer_key_id: viewerCtx.key_id,
-      is_admin: viewerCtx.is_admin, direct_get: true,
-    }));
+      is_admin: viewerCtx.is_admin, direct_get: true, public_only: Boolean(viewerCtx.public_only),
+    })) && !(viewerCtx.public_only && hasPersonalData(String(row.value ?? "")));
   }
 
   _taskVisible(row, grant, viewerCtx) {
@@ -2010,8 +2013,61 @@ export class TesseraCoordinator extends DurableObject {
       return { ok: true, status: 200, data: args.admin ? { ...ownAudit(this, grant, args), activity_map: edgeStatus(this) } : ownAudit(this, grant, args) };
     } catch (e) { return this._errOut(e); }
   }
+  // A worker's call goes through when its meaning is clear; the reply's warnings say what was filled in.
+  async _fillWorkerFields(grant, action, args, warnings) {
+    if (!["claim", "heartbeat", "submit"].includes(action)) return args;
+    const filled = { ...args };
+    if (action === "claim") {
+      if (!String(filled.worker ?? "").trim()) {
+        filled.worker = grant.label || "agent";
+        warnings.push(`no worker name was sent; using '${filled.worker}'`);
+      }
+      return filled;
+    }
+    const sent = filled.fencing_token;
+    const usable = sent !== undefined && sent !== null && sent !== "" && typeof sent !== "boolean" && Number.isFinite(Number(sent));
+    if (grant.principal_kind === "anonymous" && isOpenFreeWindow(this.env, Date.now(), this)) {
+      if (!usable) filled.fencing_token = this._ownFence(grant, String(filled.task_id || ""), filled, action, warnings);
+      if (action === "submit") readOkFlag(filled, warnings);
+    }
+    if (action === "submit") {
+      const fence = Number(filled.fencing_token);
+      const idem = filled.idempotency_key == null ? "" : String(filled.idempotency_key).trim();
+      if (!idem && Number.isFinite(fence)) {
+        filled.idempotency_key = `auto:${filled.task_id}:${fence}`;
+        warnings.push("no idempotency key was sent; made one from the Task and its fence");
+      } else if ([...idem].length > MAX_IDEMPOTENCY_KEY && isOpenFreeWindow(this.env, Date.now(), this)) {
+        filled.idempotency_key = `long:${await sha256Hex(new TextEncoder().encode(idem))}`;
+        warnings.push(`the idempotency key was over ${MAX_IDEMPOTENCY_KEY} characters; using its digest`);
+      } else filled.idempotency_key = idem;
+      if (filled.output === undefined || filled.output === null) warnings.push("no output was sent; the Task's result is empty");
+    }
+    return filled;
+  }
+
+  // Only the caller's own lease: same identity, and either the worker it names or the Task's first attempt. An earlier
+  // holder of the same identity, or anyone else, still has to name a fence and goes through the normal check.
+  _ownFence(grant, taskId, args, action, warnings) {
+    this._requireHolder(grant, taskId);
+    const lease = this._one("SELECT * FROM leases WHERE namespace = ? AND task_id = ?", this.namespace, taskId);
+    if (lease) {
+      const named = String(args.worker ?? "").trim();
+      const own = lease.key_id === grant.key_id && !String(grant.key_id).endsWith("_unattributed") && (named ? named === lease.worker : Number(this._taskRow(taskId).attempts) === 1);
+      if (!own) throw staleLease("send fencing_token: this caller's current lease on the Task isn't clear without it");
+      warnings.push("no fencing_token was sent; used this caller's own current lease");
+      return Number(lease.fencing_token);
+    }
+    // A repeat of a submit that already closed the Task finds that submit's fence, so it replays or conflicts as usual.
+    const prior = action === "submit" && this._one("SELECT fencing_token FROM results WHERE namespace = ? AND task_id = ? AND completed_by_key = ? AND state_after = 'done' ORDER BY created_at DESC LIMIT 1", this.namespace, taskId, grant.key_id);
+    if (prior) return Number(prior.fencing_token);
+    throw staleLease("send fencing_token: this caller holds no live lease on the Task");
+  }
+
   async rpcCall(secret, action, args = {}) {
     let grant = null, out, permit;
+    const forgiven = forgivingTaskArgs(action, args);
+    args = forgiven.args;
+    const warnings = forgiven.warnings;
     this._ensureSchema();
     await this._ensureAlarmPending();
     const ns = normalizeNamespace(args.namespace || "main");
@@ -2027,9 +2083,9 @@ export class TesseraCoordinator extends DurableObject {
       await ensureRequesterSeeded(this, grant, ns);
       this.namespace = ns;
       this.isPrimary = ns === "main";
+      args = await this._fillWorkerFields(grant, action, args, warnings);
       if (action === "claim") {
         this._requireQueue(grant, String(args.queue || ""));
-        if (!String(args.worker || "")) throw badReq("worker is required");
         permit = await this.claimAdmission.acquire(grant.key_id);
       }
       if (action === "me") out = { ok: true, status: 200, data: publicPrincipal(grant) };
@@ -2052,6 +2108,10 @@ export class TesseraCoordinator extends DurableObject {
       if (out.ok && action === "enqueue") this.idleClaims.work(ns, String(args.queue || ""));
       if (out.ok && action === "claim" && out.data.lease) {
         out.data.lease.claim_receipt = await sha256Hex(new TextEncoder().encode(canonicalJson({ namespace: ns, task_id: out.data.lease.task_id, fencing_token: out.data.lease.fencing_token, claimed_at: out.data.lease.claimed_at })));
+      }
+      if (out.ok && warnings.length && out.data && typeof out.data === "object") {
+        if (action === "claim" && out.data.lease) out.data.lease.warnings = warnings;
+        else out.data = { ...out.data, warnings };
       }
     } catch (e) { out = this._errOut(e instanceof ClaimPressure ? rateLim(e.message, e.retryAfter) : e); }
     try {
@@ -2435,7 +2495,6 @@ export class TesseraCoordinator extends DurableObject {
         case "claim": {
           const queue = String(args.queue || "");
           const worker = String(args.worker || "");
-          if (!worker) throw badReq("worker is required");
           this._requireQueue(grant, queue);
           const qRow = this._one(
             "SELECT heartbeat_seconds FROM queues WHERE namespace = ? AND name = ?",
@@ -2709,7 +2768,7 @@ export class TesseraCoordinator extends DurableObject {
               this._dependencyResolved(taskId, now);
               stateAfter = "done";
             } else {
-              stateAfter = this._fail(task, config, now, errorText || "worker reported failure");
+              stateAfter = this._fail(task, config, now, errorText || "worker reported failure", row.key_id);
             }
             this.ctx.storage.sql.exec(
               "INSERT INTO results (namespace, idempotency_key, task_id, fencing_token, ok, output, error, receipt_hash, state_after, completed_by_key, created_at, labels) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -3354,7 +3413,9 @@ export class TesseraCoordinator extends DurableObject {
                 is_admin: viewerCtx.is_admin,
                 direct_get: false,
                 include_restricted: includeRestricted,
-              })
+                target_cohorts: view.target_cohorts,
+                public_only: Boolean(viewerCtx.public_only),
+              }) || (viewerCtx.public_only && hasPersonalData(String(r.value ?? "")))
             ) {
               continue;
             }

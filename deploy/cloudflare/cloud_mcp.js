@@ -1,5 +1,5 @@
 import { ACCESS_TOOLS, accessDescriptionFor } from "./cloud_access_routes.js";
-import { isOpenFreeWindow } from "./cloud_access.js";
+import { forgivingTaskArgs, isOpenFreeWindow } from "./cloud_access.js";
 import { HUMAN_LINK_TOOLS } from "./human_links.js";
 import { LIBRARY_TOOLS, LIBRARY_TOOL_NAMES, libraryEnabled, libraryToolBody } from "./library_contract.js";
 // Native Streamable HTTP MCP Door (`/mcp`) for Tessera Cloud.
@@ -494,10 +494,12 @@ async function callTool(stub, env, ctx, secret, name, args, routeCtx) {
         ...govFields(args),
       });
     case "claim": {
+      const forgiven = forgivingTaskArgs("claim", args);
       const r = await stub.rpcCall(secret, "claim", {
         ...base,
+        request_warnings: forgiven.warnings,
         queue: args.queue,
-        worker: args.worker,
+        worker: forgiven.args.worker,
         kinds: args.kinds ?? null,
         effect_classes: args.effect_classes ?? null,
       });
@@ -511,10 +513,13 @@ async function callTool(stub, env, ctx, secret, name, args, routeCtx) {
       };
     }
     case "heartbeat": {
+      const forgiven = forgivingTaskArgs("heartbeat", args);
       const r = await stub.rpcCall(secret, "heartbeat", {
         ...base,
-        task_id: args.task_id,
-        fencing_token: args.fencing_token,
+        request_warnings: forgiven.warnings,
+        task_id: forgiven.args.task_id,
+        fencing_token: forgiven.args.fencing_token,
+        worker: forgiven.args.worker,
       });
       return {
         ok: r.ok,
@@ -526,13 +531,17 @@ async function callTool(stub, env, ctx, secret, name, args, routeCtx) {
       };
     }
     case "submit": {
+      const forgiven = forgivingTaskArgs("submit", args);
+      const task = forgiven.args;
       const r = await stub.rpcCall(secret, "submit", {
         ...base,
-        task_id: args.task_id,
-        fencing_token: args.fencing_token,
-        output: args.output === undefined ? null : args.output,
-        idempotency_key: args.idempotency_key,
-        ok: args.ok === undefined ? true : args.ok,
+        request_warnings: forgiven.warnings,
+        task_id: task.task_id,
+        fencing_token: task.fencing_token,
+        worker: task.worker,
+        output: task.output === undefined ? null : task.output,
+        idempotency_key: task.idempotency_key,
+        ok: task.ok === undefined ? true : task.ok,
         error: args.error ?? null,
         execution_report: args.execution_report ?? null,
       });

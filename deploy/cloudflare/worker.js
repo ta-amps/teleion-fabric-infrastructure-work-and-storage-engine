@@ -255,6 +255,16 @@ function parseBoolParam(val) {
   return ["1", "true", "yes"].includes(String(val || "").trim().toLowerCase());
 }
 
+// A worker's submit goes through with whichever key it sent; the reply's warnings say which one was used.
+function forgivingIdempotency(request, body) {
+  const hdrIdem = (request.headers.get("idempotency-key") || "").trim();
+  const sentInBody = body.idempotency_key !== undefined && body.idempotency_key !== null && typeof body.idempotency_key !== "object";
+  const bodyIdem = sentInBody ? String(body.idempotency_key).trim() : "";
+  const warnings = [];
+  if (hdrIdem && bodyIdem && hdrIdem !== bodyIdem) warnings.push("the Idempotency-Key header and the body's idempotency_key differ; using the body's");
+  return { ...body, idempotency_key: bodyIdem || hdrIdem || null, request_warnings: warnings };
+}
+
 function mergeIdempotencyHeader(request, body) {
   const hdrIdem = (request.headers.get("idempotency-key") || "").trim();
   if (body.idempotency_key !== undefined && body.idempotency_key !== null && typeof body.idempotency_key !== "string") {
@@ -348,6 +358,13 @@ async function proxyToOrigin(request, env) {
     return problem(502, "unavailable", "The Teleion Fabric origin service did not answer.");
   }
   return withSecurity(upstream, { isWrite: !isRead, noStore: !isRead });
+}
+
+const SHARED_FALLBACK_ACTIONS = new Set(["heartbeat", "submit", "task", "results"]);
+function namesSharedThing(action, args) {
+  if (action === "claim") return Boolean(args.queue) && !String(args.queue).startsWith("demo.");
+  if (action === "getRecord" || action === "listRecords") return Boolean(args.store) && !String(args.store).startsWith("demo.");
+  return false;
 }
 
 function resolveNamespace(url, request) {
@@ -594,6 +611,10 @@ const worker = {
       rpcCall: async (secret, action, args = {}, accessFlags = {}) => {
         const grant = await principalFor(secret);
         if (!grant) return { ok: false, status: 401, code: "unauthorized", detail: secret ? "the key is unknown, expired or revoked" : "a bearer key is required", extra: {} };
+        // A no-key caller that names no space reaches the shared Tasks and Task Objects it asks for by name; its own
+        // practice space keeps its practice Tasks, and a Task that isn't there is looked for in the shared space.
+        const implicitNoKey = openWindow && !secret && !explicitNamespace && grant.principal_kind === "anonymous" && normalizeNamespace(args.namespace || "main") === grant.namespace;
+        if (implicitNoKey && namesSharedThing(action, args)) args = { ...args, namespace: "main", isPrimary: true };
         const target = normalizeNamespace(args.namespace || "main");
         if (!namespaceReachable(grant, target)) {
           const denied = { ok: false, status: 403, code: "scope_denied", detail: "this principal may not access this namespace", extra: {} };
@@ -602,7 +623,11 @@ const worker = {
         }
         // A no-key public read over MCP names the shared space, whichever practice space this request routes to.
         const coordinator = target === namespace ? rawStub : coordBinding.get(coordBinding.idFromName(target === "main" ? "primary" : `ns:${target}`));
-        return coordinator.rpcCall(secret, action, { ...args, access_meta: { ...meta, ...accessFlags } });
+        const out = await coordinator.rpcCall(secret, action, { ...args, access_meta: { ...meta, ...accessFlags } });
+        if (implicitNoKey && target !== "main" && !out.ok && out.status === 404 && SHARED_FALLBACK_ACTIONS.has(action)) {
+          return primary.rpcCall(secret, action, { ...args, namespace: "main", isPrimary: true, access_meta: { ...meta, ...accessFlags } });
+        }
+        return out;
       },
       publicHealthAndBoard: (...args) => rawStub.publicHealthAndBoard(...args),
       bootstrapOrIssueKey: (secret, bootstrap, body) => primary.bootstrapOrIssueKey(secret, bootstrap, { ...body, access_meta: meta }),
@@ -925,10 +950,7 @@ const worker = {
     if (path === "/v1/tasks/submit" && method === "POST") {
       const { body, error } = await readJsonBody(request);
       if (error) return error;
-      const merged = mergeIdempotencyHeader(request, body);
-      if (merged.error) return merged.error;
-      if (!merged.body.idempotency_key) return problem(400, "invalid_request", "send an Idempotency-Key header or an idempotency_key field");
-      return rpcResponse(await stub.rpcCall(bearer, "submit", { ...merged.body, ...baseRpc }));
+      return rpcResponse(await stub.rpcCall(bearer, "submit", { ...forgivingIdempotency(request, body), ...baseRpc }));
     }
     if (path === "/v1/tasks/split" && method === "POST") {
       const { body, error } = await readJsonBody(request);
