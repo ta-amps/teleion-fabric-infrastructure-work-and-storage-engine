@@ -568,7 +568,7 @@ export function enforceAccess(c, grant, action, args) {
       throw error(404, "not_found", "task does not exist");
   } else {
     const allowedAnonAction = ANON_ACTIONS.has(action) || (openWindow && OPEN_WINDOW_READ_ACTIONS.has(action));
-    if (!allowedAnonAction) throw error(403, "scope_denied", `anonymous sessions may only use isolated demo Task Objects and Tasks (action '${action}' requires a contributor key; for shared open Tasks send X-Namespace: main to /v1/verbs or /v1/tasks/claim)`);
+    if (!allowedAnonAction) throw error(403, "scope_denied", `anonymous sessions may only use isolated demo Task Objects and Tasks (action '${action}' requires a contributor key; for shared open Tasks send X-Namespace: main to the Task list or claim route)`);
     if (args.queue && !String(args.queue).startsWith("demo.")) throw error(403, "scope_denied", "anonymous sessions cannot access production Tasks");
     if (args.store && !String(args.store).startsWith("demo.")) throw error(403, "scope_denied", "anonymous sessions cannot access production Task Objects");
   }
