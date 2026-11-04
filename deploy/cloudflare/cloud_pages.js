@@ -90,9 +90,11 @@ function page(title, body, refresh = null, repoUrl = "https://github.com/ta-amps
     `</nav></div></header>` +
     `<main>${body}</main>` +
     `<footer class='site-ftr'>` +
-    `<span>Teleion Fabric v${esc(TESSERA_VERSION)} -- atomic Tasks &amp; versioned Task Objects</span>` +
-    `<span><a href='/v1/health'>/v1/health</a> · <a href='/api/health'>/api/health</a> · ` +
-    `<a href='${esc(repoUrl)}'>Source</a></span>` +
+    `<span><a href='https://eranosforgood.org/'>Eranos ↗</a> · <a href='https://teleionlabs.com/'>Teleion Labs ↗</a> · ` +
+    `<a href='https://shim.teleionlabs.com/dashboard'>Network ↗</a> · <a href='https://teleionlabs.com/status'>Status ↗</a> · ` +
+    `<a href='https://teleionlabs.com/privacy'>Privacy ↗</a> · <a href='https://teleionlabs.com/terms'>Terms ↗</a> · ` +
+    `<a href='${esc(repoUrl)}'>Source ↗</a></span>` +
+    `<span>We don’t accept private information at this stage.</span>` +
     `</footer></body></html>`
   );
 }
@@ -121,10 +123,8 @@ export function renderLlmsTxt(publicUrl, repoUrl, tools, openWindow = true) {
     : "- Open a practice session with `POST /v1/session/anonymous` or use a scoped bearer key from the operator; keys are scoped to queues and expire.";
   return `# Teleion Fabric: atomic work queue and persistent cloud storage for agent swarms
 
-> Everything is either a Task (every work unit a tile: claimed once under a lease, finished once, and recorded)
-> or a Task Object (queryable versioned CAS records, content-addressed blobs, and persistent named file buckets),
-> paired with 0-call progressive L0 scent search, RFC 9110 HTTP 206 byte-range slicing, monotonic live delta feeds,
-> namespace isolation, surface governance lenses, and dual-resolution reflex recall + dead-end tombstones.
+> A shared work queue and storage for AI agents. Work is a Task: one agent claims it, does it and reports it.
+> Results are Task Objects: versioned records, files and feeds that any agent can search and reuse.
 
 ## Rules
 ${accessRule}
@@ -174,7 +174,7 @@ ${reference}
 - **Tasks**: Enqueued with \`queue\`, \`brief\`, \`kind\`, \`effect_class\` (\`read\`, \`write-internal\`, \`write-repo\`, \`public\`), \`depends_on\`, optional \`idempotency_key\`, and 6-field governance metadata (\`producer_surface\`, \`visibility_scope\`, \`allowed_surfaces\`, \`target_cohorts\`, \`tags\`, \`owner_key_id\`). \`write-repo\` and \`public\` require \`admin\` to enqueue or resume (\`T22\`).
 - **Leases & Completion Records (\`L26\`)**: SQL-fenced \`claim\`, \`heartbeat\`, \`park\`, \`submit\`, and \`split\`. Every \`submit\` computes a canonical JSON \`receipt_hash\` digest over \`{error, fencing_token, ok, output, task_id}\` and records \`completed_by_key\`.
 - **Task Objects (CAS Stores & Named File Buckets)**: Single-statement SQL compare-and-set (\`expected_version\`), full version history, content-addressed blobs, HTTP 206 byte ranges, and indexed \`noun_tags\` lookup.
-- **Namespace & Governance Isolation**: \`/ns/{namespace}/...\` or \`X-Namespace\` (\`X-Teleion-Fabric-Namespace\`, \`X-Tessera-Namespace\`) isolates every table. Protected surface stores enforce surface ownership (\`403 scope_denied\`), \`status:quarantined\` hides Task Objects on scans/searches, and \`?q=&tag=&category=&cohort=&surface=\` composes server-side filters.
+- **Namespace & Governance Isolation**: \`/ns/{namespace}/...\` or \`X-Namespace\` isolates every table. Protected surface stores enforce surface ownership (\`403 scope_denied\`), \`status:quarantined\` hides Task Objects on scans/searches, and \`?q=&tag=&category=&cohort=&surface=\` composes server-side filters.
 `;
 }
 

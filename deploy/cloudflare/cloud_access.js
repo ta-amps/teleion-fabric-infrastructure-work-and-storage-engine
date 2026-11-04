@@ -59,7 +59,7 @@ export const CLOSED_TO_ANONYMOUS = new Set(["eq03", "frontier.review", "frontier
 const OPEN_VERB_EFFECTS = new Set(["read", "write-internal"]);
 // Claim events would show other attempts on the verb, so they stay closed (same rule as Python).
 export const OPEN_VERB_ACTIONS = new Set(["claim", "heartbeat", "submit", "task", "results", "listVerbs", "me", "my_audit"]);
-export const OPEN_WINDOW_READ_ACTIONS = new Set(["feeds", "pollFeed", "matchReflex", "searchNouns", "getRecord", "listRecords"]);
+export const OPEN_WINDOW_READ_ACTIONS = new Set(["feeds", "pollFeed", "matchReflex", "searchNouns", "getRecord", "listRecords", "getObjectMeta"]);
 const OWN_WORK_ACTIONS = new Set(["task", "results"]);
 // While access is free, one request from a no-key caller may be as large as a Task's whole output.
 const OPEN_WINDOW_REQUEST_BYTES = 1_048_576;

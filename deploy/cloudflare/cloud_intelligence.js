@@ -640,6 +640,22 @@ export function searchVerdict(query, scents) {
   };
 }
 
+// Stored records keep their words. A public search shows a third party's text only where it's fit to show, and our own working
+// records come after public results, so a stranger's first result is one meant for them.
+export const SEARCH_HIDDEN_DESCRIPTIONS = new Set(["repo.github:zpc1314521:PCL2"]);
+const INTERNAL_SEARCH_STORES = new Set(["eranos.instructions", "eranos.plans", "eranos.requests"]);
+function isInternalResult(s) {
+  return s.kind === "record" && INTERNAL_SEARCH_STORES.has(s.container) ? 1 : 0;
+}
+/** Public results first for a public reader; otherwise as ranked. */
+export function internalFirstOrder(rows, publicOnly) {
+  return [...rows].sort((a, b) => (publicOnly ? isInternalResult(a) - isInternalResult(b) : 0) || b.score - a.score);
+}
+export function shownSummary(key, l0) {
+  if (SEARCH_HIDDEN_DESCRIPTIONS.has(key)) return "";
+  return String(l0 ?? "").replace(/^Verified NGO kit\b/, "NGO kit");
+}
+
 export function searchNouns(coord, args, canonicalJson, badReq, viewerCtx = {}) {
   const ns = coord.namespace || "main";
   const qClean = String(args.query || "").trim();
@@ -714,7 +730,7 @@ export function searchNouns(coord, args, canonicalJson, badReq, viewerCtx = {}) 
         key: row.key,
         version: Number(row.version),
         title,
-        l0_summary: l0,
+        l0_summary: shownSummary(row.key, l0),
         tags: gov.tags.slice(0, 16),
         size_bytes: enc.encode(rawVal).byteLength,
         sha256: null,
@@ -810,7 +826,7 @@ export function searchNouns(coord, args, canonicalJson, badReq, viewerCtx = {}) 
         key: row.key,
         version: Number(row.version),
         title,
-        l0_summary: l0,
+        l0_summary: shownSummary(row.key, l0),
         tags: gov.tags.slice(0, 16),
         size_bytes: Number(row.size),
         sha256: String(row.sha256),
@@ -825,7 +841,9 @@ export function searchNouns(coord, args, canonicalJson, badReq, viewerCtx = {}) 
     }
   }
 
+  const internal = (s) => isInternalResult(s);
   scents.sort((a, b) => {
+    if (viewerCtx.public_only && internal(a) !== internal(b)) return internal(a) - internal(b);
     if (b.score !== a.score) return b.score - a.score;
     if (b.updated_at !== a.updated_at) return b.updated_at - a.updated_at;
     if (a.container !== b.container) return a.container < b.container ? -1 : 1;
