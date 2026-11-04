@@ -529,13 +529,13 @@ references.
 | I2 | A lease ends only by submit, split, cancel, lapse or a cancelled job; a lapsed task returns with a higher fencing token; heartbeats never extend past the hard cap | `test_T04_lapsed_leases_come_back`, `test_T04_heartbeats_keep_a_lease`, `test_T04_lease_has_a_hard_cap` |
 | I3 | A write from a stale lease is refused and changes nothing | `test_T05_fencing_refuses_the_old_holder` |
 | I4 | Failures retry with bounded jittered backoff, then dead-letter, every attempt logged | `test_T06_dead_letter_after_three_failures`, `test_T06_backoff_grows_within_bounds` |
-| I5 | One stored result per idempotency key; a replay returns the first record | `test_T07_submit_is_idempotent` |
+| I5 | One stored result per idempotency key; a replay returns the first receipt | `test_T07_submit_is_idempotent` |
 | I6 | A split parent waits, then returns with its children's results | `test_T08_split_keeps_the_parent` |
 | I7 | The counts record always equals a recount | `test_T09_one_counts_record` |
 | I8 | Health reports the database, the reaper's last run and queue depths honestly | `test_T10_health_is_honest`, `test_T10_health_over_http` |
 | I9 | Model jobs are tied to the lease that started them; a lapse asks them to stop; a cancelled job returns its task | `test_T12_a_job_is_polled_to_done_with_its_cost`, `test_T12_a_cancelled_job_returns_its_task`, `test_T12_a_lapsed_lease_asks_its_jobs_to_stop` |
 | I10 | Nothing is lost or doubled across workers, queues and restarts | `test_T13_it_holds_up`, `test_T14_it_survives_a_restart` |
-| I11 | Every record hash matches its stored result | `test_T15_receipts_match_results` |
+| I11 | Every receipt hash matches its stored result | `test_T15_receipts_match_results` |
 | I12 | No key appears in any response, page or log | `test_T16_no_secret_leaks`, `test_no_key_appears_in_any_response`, `test_web_forms_never_echo_the_key` |
 | I13 | Records change only by compare-and-set and keep every version; blobs are content-addressed; batches are atomic | `test_ST01_compare_and_set_has_one_winner`, `test_ST02_every_version_is_kept`, `test_ST03_blobs_are_content_addressed`, `test_ST04_a_batch_applies_completely_or_not_at_all` |
 | I14 | Writes are POST-only; a GET never changes state | `test_T02_writes_are_post_only`, `test_writes_are_post_only` |
@@ -545,7 +545,7 @@ references.
 | I18 | A split child is never broader than its parent (read < write-internal < write-repo < public) | `test_T20_a_child_is_never_broader_than_its_parent`, `test_split_children_need_an_effect_class_the_key_holds` |
 | I19 | The key that parked a task may not resume it, and every resume records the resuming key | `test_the_key_that_parked_a_task_may_not_resume_it` |
 | I20 | A resume may name the park it answers, and a late resume for an earlier park is refused | `test_T19_a_resume_can_name_the_park_it_answers` |
-| I21 | Record hashes write whole numbers without a fraction, so other languages compute the same hash | `test_whole_numbers_hash_the_same_in_every_language`, `test_l26_receipt_vectors_python_and_cloudflare_edge_node_parity`, `test_T15_receipts_match_results` |
+| I21 | Receipt hashes write whole numbers without a fraction, so other languages compute the same hash | `test_whole_numbers_hash_the_same_in_every_language`, `test_l26_receipt_vectors_python_and_cloudflare_edge_node_parity`, `test_T15_receipts_match_results` |
 | I22 | An older build refuses to open a database with a newer schema instead of downgrading it | `test_an_older_build_refuses_a_newer_database` |
 | I23 | Namespaces isolate tasks, records, blobs, buckets, feeds and L0 scent search; quarantined items never appear in search or reflex recall; resuming a parked task requires its effect class | `test_T22_resume_requires_the_tasks_effect_class`, `test_namespace_isolation_across_path_and_header`, `test_visibility_quarantine_and_layer2_combinable_filters` |
 
