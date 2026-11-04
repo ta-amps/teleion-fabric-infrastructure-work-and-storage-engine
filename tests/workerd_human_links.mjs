@@ -486,7 +486,8 @@ test("open free window through 2026-12-31 allows zero-auth agent work & human li
   assert.equal(preflight.status, 204);
   const connectRes = await t.call("/connect.json");
   const getHeaders = connectRes.headers.get("access-control-allow-headers") || "";
-  assert.equal(preflight.headers["access-control-allow-headers"], getHeaders);
+  assert.equal(preflight.headers["access-control-allow-headers"], `${getHeaders}, X-Tessera-Namespace`);
+  assert.ok(!getHeaders.includes("X-Tessera-Namespace"));
   const connectContract = await connectRes.json();
   assert.equal(connectContract.demo_flow[0], "search_nouns(query=practice)");
   assert.equal(connectContract.library.anonymous_enabled, true);
