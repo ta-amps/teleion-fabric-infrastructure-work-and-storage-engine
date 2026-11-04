@@ -592,7 +592,7 @@ test("upgrading from legacy human_link_idempotency (response_json + random token
   const bearerToken = info.session_token;
   const principalId = info.principal_id;
 
-  const legacyRawToken = "legacyRandomTokenValue0123456789abcdefghijk";
+  const legacyRawToken = "legacy-human-link-fixture-not-a-secret-0000";
   const legacyRandomHash = createHash("sha256").update(legacyRawToken).digest("hex");
   const body = { kind: "ask", text: "Upgrade check?", ttl_seconds: 600 };
   const canonical = JSON.stringify({ agent_note: null, kind: "ask", text: "Upgrade check?", ttl_seconds: 600 });
