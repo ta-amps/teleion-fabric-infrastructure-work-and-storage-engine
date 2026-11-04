@@ -388,7 +388,7 @@ export const TOOLS = [
   {
     name: "match_reflex",
     description:
-      "0-call dual-resolution muscle-memory + fuzzy step recall + dead-end tombstone lookup. Call before solving to reuse verified 0-call recipes and avoid known dead ends.",
+      "0-call dual-resolution muscle-memory + fuzzy step recall + dead-end tombstone lookup. Call before solving to reuse checked 0-call recipes and avoid known dead ends.",
     inputSchema: {
       type: "object",
       required: ["query"],

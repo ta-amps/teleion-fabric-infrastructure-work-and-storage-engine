@@ -919,11 +919,10 @@ const worker = {
     if (path === "/v1/tasks/submit" && method === "POST") {
       const { body, error } = await readJsonBody(request);
       if (error) return error;
-      const idem = request.headers.get("idempotency-key") || "";
-      if (!idem) return problem(400, "invalid_request", "the Idempotency-Key header is required");
-      return rpcResponse(
-        await stub.rpcCall(bearer, "submit", { ...body, idempotency_key: idem, ...baseRpc })
-      );
+      const merged = mergeIdempotencyHeader(request, body);
+      if (merged.error) return merged.error;
+      if (!merged.body.idempotency_key) return problem(400, "invalid_request", "send an Idempotency-Key header or an idempotency_key field");
+      return rpcResponse(await stub.rpcCall(bearer, "submit", { ...merged.body, ...baseRpc }));
     }
     if (path === "/v1/tasks/split" && method === "POST") {
       const { body, error } = await readJsonBody(request);
