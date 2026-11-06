@@ -170,7 +170,7 @@ def test_ui_chrome_and_discovery_endpoints_parity(tmp_path: Path) -> None:
         llms_full = client.get("/llms-full.txt")
         assert llms_full.status_code == 200
         assert "text/plain" in llms_full.headers["content-type"]
-        assert "Tessera" in llms_full.text
+        assert "Teleion Fabric" in llms_full.text
 
         h_v1 = client.get("/v1/health")
         h_api = client.get("/api/health")

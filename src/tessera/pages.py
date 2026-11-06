@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 ROBOTS = "User-agent: *\nAllow: /\nDisallow: /v1/\nDisallow: /work\nDisallow: /mcp\n"
 
 FAVICON_SVG = (
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Tessera">'
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Teleion Fabric">'
     '<rect x="2" y="2" width="12" height="12" rx="2.5" fill="#3b4fd8"/>'
     '<rect x="18" y="2" width="12" height="12" rx="2.5" fill="#5e72eb"/>'
     '<rect x="2" y="18" width="12" height="12" rx="2.5" fill="#2c9d78"/>'
@@ -83,7 +83,7 @@ def _page(
     body: str,
     *,
     refresh: int | None = None,
-    repo_url: str = "https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine",
+    repo_url: str = "https://github.com/ta-amps/teleion-fabric-infrastructure-work-and-storage-engine",
 ) -> str:
     meta = f'<meta http-equiv="refresh" content="{refresh}">' if refresh else ""
     esc_repo = html.escape(repo_url)
@@ -94,7 +94,7 @@ def _page(
         f"<link rel='icon' href='/favicon.svg' type='image/svg+xml'>"
         f"<title>{html.escape(title)}</title>{STYLE}</head><body>"
         f"<header class='site-hdr'><div class='hdr-inner'>"
-        f"<a class='brand' href='/connect'>{LOGO_SVG}<span>Tessera</span></a>"
+        f"<a class='brand' href='/connect'>{LOGO_SVG}<span>Teleion Fabric</span></a>"
         f"<nav class='site-nav' aria-label='Primary'>"
         f"<a href='/connect'>Connect</a>"
         f"<a href='/board'>Board</a>"
@@ -105,7 +105,7 @@ def _page(
         f"</nav></div></header>"
         f"<main>{body}</main>"
         f"<footer class='site-ftr'>"
-        f"<span>Tessera v{html.escape(__version__)} -- atomic verbs &amp; versioned nouns</span>"
+        f"<span>Teleion Fabric v{html.escape(__version__)} -- atomic verbs &amp; versioned nouns</span>"
         f"<span><a href='/v1/health'>/v1/health</a> · <a href='/api/health'>/api/health</a> · "
         f"<a href='{esc_repo}'>Source</a></span>"
         f"</footer></body></html>"
@@ -133,7 +133,7 @@ def tool_reference(tools: Sequence[Mapping[str, Any]]) -> str:
 def llms_txt(settings: ServiceSettings, tools: Sequence[Mapping[str, Any]]) -> str:
     base = settings.public_url
     names = _tool_names(tools)
-    return f"""# Tessera: atomic work queue and atomic storage for agent swarms
+    return f"""# Teleion Fabric: atomic work queue and atomic storage for agent swarms
 
 > Everything is either a verb (every task a tile: claimed once under a lease, finished once, and receipted)
 > or a noun (versioned records and content-addressed blobs), allowing clear organization, reusability, and
@@ -205,7 +205,7 @@ def connect_html(settings: ServiceSettings, tools: Sequence[Mapping[str, Any]]) 
         '  -d \'{"task_id": "<task_id>", "fencing_token": 1, "output": {"result": "..."}}\''
     )
     body = f"""
-<h1>Tessera: atomic work queue &amp; storage for agent swarms</h1>
+<h1>Teleion Fabric: atomic work queue &amp; storage for agent swarms</h1>
 <p class="muted">Everything is either a verb (every task a tile: claimed once, finished once, receipted) or a
 noun (versioned records and content-addressed files) -- allowing clear organization, reusability, and swarms to
 pick up work. Version {__version__}.</p>
@@ -235,14 +235,14 @@ step and never show it back.</p>
 <p class="muted"><a href="/v1/health">Health</a> · <a href="/board">Board</a> · <a href="/llms.txt">llms.txt</a>
 · <a href="/llms-full.txt">llms-full.txt</a> · <a href="{html.escape(settings.repo_url)}">Source</a></p>
 """
-    return _page("Tessera: connect", body, repo_url=settings.repo_url)
+    return _page("Teleion Fabric: connect", body, repo_url=settings.repo_url)
 
 
 def agent_card(settings: ServiceSettings, tools: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     base = settings.public_url
     return {
-        "name": "Tessera",
-        "description": "Tessera: atomic work queue and atomic storage for agent swarms where everything is a "
+        "name": "Teleion Fabric",
+        "description": "Teleion Fabric: atomic work queue and atomic storage for agent swarms where everything is a "
         "noun or a verb -- clear organization, reusability, and tasks claimed once, finished once, receipted.",
         "url": base,
         "version": __version__,
@@ -389,7 +389,7 @@ def board_html(
     )
 
     body = (
-        f"<h1>Tessera board</h1>"
+        f"<h1>Teleion Fabric board</h1>"
         f"<p class='muted'>Read-only live console (namespace <code>{html.escape(ns)}</code>). "
         f"Every queue count comes directly from the counts record. "
         f"Reaper last ran: {reaper}. Event cursor: <code>{latest_event_seq}</code>. Refreshes every 15 s.</p>"
@@ -399,7 +399,7 @@ def board_html(
         f"<section id='feed-section'><h2>Monotonic Cursor Event Feed</h2>{feed_table}</section>"
         "<p class='muted'><a href='/connect'>Connect</a> · <a href='/v1/health'>Health JSON</a></p>"
     )
-    return _page("Tessera board", body, refresh=15, repo_url=settings.repo_url)
+    return _page("Teleion Fabric board", body, refresh=15, repo_url=settings.repo_url)
 
 
 # -- keyed web forms for agents that can only browse ----------------------------------------------
@@ -459,11 +459,13 @@ def mount_work_forms(
         )
 
     def failed(exc: TesseraError) -> HTMLResponse:
-        return respond("Tessera: error", _form_claim(f"{exc.code}: {exc.detail}"), exc.status)
+        return respond(
+            "Teleion Fabric: error", _form_claim(f"{exc.code}: {exc.detail}"), exc.status
+        )
 
     @app.get("/work", response_class=HTMLResponse, include_in_schema=False)
     def work() -> HTMLResponse:
-        return respond("Tessera: work", _form_claim())
+        return respond("Teleion Fabric: work", _form_claim())
 
     @app.post("/work/claim", response_class=HTMLResponse, include_in_schema=False)
     async def work_claim(request: Request) -> HTMLResponse:
@@ -491,10 +493,12 @@ def mount_work_forms(
         request.state.access_result = {"lease": lease.model_dump(mode="json") if lease else None}
         if lease is None:
             return respond(
-                "Tessera: nothing ready", _form_claim("Nothing is ready in that queue yet.")
+                "Teleion Fabric: nothing ready", _form_claim("Nothing is ready in that queue yet.")
             )
         request.state.access_result = {"lease": lease.model_dump(mode="json")}
-        return respond(f"Tessera: task {lease.task_id}", _form_lease(lease.model_dump(mode="json")))
+        return respond(
+            f"Teleion Fabric: task {lease.task_id}", _form_lease(lease.model_dump(mode="json"))
+        )
 
     @app.post("/work/heartbeat", response_class=HTMLResponse, include_in_schema=False)
     async def work_heartbeat(request: Request) -> HTMLResponse:
@@ -511,7 +515,9 @@ def mount_work_forms(
         except TesseraError as exc:
             return failed(exc)
         request.state.access_result = {"lease": lease.model_dump(mode="json")}
-        return respond(f"Tessera: task {lease.task_id}", _form_lease(lease.model_dump(mode="json")))
+        return respond(
+            f"Teleion Fabric: task {lease.task_id}", _form_lease(lease.model_dump(mode="json"))
+        )
 
     @app.post("/work/submit", response_class=HTMLResponse, include_in_schema=False)
     async def work_submit(request: Request) -> HTMLResponse:
@@ -548,7 +554,7 @@ def mount_work_forms(
             f"<strong>{receipt.state_after}</strong>.</p><p class='muted'>Receipt "
             f"<code>{receipt.receipt_hash}</code></p><p><a href='/work'>Claim another task</a></p>"
         )
-        return respond("Tessera: submitted", body)
+        return respond("Teleion Fabric: submitted", body)
 
     @app.post("/work/resume", response_class=HTMLResponse, include_in_schema=False)
     async def work_resume(request: Request) -> HTMLResponse:
@@ -589,4 +595,4 @@ def mount_work_forms(
             f"<h1>Resumed</h1><p>Task <code>{html.escape(resumed.task_id)}</code> is now "
             f"<strong>{resumed.state}</strong>.</p><p><a href='/work'>Back to work forms</a></p>"
         )
-        return respond("Tessera: resumed", body)
+        return respond("Teleion Fabric: resumed", body)

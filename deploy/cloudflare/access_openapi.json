@@ -2087,7 +2087,7 @@
   },
   "info": {
     "description": "Shared tracked anonymous and keyed HTTP endpoints. Anonymous sessions auto-route to their private demo namespace. Discovery and MCP descriptors are available at /connect.json and /mcp.",
-    "title": "Tessera external agent access",
+    "title": "Teleion Fabric external agent access",
     "version": "0.2.0"
   },
   "openapi": "3.1.0",

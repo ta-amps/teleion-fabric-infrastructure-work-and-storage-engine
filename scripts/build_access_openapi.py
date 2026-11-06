@@ -38,7 +38,7 @@ def generate() -> str:
         store = Store(Path(directory) / "schema.db")
         try:
             schema = create_app(store, ServiceSettings()).openapi()
-            schema["info"]["title"] = "Tessera external agent access"
+            schema["info"]["title"] = "Teleion Fabric external agent access"
             schema["info"]["description"] = (
                 "Shared tracked anonymous and keyed HTTP endpoints. Anonymous sessions auto-route to their private demo namespace. Discovery and MCP descriptors are available at /connect.json and /mcp."
             )

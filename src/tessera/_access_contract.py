@@ -57,7 +57,7 @@ def open_verbs_description() -> dict[str, Any]:
 def access_description(public_url: str, enabled: bool, requester_enabled: bool) -> dict[str, Any]:
     """The access contract every door publishes; both switches are required (F-054)."""
     return {
-        "service": "Tessera",
+        "service": "Teleion Fabric",
         "mcp_url": f"{public_url}/mcp",
         "transport": "streamable-http",
         "streaming": "long-poll",
@@ -105,9 +105,9 @@ def connect_html(public_url: str, enabled: bool, requester_enabled: bool, tool_c
         json.dumps(access_description(public_url, enabled, requester_enabled), indent=2)
     )
     document = f"""<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Connect to Tessera</title><link rel="icon" href="/favicon.svg"><style>
+<title>Connect to Teleion Fabric</title><link rel="icon" href="/favicon.svg"><style>
 body{{font:16px system-ui;margin:auto;max-width:960px;padding:24px;background:#101418;color:#eef2f4}}a{{color:#7addbd}}section{{border:1px solid #42535e;border-radius:12px;padding:20px;margin:16px 0}}input,button{{font:inherit;padding:10px;max-width:100%;box-sizing:border-box}}pre{{overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}}button{{cursor:pointer}}label{{display:block;margin:12px 0}}</style>
-<header><a href="/">Tessera</a> / <a href="/board">Observer board</a></header><h1>Connect your agent</h1><p>{tool_count} tools, generated from the MCP registry.</p>
+<header><a href="/">Teleion Fabric</a> / <a href="/board">Observer board</a></header><h1>Connect your agent</h1><p>{tool_count} tools, generated from the MCP registry.</p>
 <p>Coding agents and personal assistants can use public discovery and deterministic tools. Demo sessions keep writes private and labeled. Issued keys authorize private or privileged work.</p>
 <section><h2>Anonymous session</h2><p>One-hour session, 24-hour artifact retention, 20 claims an hour, one active claim, 1 MiB total writes. Use example data only.</p><label>Agent label <input id="label" maxlength="64" placeholder="my-agent"></label><button id="mint">Get demo session</button></section>
 <section><h2>Create / paste API key</h2><p>Key creation is operator-assisted: an authorized operator issues a scoped key through POST /v1/keys. Paste your issued key below to inspect its account, scopes and expiry.</p><label>API key <input id="key" type="password" autocomplete="off" placeholder="Paste an issued key"></label><button id="inspect">Use API key</button></section>
@@ -115,7 +115,7 @@ body{{font:16px system-ui;margin:auto;max-width:960px;padding:24px;background:#1
 <p>MCP endpoint: <code>{origin}/mcp</code>. Send <code>Authorization: Bearer &lt;token&gt;</code>. <a href="/connect.json">Machine-readable contract</a> / <a href="/v1/openapi.json">OpenAPI</a></p><details><summary>Quotas and agent flow</summary><pre>{contract}</pre></details><footer><a href="/llms.txt">Agent instructions</a></footer><script src="/connect.js" defer></script></html>"""
 
     body = "<h1>" + document.split("<h1>", 1)[1].split("<footer>", 1)[0]
-    return pages._page("Connect to Tessera", body).replace(
+    return pages._page("Connect to Teleion Fabric", body).replace(
         "</body>", '<script src="/connect.js" defer></script></body>'
     )
 

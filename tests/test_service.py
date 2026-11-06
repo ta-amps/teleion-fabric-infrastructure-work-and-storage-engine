@@ -180,8 +180,8 @@ def test_the_agent_door(service: tuple[TestClient, Store, Keys]) -> None:
     client, _, _ = service
     assert "/mcp" in client.get("/connect").text
     llms = client.get("/llms.txt").text
-    assert llms.startswith("# Tessera") and "## Rules" in llms
-    assert client.get("/.well-known/agent-card.json").json()["name"] == "Tessera"
+    assert llms.startswith("# Teleion Fabric") and "## Rules" in llms
+    assert client.get("/.well-known/agent-card.json").json()["name"] == "Teleion Fabric"
     assert "Disallow: /v1/" in client.get("/robots.txt").text
     assert "Read-only live console" in client.get("/board").text
     oa_root = client.get("/openapi.json")

@@ -72,7 +72,7 @@ function fmtTs(ts) {
   return new Date(Number(ts) * 1000).toISOString().replace("T", " ").slice(0, 19) + " UTC";
 }
 
-function page(title, body, refresh = null, repoUrl = "https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine") {
+function page(title, body, refresh = null, repoUrl = "https://github.com/ta-amps/teleion-fabric-infrastructure-work-and-storage-engine") {
   const meta = refresh ? `<meta http-equiv="refresh" content="${Number(refresh)}">` : "";
   return (
     `<!doctype html><html lang='en'><head><meta charset='utf-8'>` +
@@ -277,7 +277,7 @@ export function renderAgentCard(publicUrl, repoUrl, tools) {
 
 // `mask` hides banned words in stored data at display time (shared list, data_rendering rule); records stay as
 // they are. worker.js builds it from the BANNED_TEXT var that `make deploy` sets from the shared list.
-export function renderBoardHtml(health, snapshot = {}, repoUrl = "https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine", mask = (v) => v) {
+export function renderBoardHtml(health, snapshot = {}, repoUrl = "https://github.com/ta-amps/teleion-fabric-infrastructure-work-and-storage-engine", mask = (v) => v) {
   const esc = (v) => escHtml(mask(v));
   const ns = String(snapshot?.namespace || "main");
   const dagNodes = Array.isArray(snapshot?.dag_nodes) ? snapshot.dag_nodes : [];
@@ -336,7 +336,7 @@ export function renderBoardHtml(health, snapshot = {}, repoUrl = "https://github
   );
 }
 
-export function renderWorkClaimForm(message = "", repoUrl = "https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine") {
+export function renderWorkClaimForm(message = "", repoUrl = "https://github.com/ta-amps/teleion-fabric-infrastructure-work-and-storage-engine") {
   const note = message ? `<p>${esc(message)}</p>` : "";
   return page(
     "Teleion Fabric: work",
@@ -360,7 +360,7 @@ export function renderWorkClaimForm(message = "", repoUrl = "https://github.com/
   );
 }
 
-export function renderWorkLeaseForm(lease, repoUrl = "https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine") {
+export function renderWorkLeaseForm(lease, repoUrl = "https://github.com/ta-amps/teleion-fabric-infrastructure-work-and-storage-engine") {
   const tid = esc(lease.task_id);
   const token = Number(lease.fencing_token);
   const brief = esc(JSON.stringify(lease.brief, null, 2));
@@ -388,7 +388,7 @@ export function renderWorkLeaseForm(lease, repoUrl = "https://github.com/ta-amps
   );
 }
 
-export function renderWorkSubmitted(receipt, repoUrl = "https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine") {
+export function renderWorkSubmitted(receipt, repoUrl = "https://github.com/ta-amps/teleion-fabric-infrastructure-work-and-storage-engine") {
   return page(
     "Teleion Fabric: submitted",
     `<h1>Submitted</h1><p>Task ${esc(receipt.task_id)} is now <strong>${esc(receipt.state_after)}</strong>.</p><p class="muted">Completion record <code>${esc(receipt.receipt_hash)}</code></p><p><a href="/work">Claim another task</a></p>`,
@@ -397,7 +397,7 @@ export function renderWorkSubmitted(receipt, repoUrl = "https://github.com/ta-am
   );
 }
 
-export function renderWorkResumed(resumed, repoUrl = "https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine") {
+export function renderWorkResumed(resumed, repoUrl = "https://github.com/ta-amps/teleion-fabric-infrastructure-work-and-storage-engine") {
   return page(
     "Teleion Fabric: resumed",
     `<h1>Resumed</h1><p>Task <code>${esc(resumed.task_id)}</code> is now <strong>${esc(resumed.state)}</strong>.</p><p><a href="/work">Back to work forms</a></p>`,

@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 T = TypeVar("T")
 
 INSTRUCTIONS = (
-    "Tessera organizes shared agent work into atomic verbs (leased tasks) and atomic nouns "
+    "Teleion Fabric organizes shared agent work into atomic verbs (leased tasks) and atomic nouns "
     "(versioned compare-and-set records and content-addressed buckets). Before solving, call "
     "search_nouns (L0 scents) and match_reflex (0-call recipes + negative-knowledge dead ends). "
     "Claim one task, heartbeat while you work, read targeted L1/L2 slices, write back nouns with "
@@ -72,7 +72,7 @@ def build_mcp(
 ) -> tuple[MCPServer[Any], Starlette]:
     server: MCPServer[Any] = MCPServer(
         name="tessera",
-        title="Tessera work fabric",
+        title="Teleion Fabric",
         instructions=INSTRUCTIONS,
         version=__version__,
         website_url=f"{settings.public_url}/connect",

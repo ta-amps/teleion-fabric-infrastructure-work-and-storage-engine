@@ -39,7 +39,9 @@ class ServiceSettings:
     # Addresses whose X-Forwarded-For `tessera serve` believes. Empty: none, so per-IP limits use
     # the connecting address (or CF-Connecting-IP behind the edge lock), never a client's claim.
     trusted_proxies: tuple[str, ...] = ()
-    repo_url: str = "https://github.com/ta-amps/tessera-infrastructure-work-and-storage-engine"
+    repo_url: str = (
+        "https://github.com/ta-amps/teleion-fabric-infrastructure-work-and-storage-engine"
+    )
 
     @classmethod
     def from_env(cls) -> ServiceSettings:

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Claim library.review verbs with a reviewer key and submit the library's offline decision.
 
-    TESSERA_URL=https://tessera.ta-amps.workers.dev TESSERA_KEY_FILE=~/.config/tessera/reviewer.key \\
+    TESSERA_URL=https://fabric.teleionlabs.com TESSERA_KEY_FILE=~/.config/tessera/reviewer.key \\
         python3 tools/library_reviewer.py --library ../seed-packs-library-of-nouns-and-verbs --once
 
 One pass per verb: claim from `library.review`, read the proposal the brief names
